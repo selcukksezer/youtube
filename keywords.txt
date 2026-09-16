@@ -1,0 +1,4 @@
+# YouTube Shorts Titles
+# LANGUAGE = "en" for English, "tr" for Turkish (set in config.py)
+
+kilo verme egzersizi

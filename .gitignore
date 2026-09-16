@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Environment and Secret Keys
+.env
+
+# Generated Output & Media (Large binary files)
+output/*.mp4
+output/*.ass
+output/*.srt
+output/*.wav
+!output/.gitkeep
+
+assets/*
+!assets/.gitkeep
+
+audio/*.wav
+audio/*.mp3
+!audio/.gitkeep
+
+# Local SQLite Database
+*.db
+*.sqlite3
+
+# Test audio artifacts
+test_*.wav
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

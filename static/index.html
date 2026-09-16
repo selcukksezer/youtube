@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ShortsAI Studio Pro — Yapay Zeka YouTube Shorts Üretim İstasyonu</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&family=Montserrat:wght@700;800;900&family=Anton&family=Bangers&display=swap" rel="stylesheet">
+    <!-- FontAwesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <div class="app-layout">
+        <!-- SOL MENÜ (SIDEBAR) -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-bolt-lightning"></i>
+                </div>
+                <div class="brand-text">
+                    <h2>ShortsAI <span class="pro-tag">PRO</span></h2>
+                    <span>OTONOM VİDEO STÜDYOSU</span>
+                </div>
+            </div>
+
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="studio">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> 
+                    <span>Stüdyo & Trendler</span>
+                </button>
+                <button class="nav-item" data-tab="editor" id="nav-editor-btn">
+                    <i class="fa-solid fa-layer-group"></i> 
+                    <span>Sahne Zaman Çizelgesi</span>
+                    <span class="badge" id="scene-count-badge">0</span>
+                </button>
+                <button class="nav-item" data-tab="subtitles">
+                    <i class="fa-solid fa-mobile-screen"></i> 
+                    <span>9:16 Altyazı Tasarım</span>
+                </button>
+                <button class="nav-item" data-tab="audio-sfx">
+                    <i class="fa-solid fa-music"></i> 
+                    <span>Müzik & SFX Konsolu</span>
+                </button>
+                <button class="nav-item" data-tab="gallery">
+                    <i class="fa-solid fa-film"></i> 
+                    <span>Video Galerisi</span> 
+                    <span class="badge" id="gallery-count-badge">0</span>
+                </button>
+                <button class="nav-item" data-tab="settings">
+                    <i class="fa-solid fa-sliders"></i> 
+                    <span>Sistem Ayarları</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="system-status-card">
+                    <div class="status-header">
+                        <span class="pulse-dot"></span>
+                        <span class="status-label">Aktif AI Motoru</span>
+                    </div>
+                    <div class="status-engine" id="sidebar-ai-engine">Algılanıyor...</div>
+                    <div class="status-meta" id="sidebar-engine-info">5 Stok Kaynağı Aktif</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ANA ÇALIŞMA ALANI -->
+        <main class="main-content">
+
+            <!-- ÜST BİLGİ VE DURUM ÇUBUĞU (TOPBAR) -->
+            <header class="top-bar">
+                <div class="header-title">
+                    <h1 id="page-title">İçerik Üretim Stüdyosu</h1>
+                    <p class="subtitle" id="page-subtitle">Yapay Zeka Destekli Otomatik Dikey YouTube Shorts Üretim Paneli</p>
+                </div>
+                <div class="header-actions">
+                    <div class="chip" id="chip-lang"><i class="fa-solid fa-globe"></i> <span id="chip-lang-val">Türkçe</span></div>
+                    <div class="chip" id="chip-voice"><i class="fa-solid fa-microphone"></i> <span id="chip-voice-val">Erkek Ses</span></div>
+                    <div class="chip highlight" id="chip-render-status">
+                        <i class="fa-solid fa-circle-check"></i> <span id="chip-render-text">Sistem Hazır</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- ======================================================= -->
+            <!-- SEKME 1: STÜDYO & TREND KEŞFİ                           -->
+            <!-- ======================================================= -->
+            <section class="tab-page active" id="tab-studio">
+                
+                <!-- Adım İlerleme Rehberi -->
+                <div class="workflow-steps mb-4">
+                    <div class="step-card active" data-step="1">
+                        <div class="step-icon"><i class="fa-solid fa-lightbulb"></i></div>
+                        <div class="step-details">
+                            <h4>1. Konu & Fikir</h4>
+                            <p>Trendi seçin veya konu girin</p>
+                        </div>
+                    </div>
+                    <div class="step-card" data-step="2">
+                        <div class="step-icon"><i class="fa-solid fa-code-branch"></i></div>
+                        <div class="step-details">
+                            <h4>2. AI Senaryosu</h4>
+                            <p>Sahneleri oluşturup düzenleyin</p>
+                        </div>
+                    </div>
+                    <div class="step-card" data-step="3">
+                        <div class="step-icon"><i class="fa-solid fa-palette"></i></div>
+                        <div class="step-details">
+                            <h4>3. Stil & Müzik</h4>
+                            <p>Altyazı ve müzik seçin</p>
+                        </div>
+                    </div>
+                    <div class="step-card" data-step="4">
+                        <div class="step-icon"><i class="fa-solid fa-film"></i></div>
+                        <div class="step-details">
+                            <h4>4. HD Render</h4>
+                            <p>Full HD 1080x1920 çıktınızı alın</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid-2-col">
+                    <!-- Sol: Konu & Hızlı Ayar Formu -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon"><i class="fa-solid fa-compass"></i></div>
+                            <div>
+                                <h3>Video Konusu ve Ana Ayarlar</h3>
+                                <p class="card-desc">Oluşturmak istediğiniz Shorts konusunu veya başlığını belirleyin.</p>
+                            </div>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="topic-input">Video Konusu / Başlık</label>
+                            <div class="input-with-icon">
+                                <i class="fa-solid fa-pen-nib"></i>
+                                <input type="text" id="topic-input" placeholder="Örn: Derin Okyanuslar Hakkında 3 Korkunç Gerçek" value="Derin Okyanuslar Hakkında 3 Korkunç Gerçek">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="lang-select"><i class="fa-solid fa-language"></i> Anlatım Dili</label>
+                                <select id="lang-select">
+                                    <option value="tr">Türkçe (TR)</option>
+                                    <option value="en">İngilizce (EN)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="voice-select"><i class="fa-solid fa-headset"></i> Seslendirme Sesi</label>
+                                <select id="voice-select">
+                                    <option value="male">Erkek Sesi (Ahmet / Guy)</option>
+                                    <option value="female">Kadın Sesi (Emel / Jenny)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="bgm-select"><i class="fa-solid fa-music"></i> Arka Plan Müziği</label>
+                                <div class="input-group-addon">
+                                    <select id="bgm-select">
+                                        <option value="">Yok (Sadece Seslendirme)</option>
+                                    </select>
+                                    <button class="btn btn-icon" id="btn-preview-bgm-inline" title="Müziği Dinle/Durdur">
+                                        <i class="fa-solid fa-play"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="bgm-volume-range">Müzik Seviyesi (<span id="bgm-vol-val">%12</span>)</label>
+                                <input type="range" id="bgm-volume-range" min="0.02" max="0.35" step="0.01" value="0.12">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group switch-group">
+                                <label class="switch">
+                                    <input type="checkbox" id="toggle-sfx" checked>
+                                    <span class="slider round"></span>
+                                </label>
+                                <span class="switch-label"><i class="fa-solid fa-wind"></i> Sahne Geçiş SFX Efektleri (Whoosh)</span>
+                            </div>
+                            <div class="form-group">
+                                <label for="sfx-volume-range">SFX Seviyesi (<span id="sfx-vol-val">%20</span>)</label>
+                                <input type="range" id="sfx-volume-range" min="0.05" max="0.40" step="0.02" value="0.20">
+                            </div>
+                        </div>
+
+                        <div class="action-buttons-row mt-4">
+                            <button class="btn btn-secondary" id="btn-generate-script">
+                                <i class="fa-solid fa-code-branch"></i> Önce Senaryoyu Oluştur & Düzenle
+                            </button>
+                            <button class="btn btn-primary btn-glow" id="btn-render-direct">
+                                <i class="fa-solid fa-play"></i> Doğrudan Video Oluştur
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Sağ: Hızlı İlham & Kaynaklar -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon"><i class="fa-solid fa-fire-flame-curved"></i></div>
+                            <div>
+                                <h3>Popüler Shorts Fikirleri</h3>
+                                <p class="card-desc">Tıklayarak konuyu anında aktarabilirsiniz.</p>
+                            </div>
+                        </div>
+
+                        <div class="preset-chips-grid mt-3">
+                            <button class="preset-pill" data-topic="Derin Okyanuslar Hakkında 3 Korkunç Gerçek">
+                                <i class="fa-solid fa-water"></i> Okyanus Gizemleri
+                            </button>
+                            <button class="preset-pill" data-topic="Zengin İnsanların 5 Günlük Sabah Alışkanlığı">
+                                <i class="fa-solid fa-coins"></i> Zenginlik Psikolojisi
+                            </button>
+                            <button class="preset-pill" data-topic="Tarihin Açıklanamayan En Büyük 3 Gizemi">
+                                <i class="fa-solid fa-landmark"></i> Tarihsel Sırlar
+                            </button>
+                            <button class="preset-pill" data-topic="İnsan Beyninin Sizi Yanılttığı 4 Şaşırtıcı Durum">
+                                <i class="fa-solid fa-brain"></i> Zihin Hileleri
+                            </button>
+                            <button class="preset-pill" data-topic="Uzayda Meydana Gelen En Korkunç 3 Olay">
+                                <i class="fa-solid fa-shuttle-space"></i> Uzay Keşifleri
+                            </button>
+                            <button class="preset-pill" data-topic="Yapay Zekanın 2030 Yılında Değiştireceği 5 Şey">
+                                <i class="fa-solid fa-robot"></i> Yapay Zeka Geleceği
+                            </button>
+                        </div>
+
+                        <div class="card-header mt-4">
+                            <div class="card-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                            <div>
+                                <h3>Aktif Güvenli Stok Arama Zinciri</h3>
+                                <p class="card-desc">Telif hakkı içermeyen 5 seviyeli akıllı video arşivi.</p>
+                            </div>
+                        </div>
+
+                        <div class="source-pills-list mt-2">
+                            <span class="source-tag active"><i class="fa-solid fa-check"></i> Pexels Video (1080p)</span>
+                            <span class="source-tag active"><i class="fa-solid fa-check"></i> Pixabay Kütüphanesi</span>
+                            <span class="source-tag active"><i class="fa-solid fa-check"></i> Coverr HD</span>
+                            <span class="source-tag active"><i class="fa-solid fa-check"></i> Mixkit Sinematik</span>
+                            <span class="source-tag active"><i class="fa-solid fa-check"></i> Prosedürel Görsel Fallback</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- YouTube Viral Shorts Trend Tarayıcısı Pro -->
+                <div class="glass-card mt-4">
+                    <div class="card-header-bar">
+                        <div class="card-header" style="margin-bottom:0;">
+                            <div class="card-icon yt-red"><i class="fa-brands fa-youtube"></i></div>
+                            <div>
+                                <h3>YouTube Viral Shorts Trend Tarayıcısı Pro</h3>
+                                <p class="card-desc">YouTube'da en çok tıklanan Shorts videolarını, kancalarını (hook) ve viral skorlarını canlı analiz edin.</p>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" id="btn-scan-trends">
+                            <i class="fa-solid fa-magnifying-glass-chart"></i> Viral Trendleri Tara
+                        </button>
+                    </div>
+
+                    <div class="trend-filters-row mt-3">
+                        <div class="filter-item">
+                            <label><i class="fa-solid fa-clock"></i> Zaman Aralığı</label>
+                            <select id="trend-time-filter">
+                                <option value="week">Son 1 Hafta (En Popüler)</option>
+                                <option value="day">Son 24 Saat (Sıcak Trendler)</option>
+                                <option value="month">Son 1 Ay (Sürekli İzlenen)</option>
+                            </select>
+                        </div>
+                        <div class="filter-item">
+                            <label><i class="fa-solid fa-layer-group"></i> Kategori</label>
+                            <select id="trend-category-filter">
+                                <option value="all">Tüm Kategoriler</option>
+                                <option value="science">Bilim & Teknoloji & Uzay</option>
+                                <option value="history">Tarih & Gizem & Sırlar</option>
+                                <option value="psychology">İnsan Psikolojisi & Zihin</option>
+                                <option value="success">Başarı & Zenginlik</option>
+                                <option value="facts">İnanılmaz Bilgiler & Gerçekler</option>
+                            </select>
+                        </div>
+                        <div class="filter-item">
+                            <label><i class="fa-solid fa-arrow-down-wide-short"></i> Sıralama</label>
+                            <select id="trend-sort-filter">
+                                <option value="views">Viral Skor / İzlenme (Yüksek → Düşük)</option>
+                                <option value="date">En Yenilere Göre</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="trend-cards-grid mt-4" id="trending-results-container">
+                        <div class="empty-state">
+                            <i class="fa-brands fa-youtube empty-icon"></i>
+                            <p>Konunuzla ilişkili trend Shorts fikirlerini ve kanca analizlerini getirmek için "Viral Trendleri Tara" butonuna tıklayın.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+
+            <!-- ======================================================= -->
+            <!-- SEKME 2: İNTERAKTİF SAHNE ZAMAN ÇİZELGESİ               -->
+            <!-- ======================================================= -->
+            <section class="tab-page" id="tab-editor">
+                <div class="glass-card mb-4">
+                    <div class="timeline-summary-bar">
+                        <div class="timeline-info">
+                            <h3>Sahne Zaman Çizelgesi & Metin Düzenleyici</h3>
+                            <p class="card-desc">Sahneleri sürükleyebilir, süresini değiştirebilir, yeni sahne ekleyebilir veya silebilirsiniz.</p>
+                        </div>
+                        <div class="timeline-metrics">
+                            <div class="metric-badge">
+                                <i class="fa-solid fa-stopwatch"></i> Toplam Süre: <span id="total-duration-display">0 sn</span>
+                            </div>
+                            <div class="metric-badge">
+                                <i class="fa-solid fa-film"></i> Sahne Sayısı: <span id="total-scenes-display">0</span>
+                            </div>
+                        </div>
+                        <div class="timeline-actions">
+                            <button class="btn btn-outline" id="btn-add-new-scene">
+                                <i class="fa-solid fa-plus"></i> Yeni Sahne Ekle
+                            </button>
+                            <button class="btn btn-secondary" id="btn-replan-ai">
+                                <i class="fa-solid fa-rotate"></i> Yeniden AI Senaryosu Yaz
+                            </button>
+                            <button class="btn btn-primary btn-glow" id="btn-render-edited">
+                                <i class="fa-solid fa-film"></i> Düzenlenen Senaryoyu Render Et
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="scenes-list-container" id="scenes-container">
+                    <div class="empty-state">
+                        <i class="fa-solid fa-wand-magic-sparkles empty-icon"></i>
+                        <p>Henüz bir senaryo oluşturulmadı. "Stüdyo" sekmesinden bir konu girip <strong>"Önce Senaryoyu Oluştur & Düzenle"</strong> butonuna tıklayın.</p>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ======================================================= -->
+            <!-- SEKME 3: 9:16 ALTYAZI & STİL TASARIMCISI                -->
+            <!-- ======================================================= -->
+            <section class="tab-page" id="tab-subtitles">
+                <div class="grid-2-col">
+                    <!-- Sol: Gerçek 9:16 Dikey Telefon Simülatörü -->
+                    <div class="glass-card flex-center-col">
+                        <div class="card-header w-100">
+                            <div class="card-icon"><i class="fa-solid fa-mobile-screen"></i></div>
+                            <div>
+                                <h3>Canlı 9:16 Dikey Telefon Simülatörü</h3>
+                                <p class="card-desc">Karaoke altyazıların telefonda nasıl göründüğünü canlı izleyin.</p>
+                            </div>
+                        </div>
+
+                        <!-- Telefon Çerçevesi Mockup -->
+                        <div class="phone-mockup">
+                            <div class="phone-notch"></div>
+                            <div class="phone-screen" id="phone-screen-bg">
+                                <div class="phone-overlay"></div>
+                                <div class="phone-channel-watermark">
+                                    <i class="fa-brands fa-youtube"></i> @ShortsCreator
+                                </div>
+                                
+                                <!-- Canlı Altyazı Katmanı -->
+                                <div class="phone-subtitle-wrapper" id="phone-sub-wrapper" style="bottom: 20%;">
+                                    <div class="phone-subtitle-text" id="phone-sub-display">
+                                        Bu Bir <span class="highlight-word" id="phone-sub-highlight">KARAOKE</span> Altyazı Örneğidir
+                                    </div>
+                                </div>
+
+                                <!-- UI overlay iconları -->
+                                <div class="phone-actions-mock">
+                                    <div class="mock-btn"><i class="fa-solid fa-heart"></i><span>124K</span></div>
+                                    <div class="mock-btn"><i class="fa-solid fa-comment"></i><span>1.2K</span></div>
+                                    <div class="mock-btn"><i class="fa-solid fa-share"></i><span>Paylaş</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="simulator-controls mt-3">
+                            <button class="btn btn-secondary btn-sm" id="btn-test-sub-anim">
+                                <i class="fa-solid fa-play"></i> Karaoke Animasyonunu Oynat
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Sağ: Altyazı Stil Ayarları Paneli -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon"><i class="fa-solid fa-palette"></i></div>
+                            <div>
+                                <h3>Altyazı Tipografi ve Renk Tasarımı</h3>
+                                <p class="card-desc">YouTube Shorts viral altyazı şablonlarını özelleştirin.</p>
+                            </div>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <label for="sub-font-family"><i class="fa-solid fa-font"></i> Yazı Tipi (Font Family)</label>
+                            <select id="sub-font-family">
+                                <option value="Outfit">Outfit (Modern Temiz Sans-Serif)</option>
+                                <option value="Montserrat">Montserrat (Kalın & Güçlü Viral Font)</option>
+                                <option value="Space Grotesk">Space Grotesk (Teknoloji & Dikkat Çekici)</option>
+                                <option value="Anton">Anton (Ultra Kalın YouTube Başlık Stili)</option>
+                                <option value="Bangers">Bangers (Eğlenceli & Çizgi Roman Stili)</option>
+                                <option value="Arial">Arial (Klasik Standart)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sub-highlight-color">Vurgu Rengi (Okunan Kelime)</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="sub-highlight-color" value="#FFD700">
+                                    <span class="color-hex-val" id="highlight-hex-label">#FFD700</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="sub-base-color">Metin Rengi (Genel Altyazı)</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="sub-base-color" value="#FFFFFF">
+                                    <span class="color-hex-val" id="base-hex-label">#FFFFFF</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sub-stroke-color">Kenarlık (Stroke) Rengi</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="sub-stroke-color" value="#000000">
+                                    <span class="color-hex-val" id="stroke-hex-label">#000000</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="sub-stroke-width">Kenarlık Kalınlığı (<span id="stroke-width-label">4px</span>)</label>
+                                <input type="range" id="sub-stroke-width" min="1" max="8" value="4">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sub-font-size">Yazı Boyutu (<span id="sub-size-val">54px</span>)</label>
+                                <input type="range" id="sub-font-size" min="36" max="76" value="54">
+                            </div>
+                            <div class="form-group">
+                                <label for="sub-y-pos">Dikey Konum (Ekran Alt Oranı: <span id="sub-pos-val">%80</span>)</label>
+                                <input type="range" id="sub-y-pos" min="0.5" max="0.9" step="0.05" value="0.8">
+                            </div>
+                        </div>
+
+                        <div class="preset-styles-row mt-3">
+                            <label class="w-100 mb-2" style="font-size:13px; color:var(--text-muted);">Hızlı Stil Şablonları:</label>
+                            <button class="btn btn-outline btn-sm btn-sub-preset" data-hl="#FFD700" data-base="#FFFFFF" data-font="Montserrat">
+                                🟡 Altın & Beyaz
+                            </button>
+                            <button class="btn btn-outline btn-sm btn-sub-preset" data-hl="#00FF66" data-base="#FFFFFF" data-font="Anton">
+                                🟢 Neon Yeşil & Beyaz
+                            </button>
+                            <button class="btn btn-outline btn-sm btn-sub-preset" data-hl="#00E5FF" data-base="#FFFFFF" data-font="Space Grotesk">
+                                🔵 Siber Cyan & Beyaz
+                            </button>
+                            <button class="btn btn-outline btn-sm btn-sub-preset" data-hl="#FF0055" data-base="#FFFF00" data-font="Bangers">
+                                🔴 Ateş Kırmızısı & Sarı
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ======================================================= -->
+            <!-- SEKME 4: MÜZİK & SFX KONSOLU                            -->
+            <!-- ======================================================= -->
+            <section class="tab-page" id="tab-audio-sfx">
+                <div class="grid-2-col">
+                    <!-- Sol: Müzik Yükleme ve Ses Parçaları Kütüphanesi -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon"><i class="fa-solid fa-compact-disc"></i></div>
+                            <div>
+                                <h3>Arka Plan Müzik Arşivi (BGM)</h3>
+                                <p class="card-desc">Müzik yükleyebilir, silebilir ve tarayıcıda önceden dinleyebilirsiniz.</p>
+                            </div>
+                        </div>
+
+                        <div class="upload-dropzone mt-3" id="dropzone">
+                            <i class="fa-solid fa-cloud-arrow-up drop-icon"></i>
+                            <p class="drop-title">Müzik dosyasını buraya sürükleyin veya seçmek için tıklayın</p>
+                            <span class="drop-subtitle">Desteklenen formatlar: MP3, WAV, M4A, AAC</span>
+                            <input type="file" id="bgm-file-input" accept="audio/*" class="hidden">
+                        </div>
+
+                        <div class="mt-4">
+                            <div class="card-header-bar">
+                                <h4>Mevcut Müzikler</h4>
+                                <span class="badge" id="bgm-count-badge">0 Parça</span>
+                            </div>
+                            <div class="track-list" id="track-list-container">
+                                <div class="empty-state">Müzik taranıyor...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sağ: Aktif Oynatıcı & SFX Geçiş Ayarları -->
+                    <div class="glass-card">
+                        <div class="card-header">
+                            <div class="card-icon"><i class="fa-solid fa-volume-high"></i></div>
+                            <div>
+                                <h3>Dahili Canlı Ses Çalar & SFX</h3>
+                                <p class="card-desc">Seçili müziğin ses seviyesini ve sahne geçiş seslerini test edin.</p>
+                            </div>
+                        </div>
+
+                        <div class="audio-player-card mt-3">
+                            <div class="player-track-info">
+                                <i class="fa-solid fa-music"></i>
+                                <span id="player-track-name">Seçili müzik yok</span>
+                            </div>
+                            <audio id="global-bgm-audio" preload="none"></audio>
+                            <div class="player-controls">
+                                <button class="btn btn-primary btn-round" id="btn-player-play-toggle">
+                                    <i class="fa-solid fa-play"></i>
+                                </button>
+                                <input type="range" id="player-volume-slider" min="0" max="1" step="0.05" value="0.5" title="Önizleme Sesi">
+                                <span id="player-time-display">0:00</span>
+                            </div>
+                        </div>
+
+                        <div class="card-header mt-4">
+                            <div class="card-icon"><i class="fa-solid fa-wand-magic"></i></div>
+                            <div>
+                                <h3>Sahne Geçiş Ses Efektleri (SFX)</h3>
+                                <p class="card-desc">İzleyici dikkatini canlı tutan mikrosaniye senkronlu sesler.</p>
+                            </div>
+                        </div>
+
+                        <div class="sfx-showcase-list mt-3">
+                            <div class="sfx-item">
+                                <div class="sfx-info">
+                                    <strong>Whoosh Hızlı Geçiş Sesi</strong>
+                                    <span>Sahne kesim anlarında 250ms frekans modülasyonlu hava dalgası sesi</span>
+                                </div>
+                                <button class="btn btn-secondary btn-sm" id="btn-test-whoosh">
+                                    <i class="fa-solid fa-play"></i> Dinle
+                                </button>
+                            </div>
+                            <div class="sfx-item">
+                                <div class="sfx-info">
+                                    <strong>Pop / Punch Vurgu Sesi</strong>
+                                    <span>Önemli kelime veya başlık patlama anlarında yüksek frekans darbe</span>
+                                </div>
+                                <button class="btn btn-secondary btn-sm" id="btn-test-pop">
+                                    <i class="fa-solid fa-play"></i> Dinle
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ======================================================= -->
+            <!-- SEKME 5: VİDEO GALERİSİ & YOUTUBE DAĞITIMI              -->
+            <!-- ======================================================= -->
+            <section class="tab-page" id="tab-gallery">
+                <div class="gallery-header glass-card mb-4">
+                    <div class="gallery-title-box">
+                        <h3>Üretilen Shorts Arşivi & Yayın Asistanı</h3>
+                        <p class="card-desc">Hazır Full HD videolarınızı izleyin, indirin ve YouTube etiketlerini tek tıkla kopyalayın.</p>
+                    </div>
+                    <div class="gallery-filter-actions">
+                        <div class="search-input-wrap">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="gallery-search-input" placeholder="Videolarda ara...">
+                        </div>
+                        <button class="btn btn-secondary" id="btn-refresh-gallery">
+                            <i class="fa-solid fa-arrows-rotate"></i> Yenile
+                        </button>
+                    </div>
+                </div>
+
+                <div class="gallery-grid" id="gallery-container">
+                    <!-- Dinamik Video Kartları -->
+                </div>
+            </section>
+
+
+            <!-- ======================================================= -->
+            <!-- SEKME 6: SİSTEM & API AYARLARI                          -->
+            <!-- ======================================================= -->
+            <section class="tab-page" id="tab-settings">
+                <div class="glass-card max-w-3xl">
+                    <div class="card-header">
+                        <div class="card-icon"><i class="fa-solid fa-key"></i></div>
+                        <div>
+                            <h3>API Anahtarları & Entegrasyon Paneli</h3>
+                            <p class="card-desc">Yapay zeka ve stok video servislerinin anahtarlarını test edip kaydedebilirsiniz.</p>
+                        </div>
+                    </div>
+
+                    <form id="settings-form" class="mt-3">
+                        <div class="form-group">
+                            <label>Gemini API Anahtarı</label>
+                            <div class="input-group-addon">
+                                <input type="password" id="key-gemini" placeholder="Gemini API anahtarı girin...">
+                                <button type="button" class="btn btn-outline btn-test-key" data-provider="gemini">
+                                    <i class="fa-solid fa-plug"></i> Test Et
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>OpenAI API Anahtarı (Opsiyonel)</label>
+                            <div class="input-group-addon">
+                                <input type="password" id="key-openai" placeholder="OpenAI API anahtarı girin...">
+                                <button type="button" class="btn btn-outline btn-test-key" data-provider="openai">
+                                    <i class="fa-solid fa-plug"></i> Test Et
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Pexels API Anahtarı (HD Video)</label>
+                            <div class="input-group-addon">
+                                <input type="password" id="key-pexels" placeholder="Pexels API anahtarı girin...">
+                                <button type="button" class="btn btn-outline btn-test-key" data-provider="pexels">
+                                    <i class="fa-solid fa-plug"></i> Test Et
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Pixabay API Anahtarı</label>
+                            <div class="input-group-addon">
+                                <input type="password" id="key-pixabay" placeholder="Pixabay API anahtarı girin...">
+                                <button type="button" class="btn btn-outline btn-test-key" data-provider="pixabay">
+                                    <i class="fa-solid fa-plug"></i> Test Et
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="form-row mt-3">
+                            <div class="form-group">
+                                <label for="setting-tts-rate">Varsayılan Konuşma Hızı</label>
+                                <input type="text" id="setting-tts-rate" value="+5%">
+                            </div>
+                            <div class="form-group">
+                                <label for="setting-tts-pitch">Ses Perdesi (Pitch)</label>
+                                <input type="text" id="setting-tts-pitch" value="+0Hz">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-glow mt-4">
+                            <i class="fa-solid fa-floppy-disk"></i> Ayarları Sisteme Kaydet
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- CANLI RENDER İZLEME KONSOLU (HER SEKMEDE ERİŞİLEBİLİR)   -->
+    <!-- ======================================================= -->
+    <div class="floating-monitor-panel hidden" id="monitor-panel">
+        <div class="monitor-card glass-card">
+            <div class="monitor-header">
+                <div class="monitor-title-box">
+                    <div class="spinner"></div>
+                    <div>
+                        <h4 id="monitor-status-text">Video Render Ediliyor...</h4>
+                        <span class="monitor-sub" id="monitor-keyword-text">Konu: İşlem başlatılıyor</span>
+                    </div>
+                </div>
+                <div class="monitor-right-actions">
+                    <span class="progress-percentage" id="progress-pct-text">%0</span>
+                    <button class="btn btn-icon btn-cancel-render" id="btn-cancel-render" title="Render İşlemini İptal Et">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+            </div>
+
+            <div class="console-box" id="console-logs">
+                <div class="log-line info">[Sistem] Canlı render izleme başlatıldı...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- MODAL: VİDEO TAMAMLANDI & YOUTUBE YAYIN ASİSTANI       -->
+    <!-- ======================================================= -->
+    <div class="modal-overlay hidden" id="video-modal">
+        <div class="modal-card">
+            <button class="modal-close" id="modal-close-btn">&times;</button>
+            <div class="modal-header">
+                <span class="badge badge-success"><i class="fa-solid fa-circle-check"></i> TEBRİKLER! VİDEO HAZIR</span>
+                <h2 id="modal-video-title" style="margin-top:8px;">Video Başlığı</h2>
+            </div>
+            <div class="modal-body">
+                <div class="modal-video-container">
+                    <video id="modal-player" controls autoplay></video>
+                </div>
+                <div class="modal-info">
+                    <h3><i class="fa-brands fa-youtube yt-red"></i> YouTube Shorts Yayın Paketi</h3>
+                    <p class="modal-sub">Videonuzu doğrudan indirebilir veya başlık & etiketleri kopyalayabilirsiniz.</p>
+
+                    <div class="form-group mt-3">
+                        <label>Önerilen YouTube Başlığı</label>
+                        <div class="input-group-addon">
+                            <input type="text" id="modal-title-copy" readonly value="">
+                            <button class="btn btn-secondary btn-copy" data-target="modal-title-copy">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group mt-2">
+                        <label>Önerilen Hashtag'ler</label>
+                        <div class="input-group-addon">
+                            <input type="text" id="modal-tags-input" readonly value="#Shorts #Trend #Viral #YapayZeka">
+                            <button class="btn btn-secondary btn-copy" data-target="modal-tags-input">
+                                <i class="fa-solid fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <a id="modal-download-btn" href="#" download class="btn btn-primary btn-glow style-full mt-3">
+                        <i class="fa-solid fa-download"></i> Videoyu Bilgisayara İndir (MP4)
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Bildirimi -->
+    <div class="toast" id="toast-notification">
+        <i class="fa-solid fa-circle-check" id="toast-icon"></i>
+        <span id="toast-message">İşlem başarıyla tamamlandı!</span>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
