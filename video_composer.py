@@ -106,7 +106,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         if cancel_check and cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
-        render_logger = MoviePyProgressLogger(progress_callback, cancel_check)
+        render_logger = None
         combined.write_videofile(tmp, fps=config.FPS, codec="libx264",
                                  preset="ultrafast", audio=False, threads=4, logger=render_logger)
 
@@ -220,9 +220,41 @@ def _prep(path, dur, tw, th):
         c = c.fx(vfx.speedx, f) if f >= 0.5 else c.loop(duration=dur)
     return _fit(c, tw, th)
 
+from moviepy.editor import CompositeVideoClip
+from moviepy.video.fx.all import colorx
+
 def _fit(c, tw, th):
     cw, ch = c.size
     tr, cr = tw/th, cw/ch
+
+    # If the video is horizontal (landscape) and needs to fit vertical (portrait)
+    if cw > ch and cr > tr * 1.2:
+        # 1. Create a blurred/darkened background scaled to fill the vertical screen
+        # We simulate blur by shrinking drastically and enlarging, then darkening
+        try:
+            bg_clip = c.resize(height=th)
+            # Crop center to match target width
+            bg_cw, bg_ch = bg_clip.size
+            if bg_cw > tw:
+                x = (bg_cw - tw) // 2
+                bg_clip = bg_clip.crop(x1=x, x2=x+tw)
+
+            # Simulate a quick blur/darken effect
+            bg_clip = bg_clip.resize(0.1).resize(10).fx(colorx, 0.4)
+
+            # 2. Resize original to fit the width of the target screen
+            fg_clip = c.resize(width=tw)
+            fg_clip = fg_clip.set_position("center")
+
+            # 3. Composite
+            comp = CompositeVideoClip([bg_clip, fg_clip], size=(tw, th))
+            comp = comp.set_duration(c.duration)
+            return comp
+        except Exception as e:
+            print(f"    Warning: Smart crop fallback failed: {e}")
+            pass
+
+    # Fallback to standard crop
     if cr > tr:
         nw = int(ch*tr); x = (cw-nw)//2; c = c.crop(x1=x, x2=x+nw)
     elif cr < tr:
