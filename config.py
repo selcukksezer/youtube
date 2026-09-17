@@ -4,6 +4,11 @@ YouTube Shorts Ultimate — Configuration
 """
 import os, sys
 from dotenv import load_dotenv
+import PIL.Image
+
+# Patch MoviePy PIL 10+ ANTIALIAS removal
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, 'Resampling', PIL.Image).LANCZOS
 
 # Load environment variables from .env file
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
@@ -16,8 +21,12 @@ LANGUAGE = os.getenv("LANGUAGE", "tr")
 # ══════════════════════════════════════════════════════════════
 #  AI PROVIDERS — system auto-detects first available
 # ══════════════════════════════════════════════════════════════
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6KobsFbKVec2KT1-5ISCAiwed5RT5rPtYswk63jUQOO8A")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = "gemini-flash-lite-latest"
+YOUTUBE_DATA_API_KEY = os.getenv("YOUTUBE_DATA_API_KEY", "")
+REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "YouTubeShortsStudio/1.0 (research workflow)")
+REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
+REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = "deepseek-chat"
@@ -28,6 +37,9 @@ OPENAI_MODEL = "gpt-4o-mini"
 GROK_API_KEY = os.getenv("GROK_API_KEY", "")
 GROK_MODEL = "grok-4.20-reasoning"
 
+# Item 113: AI Görsel Üretimi — FAL.ai + Stability AI
+FAL_API_KEY = os.getenv("FAL_API_KEY", "")           # https://fal.ai  (flux, stable-diffusion)
+STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "")  # https://stability.ai API
 # ══════════════════════════════════════════════════════════════
 #  VIDEO SOURCES — 5 free sources, all searched per scene
 #  Priority: Pexels → Pixabay → Coverr → Mixkit → Videvo
@@ -108,4 +120,7 @@ for n, k, u, m in _P:
         AI_PROVIDER, AI_API_KEY, AI_BASE_URL, AI_MODEL = n, k, u, m
         break
 if not AI_PROVIDER:
-    print("ERROR: No AI API key set!"); sys.exit(1)
+    AI_PROVIDER = "Yerel Fallback"
+    AI_API_KEY = ""
+    AI_BASE_URL = ""
+    AI_MODEL = "procedural"

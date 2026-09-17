@@ -1,0 +1,77 @@
+"""
+Advanced Video Effects, Compositor & Anti-Duplicate Engine (Facade)
+Maintained for 100% backwards-compatibility across tests and pipeline callers.
+All core logic is modularly organized in the `effects/` package:
+- effects/layout.py     : Smart crop, split-screen, PIP, corner radius, micro-resolution crop
+- effects/motion.py     : Ken Burns, camera shake, transitions, alternating motion, heartbeat zoom
+- effects/filters.py    : pHash noise, color grading jitter, unsharp, vignette, color splash, particles
+- effects/overlays.py   : Watermark, badges, 3D mockups, retro avatars, end cards, UI elements, progress bar
+- effects/pipeline.py   : Anti-duplicate pipeline, 3s B-roll rule, MP4 hash scramble, metadata injectors
+"""
+from moviepy.editor import VideoFileClip, ColorClip, CompositeVideoClip, ImageClip, vfx
+import config
+
+from effects import (
+    # layout
+    apply_smart_crop,
+    create_split_screen_clip,
+    apply_pip_overlay,
+    apply_corner_radius_to_clip,
+    apply_corner_radius_ffmpeg,
+    apply_micro_resolution_crop,
+    # motion
+    apply_ken_burns,
+    apply_horizontal_flip,
+    apply_speed_ramp,
+    apply_handheld_camera_shake,
+    get_ffmpeg_camera_shake_filter,
+    apply_mask_wipe_transition,
+    apply_out_of_focus_reveal,
+    apply_heartbeat_zoom,
+    apply_alternating_motion,
+    # filters
+    inject_pixel_noise,
+    apply_color_grading_jitter,
+    apply_color_jitter,
+    get_color_grading_ffmpeg_filter,
+    get_phash_ffmpeg_noise_filter,
+    get_unsharp_filter,
+    get_ffmpeg_static_grain_filter,
+    get_ffmpeg_vignette_filter,
+    generate_particle_overlay_frames,
+    apply_particle_overlay,
+    apply_color_splash_ffmpeg,
+    apply_color_splash_moviepy,
+    generate_fluid_gradient_background,
+    apply_fluid_gradient_background,
+    # overlays
+    overlay_watermark,
+    extract_frame0_thumbnail,
+    apply_multi_layer_overlay,
+    overlay_graphic_badge,
+    overlay_micro_brand_signature,
+    apply_affiliate_3d_mockup,
+    generate_retro_avatar_png,
+    apply_speaker_avatar_overlay,
+    get_mood_emoji,
+    generate_emoji_subtitle_overlay,
+    build_emoji_events_from_timings,
+    generate_end_card_overlay,
+    apply_end_card_to_video,
+    generate_ui_element_overlay,
+    apply_ui_element_overlay,
+    generate_dynamic_progress_bar,
+    apply_dynamic_progress_bar,
+    # pipeline
+    apply_anti_duplicate,
+    apply_mirror_and_pitch,
+    get_diversified_fps,
+    enforce_3s_broll_rule,
+    apply_section2_anti_reused_pipeline,
+    scramble_mp4_hash,
+    get_hardware_acceleration_flags,
+    clean_video_metadata,
+    inject_nle_signature,
+    apply_full_metadata_pipeline,
+    __all__,
+)
