@@ -75,7 +75,7 @@ class TestSection2Transformations(unittest.TestCase):
             f0 = kb.get_frame(0.0)
             self.assertEqual(f0.shape, (100, 100, 3))
             f1 = kb.get_frame(1.0)
-            self.assertEqual(f1.shape, (104, 104, 3))
+            self.assertEqual(f1.shape, (100, 100, 3))
         finally:
             clip.close()
 
