@@ -194,16 +194,25 @@ def _generate_fallback_clip(scene_index, project_dir, target_duration=7):
     Guarantees the video pipeline NEVER fails due to missing stock clips.
     """
     try:
-        from moviepy.editor import ColorClip
+        from moviepy.editor import ColorClip, TextClip, CompositeVideoClip
         path = os.path.join(project_dir, f"s{scene_index:03d}_procedural_fallback.mp4")
         
         # Color palette cycling based on scene index
         colors = [(15, 20, 35), (20, 15, 35), (35, 15, 25), (15, 30, 35), (25, 20, 15)]
         col = colors[scene_index % len(colors)]
         
-        clip = ColorClip(size=(config.VIDEO_WIDTH, config.VIDEO_HEIGHT), color=col, duration=target_duration)
-        clip.write_videofile(path, fps=config.FPS, codec="libx264", audio=False, preset="ultrafast", logger=None)
-        clip.close()
+        bg_clip = ColorClip(size=(config.VIDEO_WIDTH, config.VIDEO_HEIGHT), color=col, duration=target_duration)
+
+        try:
+            text_clip = TextClip("Gorsel Bulunamadi", fontsize=70, color='white', bg_color='rgba(0,0,0,100)')
+            text_clip = text_clip.set_position('center').set_duration(target_duration)
+            final_clip = CompositeVideoClip([bg_clip, text_clip])
+        except Exception:
+            # Fallback if ImageMagick is missing or fails
+            final_clip = bg_clip
+
+        final_clip.write_videofile(path, fps=config.FPS, codec="libx264", audio=False, preset="ultrafast", logger=None)
+        final_clip.close()
         
         if os.path.exists(path) and os.path.getsize(path) > 1000:
             print(f"    [OK] [FAILSAFE] Created procedural fallback clip ({target_duration}s)")

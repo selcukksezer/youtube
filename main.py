@@ -85,6 +85,27 @@ def process(keyword, index):
 
     if result and os.path.exists(result):
         print(f"\n  [OK] DONE: {result}")
+
+        # 5) Auto Publish with Viral SEO Agent
+        if getattr(config, "YOUTUBE_AUTO_PUBLISH", False):
+            print(f"\n[5/5] YouTube yuklemesi ve Viral SEO optimizasyonu baslatiliyor...")
+            try:
+                from viral_seo_agent import generate_viral_seo_metadata
+                seo_data = generate_viral_seo_metadata(keyword)
+
+                from youtube_uploader import upload_video_to_youtube
+                upload_video_to_youtube(
+                    result,
+                    title=seo_data.get("seo_title", f"{keyword} #shorts")[:100],
+                    description=seo_data.get("seo_description", f"{keyword} hakkında video. #shorts"),
+                    tags=seo_data.get("tags", [safe, "shorts", "bilgi"]),
+                    privacy_status=getattr(config, "YOUTUBE_PRIVACY", "private")
+                )
+            except ImportError:
+                print("  ERROR: Youtube yayinlama modulu veya SEO ajani bulunamadi/bagimliliklar eksik.")
+            except Exception as e:
+                print(f"  ERROR (YouTube): {e}")
+
         return result
     return None
 
