@@ -13,6 +13,5 @@ if [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
 fi
 
-# Tarayıcıyı aç ve sunucuyu başlat
-python3 -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+python3 run.py "$@"
 

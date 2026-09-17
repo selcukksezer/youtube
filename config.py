@@ -3,6 +3,15 @@ YouTube Shorts Ultimate — Configuration
 5 Video Sources | Multi-AI | TR+EN | Karaoke Subtitles
 """
 import os, sys
+
+# Ensure UTF-8 console output on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 from dotenv import load_dotenv
 import PIL.Image
 

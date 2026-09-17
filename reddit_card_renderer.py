@@ -15,9 +15,25 @@ def generate_reddit_post_card_clip(post: dict, output_path: str, duration: float
     try:
         image = Image.new("RGB", (1080, 1920), "#15141b")
         draw = ImageDraw.Draw(image)
-        title_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 43)
-        body_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 32)
-        meta_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 25)
+        def _get_font(font_name, size):
+            candidates = [
+                font_name,
+                f"C:/Windows/Fonts/{font_name}.ttf",
+                f"C:/Windows/Fonts/{font_name.lower()}.ttf",
+                f"/System/Library/Fonts/Supplemental/{font_name}.ttf",
+                "arial.ttf",
+                "Arial.ttf"
+            ]
+            for c in candidates:
+                try:
+                    return ImageFont.truetype(c, size)
+                except Exception:
+                    pass
+            return ImageFont.load_default()
+
+        title_font = _get_font("Arial Bold", 43)
+        body_font = _get_font("Arial", 32)
+        meta_font = _get_font("Arial", 25)
         draw.rounded_rectangle((65, 230, 1015, 1530), radius=26, fill="#25232b", outline="#ff4500", width=3)
         draw.ellipse((105, 280, 165, 340), fill="#ff4500")
         draw.text((185, 287), f"r/{post.get('subreddit', 'reddit')} | Kaynak gönderi önizlemesi", font=meta_font, fill="#c9c7d0")

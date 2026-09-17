@@ -22,8 +22,6 @@ assets/*
 !assets/.gitkeep
 audio/*
 !audio/.gitkeep
-scenes/*
-!scenes/.gitkeep
 proofs/*
 !proofs/.gitkeep
 bgm/*.wav
