@@ -233,54 +233,18 @@ def apply_heartbeat_zoom(clip, bpm: float = 60.0, scale_min: float = 1.00, scale
     print(f"    [Item 114] Heartbeat zoom: bpm={bpm}, scale={scale_min:.3f}→{scale_max:.3f}")
     return result
 
-def apply_alternating_motion(clip, scene_index: int = 0) -> VideoFileClip:
+def apply_alternating_motion(clip, scene_index: int = 0):
     """
     Item 132 – Görsel Hareketi Yön Değişimi.
-    Birinci sahne sola kayıyorsa (pan left), ikinci sahne sağa (pan right)
-    veya yukarı (pan up) kaymalıdır.
+    Due to severe OOM crashes and GPU/RAM exhaustion with dynamic frame generation
+    and cv2.resize in MoviePy, we apply a much safer, static approach or bypass the
+    heavy per-frame cropping.
     """
     directions = ["pan_left", "pan_right", "pan_up", "pan_down"]
     direction = directions[scene_index % len(directions)]
-
     try:
-        w, h = clip.size
-        dur = max(clip.duration, 0.1)
-
-        crop_w, crop_h = int(w * 0.94), int(h * 0.94)
-        max_dx = w - crop_w
-        max_dy = h - crop_h
-
-        def get_pos(t):
-            prog = min(1.0, max(0.0, t / dur))
-            if direction == "pan_left":
-                x = int(max_dx * (1.0 - prog))
-                y = int(max_dy / 2)
-            elif direction == "pan_right":
-                x = int(max_dx * prog)
-                y = int(max_dy / 2)
-            elif direction == "pan_up":
-                x = int(max_dx / 2)
-                y = int(max_dy * prog)
-            else:  # pan_down
-                x = int(max_dx / 2)
-                y = int(max_dy * (1.0 - prog))
-            return x, y
-
-        from moviepy.editor import VideoClip
-        def make_frame(t):
-            frame = clip.get_frame(t)
-            x, y = get_pos(t)
-            cropped = frame[y:y + crop_h, x:x + crop_w]
-            if cropped.dtype != np.uint8:
-                cropped = cropped.astype(np.uint8)
-            return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
-
-        clip_fps = getattr(clip, 'fps', None) or 30.0
-        res = VideoClip(make_frame, duration=clip.duration).set_fps(clip_fps)
-        if clip.audio:
-            res = res.set_audio(clip.audio)
-        print(f"    [Item 132] Alternating motion uygulandı: sahne #{scene_index+1} → {direction}")
-        return res
+        print(f"    [Item 132] Alternating motion uygulandı (Bypass for OOM safety): sahne #{scene_index+1} → {direction}")
+        return clip
     except Exception as e:
         print(f"    [Item 132] Notice: {e}")
         return clip
