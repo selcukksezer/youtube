@@ -2,8 +2,17 @@
 Video composer — MoviePy (video only) + ffmpeg (audio + karaoke subs).
 3-tier fallback: ASS karaoke → SRT styled → no subs.
 """
-import os, subprocess
+import os, subprocess, platform, gc, shutil
 from moviepy.editor import VideoFileClip, ColorClip, CompositeVideoClip, concatenate_videoclips, vfx
+import cv2
+
+# Disable OpenCL GPU acceleration and cap threads to 2 to eliminate GPU driver crashes and black screens
+try:
+    cv2.ocl.setUseOpenCL(False)
+    cv2.setNumThreads(2)
+except Exception:
+    pass
+
 import config
 from subtitle_generator import create_karaoke_subtitles, create_srt_file
 from bgm_manager import get_bgm_path, mix_narration_and_bgm, align_scenes_to_bgm_beats
@@ -22,28 +31,53 @@ from effects_engine import (
     apply_particle_overlay, apply_heartbeat_zoom, apply_speaker_avatar_overlay,
     build_emoji_events_from_timings, generate_emoji_subtitle_overlay,
     apply_alternating_motion, apply_ui_element_overlay,
-    apply_dynamic_progress_bar
+    apply_dynamic_progress_bar, get_color_grading_ffmpeg_filter
 )
 
 from proglog import ProgressBarLogger
 
+def cleanup_stray_ffmpeg_processes():
+    """Kullanıcı render iptal ettiğinde veya işlem bittiğinde asılı kalan FFmpeg okuyucularını temizler."""
+    try:
+        if platform.system() == "Windows":
+            subprocess.run("taskkill /F /IM ffmpeg-win*.exe", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
 class MoviePyProgressLogger(ProgressBarLogger):
     def __init__(self, callback=None, cancel_check=None):
         super().__init__()
-        self.callback = callback
+        self.ui_callback = callback
         self.cancel_check = cancel_check
-        self.last_pct = -1
+        self.last_log_time = 0.0
+        self.last_frame_pct = -1
+
+    def callback(self, **changes):
+        pass
 
     def bars_callback(self, bar, attr, value, old_value=None):
         if self.cancel_check and self.cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
         if bar == 't' and attr == 'index':
             total = self.bars['t'].get('total', 0)
-            if total > 0 and self.callback:
-                pct = int(80 + (value / total) * 16)
-                if pct != self.last_pct and pct % 2 == 0:
-                    self.last_pct = pct
-                    self.callback(pct, f"Kareler Full HD kodlanıyor... (%{int((value/total)*100)} - {value}/{total} kare)")
+            if total > 0:
+                import time
+                now = time.time()
+                frame_pct = int((value / total) * 100)
+                # Canlı ilerleme: Her 1.2 saniyede bir veya her %4 karede bir hem terminale hem UI'a bas
+                if (now - self.last_log_time >= 1.2) or (frame_pct >= self.last_frame_pct + 4) or value >= total:
+                    self.last_log_time = now
+                    self.last_frame_pct = frame_pct
+                    overall_pct = int(80 + (value / total) * 16)
+                    msg = f"Kareler Full HD kodlanıyor: %{frame_pct} ({int(value)}/{int(total)} kare)"
+                    print(f"  [Composer] {msg}", flush=True)
+                    # Free temporary NumPy frame arrays from RAM
+                    gc.collect()
+                    if self.ui_callback:
+                        try:
+                            self.ui_callback(overall_pct, msg)
+                        except Exception:
+                            pass
 
 def compose_video(scene_clips, audio_path, word_timings, output_path, title="", 
                   bgm_track=None, bgm_volume=None, subtitle_opts=None,
@@ -100,8 +134,13 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     try:
         with wave.open(mastered_audio, "rb") as w:
             audio_dur = w.getnframes() / float(w.getframerate())
-    except Exception as e:
-        print(f"    Audio duration read error: {e}")
+    except Exception:
+        try:
+            from scipy.io import wavfile
+            rate, data = wavfile.read(mastered_audio)
+            audio_dur = len(data) / float(rate)
+        except Exception as e:
+            print(f"    Audio duration read error: {e}")
 
     # Scale scene clip durations to match exact audio length BEFORE mixing SFX
     total_scene_dur = sum(sc.get("duration", 7) for sc in scene_clips)
@@ -242,17 +281,21 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     srt = output_path.rsplit(".", 1)[0] + ".srt"
 
     try:
-        for sc in scene_clips:
+        cleanup_stray_ffmpeg_processes()
+        total_scenes = len(scene_clips)
+        for idx, sc in enumerate(scene_clips):
             if cancel_check and cancel_check():
                 raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
             p, d = sc.get("path"), sc.get("duration", 7)
+
             if not p or not os.path.exists(p):
-                segs.append(ColorClip(size=(W, H), color=(15, 15, 25), duration=d))
+                fallback_clip = ColorClip(size=(W, H), color=(15, 15, 25), duration=d)
+                segs.append(fallback_clip)
             else:
                 try:
                     enable_pip = sc.get("enable_pip", False)
                     pip_path = sc.get("pip_path", None)
-                    badge_label = sc.get("badge_label") or f"{len(segs) + 1}/{len(scene_clips)}"
+                    badge_label = sc.get("badge_label") or f"{idx + 1}/{total_scenes}"
                     clip_seg = _prep(
                         p, d, W, H,
                         split_screen=split_screen,
@@ -262,7 +305,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         pip_path=pip_path,
                         gameplay_path=gameplay_path
                     )
-                    if enable_ken_burns:
+                    if enable_ken_burns and not enable_section2_filters:
                         # Item 73: Mikro-Zoom (Ken Burns Jitter 1.00x -> 1.04x)
                         clip_seg = apply_ken_burns(clip_seg, zoom_start=1.00, zoom_end=1.04)
 
@@ -271,26 +314,35 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         clip_seg = apply_handheld_camera_shake(clip_seg, intensity=5.0)
 
                     # Item 100: Görsel Maskeleme (Wipe Transition Mask Overlay)
-                    if sc.get("wipe_transition", False) and len(segs) > 0:
+                    if sc.get("wipe_transition", False) and idx > 0:
                         direction = sc.get("wipe_direction", "horizontal")
                         clip_seg = apply_mask_wipe_transition(clip_seg, direction=direction, transition_dur=0.35)
 
                     # Item 103: Ekran Dışı Odak (İlk sahnede 0.35s netleşme kancası)
-                    if len(segs) == 0 and enable_section2_filters:
+                    if idx == 0 and enable_section2_filters:
                         clip_seg = apply_out_of_focus_reveal(clip_seg, blur_duration=0.35)
 
                     # Item 132: Görsel Hareketi Yön Değişimi (Alternating pan/tilt motion)
                     if enable_section2_filters:
-                        clip_seg = apply_alternating_motion(clip_seg, scene_index=len(segs))
+                        clip_seg = apply_alternating_motion(clip_seg, scene_index=idx)
 
                     segs.append(clip_seg)
+                    print(f"  [Composer] Sahne #{idx+1}/{total_scenes} hazırlandı ({d:.1f}s).", flush=True)
                 except Exception as e:
-                    print(f"    Clip error: {e}")
-                    segs.append(ColorClip(size=(W, H), color=(15, 15, 25), duration=d))
+                    print(f"    Clip error on scene #{idx+1}: {e}", flush=True)
+                    fallback_clip = ColorClip(size=(W, H), color=(15, 15, 25), duration=d)
+                    segs.append(fallback_clip)
+
+            if progress_callback:
+                seg_pct = int(10 + ((idx + 1) / total_scenes) * 15)
+                progress_callback(seg_pct, f"Sahneler hazırlandı ({idx + 1}/{total_scenes})...")
+
         if not segs:
             return ""
 
-        combined = concatenate_videoclips(segs, method="compose")
+        # Concatenate sequentially with method="chain" (zero double-encoding, low memory, fast single pass)
+        combined = concatenate_videoclips(segs, method="chain")
+
         if enable_section2_filters:
             emoji_events = build_emoji_events_from_timings(word_timings, scene_clips)
             if emoji_events:
@@ -298,7 +350,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                     W, H, combined.duration, emoji_events, fps=combined.fps or config.FPS
                 )
                 combined = CompositeVideoClip([combined, emoji_overlay], size=(W, H))
-                combined.duration = sum(segment.duration for segment in segs)
+                combined.duration = sum(float(sc.get("duration", 3.0)) for sc in scene_clips)
             combined = apply_heartbeat_zoom(combined, bpm=60.0)
             combined = apply_particle_overlay(combined, particle_type="spark", particle_count=30)
             combined = apply_speaker_avatar_overlay(combined, avatar_size=96)
@@ -327,12 +379,11 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
         # Item 74: Kare Hızı (FPS) Çeşitlendirmesi (29.97, 30.02 fps)
-        export_fps = get_diversified_fps(config.FPS) if enable_section2_filters else config.FPS
-        print(f"  [Composer] Exporting with diversified FPS: {export_fps:.2f} (Item 74)...")
-
-        render_logger = None
+        # Limit encoding threads to 2 and disable GPU OpenCL to keep PC cool and prevent driver crashes
+        print(f"  [Composer] Exporting with diversified FPS: {export_fps:.2f} (Item 74, threads=2)...", flush=True)
+        render_logger = MoviePyProgressLogger(callback=progress_callback, cancel_check=cancel_check)
         combined.write_videofile(tmp, fps=export_fps, codec="libx264",
-                                 preset="ultrafast", audio=False, threads=4, logger=render_logger)
+                                 preset="ultrafast", audio=False, threads=2, logger=render_logger)
 
         if cancel_check and cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
@@ -461,6 +512,8 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 s.close()
             except Exception:
                 pass
+        cleanup_stray_ffmpeg_processes()
+        gc.collect()
 
         # Cleanup intermediate files safely
         for f in [tmp]:
@@ -490,11 +543,12 @@ def _merge(vid, aud, ass, srt, out):
     base_out = os.path.basename(out)
     rel_aud = os.path.relpath(aud, out_dir).replace("\\", "/")
 
-    # Item 84, 86 & 92: FFmpeg Unsharp + Piksel Greni + Kenar Vinyet Filtresi (%4 Degrade)
+    # Items 72, 84, 86 & 92: FFmpeg Renk Jitter + Unsharp + Piksel Greni + Kenar Vinyet Filtresi (%4 Degrade)
+    color_vf = get_color_grading_ffmpeg_filter(jitter_range=0.015)
     unsharp_vf = get_unsharp_filter(luma_matrix=5, luma_amount=0.8)
     grain_vf = get_ffmpeg_static_grain_filter()
     vignette_vf = get_ffmpeg_vignette_filter(angle=0.18)
-    base_vf = f"{unsharp_vf},{grain_vf},{vignette_vf}"
+    base_vf = f"{color_vf},{unsharp_vf},{grain_vf},{vignette_vf}"
 
     # Try 1: ASS karaoke
     if os.path.exists(ass) and os.path.getsize(ass) > 50:
@@ -539,8 +593,12 @@ def _merge(vid, aud, ass, srt, out):
 
 def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_label=None, badge_icon="💡", enable_pip=False, pip_path=None, gameplay_path=None):
     c = VideoFileClip(path, audio=False)
-    # Downscale high-resolution videos early to save RAM
-    if c.w > tw * 1.5 or c.h > th * 1.5:
+    # Downscale high-resolution/4K videos early to 1080p to save RAM and CPU
+    if c.w > tw and c.h > th:
+        c = c.resize(width=tw) if c.w >= c.h else c.resize(height=th)
+    elif c.w > tw * 1.2:
+        c = c.resize(width=tw)
+    elif c.h > th * 1.2:
         c = c.resize(height=th)
 
     # Item 79: Hız Varyasyonu (Speed Ramp %97 veya %103)

@@ -33,11 +33,40 @@ def open_browser(url: str, delay: float = 1.2):
         pass
 
 
+def free_port_if_occupied(port: int = 8000):
+    """If port is held by an existing process, terminate it cleanly to prevent Errno 10048."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(('127.0.0.1', port)) != 0:
+            return  # Port is free
+    
+    print(f"[*] Port {port} meşgul, eski arka plan süreci temizleniyor...")
+    try:
+        if platform.system() == "Windows":
+            import subprocess
+            out = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True).decode(errors="ignore")
+            for line in out.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 5 and "LISTENING" in parts[3].upper():
+                    pid = parts[-1]
+                    if pid and pid != str(os.getpid()):
+                        subprocess.run(f"taskkill /F /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            import subprocess
+            subprocess.run(f"lsof -ti:{port} | xargs kill -9", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"[*] Port kontrol bildirimi: {e}")
+
+
 def launch_web():
     """Starts the FastAPI Web Dashboard."""
     url = "http://127.0.0.1:8000"
     os_name = "macOS" if platform.system() == "Darwin" else "Windows" if platform.system() == "Windows" else platform.system()
     
+    # Ensure port 8000 is clean and free
+    free_port_if_occupied(8000)
+
     print("=" * 60)
     print(f"  YouTube Shorts Ultimate — Web Studio ({os_name})")
     print("=" * 60)

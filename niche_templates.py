@@ -413,35 +413,33 @@ KONU: "{topic}"
 NİŞ KATEGORİSİ: "{niche['name']}" ({niche['category']})
 ANLATIM TONU: {niche['tone']}
 
-ZORUNLU ALGORİTMA KURALLARI:
-1. İLK 3 SANİYE KANCASI (VIRAL HOOK):
-   İlk cümle şok edici, aşırı merak uyandırıcı ve doğrudan izleyiciye hitap etmeli.
+ZORUNLU ALGORİTMA VE SAHNE KURALLARI:
+1. CADENCE 14 VE SÜRE KURALI (Madde 88 & 494):
+   TAM OLARAK 14 SAHNE ÜRET (scenes dizisinde tam 14 eleman olmalı).
+   Her sahnenin "duration" değeri 3.0 saniye olmalıdır.
+   Toplam video süresi tam 42 saniyedir (Shorts için 38-48 saniye altın standardı).
+
+2. TAM VE AKICI CÜMLE KURALI:
+   Her sahnenin 'narration' kısmı tek başına anlamlı, dilbilgisel olarak eksiksiz, konuyla ("{topic}") birebir ilgili ve akıcı bir cümle olmalıdır (10-16 kelime).
+   Cümleleri ASLA yarım bırakma veya anlamsız kelime öbeklerine bölme!
+   14 sahne baştan sona tam ve sürükleyici bir olay/bilgi akışı sunmalıdır.
+   Her sahneye izleyicinin dikkatini canlı tutacak 1-2 adet ilgili EMOJİ ekle.
+
+3. İLK 3 SANİYE KANCASI (VIRAL HOOK - Sahne 1):
+   İlk sahne doğrudan konuya giren, merak uyandırıcı şok edici bir kanca cümlesi olmalı.
    Örnek Hook tarzı: "{niche['hook_style']}"
 
-2. SONSUZ DÖNGÜ (SEAMLESS LOOP - Madde 81):
-   Videonun EN SON cümlesi, EN BAŞTAKİ ilk cümlenin öznesi veya başlangıcı ile kesintisiz bağlanmalı!
-   İzleyici video bittiğinde yeniden başladığını fark etmemeli, döngü hissi vermelidir.
+4. SONSUZ DÖNGÜ, TARTIŞMA VE CTA (SEAMLESS LOOP - Sahne 14):
+   14. sahnenin son cümlesi, 1. sahnenin başına kesintisiz bağlanan bir döngü ve izleyicileri yoruma davet eden bir soru içermelidir!
 
-3. TARTIŞMA & YORUM TETİKLEYİCİ (Madde 82):
-   Senaryonun ortasında veya sonunda insanların yoruma koşmasını sağlayacak tartışmalı bir soru veya tezat unsur yer almalı.
-
-4. METİN VE SAHNE YOĞUNLUĞU (Madde 93):
-   10-14 sahne oluştur. Her sahne 5-7 saniye sürmeli. Toplam süre 60-80 saniye olmalı.
-   Her sahnenin 'narration' kısmı akıcı, anlamlı, tam ve dilbilgisel olarak eksiksiz bir cümle olmalıdır (10-15 kelime).
-   Cümleleri asla yarım bırakma veya anlamsız kelime öbeklerine bölme; her sahne mantıklı ve konuyla doğrudan ilgili bir gerçeği veya adımı anlatsın.
-   İzleyicinin dikkatini canlı tutmak için her sahneye 1-2 adet ilgili EMOJİ ekle.
-
-5. SORU İLE BİTİRME (CTA - Madde 96):
-   Videonun kapanışına doğru izleyiciye 'Peki sen olsaydın ne yapardın?' veya 'Senin favorin hangisi?' gibi doğrudan bir soru yönelt.
-
-6. STOK VİDEO VE GÖRSEL BAĞLAMI:
-   - "scene_description": Sahne için İngilizce net görsel tasviri.
-   - "search_queries": 3 adet İngilizce stok video arama terimi [spesifik, orta, genel].
+5. STOK VİDEO VE GÖRSEL BAĞLAMI:
+   - "scene_description": Sahne için İngilizce net görsel tasviri (Pexels video araması için).
+   - "search_queries": 3 adet İngilizce stok video arama terimi [spesifik, orta, genel]. Asla Türkçe kelime koyma!
 
 NİŞ ÖZEL TALİMATI:
 {niche['system_instruction']}
 
-SADECE VE SADECE GEÇERLİ JSON DÖNDÜR:
+SADECE VE SADECE GEÇERLİ JSON DÖNDÜR (Tam 14 sahne içermelidir):
 {{
   "niche_id": "{niche['id']}",
   "title": "Çarpıcı YouTube Shorts Başlığı (#Shorts dahil)",
@@ -452,10 +450,10 @@ SADECE VE SADECE GEÇERLİ JSON DÖNDÜR:
   "scenes": [
     {{
       "scene_number": 1,
-      "narration": "Sahne metni ve emojiler...",
+      "narration": "İlk sahne kancası ve emojiler...",
       "scene_description": "Clear visual description in English",
-      "search_queries": ["query1", "query2", "query3"],
-      "duration": 6,
+      "search_queries": ["specific english query", "medium query", "general query"],
+      "duration": 3.0,
       "mood": "{niche['default_music']}"
     }}
   ]
@@ -466,34 +464,29 @@ TOPIC: "{topic}"
 NICHE CATEGORY: "{niche['name_en']}" ({niche['category']})
 TONE OF VOICE: {niche['tone']}
 
-MANDATORY ALGORITHM RULES:
-1. FIRST 3-SECOND VIRAL HOOK (Item 37):
-   The first sentence must be high-voltage curiosity, shocking, and hook the viewer immediately.
-   Reference hook: "{niche['hook_style']}"
+MANDATORY ALGORITHM & SCENE RULES:
+1. CADENCE 14 & DURATION RULE:
+   Generate EXACTLY 14 SCENES (array of exactly 14 scene objects).
+   Each scene "duration" must be 3.0 seconds (Total duration: 42.0 seconds).
 
-2. SEAMLESS LOOP STRUCTURE (Item 81):
-   The VERY LAST sentence must flow effortlessly into the VERY FIRST sentence of the video so viewers watch it twice.
+2. COMPLETE SENTENCES:
+   Each scene's "narration" must be a complete, self-contained, grammatically sound sentence directly on topic (10-16 words).
+   Embed 1-2 relevant emojis naturally in each scene.
 
-3. DISCUSSION & COMMENT TRIGGER (Item 82):
-   Include a provocative or debatable question designed to trigger debate in the comments.
+3. FIRST 3-SECOND VIRAL HOOK (Scene 1):
+   Hook the viewer immediately. Reference: "{niche['hook_style']}"
 
-4. SCENE PACING & TEXT DENSITY (Item 93):
-   Generate 10-14 scenes (5-7s each). Total length 60-80 seconds.
-   Each scene narration must be a complete, grammatically sound, coherent and meaningful sentence (10-15 words).
-   NEVER truncate or split sentences mid-clause. Every scene must convey a crisp, fascinating, on-topic insight.
-   Embed 1-2 relevant EMOJIS naturally.
+4. SEAMLESS LOOP & CTA (Scene 14):
+   Last scene must flow seamlessly back into Scene 1 and ask a debate question.
 
-5. CTA QUESTION CLOSING (Item 96):
-   Ask a closing question driving immediate viewer replies.
-
-6. STOCK VIDEO MAPPING:
+5. STOCK VIDEO QUERIES:
    - "scene_description": Precise visual depiction in English.
    - "search_queries": 3 concise English search keywords [specific, medium, general].
 
 NICHE SPECIFIC INSTRUCTION:
 {niche['system_instruction']}
 
-RETURN ONLY VALID JSON:
+RETURN ONLY VALID JSON (with exactly 14 scenes):
 {{
   "niche_id": "{niche['id']}",
   "title": "Viral YouTube Shorts Title (#Shorts included)",
@@ -507,7 +500,7 @@ RETURN ONLY VALID JSON:
       "narration": "Scene narration with emojis...",
       "scene_description": "Clear visual description in English",
       "search_queries": ["query1", "query2", "query3"],
-      "duration": 6,
+      "duration": 3.0,
       "mood": "{niche['default_music']}"
     }}
   ]

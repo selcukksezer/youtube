@@ -478,22 +478,76 @@
                 </div>
             </section>
 
-            <!-- SEKME 2: SAHNE & ZAMAN ÇİZELGESİ EDİTÖRÜ -->
+            <!-- SEKME 2: SAHNE & ZAMAN ÇİZELGESİ EDİTÖRÜ — 500 Madde Uyumlu -->
             <section class="tab-pane" id="pane-timeline">
                 <div class="timeline-header glass-box mb-3">
                     <div class="timeline-meta">
                         <div>
                             <h3 id="timeline-project-title">Aktif Proje Senaryosu</h3>
-                            <p id="timeline-project-desc">Her sahnenin metnini, süresini ve stok arama terimlerini özelleştirin.</p>
+                            <p id="timeline-project-desc">Her sahnenin metnini, süresini, arama terimlerini ve mood'unu özelleştirin.</p>
                         </div>
                         <div class="timeline-chips">
                             <div class="chip">Toplam Sahne: <strong id="timeline-total-scenes">0</strong></div>
                             <div class="chip">Tahmini Süre: <strong id="timeline-total-duration">0 sn</strong></div>
                         </div>
                     </div>
-                    <div class="timeline-actions">
+
+                    <!-- Compliance Dashboard — Madde 76, 88, 247, 274, 494 -->
+                    <div class="compliance-dashboard" id="compliance-dashboard">
+                        <div class="compliance-chip" id="chip-duration-band" title="Madde 494: İdeal süre 38-48 saniye">
+                            <i class="fa-solid fa-stopwatch"></i>
+                            <span id="chip-duration-text">Süre: —</span>
+                        </div>
+                        <div class="compliance-chip" id="chip-cadence" title="Madde 88: 45sn+ videoda en az 14 görsel parça">
+                            <i class="fa-solid fa-film"></i>
+                            <span id="chip-cadence-text">Cadence: 0/14</span>
+                        </div>
+                        <div class="compliance-chip" id="chip-32s-violations" title="Madde 76: Hiçbir görsel 3.2 sn'den uzun durmamalı">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span id="chip-32s-text">3.2sn İhlali: 0</span>
+                        </div>
+                        <div class="compliance-chip" id="chip-duplicates" title="Madde 247: Arka arkaya aynı tip görsel yasak">
+                            <i class="fa-solid fa-clone"></i>
+                            <span id="chip-duplicates-text">Tekrar: 0</span>
+                        </div>
+                    </div>
+
+                    <!-- Hikaye Arkı — Madde 274: Giriş→Çatışma→Doruk→Döngü -->
+                    <div class="story-arc-bar" id="story-arc-bar">
+                        <div class="arc-segment intro" id="arc-intro" style="width: 7%"></div>
+                        <div class="arc-segment conflict" id="arc-conflict" style="width: 36%"></div>
+                        <div class="arc-segment climax" id="arc-climax" style="width: 33%"></div>
+                        <div class="arc-segment loop" id="arc-loop" style="width: 24%"></div>
+                    </div>
+                    <div class="story-arc-labels">
+                        <span>🎬 Giriş (0-3sn)</span>
+                        <span>⚔️ Çatışma (4-20sn)</span>
+                        <span>🔥 Doruk (21-35sn)</span>
+                        <span>🔄 Döngü (36-45sn)</span>
+                    </div>
+
+                    <!-- Smart Action Buttons — Madde 88, 89, 90, 130, 443, 494 -->
+                    <div class="smart-actions-bar">
+                        <button class="btn-smart accent-blue" id="btn-fetch-stock-clips" title="Tüm sahneler için Pexels/Pixabay'den otomatik stok videoları çek">
+                            <i class="fa-solid fa-cloud-arrow-down"></i> Stok Videoları Otomatik Çek
+                        </button>
+                        <button class="btn-smart accent-cyan" id="btn-fix-cadence" title="Madde 88: 14 görsel parçaya otomatik düzelt">
+                            <i class="fa-solid fa-scissors"></i> Cadence Düzelt (14+)
+                        </button>
+                        <button class="btn-smart accent-green" id="btn-enrich-queries" title="Madde 89: Arama terimlerine sinematik sıfatlar ekle">
+                            <i class="fa-solid fa-wand-sparkles"></i> Arama Terimi Zenginleştir
+                        </button>
+                        <button class="btn-smart accent-amber" id="btn-balance-durations" title="Madde 494: Süreleri 38-48sn bandına dengele">
+                            <i class="fa-solid fa-scale-balanced"></i> Süreleri Dengele
+                        </button>
+                        <button class="btn-smart" id="btn-hallucination-check" title="Madde 90: Tarih/isim halüsinasyon kontrolü">
+                            <i class="fa-solid fa-magnifying-glass-chart"></i> Halüsinasyon Kontrolü
+                        </button>
+                    </div>
+
+                    <div class="timeline-actions" style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
                         <button class="btn btn-secondary" id="btn-add-scene-manual"><i class="fa-solid fa-plus"></i> Sahne Ekle</button>
-                        <button class="btn btn-primary" id="btn-render-from-timeline"><i class="fa-solid fa-clapperboard"></i> Bu Senaryo İle Render Al</button>
+                        <button class="btn btn-primary" id="btn-render-from-timeline"><i class="fa-solid fa-clapperboard"></i> Bu Senaryo İle Render Al <span class="kbd-hint">Ctrl+Enter</span></button>
                     </div>
                 </div>
 

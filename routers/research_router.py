@@ -49,8 +49,17 @@ def api_generate_script(req: ScriptGenerateRequest):
             plan = generate_reddit_rewrite_script(source_text, lang=req.language or "tr")
             plan["reddit_post"] = req.reddit_post
         else:
-            plan = generate_scenes(req.keyword, niche_type=req.niche)
+            plan = generate_scenes(req.keyword, niche_type=req.niche, language=req.language or config.LANGUAGE)
         plan["niche_profile"] = get_niche_production_profile(req.niche or "1_news_flash")
+        
+        # Auto-fetch stock video candidates for each scene (Item 89 & 130)
+        try:
+            from routers.media_router import auto_fetch_videos_for_scenes
+            if "scenes" in plan and plan["scenes"]:
+                plan["scenes"] = auto_fetch_videos_for_scenes(plan["scenes"])
+        except Exception as err:
+            print(f"  [AutoStock] Note: {err}")
+
         config.LANGUAGE = old_lang
         return {"status": "ok", "plan": plan}
     except Exception as e:

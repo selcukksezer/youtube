@@ -65,14 +65,58 @@ def generate_counter_argument_script(topic: str, lang: str = "tr") -> Dict[str, 
 def generate_reddit_rewrite_script(source: Union[str, Dict[str, Any]], lang: str = "tr") -> Dict[str, Any]:
     """
     Transforms Reddit post / confession into an engaging, fair-use compliant Shorts plan.
+    Attempts AI generation first, falling back to rich procedural story reconstruction.
     """
     if isinstance(source, dict):
         title = source.get("title", "")
         body = source.get("body", source.get("selftext", ""))
-        text = f"{title}\n{body}".strip()
     else:
         text = str(source).strip()
-        title = text.split("\n")[0][:60] if text else "Reddit Hikayesi"
+        lines = text.split("\n", 1)
+        title = lines[0][:80] if lines else "Reddit Hikayesi"
+        body = lines[1] if len(lines) > 1 else ""
 
-    plan = _generate_procedural_fallback_scenes(title or "Bilinmeyen İtiraf", niche_type="2_reddit_confessions")
+    is_tr = (lang == "tr" or config.LANGUAGE == "tr")
+    prompt = REDDIT_REWRITE_PROMPT_TR if is_tr else REDDIT_REWRITE_PROMPT_EN
+    user_msg = (
+        f"Aşağıdaki Reddit gönderisini viral, merak uyandırıcı, 1. tekil şahıs ağzından 14 sahneli bir YouTube Shorts senaryosuna dönüştür:\n\nBAŞLIK: {title}\nİÇERİK: {body}"
+        if is_tr
+        else f"Transform this Reddit post into an engaging, 1st-person 14-scene YouTube Shorts script:\n\nTITLE: {title}\nBODY: {body}"
+    )
+
+    # Try AI providers if available
+    try:
+        from .generator import _call, _clean_json
+        from openai import OpenAI
+        providers = []
+        if getattr(config, "AI_PROVIDER", None) and getattr(config, "AI_API_KEY", None):
+            providers.append((config.AI_PROVIDER, config.AI_API_KEY, config.AI_BASE_URL, config.AI_MODEL))
+        if hasattr(config, "_P"):
+            for n, k, u, m in config._P:
+                if k and (n != getattr(config, "AI_PROVIDER", None)):
+                    providers.append((n, k, u, m))
+
+        for provider_name, api_key, base_url, model_name in providers:
+            try:
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                params = dict(
+                    model=model_name,
+                    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_msg}],
+                    temperature=0.7, max_tokens=4000
+                )
+                if "Gemini" in provider_name or "OpenAI" in provider_name:
+                    params["response_format"] = {"type": "json_object"}
+                resp = _call(client, params)
+                raw = resp.choices[0].message.content.strip()
+                data = _clean_json(raw)
+                if data and "scenes" in data and len(data["scenes"]) >= 8:
+                    data["title"] = title or data.get("title", "Reddit Hikayesi")
+                    return data
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # Intelligent procedural fallback
+    plan = _generate_procedural_fallback_scenes(title or "Bilinmeyen İtiraf", niche_type="2_reddit_confessions", raw_body=body)
     return plan

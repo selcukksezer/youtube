@@ -42,13 +42,25 @@ def _clean_json(text):
     return None
 
 
-def generate_scenes(title: str, niche_type: str = None) -> dict:
-    prompt = get_rotated_system_prompt(base_lang=config.LANGUAGE)
-    user_msg = (
-        f"Bu başlık için senaryo oluştur: {title}"
-        if config.LANGUAGE == "tr"
-        else f"Create a video script for: {title}"
-    )
+def generate_scenes(title: str, niche_type: str = None, language: str = None) -> dict:
+    lang = language or getattr(config, "LANGUAGE", "tr")
+    if niche_type:
+        try:
+            from niche_templates import get_niche_prompt
+            prompt = get_niche_prompt(niche_type, title, language=lang)
+        except Exception:
+            prompt = get_rotated_system_prompt(base_lang=lang)
+    else:
+        prompt = get_rotated_system_prompt(base_lang=lang)
+
+    if lang == "en":
+        user_msg = (
+            f"Create a high-retention English YouTube Shorts video script for this topic: '{title}'.\n"
+            f"CRITICAL REQUIREMENT: The 'narration' field in ALL 14 scenes MUST be written 100% in fluent, natural ENGLISH. "
+            f"Do NOT output Turkish narration. Translate and adapt the topic into an immersive English script."
+        )
+    else:
+        user_msg = f"Bu başlık için Türkçe YouTube Shorts senaryosu oluştur: '{title}'"
 
     # Build fallback provider chain
     providers = []
@@ -108,7 +120,7 @@ def generate_scenes(title: str, niche_type: str = None) -> dict:
 
     if not data or not data.get("scenes"):
         print(f"  [BİLGİ] AI servisleri yanıt vermedi ({last_error}). Akıllı Prosedürel Senaryo Motoru devreye alındı.")
-        data = _generate_procedural_fallback_scenes(title, niche_type=niche_type)
+        data = _generate_procedural_fallback_scenes(title, niche_type=niche_type, language=lang)
 
     for s in data.get("scenes", []):
         if "search_query" in s and "search_queries" not in s:
@@ -122,20 +134,28 @@ def generate_scenes(title: str, niche_type: str = None) -> dict:
         if "search_queries" in s:
             s["search_queries"] = enrich_cinematic_search_queries(s["search_queries"], mood=s.get("mood", "epic"))
 
-    total = sum(s["duration"] for s in data["scenes"])
-
-    min_dur = getattr(config, "MIN_DURATION", 45)
-    max_dur = getattr(config, "MAX_DURATION", 60)
-
-    if total < min_dur:
+    # Enforce optimal Shorts duration: 38-48s (Madde 494)
+    target_total = 42.0
+    if len(data["scenes"]) >= 14:
         for s in data["scenes"]:
-            s["duration"] = min(int(s["duration"] * min_dur / max_dur), getattr(config, "SCENE_CLIP_MAX", 8))
-    elif total > max_dur:
+            s["duration"] = 3.0
+    else:
+        current_total = sum(s.get("duration", 3.0) for s in data["scenes"])
+        if current_total <= 0:
+            current_total = len(data["scenes"]) * 3.0
+        scale = target_total / current_total
         for s in data["scenes"]:
-            s["duration"] = max(int(s["duration"] * max_dur / total), getattr(config, "SCENE_CLIP_MIN", 3))
+            s["duration"] = round(max(1.8, min(8.0, s.get("duration", 3.0) * scale)), 1)
 
-    # Apply 14 visual cuts cadence if eligible
+    # Apply 14 visual cuts cadence if eligible (Madde 88)
     data["scenes"] = enforce_visual_cadence_14(data["scenes"], min_cadence=14)
+
+    # Final normalization to ensure 38-48s compliance (Madde 494)
+    total = sum(s["duration"] for s in data["scenes"])
+    if total < 38.0 or total > 48.0:
+        per_scene = round(42.0 / max(1, len(data["scenes"])), 1)
+        for s in data["scenes"]:
+            s["duration"] = per_scene
 
     total = sum(s["duration"] for s in data["scenes"])
     print(f"  [SceneGenerator] Sahne Sayısı: {len(data['scenes'])}, Toplam Süre: {total}s | Tema: {data.get('visual_theme', '-')}")

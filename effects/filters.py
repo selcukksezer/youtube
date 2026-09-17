@@ -11,34 +11,25 @@ import imageio_ffmpeg
 def inject_pixel_noise(clip: VideoFileClip, intensity: float = 0.005) -> VideoFileClip:
     """
     Item 71: Perceptual Hashing (pHash) Modülasyonu.
-    Video karelerine insan gözünün fark edemeyeceği %0.5 (intensity=0.005) oranında
-    piksel seviyesinde gürültü eklenerek hash benzerliği kırılır.
+    Hafif uint8 piksel modülasyonu ile hash benzerliği kırılır, devasa float32 RAM tahsisleri engellenir.
     """
     try:
         def add_noise(frame):
-            noise = np.random.uniform(-intensity * 255, intensity * 255, frame.shape).astype(np.float32)
-            noisy_frame = np.clip(frame.astype(np.float32) + noise, 0, 255).astype(np.uint8)
-            return noisy_frame
+            noise = np.random.randint(-1, 2, frame.shape, dtype=np.int16)
+            return np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
         return clip.fl_image(add_noise)
     except Exception as e:
-        print(f"    [pHashNoise] Notice: {e}")
         return clip
 
 def apply_color_grading_jitter(clip: VideoFileClip, jitter_range: float = 0.015) -> VideoFileClip:
     """
     Item 72: FFmpeg Renk Derecelendirme (Color Grading LUT / Jitter).
-    Her renderda gamma, kontrast ve doygunluk değerleri ±%1.5 oranında rastgele kaydırılır.
+    Hafif doygunluk modülasyonu (ek olarak _merge aşamasında FFmpeg donanım eq filtresi uygulanır).
     """
     try:
-        gamma_shift = 1.0 + random.uniform(-jitter_range, jitter_range)
-        contrast_shift = 1.0 + random.uniform(-jitter_range, jitter_range)
         sat_shift = 1.0 + random.uniform(-jitter_range, jitter_range)
-
-        res = clip.fx(vfx.gamma_corr, gamma_shift)
-        res = res.fx(vfx.colorx, sat_shift * contrast_shift)
-        return res
+        return clip.fx(vfx.colorx, sat_shift)
     except Exception as e:
-        print(f"    [ColorGradingJitter] Notice: {e}")
         return clip
 
 def apply_color_jitter(clip: VideoFileClip) -> VideoFileClip:
@@ -122,32 +113,34 @@ def generate_particle_overlay_frames(
         speed_y = rng.uniform(1.5, 3.5, particle_count)
         speed_mul = 1.0
 
-    def make_frame(t):
-        frame = np.zeros((height, width, 4), dtype=np.uint8)
-
+    # Precompute a 1-second cyclic buffer (e.g. 30 frames) for instant O(1) rendering
+    num_loop_frames = max(1, int(fps))
+    loop_frames = []
+    loop_masks = []
+    for f_idx in range(num_loop_frames):
+        t_sim = f_idx / float(fps)
+        f_rgb = np.zeros((height, width, 3), dtype=np.uint8)
+        f_mask = np.zeros((height, width), dtype=np.float32)
         for i in range(particle_count):
-            cy = (py[i] + speed_y[i] * speed_mul * t * fps / fps) % (height + 20) - 10
-            cx = (px[i] + pvx[i] * t * fps / fps) % (width + 10) - 5
-
-            xi, yi = int(cx), int(cy)
+            cy = int((py[i] + speed_y[i] * speed_mul * t_sim * fps) % (height + 20) - 10)
+            cx = int((px[i] + pvx[i] * t_sim * fps) % (width + 10) - 5)
             sz = max(1, int(psz[i]))
-            alpha = int(palpha[i] * 255)
-
-            y1, y2 = max(0, yi - sz), min(height, yi + sz + 1)
-            x1, x2 = max(0, xi - sz), min(width, xi + sz + 1)
-
+            alpha = float(palpha[i])
+            y1, y2 = max(0, cy - sz), min(height, cy + sz + 1)
+            x1, x2 = max(0, cx - sz), min(width, cx + sz + 1)
             if y2 > y1 and x2 > x1:
-                frame[y1:y2, x1:x2, 0] = color_rgb[0]
-                frame[y1:y2, x1:x2, 1] = color_rgb[1]
-                frame[y1:y2, x1:x2, 2] = color_rgb[2]
-                frame[y1:y2, x1:x2, 3] = alpha
-
-        return frame
+                f_rgb[y1:y2, x1:x2] = color_rgb
+                f_mask[y1:y2, x1:x2] = alpha
+        loop_frames.append(f_rgb)
+        loop_masks.append(f_mask)
 
     def make_rgb(t):
-        return make_frame(t)[:, :, :3].astype(np.uint8)
+        idx = int(t * fps) % len(loop_frames)
+        return loop_frames[idx]
+
     def make_mask(t):
-        return make_frame(t)[:, :, 3].astype(float) / 255.0
+        idx = int(t * fps) % len(loop_masks)
+        return loop_masks[idx]
 
     mask = VideoClip(make_mask, ismask=True, duration=duration).set_fps(fps)
     clip = VideoClip(make_rgb, ismask=False, duration=duration).set_fps(fps).set_mask(mask)

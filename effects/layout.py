@@ -9,9 +9,9 @@ from moviepy.editor import (
     vfx
 )
 import numpy as np
-import PIL.Image
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = getattr(PIL.Image, 'Resampling', PIL.Image).LANCZOS
+from PIL import Image, ImageFilter
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = getattr(Image, 'Resampling', Image).LANCZOS
 
 import imageio_ffmpeg
 import config
@@ -32,20 +32,28 @@ def apply_smart_crop(clip: VideoFileClip, target_w: int, target_h: int, blur_int
 
     # Horizontal or square video: blurred background + centered crisp video
     try:
-        # Background: scale to cover full height and target_w with zero black bars
-        bg = clip.resize(height=target_h)
-        if bg.w < target_w:
-            bg = clip.resize(width=target_w)
-        bg = bg.crop(x_center=bg.w / 2, y_center=bg.h / 2, width=target_w, height=target_h)
-        
-        # Apply 40% Gaussian diffusion blur + tint
-        bg = bg.resize(0.10).resize((target_w, target_h)).fx(vfx.colorx, 1.0 - blur_intensity * 0.5)
-        
+        # Extract a static frame for blurred background to avoid running a second FFmpeg reader process
+        mid_t = min(clip.duration / 2.0, max(0.0, clip.duration - 0.1))
+        frame_raw = clip.get_frame(mid_t)
+        img = Image.fromarray(frame_raw.astype(np.uint8))
+
+        # Scale to cover target_w, target_h
+        img_w, img_h = img.size
+        scale = max(target_w / img_w, target_h / img_h)
+        scaled_w, scaled_h = int(img_w * scale), int(img_h * scale)
+        img_scaled = img.resize((scaled_w, scaled_h), Image.BILINEAR)
+        left = (scaled_w - target_w) // 2
+        top = (scaled_h - target_h) // 2
+        img_cropped = img_scaled.crop((left, top, left + target_w, top + target_h))
+
+        blurred_bg = img_cropped.filter(ImageFilter.GaussianBlur(radius=25))
+        bg = ImageClip(np.array(blurred_bg)).set_duration(clip.duration)
+
         # Center foreground: fits horizontally within target_w without distortion
         fg = clip.resize(width=target_w)
         if fg.h > target_h:
             fg = clip.resize(height=target_h)
-            
+
         fg = fg.set_position("center")
         composite = CompositeVideoClip([bg, fg], size=(target_w, target_h))
         composite.duration = clip.duration
@@ -79,6 +87,8 @@ def create_split_screen_clip(
     if os.path.exists(bottom_clip_path):
         try:
             bot_raw = VideoFileClip(bottom_clip_path)
+            if bot_raw.w > target_w * 1.2 or bot_raw.h > bottom_h * 1.5:
+                bot_raw = bot_raw.resize(width=target_w)
             # Loop or trim to match top clip duration
             if bot_raw.duration < top_clip.duration:
                 bot_raw = bot_raw.fx(vfx.loop, duration=top_clip.duration)
@@ -130,7 +140,7 @@ def apply_pip_overlay(
 
         from PIL import ImageDraw, ImageFont
         card_w, card_h = pip_w, int(pip_w * 0.58)
-        img = PIL.Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
+        img = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
         draw.rounded_rectangle([(2, 2), (card_w - 2, card_h - 2)], radius=18, fill=(10, 15, 25, 220), outline=(0, 255, 127, 230), width=2)
         try:

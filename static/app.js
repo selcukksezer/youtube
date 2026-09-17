@@ -548,6 +548,110 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ══════════════════════════════════════════════════════════════
+    // 9A. SAHNE & KURGU EDİTÖRÜ — 500 Madde Uyumlu Overhaul
+    // ══════════════════════════════════════════════════════════════
+
+    // Helper: Detect emojis in text (Madde 125)
+    function hasEmoji(text) {
+        return /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}]/u.test(text || '');
+    }
+
+    // Helper: Word count
+    function wordCount(text) {
+        return (text || '').trim().split(/\s+/).filter(Boolean).length;
+    }
+
+    // Helper: Clean cutaway markers from narration for display
+    function cleanNarration(text) {
+        return (text || '').replace(/\s*\[Görsel Açı \d+\]\s*/g, '').replace(/\s*\[Kadraj \d+\]\s*/g, '').trim();
+    }
+
+    // Helper: Mood emoji map
+    const MOOD_ICONS = {
+        epic: '🌟', dramatic: '🔴', calm: '🔵', mysterious: '🟣',
+        energetic: '⚡', dark: '⬛', bright: '☀️'
+    };
+
+    // ── Compliance Dashboard Update ──
+    function updateComplianceDashboard(scenes) {
+        if (!scenes || scenes.length === 0) return;
+
+        const totalSec = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
+
+        // Duration band — Madde 494
+        const chipDur = document.getElementById('chip-duration-band');
+        const chipDurText = document.getElementById('chip-duration-text');
+        chipDurText.textContent = `Süre: ${totalSec.toFixed(1)}sn`;
+        chipDur.className = 'compliance-chip';
+        if (totalSec >= 38 && totalSec <= 48) {
+            chipDur.classList.add('status-ok');
+        } else if (totalSec > 48 && totalSec <= 60) {
+            chipDur.classList.add('status-warn');
+        } else {
+            chipDur.classList.add('status-danger');
+        }
+
+        // Cadence — Madde 88
+        const chipCad = document.getElementById('chip-cadence');
+        const chipCadText = document.getElementById('chip-cadence-text');
+        chipCadText.textContent = `Cadence: ${scenes.length}/14`;
+        chipCad.className = 'compliance-chip';
+        if (scenes.length >= 14) {
+            chipCad.classList.add('status-ok');
+        } else if (scenes.length >= 10) {
+            chipCad.classList.add('status-warn');
+        } else {
+            chipCad.classList.add('status-danger');
+        }
+
+        // 3.2s violations — Madde 76
+        const violations = scenes.filter(s => (parseFloat(s.duration) || 6) > 3.2).length;
+        const chip32 = document.getElementById('chip-32s-violations');
+        const chip32Text = document.getElementById('chip-32s-text');
+        chip32Text.textContent = `3.2sn İhlali: ${violations}`;
+        chip32.className = 'compliance-chip';
+        if (violations === 0) {
+            chip32.classList.add('status-ok');
+        } else if (violations <= 3) {
+            chip32.classList.add('status-warn');
+        } else {
+            chip32.classList.add('status-danger');
+        }
+
+        // Duplicate search terms — Madde 247
+        const allQueries = [];
+        scenes.forEach(s => {
+            const sq = s.search_queries || [];
+            if (sq[0]) allQueries.push(sq[0].toLowerCase().trim());
+        });
+        const seen = {};
+        let dupes = 0;
+        allQueries.forEach(q => { seen[q] = (seen[q] || 0) + 1; });
+        Object.values(seen).forEach(c => { if (c > 1) dupes += (c - 1); });
+        const chipDup = document.getElementById('chip-duplicates');
+        const chipDupText = document.getElementById('chip-duplicates-text');
+        chipDupText.textContent = `Tekrar: ${dupes}`;
+        chipDup.className = 'compliance-chip';
+        if (dupes === 0) {
+            chipDup.classList.add('status-ok');
+        } else {
+            chipDup.classList.add('status-warn');
+        }
+
+        // Story Arc Bar — Madde 274
+        if (totalSec > 0) {
+            const introEnd = Math.min(3, totalSec);
+            const conflictEnd = Math.min(20, totalSec);
+            const climaxEnd = Math.min(35, totalSec);
+            document.getElementById('arc-intro').style.width = `${(introEnd / totalSec) * 100}%`;
+            document.getElementById('arc-conflict').style.width = `${((conflictEnd - introEnd) / totalSec) * 100}%`;
+            document.getElementById('arc-climax').style.width = `${((climaxEnd - conflictEnd) / totalSec) * 100}%`;
+            document.getElementById('arc-loop').style.width = `${((totalSec - climaxEnd) / totalSec) * 100}%`;
+        }
+    }
+
+    // ── Main render function ──
     function renderTimelineScenes(plan) {
         const container = document.getElementById('scenes-timeline-container');
         const titleEl = document.getElementById('timeline-project-title');
@@ -562,35 +666,175 @@ document.addEventListener('DOMContentLoaded', () => {
         totalScenesEl.textContent = scenes.length;
         badgeSceneCount.textContent = scenes.length;
 
-        const totalSec = scenes.reduce((acc, s) => acc + (s.duration || 6), 0);
-        totalDurEl.textContent = `${totalSec} sn`;
+        const totalSec = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
+        totalDurEl.textContent = `${totalSec.toFixed(1)} sn`;
+
+        // Build duplicate query map for highlighting
+        const queryFreq = {};
+        scenes.forEach(s => {
+            const q = ((s.search_queries && s.search_queries[0]) || '').toLowerCase().trim();
+            if (q) queryFreq[q] = (queryFreq[q] || 0) + 1;
+        });
 
         container.innerHTML = '';
         scenes.forEach((sc, i) => {
+            const mood = (sc.mood || 'epic').toLowerCase();
+            const isCutaway = sc.is_visual_cutaway === true;
+            const dur = parseFloat(sc.duration) || 6;
+            const durationViolation = dur > 3.2;
+            const narr = isCutaway ? cleanNarration(sc.narration) : (sc.narration || '');
+            const wc = wordCount(narr);
+            const hasEm = hasEmoji(narr);
+            const searchQueries = sc.search_queries || [];
+            const sceneDesc = sc.scene_description || '';
+
+            // Word count class
+            let wcClass = 'count-ok';
+            if (wc < 5) wcClass = 'count-danger';
+            else if (wc > 20) wcClass = 'count-warn';
+
+            // Build CSS classes
+            let cardClasses = `scene-item-card mood-${mood}`;
+            if (isCutaway) cardClasses += ' is-cutaway';
+            if (durationViolation) cardClasses += ' duration-violation';
+
             const row = document.createElement('div');
-            row.className = 'scene-item-card';
+            row.className = cardClasses;
+            row.setAttribute('draggable', 'true');
+            row.setAttribute('data-scene-idx', i);
+
+            // Build search query tags HTML
+            let queryTagsHtml = '';
+            searchQueries.forEach((q, qi) => {
+                const isDupe = qi === 0 && queryFreq[q.toLowerCase().trim()] > 1;
+                const labels = ['spesifik', 'orta', 'genel'];
+                queryTagsHtml += `<span class="search-query-tag${isDupe ? ' duplicate' : ''}" title="${labels[qi] || ''}">${q}</span>`;
+            });
+
+            // Stock video badge / preview
+            let stockVideoHtml = '';
+            if (sc.selected_video && sc.selected_video.url) {
+                const vid = sc.selected_video;
+                stockVideoHtml = `
+                    <div class="scene-stock-badge-container">
+                        ${vid.thumbnail ? `<img src="${vid.thumbnail}" class="scene-stock-thumb" alt="Klip">` : ''}
+                        <span class="scene-stock-provider-tag"><i class="fa-solid fa-video"></i> ${vid.source || 'Stok'}</span>
+                        <a href="${vid.url}" target="_blank" class="scene-stock-preview-btn"><i class="fa-solid fa-play"></i> Klip Önizle</a>
+                        <button type="button" class="btn-swap-stock" data-idx="${i}" title="Farklı Bir Stok Video Çek"><i class="fa-solid fa-rotate"></i> Değiştir</button>
+                    </div>
+                `;
+            } else {
+                stockVideoHtml = `
+                    <div class="scene-stock-badge-container">
+                        <span style="font-size: 10px; color: #64748b;"><i class="fa-solid fa-film"></i> Stok video atanmadı</span>
+                        <button type="button" class="btn-fetch-single-stock" data-idx="${i}"><i class="fa-solid fa-cloud-arrow-down"></i> Stok Çek</button>
+                    </div>
+                `;
+            }
+
             row.innerHTML = `
-                <div class="scene-idx">#${i + 1}</div>
-                <div>
-                    <strong style="font-size: 11px; color: var(--text-muted);">SESLENDİRME METNİ</strong>
-                    <input type="text" class="input-styled scene-narr-input" value="${sc.narration || ''}" style="margin-top: 4px;">
+                <div class="scene-idx">
+                    <span class="scene-idx-number">#${i + 1}</span>
+                    <span class="mood-badge mood-${mood}">${MOOD_ICONS[mood] || '🎬'} ${mood}</span>
+                    ${isCutaway ? '<span class="cutaway-badge">📐 Açı</span>' : ''}
                 </div>
-                <div>
-                    <strong style="font-size: 11px; color: var(--text-muted);">GÖRSEL ARAMA TERİMİ</strong>
-                    <input type="text" class="input-styled scene-query-input" value="${(sc.search_queries && sc.search_queries[0]) || ''}" style="margin-top: 4px;">
-                </div>
-                <div>
-                    <strong style="font-size: 11px; color: var(--text-muted);">SÜRE (SN)</strong>
-                    <input type="number" class="input-styled scene-dur-input" min="3" max="15" value="${sc.duration || 6}" style="margin-top: 4px;">
-                </div>
-                <div>
-                    <button class="btn btn-sm btn-danger btn-del-scene" data-idx="${i}"><i class="fa-solid fa-trash"></i></button>
+                <div class="scene-body">
+                    <div class="scene-body-row">
+                        <div>
+                            <div class="scene-field-label">
+                                Seslendirme Metni
+                                <span class="word-count-chip ${wcClass}">${wc} klm</span>
+                                <span class="emoji-indicator ${hasEm ? 'has-emoji' : 'no-emoji'}">${hasEm ? '✅ Emoji' : '⚠️ Emoji yok'}</span>
+                            </div>
+                            <textarea class="input-styled scene-narr-input" rows="2" style="resize: vertical; min-height: 36px;">${narr}</textarea>
+                        </div>
+                        <div>
+                            <div class="scene-field-label">Görsel Açıklama <span class="field-meta">(scene_description)</span></div>
+                            <input type="text" class="input-styled scene-desc-input" value="${sceneDesc}" placeholder="İngilizce görsel açıklama...">
+                            ${stockVideoHtml}
+                        </div>
+                    </div>
+                    <div class="scene-body-row-3">
+                        <div>
+                            <div class="scene-field-label">Stok Arama Terimleri <span class="field-meta">(Madde 89)</span></div>
+                            <input type="text" class="input-styled scene-query-input" value="${searchQueries[0] || ''}" placeholder="Ana arama terimi...">
+                            <div class="search-query-tags">${queryTagsHtml}</div>
+                        </div>
+                        <div>
+                            <div class="scene-field-label">Süre</div>
+                            <input type="number" class="input-styled scene-dur-input" min="1" max="15" step="0.25" value="${dur}">
+                        </div>
+                        <div class="scene-actions">
+                            <button class="btn-sm btn-clone-scene" data-idx="${i}" title="Sahneyi Klonla"><i class="fa-solid fa-copy"></i></button>
+                            <button class="btn-sm btn-del-scene" data-idx="${i}" title="Sahneyi Sil"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
                 </div>
             `;
             container.appendChild(row);
         });
 
-        // Silme olayları
+        // ── Event handlers ──
+
+        // Swap stock video for single scene
+        container.querySelectorAll('.btn-swap-stock').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+                const sc = currentPlan.scenes[idx];
+                const q = (sc.search_queries && sc.search_queries[0]) || sc.scene_description || 'cinematic motion';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                btn.disabled = true;
+                try {
+                    const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=6`);
+                    const data = await res.json();
+                    if (data.results && data.results.length > 0) {
+                        const currentId = sc.selected_video?.id;
+                        const alt = data.results.find(v => v.id !== currentId) || data.results[0];
+                        sc.selected_video = alt;
+                        renderTimelineScenes(currentPlan);
+                        showToast(`🎬 Sahne #${idx + 1} için yeni stok video seçildi!`);
+                    } else {
+                        showToast('⚠️ Alternatif video bulunamadı.', 'warn');
+                        btn.innerHTML = '<i class="fa-solid fa-rotate"></i> Değiştir';
+                        btn.disabled = false;
+                    }
+                } catch (err) {
+                    showToast('Hata: ' + err.message, 'error');
+                    btn.innerHTML = '<i class="fa-solid fa-rotate"></i> Değiştir';
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        // Fetch single stock video
+        container.querySelectorAll('.btn-fetch-single-stock').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+                const sc = currentPlan.scenes[idx];
+                const q = (sc.search_queries && sc.search_queries[0]) || sc.scene_description || 'cinematic motion';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                btn.disabled = true;
+                try {
+                    const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=3`);
+                    const data = await res.json();
+                    if (data.results && data.results.length > 0) {
+                        sc.selected_video = data.results[0];
+                        renderTimelineScenes(currentPlan);
+                        showToast(`🎬 Sahne #${idx + 1} için stok video çekildi!`);
+                    } else {
+                        showToast('⚠️ Video bulunamadı.', 'warn');
+                        btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Stok Çek';
+                        btn.disabled = false;
+                    }
+                } catch (err) {
+                    showToast('Hata: ' + err.message, 'error');
+                    btn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Stok Çek';
+                    btn.disabled = false;
+                }
+            });
+        });
+
+        // Delete scene
         container.querySelectorAll('.btn-del-scene').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
@@ -598,33 +842,291 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderTimelineScenes(currentPlan);
             });
         });
+
+        // Clone scene
+        container.querySelectorAll('.btn-clone-scene').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const idx = parseInt(e.currentTarget.getAttribute('data-idx'));
+                const clone = JSON.parse(JSON.stringify(currentPlan.scenes[idx]));
+                clone.scene_number = currentPlan.scenes.length + 1;
+                clone.is_visual_cutaway = false;
+                currentPlan.scenes.splice(idx + 1, 0, clone);
+                renderTimelineScenes(currentPlan);
+                showToast('📋 Sahne klonlandı');
+            });
+        });
+
+        // ── Drag & Drop ──
+        let dragSrcIdx = null;
+        container.querySelectorAll('.scene-item-card').forEach(card => {
+            card.addEventListener('dragstart', (e) => {
+                dragSrcIdx = parseInt(card.getAttribute('data-scene-idx'));
+                card.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            });
+            card.addEventListener('dragend', () => {
+                card.classList.remove('dragging');
+                container.querySelectorAll('.scene-item-card').forEach(c => c.classList.remove('drag-over'));
+            });
+            card.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                card.classList.add('drag-over');
+            });
+            card.addEventListener('dragleave', () => {
+                card.classList.remove('drag-over');
+            });
+            card.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const targetIdx = parseInt(card.getAttribute('data-scene-idx'));
+                if (dragSrcIdx !== null && dragSrcIdx !== targetIdx && currentPlan && currentPlan.scenes) {
+                    const [moved] = currentPlan.scenes.splice(dragSrcIdx, 1);
+                    currentPlan.scenes.splice(targetIdx, 0, moved);
+                    // Renumber
+                    currentPlan.scenes.forEach((s, si) => s.scene_number = si + 1);
+                    renderTimelineScenes(currentPlan);
+                    showToast('🔀 Sahne sırası güncellendi');
+                }
+                dragSrcIdx = null;
+            });
+        });
+
+        // Update compliance dashboard
+        updateComplianceDashboard(scenes);
     }
 
+    // ── Add scene manually ──
     document.getElementById('btn-add-scene-manual')?.addEventListener('click', () => {
         if (!currentPlan) currentPlan = { title: inputTopic.value, scenes: [] };
         currentPlan.scenes.push({
             scene_number: currentPlan.scenes.length + 1,
             narration: "Yeni sahne anlatım parçası...",
-            search_queries: ["cinematic nature"],
-            duration: 6
+            scene_description: "Wide angle cinematic shot of the scene",
+            search_queries: ["cinematic nature", "landscape aerial", "nature"],
+            duration: 3,
+            mood: "epic"
         });
         renderTimelineScenes(currentPlan);
+        showToast('➕ Yeni sahne eklendi');
     });
 
+    // ── Smart Buttons ──
+
+    // Auto-fetch stock videos for all scenes — Item 89 & 130
+    document.getElementById('btn-fetch-stock-clips')?.addEventListener('click', async () => {
+        if (!currentPlan || !currentPlan.scenes || currentPlan.scenes.length === 0) {
+            return showToast('⚠️ Önce senaryo oluşturun', 'warn');
+        }
+        const btn = document.getElementById('btn-fetch-stock-clips');
+        const oldHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Stok Videolar Çekiliyor...';
+        showToast('📡 Pexels ve Pixabay kütüphanelerinden en iyi dikey videolar taranıyor...');
+        try {
+            collectTimelineEdits();
+            const res = await fetch('/api/stock/fetch_for_scenes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scenes: currentPlan.scenes })
+            });
+            const data = await res.json();
+            if (data.status === 'ok' && data.scenes) {
+                currentPlan.scenes = data.scenes;
+                renderTimelineScenes(currentPlan);
+                showToast('🎬 Tüm sahneler için stok videolar başarıyla çekildi ve eşleştirildi!');
+            }
+        } catch (err) {
+            showToast('⚠️ Stok video çekme hatası: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = oldHtml;
+        }
+    });
+
+    // Cadence fix — Madde 88
+    document.getElementById('btn-fix-cadence')?.addEventListener('click', () => {
+        if (!currentPlan || !currentPlan.scenes || currentPlan.scenes.length === 0) return showToast('⚠️ Önce senaryo oluşturun', 'warn');
+        const scenes = currentPlan.scenes;
+        const totalDuration = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
+        if (totalDuration < 30 || scenes.length >= 14) return showToast('✅ Cadence zaten yeterli');
+
+        let cutsNeeded = 14 - scenes.length;
+        let cutawayCounter = 1;
+        const cutawayAdjs = ['macro closeup', 'cinematic angle', 'reaction detail', 'slow motion cutaway'];
+        const expanded = [];
+        for (const sc of scenes) {
+            const dur = parseFloat(sc.duration) || 6;
+            if (cutsNeeded > 0 && dur >= 3.5) {
+                const half1 = Math.round((dur / 2) * 100) / 100;
+                const half2 = Math.round((dur - half1) * 100) / 100;
+                cutsNeeded--;
+
+                const words = (sc.narration || '').split(' ');
+                let narr1 = sc.narration || '';
+                let narr2 = `${sc.narration || ''} [Görsel Açı ${cutawayCounter}]`;
+                if (words.length >= 6) {
+                    const mid = Math.floor(words.length / 2);
+                    narr1 = words.slice(0, mid).join(' ');
+                    narr2 = words.slice(mid).join(' ');
+                }
+
+                const sq = sc.search_queries || ['cinematic visual'];
+                const cadj = cutawayAdjs[cutawayCounter % cutawayAdjs.length];
+                const q1 = sq[0] || 'cinematic motion';
+                const q2 = sq[1] ? `${sq[1]} ${cadj}` : `${q1} ${cadj}`;
+                const queries1 = [q1, sq[1] || 'dramatic lighting'];
+                const queries2 = [q2, sq[2] || 'cinematic slow motion'];
+
+                const sc1 = { ...sc, duration: half1, narration: narr1, search_queries: queries1 };
+                const sc2 = { ...sc, duration: half2, is_visual_cutaway: true, narration: narr2, search_queries: queries2, scene_description: `Cutaway dynamic angle showing ${q2}` };
+                cutawayCounter++;
+                expanded.push(sc1, sc2);
+            } else {
+                expanded.push({ ...sc });
+            }
+        }
+        // Further split if needed
+        while (expanded.length < 14) {
+            const maxIdx = expanded.reduce((best, s, i) => (s.duration || 0) > (expanded[best].duration || 0) ? i : best, 0);
+            if ((expanded[maxIdx].duration || 0) < 1.5) break;
+            const target = expanded[maxIdx];
+            const h1 = Math.round((target.duration / 2) * 100) / 100;
+            const h2 = Math.round((target.duration - h1) * 100) / 100;
+
+            const words = (target.narration || '').split(' ');
+            let narr1 = target.narration || '';
+            let narr2 = `${target.narration || ''} [Kadraj ${cutawayCounter}]`;
+            if (words.length >= 6) {
+                const mid = Math.floor(words.length / 2);
+                narr1 = words.slice(0, mid).join(' ');
+                narr2 = words.slice(mid).join(' ');
+            }
+
+            const sq = target.search_queries || ['cinematic visual'];
+            const cadj = cutawayAdjs[cutawayCounter % cutawayAdjs.length];
+            const q1 = sq[0] || 'cinematic motion';
+            const q2 = sq[1] ? `${sq[1]} ${cadj}` : `${q1} ${cadj}`;
+
+            const t1 = { ...target, duration: h1, narration: narr1, search_queries: [q1, sq[1] || 'dramatic lighting'] };
+            const t2 = { ...target, duration: h2, is_visual_cutaway: true, narration: narr2, search_queries: [q2, sq[2] || 'cinematic slow motion'], scene_description: `Cutaway dynamic angle showing ${q2}` };
+            cutawayCounter++;
+            expanded.splice(maxIdx, 1, t1, t2);
+        }
+        expanded.forEach((s, i) => s.scene_number = i + 1);
+        currentPlan.scenes = expanded;
+        renderTimelineScenes(currentPlan);
+        showToast(`✂️ Cadence düzeltildi: ${expanded.length} sahne`);
+    });
+
+    // Enrich search queries — Madde 89
+    document.getElementById('btn-enrich-queries')?.addEventListener('click', () => {
+        if (!currentPlan || !currentPlan.scenes) return showToast('⚠️ Önce senaryo oluşturun', 'warn');
+        const adjectives = ['cinematic', 'drone', 'aerial', 'slow motion', 'macro', 'atmospheric', '4k', 'moody'];
+        currentPlan.scenes.forEach((sc, i) => {
+            const sq = sc.search_queries || [];
+            sc.search_queries = sq.map((q, qi) => {
+                const ql = q.toLowerCase();
+                if (!adjectives.some(a => ql.includes(a))) {
+                    return `${q} ${adjectives[(i + qi) % adjectives.length]}`;
+                }
+                return q;
+            });
+        });
+        renderTimelineScenes(currentPlan);
+        showToast('🎬 Arama terimleri sinematik sıfatlarla zenginleştirildi');
+    });
+
+    // Balance durations — Madde 494
+    document.getElementById('btn-balance-durations')?.addEventListener('click', () => {
+        if (!currentPlan || !currentPlan.scenes || currentPlan.scenes.length === 0) return showToast('⚠️ Önce senaryo oluşturun', 'warn');
+        const scenes = currentPlan.scenes;
+        const totalSec = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
+        const targetTotal = 45; // Ideal center of 38-48
+
+        if (totalSec >= 38 && totalSec <= 48) return showToast('✅ Süre zaten ideal bantta (38-48sn)');
+
+        const ratio = targetTotal / totalSec;
+        const maxPerScene = scenes.length >= 14 ? 3.0 : 6.0;
+        scenes.forEach(s => {
+            s.duration = Math.max(1.5, Math.min(maxPerScene, Math.round((parseFloat(s.duration) || 3) * ratio * 4) / 4));
+        });
+        renderTimelineScenes(currentPlan);
+        const newTotal = scenes.reduce((acc, s) => acc + s.duration, 0);
+        showToast(`⚖️ Süreler dengelendi: ${newTotal.toFixed(1)}sn`);
+    });
+
+    // Hallucination check — Madde 90
+    document.getElementById('btn-hallucination-check')?.addEventListener('click', () => {
+        if (!currentPlan || !currentPlan.scenes) return showToast('⚠️ Önce senaryo oluşturun', 'warn');
+        const issues = [];
+        const title = (currentPlan.title || '').toLowerCase();
+        const ancientMarkers = ['marcus aurelius', 'roma', 'antik', 'stoa', 'osmanlı', 'fatih', 'platon', 'aristoteles', 'sezar'];
+        const isAncient = ancientMarkers.some(m => title.includes(m));
+        const yearPattern = /\b(1[0-9]{3}|20[0-9]{2})\b/g;
+
+        currentPlan.scenes.forEach((sc, i) => {
+            const narr = sc.narration || '';
+            let match;
+            while ((match = yearPattern.exec(narr)) !== null) {
+                const yr = parseInt(match[1]);
+                if (yr > 2030) {
+                    issues.push(`Sahne #${i + 1}: Gelecek yıl (${yr}) — halüsinasyon`);
+                } else if (isAncient && yr >= 1800) {
+                    issues.push(`Sahne #${i + 1}: Antik konu için modern yıl (${yr}) — anakronizm`);
+                }
+            }
+        });
+
+        if (issues.length === 0) {
+            showToast('✅ Halüsinasyon tespit edilmedi — temiz');
+        } else {
+            showToast(`⚠️ ${issues.length} potansiyel halüsinasyon tespit edildi`, 'warn');
+            alert('Halüsinasyon Raporu:\n\n' + issues.join('\n'));
+        }
+    });
+
+    // ── Render from timeline (collect edits) ──
     document.getElementById('btn-render-from-timeline')?.addEventListener('click', () => {
-        // Collect edits from timeline inputs
+        collectTimelineEdits();
+        startRenderProcess(currentPlan);
+    });
+
+    function collectTimelineEdits() {
         if (currentPlan && currentPlan.scenes) {
             const narrInputs = document.querySelectorAll('.scene-narr-input');
+            const descInputs = document.querySelectorAll('.scene-desc-input');
             const queryInputs = document.querySelectorAll('.scene-query-input');
             const durInputs = document.querySelectorAll('.scene-dur-input');
             currentPlan.scenes.forEach((sc, i) => {
                 if (narrInputs[i]) sc.narration = narrInputs[i].value;
-                if (queryInputs[i]) sc.search_queries = [queryInputs[i].value];
+                if (descInputs[i]) sc.scene_description = descInputs[i].value;
+                if (queryInputs[i]) sc.search_queries = [queryInputs[i].value, ...(sc.search_queries || []).slice(1)];
                 if (durInputs[i]) sc.duration = parseFloat(durInputs[i].value) || 6;
             });
             currentPlan.full_narration = currentPlan.scenes.map(s => s.narration || '').filter(Boolean).join(' ');
         }
-        startRenderProcess(currentPlan);
+    }
+
+    // ── Keyboard Shortcuts — Madde 443 ──
+    document.addEventListener('keydown', (e) => {
+        // Ctrl+Enter — Render
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            const activeTab = document.querySelector('.nav-btn.active')?.getAttribute('data-tab');
+            if (activeTab === 'timeline' && currentPlan) {
+                collectTimelineEdits();
+                startRenderProcess(currentPlan);
+            }
+        }
+        // Ctrl+S — Save/sync edits
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            collectTimelineEdits();
+            if (currentPlan) {
+                updateComplianceDashboard(currentPlan.scenes || []);
+                showToast('💾 Sahne düzenlemeleri kaydedildi');
+            }
+        }
     });
 
     // ══════════════════════════════════════════════════════════════

@@ -7,6 +7,14 @@ from typing import Optional
 from moviepy.editor import VideoFileClip, CompositeVideoClip, vfx
 import numpy as np
 from PIL import Image
+import cv2
+
+# Disable OpenCL GPU acceleration and limit CPU threads to prevent GPU driver crashes / TDR black screens
+try:
+    cv2.ocl.setUseOpenCL(False)
+    cv2.setNumThreads(2)
+except Exception:
+    pass
 
 def apply_ken_burns(
     clip: VideoFileClip,
@@ -20,10 +28,33 @@ def apply_ken_burns(
     hafif, sinematik yaklaşma hareketi verir.
     """
     try:
+        w, h = clip.size
         dur = max(clip.duration, 0.1)
-        if zoom_ratio is not None:
-            return clip.fx(vfx.resize, lambda t: 1 + (zoom_ratio - 1) * (t / dur))
-        return clip.fx(vfx.resize, lambda t: zoom_start + (zoom_end - zoom_start) * (t / dur))
+        z_start = zoom_start
+        z_end = zoom_ratio if zoom_ratio is not None else zoom_end
+
+        def make_frame(t):
+            raw = clip.get_frame(t)
+            prog = min(1.0, max(0.0, t / dur))
+            zf = z_start + (z_end - z_start) * prog
+            if abs(zf - 1.0) < 0.002:
+                return raw
+            inv_z = 1.0 / zf
+            cw = int(w * inv_z)
+            ch = int(h * inv_z)
+            left = max(0, (w - cw) // 2)
+            top = max(0, (h - ch) // 2)
+            cropped = raw[top:top + ch, left:left + cw]
+            if cropped.dtype != np.uint8:
+                cropped = cropped.astype(np.uint8)
+            return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        from moviepy.editor import VideoClip
+        clip_fps = getattr(clip, 'fps', None) or 30.0
+        res = VideoClip(make_frame, duration=clip.duration).set_fps(clip_fps)
+        if clip.audio:
+            res = res.set_audio(clip.audio)
+        return res
     except Exception:
         return clip
 
@@ -142,15 +173,26 @@ def apply_out_of_focus_reveal(clip: VideoFileClip, blur_duration: float = 0.35) 
         w, h = clip.size
         blur_dur = min(blur_duration, clip.duration / 2)
 
-        blurred_part = (
-            clip.subclip(0, blur_dur)
-            .resize(0.12)
-            .resize((w, h))
-            .fx(vfx.fadeout, blur_dur)
-        )
-        composite = CompositeVideoClip([clip, blurred_part], size=(w, h))
-        composite.duration = clip.duration
-        return composite
+        def make_frame(t):
+            frame = clip.get_frame(t)
+            if t >= blur_dur:
+                return frame
+            alpha = max(0.0, min(1.0, 1.0 - (t / blur_dur)))
+            if alpha < 0.04:
+                return frame
+            if frame.dtype != np.uint8:
+                frame = frame.astype(np.uint8)
+            small_w, small_h = max(16, int(w * 0.10)), max(16, int(h * 0.10))
+            small = cv2.resize(frame, (small_w, small_h), interpolation=cv2.INTER_LINEAR)
+            blurred = cv2.resize(small, (w, h), interpolation=cv2.INTER_LINEAR)
+            return cv2.addWeighted(frame, 1.0 - alpha, blurred, alpha, 0)
+
+        from moviepy.editor import VideoClip
+        clip_fps = getattr(clip, 'fps', None) or 30.0
+        res = VideoClip(make_frame, duration=clip.duration).set_fps(clip_fps)
+        if clip.audio:
+            res = res.set_audio(clip.audio)
+        return res
     except Exception as e:
         print(f"    [OutOfFocusReveal] Notice: {e}")
         return clip
@@ -166,21 +208,26 @@ def apply_heartbeat_zoom(clip, bpm: float = 60.0, scale_min: float = 1.00, scale
         sine = (math.sin(2 * math.pi * t / period) + 1.0) / 2.0
         return scale_min + (scale_max - scale_min) * sine
 
+    w, h = clip.size
+
     def make_frame(t):
         raw = clip.get_frame(t)
         zf = zoom_factor(t)
-        w, h = clip.size
-        new_w = int(w * zf)
-        new_h = int(h * zf)
-        img = Image.fromarray(raw.astype(np.uint8))
-        resized = img.resize((new_w, new_h), Image.LANCZOS)
-        left = (new_w - w) // 2
-        top = (new_h - h) // 2
-        cropped = resized.crop((left, top, left + w, top + h))
-        return np.array(cropped)
+        if abs(zf - 1.0) < 0.001:
+            return raw
+        inv_z = 1.0 / zf
+        cw = int(w * inv_z)
+        ch = int(h * inv_z)
+        left = max(0, (w - cw) // 2)
+        top = max(0, (h - ch) // 2)
+        cropped = raw[top:top + ch, left:left + cw]
+        if cropped.dtype != np.uint8:
+            cropped = cropped.astype(np.uint8)
+        return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
     from moviepy.editor import VideoClip
-    result = VideoClip(make_frame, duration=clip.duration).set_fps(clip.fps or 30.0)
+    clip_fps = getattr(clip, 'fps', None) or 30.0
+    result = VideoClip(make_frame, duration=clip.duration).set_fps(clip_fps)
     if clip.audio:
         result = result.set_audio(clip.audio)
     print(f"    [Item 114] Heartbeat zoom: bpm={bpm}, scale={scale_min:.3f}→{scale_max:.3f}")
@@ -224,10 +271,12 @@ def apply_alternating_motion(clip, scene_index: int = 0) -> VideoFileClip:
             frame = clip.get_frame(t)
             x, y = get_pos(t)
             cropped = frame[y:y + crop_h, x:x + crop_w]
-            img = Image.fromarray(cropped.astype(np.uint8))
-            return np.array(img.resize((w, h), Image.BILINEAR))
+            if cropped.dtype != np.uint8:
+                cropped = cropped.astype(np.uint8)
+            return cv2.resize(cropped, (w, h), interpolation=cv2.INTER_LINEAR)
 
-        res = VideoClip(make_frame, duration=clip.duration).set_fps(clip.fps or 30.0)
+        clip_fps = getattr(clip, 'fps', None) or 30.0
+        res = VideoClip(make_frame, duration=clip.duration).set_fps(clip_fps)
         if clip.audio:
             res = res.set_audio(clip.audio)
         print(f"    [Item 132] Alternating motion uygulandı: sahne #{scene_index+1} → {direction}")

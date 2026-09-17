@@ -204,9 +204,10 @@ def process_video_task(req: VideoRenderRequest):
         if req.subtitle_preset and req.subtitle_preset in SUBTITLE_PRESETS:
             sub_opts.update(SUBTITLE_PRESETS[req.subtitle_preset])
 
-        def on_compose_progress(pct, step_text):
-            state.broadcast_event("progress", {"percent": pct, "step": step_text})
-            state.broadcast_event("log", f"  {step_text}")
+        def on_compose_progress(pct, step_text="", *args, **kwargs):
+            msg = step_text or kwargs.get("message") or kwargs.get("step") or ""
+            state.broadcast_event("progress", {"percent": pct, "step": str(msg)})
+            state.broadcast_event("log", f"  {msg}")
 
         # Step 3.8: Generate Viral SEO Metadata & 15 Tags (Items 346 - 410)
         from viral_seo_agent import generate_viral_seo_metadata
