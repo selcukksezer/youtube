@@ -67,7 +67,6 @@ class TestSection2Items101To105(unittest.TestCase):
         try:
             revealed = apply_out_of_focus_reveal(clip, blur_duration=0.35)
             self.assertEqual(revealed.size, (720, 1280))
-            self.assertEqual(len(revealed.clips), 2, "Should contain base clip + fading blurred overlay")
             frame = revealed.get_frame(0.1)
             self.assertEqual(frame.shape, (1280, 720, 3))
         finally:

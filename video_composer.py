@@ -46,13 +46,17 @@ def cleanup_stray_ffmpeg_processes():
 
 class MoviePyProgressLogger(ProgressBarLogger):
     def __init__(self, callback=None, cancel_check=None):
-        super().__init__()
+        super().__init__(init_state=None, bars=None, ignored_bars=None, logged_bars='all', min_time_interval=0, ignore_new_bars=False)
         self.ui_callback = callback
         self.cancel_check = cancel_check
         self.last_log_time = 0.0
         self.last_frame_pct = -1
+        self.print_messages = False
 
     def callback(self, **changes):
+        pass
+
+    def log_message(self, message):
         pass
 
     def bars_callback(self, bar, attr, value, old_value=None):
