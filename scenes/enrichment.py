@@ -30,19 +30,16 @@ def enrich_cinematic_search_queries(queries: List[str], mood: str = "epic") -> L
 
 
 def _split_narration_cleanly(narration: str, cutaway_counter: int):
-    # 1. Split on sentence boundaries if present (. ! ?)
+    # 1. Split ONLY on sentence boundaries (. ! ?) — never mid-clause or mid-verb
     sentences = [s.strip() for s in re.split(r'(?<=[.?!])\s+', narration or "") if s.strip()]
     if len(sentences) >= 2:
         mid = len(sentences) // 2
-        return " ".join(sentences[:mid]), " ".join(sentences[mid:])
+        left = " ".join(sentences[:mid])
+        right = " ".join(sentences[mid:])
+        if len(left.split()) >= 5 and len(right.split()) >= 5:
+            return left, right
 
-    # 2. Split on natural clause boundaries (, ; — :)
-    clauses = [c.strip() for c in re.split(r'[,;—:]\s*', narration or "") if c.strip()]
-    if len(clauses) >= 2 and len(clauses[0].split()) >= 3 and len(clauses[1].split()) >= 3:
-        mid = len(clauses) // 2
-        return ", ".join(clauses[:mid]) + "...", "... " + ", ".join(clauses[mid:])
-
-    # 3. For single short clauses, keep main narration whole and insert a natural dramatic reaction beat
+    # 2. Single sentence — keep narration whole; use reaction beat for visual cutaway
     reaction_beats = [
         "O an herkes nefesini tuttu... ⚡",
         "Gözlerime inanamadım, kalbim duracak gibiydi! 😱",

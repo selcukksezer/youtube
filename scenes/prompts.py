@@ -5,15 +5,16 @@ System prompts and prompt rotation strategies for Shorts script generation.
 PROMPT_TR = """Sen profesyonel bir YouTube Shorts senaristi ve seslendirme yazarısın.
 Verilen başlık için:
 
-1. Türkçe anlatım metni yaz (EN AZ 140-180 KELİME, KAPSAMLI VE DETAYLI ANLATIM, 60-90 SANİYE SÜRECEK. KISA TUTMA!).
+1. Türkçe anlatım metni yaz (95-120 KELİME, 38-48 SANİYE Shorts süresi — Madde 494. Aşırı uzun yazma!).
 
-2. 10-16 sahne oluştur (her biri 5-7 sn). TOPLAM EN AZ 60 SANİYE.
+2. 14 sahne oluştur. TOPLAM 38-48 SANİYE. Sen duration belirle (2.0-4.5 sn, doğal tempo).
    Her sahne:
-   - "narration": Türkçe anlatım parçası (her sahne için 10-15 kelimelik zengin açıklama). **Ayrıca anlatımın sonuna veya uygun bir yerine izleyicinin dikkatini çekecek 1-2 adet uygun EMOJİ ekle.**
-   - "scene_description": Bu sahnede İZLEYİCİNİN GÖRMESİ GEREKEN görsel, İngilizce, 1 cümle (örn: "Aerial view of a massive ocean wave crashing against rocky cliffs at sunset")
+   - "narration": 1-2 TAM Türkçe cümle (drama nişlerinde 8-12 kelime). ASLA yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). **1-2 EMOJİ ekle.**
+   - "scene_description": Bu sahnede İZLEYİCİNİN GÖRMESİ GEREKEN görsel, İngilizce, 1 cümle
    - "search_queries": 3 İngilizce stok video arama terimi [spesifik, orta, genel]
-   - "duration": 5-7
-   - "mood": epic/calm/dramatic/mysterious/energetic/dark/bright
+   - "duration": AI belirler (2.0-4.5)
+   - "beat_type": hook/conflict/climax/resolution/shock
+   - "mood": URGENT/DRAMATIC/epic/calm/mysterious/energetic/dark/bright
 
 3. search_queries kuralları:
    İYİ: "ocean waves aerial", "mountain fog drone", "city skyline night", "stars night sky"
@@ -28,14 +29,14 @@ SADECE JSON:
 PROMPT_EN = """You are a professional YouTube Shorts scriptwriter.
 For the given title:
 
-1. Write English narration (AT LEAST 140-180 words, DETAILED AND COMPREHENSIVE, 60-90 SECONDS DURATION. DO NOT MAKE IT SHORT!).
+1. Write English narration (95-120 WORDS, 38-48 SECOND Shorts length — Item 494. Do NOT make it overlong).
 
-2. Create 10-16 scenes (5-7s each). TOTAL AT LEAST 60 SECONDS.
+2. Create 14 scenes (~2.5-3.5s each). TOTAL 38-48 SECONDS.
    Each scene:
-   - "narration": English narration fragment (10-15 words per scene). **Also include 1-2 highly relevant EMOJIS naturally in or at the end of the narration fragment to boost engagement.**
+   - "narration": English narration fragment (6-9 words per scene). **Also include 1-2 highly relevant EMOJIS naturally in or at the end of the narration fragment to boost engagement.**
    - "scene_description": What the VIEWER SHOULD SEE, 1 sentence in English (e.g., "Aerial view of a massive ocean wave crashing against rocky cliffs at sunset")
-   - "search_queries": 3 English stock video search terms [specific, medium, general]
-   - "duration": 5-7
+   - "search_queries": 3 English stock video search terms [specific, medium, general] — ON-TOPIC only
+   - "duration": 2.5-3.5
    - "mood": epic/calm/dramatic/mysterious/energetic/dark/bright
 
 3. search_queries rules:
@@ -54,14 +55,14 @@ PROMPT_VARIANTS_TR = [
 Hedef: İzleyiciyi ilk 3 saniyede yakalayan ve sonuna kadar tutan sürükleyici bir video senaryosu hazırlamak.
 Kurallar:
 - Dil: Türkçe, akıcı, merak uyandırıcı, doğal tonlama ve uygun emojiler.
-- Sahne Sayısı: 10-16 sahne, her biri 5-7 saniye (toplam 60-90 sn).
-- Her sahnede narration, scene_description (İngilizce), 3 farklı search_queries ve mood bulunmalı.
+- Sahne Sayısı: 14 sahne, her biri ~3 saniye (toplam 38-48 sn, Madde 494).
+- Her sahnede narration (6-9 kelime), scene_description (İngilizce), 3 farklı search_queries ve mood bulunmalı.
 SADECE JSON formatında çıktı ver:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"dramatic"}]}""",
     """Sen YouTube Shorts için sinematik belgesel ve hikaye anlatıcısısın.
-Hedef: Verilen başlığı derinlikli, bilimsel veya tarihi kanıtlarla zenginleştirerek açıklayan 60-90 saniyelik video senaryosu oluşturmak.
+Hedef: Verilen başlığı derinlikli, bilimsel veya tarihi kanıtlarla zenginleştirerek açıklayan 38-48 saniyelik video senaryosu oluşturmak.
 Kurallar:
-- 10-14 sahne, güçlü kancalar ve organik emojiler.
+- 14 sahne, güçlü kancalar ve organik emojiler, ~95-120 kelime.
 - Her sahnede İngilizce görsel sahne tarifi ve sinematik arama terimleri.
 SADECE JSON döndür:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"mysterious"}]}"""

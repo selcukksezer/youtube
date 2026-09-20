@@ -2,12 +2,15 @@
 System features router: Niches, Batch processing, Quota, Anti-Detect, Retention, Proofs, Roadmap.
 """
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel
 import requests
 import config
-from niche_templates import list_all_niches, get_niche_production_profile
+from niche_templates import (
+    list_all_niches, get_niche_production_profile,
+    get_niche_ab_variants, get_niche_leaderboard, NICHES
+)
 from batch_processor import batch_manager
 from quota_manager import quota_tracker
 from server_core import (
@@ -15,8 +18,33 @@ from server_core import (
     process_batch_queue
 )
 from server_core import state
+from hybrid_niches import HYBRID_NICHES
+from research_service import extract_format_fingerprint_from_title, aggregate_format_fingerprint
+from services.niche_trend_signals import (
+    MAX_TREND_CARDS,
+    SOURCE_AI,
+    SOURCE_YOUTUBE_API,
+    SOURCE_YOUTUBE_SEARCH,
+    build_trends_response,
+    fetch_niche_youtube_trends,
+    fetch_public_youtube_trends,
+    filter_trends_for_family,
+    generate_synthetic_trend_signals,
+    get_content_gap_examples,
+    niche_search_queries,
+)
 
 router = APIRouter(tags=["System"])
+
+
+def _enrich_trends_with_fingerprint(trends: list) -> dict:
+    """P2-04: attach per-title and aggregate format fingerprints to trend payloads."""
+    fps = []
+    for trend in trends:
+        fp = extract_format_fingerprint_from_title(trend.get("title", ""))
+        trend["format_fingerprint"] = fp
+        fps.append(fp)
+    return aggregate_format_fingerprint(fps)
 
 
 class BatchSubmitRequest(BaseModel):
@@ -25,64 +53,219 @@ class BatchSubmitRequest(BaseModel):
     language: Optional[str] = "tr"
 
 
+class NicheCompareRequest(BaseModel):
+    niche_a: str
+    niche_b: str
+
+
+class NicheCollisionRequest(BaseModel):
+    niche_a: str
+    niche_b: str
+
+
 @router.get("/api/niches")
 def get_niches():
-    """Returns all 35 pre-configured niche templates (Items 1-35)."""
+    """Returns all 35 pre-configured niche templates with full analytics schema."""
     return {"niches": list_all_niches()}
+
+
+@router.get("/api/niches/leaderboard")
+def get_niches_leaderboard():
+    """Returns all niches sorted by viral_score descending — for leaderboard display."""
+    return {"status": "ok", "leaderboard": get_niche_leaderboard()}
+
+
+@router.get("/api/niches/resolve-from-topic")
+def resolve_niche_from_topic_api(topic: str = "", niche: str = "1_news_flash"):
+    """Lock niche from topic keywords (same rules as director compile path)."""
+    from director import resolve_niche_from_topic
+
+    resolved = resolve_niche_from_topic(topic or "", niche or "1_news_flash")
+    profile = NICHES.get(resolved) or {}
+    return {
+        "status": "ok",
+        "topic": topic,
+        "requested_niche": niche or "1_news_flash",
+        "resolved_niche": resolved,
+        "niche_name": profile.get("name") or resolved,
+        "locked": resolved != (niche or "1_news_flash"),
+    }
 
 
 @router.get("/api/niches/{niche_id}/profile")
 def get_niche_profile(niche_id: str):
     """Returns the concrete render settings selected by a niche."""
-    return {"status": "ok", "profile": get_niche_production_profile(niche_id)}
+    profile = get_niche_production_profile(niche_id)
+    profile["content_gap_examples"] = get_content_gap_examples(niche_id)
+    return {"status": "ok", "profile": profile}
+
+
+@router.get("/api/niches/{niche_id}/ab_variants")
+def get_niche_ab_variants_endpoint(niche_id: str):
+    """Returns 3 A/B test hook variants (Curiosity / Shock / Debate) for a niche."""
+    return {"status": "ok", "data": get_niche_ab_variants(niche_id)}
+
+
+@router.post("/api/niches/compare")
+def compare_niches(req: NicheCompareRequest):
+    """Compares two niches side-by-side on RPM, viral score, retention, competition."""
+    def _get_data(niche_id: str):
+        n = NICHES.get(niche_id)
+        if not n:
+            return None
+        return {
+            "id": niche_id,
+            "name": n["name"],
+            "category": n["category"],
+            "icon": n.get("icon", "fa-fire"),
+            "rpm_tier": n.get("rpm_tier", "$2-5"),
+            "viral_score": n.get("viral_score", 75),
+            "avg_retention_pct": n.get("avg_retention_pct", 70),
+            "competition_level": n.get("competition_level", "medium"),
+            "best_posting_time": n.get("best_posting_time", "12:00-15:00 TRT"),
+            "tier1_compatible": n.get("tier1_compatible", False),
+            "episodic_capable": n.get("episodic_capable", False),
+            "cta_type": n.get("cta_type", "comment"),
+        }
+    a = _get_data(req.niche_a)
+    b = _get_data(req.niche_b)
+    if not a or not b:
+        return {"status": "error", "message": "Bir veya her iki niş bulunamadı."}
+    # Determine winner per dimension
+    comp_order = {"low": 3, "medium": 2, "high": 1}
+    winner = {
+        "viral_score": req.niche_a if a["viral_score"] >= b["viral_score"] else req.niche_b,
+        "avg_retention_pct": req.niche_a if a["avg_retention_pct"] >= b["avg_retention_pct"] else req.niche_b,
+        "competition": req.niche_a if comp_order.get(a["competition_level"], 2) >= comp_order.get(b["competition_level"], 2) else req.niche_b,
+        "tier1": req.niche_a if a["tier1_compatible"] else req.niche_b,
+    }
+    overall_score_a = a["viral_score"] + a["avg_retention_pct"] + comp_order.get(a["competition_level"], 2) * 5
+    overall_score_b = b["viral_score"] + b["avg_retention_pct"] + comp_order.get(b["competition_level"], 2) * 5
+    overall_winner = req.niche_a if overall_score_a >= overall_score_b else req.niche_b
+    return {
+        "status": "ok",
+        "niche_a": a,
+        "niche_b": b,
+        "winner_per_dimension": winner,
+        "overall_winner": overall_winner,
+        "overall_scores": {req.niche_a: overall_score_a, req.niche_b: overall_score_b}
+    }
+
+
+@router.post("/api/niches/collision")
+def collide_niches(req: NicheCollisionRequest):
+    """Merges two niches into a unique hybrid concept (Niche Collision Engine)."""
+    a = NICHES.get(req.niche_a) or HYBRID_NICHES.get(req.niche_a)
+    b = NICHES.get(req.niche_b) or HYBRID_NICHES.get(req.niche_b)
+    if not a or not b:
+        return {"status": "error", "message": "Bir veya her iki niş bulunamadı."}
+    name_a = a["name"].split("(")[0].strip()
+    name_b = b["name"].split("(")[0].strip()
+    collision_id = f"{req.niche_a}_x_{req.niche_b}"
+    blended_viral = int((a.get("viral_score", 80) + b.get("viral_score", 80)) / 2 * 1.08)  # 8% synergy bonus
+    blended_viral = min(blended_viral, 99)
+    blended_retention = int((a.get("avg_retention_pct", 75) + b.get("avg_retention_pct", 75)) / 2)
+    return {
+        "status": "ok",
+        "collision": {
+            "id": collision_id,
+            "name": f"{name_a} × {name_b}",
+            "category_blend": f"{a['category']} + {b['category']}",
+            "blended_tone": f"{a.get('tone','')}, {b.get('tone','')}",
+            "blended_viral_score": blended_viral,
+            "blended_retention": blended_retention,
+            "hook_style": f"{a.get('hook_style','')} Üstelik: {b.get('hook_style','')}",
+            "system_prompt": (
+                f"Bu senaryoda iki farklı dünyayı melezle: {name_a} VE {name_b}. "
+                f"Her iki konseptin görsel ve tematik unsurlarını sahne sahne harmanla. "
+                f"Anlatım tonu: {a.get('tone','')}, {b.get('tone','')}. "
+                f"Varsayılan müzik: {a.get('default_music','energetic')}."
+            ),
+            "suggested_niche_base": req.niche_a,
+            "collision_hook_variants": [
+                f"Ne zaman {name_a} ile {name_b} bir araya gelse, ortaya bu akıl almaz tablo çıkıyor.",
+                f"{name_a} + {name_b} = İnterneti yıkacak içerik.",
+                f"Bu ikilem var mı yok mu? {name_a} mi yoksa {name_b} mi kazanır?"
+            ]
+        }
+    }
+
+
+@router.get("/api/niches/{niche_id}/trending_topics")
+def get_niche_trending_topics(niche_id: str, region: str = "TR"):
+    """Returns trending topic suggestions for a specific niche via YouTube web scraping."""
+    niche = NICHES.get(niche_id)
+    if not niche:
+        return {"status": "error", "message": "Niş bulunamadı."}
+    keywords = niche_search_queries(niche_id)
+    public = fetch_niche_youtube_trends(niche_id, region=region)
+    source = SOURCE_YOUTUBE_SEARCH if public else SOURCE_AI
+    if not public:
+        public = generate_synthetic_trend_signals(niche_id)
+    return {
+        "status": "ok",
+        "source": source,
+        "niche_name": niche["name"],
+        "trending_keywords": keywords,
+        "topics": public[:MAX_TREND_CARDS],
+    }
 
 
 @router.get("/api/niches/{niche_id}/trends")
 def get_niche_trends(niche_id: str, region: str = "TR"):
-    """Fetches the past 24-hour YouTube video signals through YouTube Data API v3."""
+    """Fetches the past 24-hour YouTube video signals through YouTube Data API v3, with automatic public fallback."""
     profile = get_niche_production_profile(niche_id)
-    if not config.YOUTUBE_DATA_API_KEY:
-        return {
-            "status": "unavailable",
-            "reason": "YOUTUBE_DATA_API_KEY tanımlı değil; resmi son 24 saat verisi alınamadı.",
-            "profile": profile,
-            "trends": []
-        }
 
-    published_after = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat().replace("+00:00", "Z")
-    params = {
-        "part": "snippet", "type": "video", "q": profile["name"], "order": "viewCount",
-        "publishedAfter": published_after, "regionCode": region.upper(), "maxResults": 10,
-        "key": config.YOUTUBE_DATA_API_KEY
-    }
-    try:
-        search = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=12)
-        search.raise_for_status()
-        items = search.json().get("items", [])
-        ids = [item.get("id", {}).get("videoId") for item in items if item.get("id", {}).get("videoId")]
-        stats_by_id = {}
-        if ids:
-            stats = requests.get(
-                "https://www.googleapis.com/youtube/v3/videos",
-                params={"part": "statistics", "id": ",".join(ids), "key": config.YOUTUBE_DATA_API_KEY},
-                timeout=12
-            )
-            stats.raise_for_status()
-            stats_by_id = {item["id"]: item.get("statistics", {}) for item in stats.json().get("items", [])}
-        trends = [
-            {
-                "video_id": item["id"]["videoId"],
-                "title": item["snippet"]["title"],
-                "channel": item["snippet"].get("channelTitle", ""),
-                "published_at": item["snippet"].get("publishedAt", ""),
-                "view_count": int(stats_by_id.get(item["id"]["videoId"], {}).get("viewCount", 0)),
-                "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}"
+    # 1. Resmi YouTube Data API v3 (Anahtar tanımlıysa) — niche keywords first
+    if config.YOUTUBE_DATA_API_KEY:
+        published_after = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat().replace("+00:00", "Z")
+        for query in niche_search_queries(niche_id):
+            params = {
+                "part": "snippet", "type": "video", "q": query, "order": "viewCount",
+                "publishedAfter": published_after, "regionCode": region.upper(),
+                "maxResults": MAX_TREND_CARDS, "key": config.YOUTUBE_DATA_API_KEY,
             }
-            for item in items if item.get("id", {}).get("videoId")
-        ]
-        return {"status": "ok", "profile": profile, "trends": trends}
-    except requests.RequestException as exc:
-        return {"status": "error", "reason": str(exc), "profile": profile, "trends": []}
+            try:
+                search = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=12)
+                search.raise_for_status()
+                items = search.json().get("items", [])
+                ids = [item.get("id", {}).get("videoId") for item in items if item.get("id", {}).get("videoId")]
+                stats_by_id = {}
+                if ids:
+                    stats = requests.get(
+                        "https://www.googleapis.com/youtube/v3/videos",
+                        params={"part": "statistics", "id": ",".join(ids), "key": config.YOUTUBE_DATA_API_KEY},
+                        timeout=12,
+                    )
+                    stats.raise_for_status()
+                    stats_by_id = {item["id"]: item.get("statistics", {}) for item in stats.json().get("items", [])}
+                trends = [
+                    {
+                        "video_id": item["id"]["videoId"],
+                        "title": item["snippet"]["title"],
+                        "channel": item["snippet"].get("channelTitle", ""),
+                        "published_at": item["snippet"].get("publishedAt", ""),
+                        "view_count": int(stats_by_id.get(item["id"]["videoId"], {}).get("viewCount", 0)),
+                        "view_count_text": f"{int(stats_by_id.get(item['id']['videoId'], {}).get('viewCount', 0)):,} görüntülenme",
+                        "url": f"https://www.youtube.com/watch?v={item['id']['videoId']}",
+                        "source_type": SOURCE_YOUTUBE_API,
+                    }
+                    for item in items if item.get("id", {}).get("videoId")
+                ]
+                trends = filter_trends_for_family(trends, niche_id)
+                if trends:
+                    return build_trends_response(trends, SOURCE_YOUTUBE_API, profile, _enrich_trends_with_fingerprint)
+            except Exception as exc:
+                print(f"  [YouTubeDataAPI] Resmi API uyarısı ({exc}), sonraki anahtar kelime deneniyor...")
+
+    # 2. Açık Web YouTube 24-Saat Arama Fallback'i (API Key Gerektirmez!)
+    public_trends = fetch_niche_youtube_trends(niche_id, region=region)
+    if public_trends:
+        return build_trends_response(public_trends, SOURCE_YOUTUBE_SEARCH, profile, _enrich_trends_with_fingerprint)
+
+    # 3. Nişe uygun AI/template önerileri — sahte kanal/görüntülenme yok
+    curated = generate_synthetic_trend_signals(niche_id)
+    return build_trends_response(curated, SOURCE_AI, profile, _enrich_trends_with_fingerprint)
 
 
 @router.post("/api/batch/submit")
@@ -102,9 +285,9 @@ def get_batch_queue_status():
 
 
 @router.get("/api/quota/stats")
-def get_quota_statistics():
-    """Returns API call count, errors, and zero cost health metrics (Items 62, 69)."""
-    return quota_tracker.get_stats()
+def get_quota_statistics(refresh: bool = False):
+    """Returns API call count, errors, real-time live quotas and health metrics."""
+    return quota_tracker.get_stats(force_live=refresh)
 
 
 @router.post("/api/quota/reset")
@@ -190,4 +373,73 @@ def get_system_health():
     """Returns real-time system health, VideoToolbox encoder, disk space, and API status (Item 464)."""
     from system_resilience import get_system_health_status
     return get_system_health_status()
+
+
+@router.get("/api/hardware/specs")
+def get_hardware_specifications():
+    """Detects CPU, RAM, NVIDIA GPU, and NVENC capabilities, offering tailor-made profiles."""
+    from hardware_detector import get_system_hardware_specs
+    specs = get_system_hardware_specs()
+    specs["current_config"] = {
+        "use_gpu": getattr(config, "USE_GPU_ACCELERATION", True),
+        "gpu_codec": getattr(config, "GPU_CODEC", "h264_nvenc"),
+        "render_threads": getattr(config, "RENDER_THREADS", 8),
+        "fps_diversify": getattr(config, "FPS_DIVERSIFY", True),
+        "resolution": getattr(config, "RENDER_RESOLUTION_MODE", "1080p"),
+        "safe_mode": getattr(config, "RENDER_SAFE_MODE", True)
+    }
+    specs["resolution_options"] = [
+        {"id": "1080p", "label": "1080x1920 (Full HD — YouTube Shorts Final)", "width": 1080, "height": 1920},
+        {"id": "720p", "label": "720x1280 (Hızlı HD — 2.2x Daha Hızlı)", "width": 720, "height": 1280},
+        {"id": "540p", "label": "540x960 (Ultra Hızlı Test — 4x Kat Daha Hızlı!)", "width": 540, "height": 960}
+    ]
+    return {"status": "ok", "specs": specs}
+
+
+@router.post("/api/hardware/apply_profile")
+def apply_hardware_profile(data: dict):
+    """Applies automatic or manual hardware settings (GPU NVENC, CPU threads, FPS mode, Resolution, Safe Mode)."""
+    profile = data.get("profile", "manual")
+    threads = int(data.get("threads", getattr(config, "RENDER_THREADS", 8)))
+    use_gpu = bool(data.get("use_gpu", True))
+    gpu_codec = str(data.get("gpu_codec", "h264_nvenc"))
+    fps_div = bool(data.get("fps_diversify", True))
+    fixed_fps = float(data.get("fixed_fps", 30.0))
+    resolution = str(data.get("resolution", getattr(config, "RENDER_RESOLUTION_MODE", "1080p")))
+    if "safe_mode" in data:
+        config.RENDER_SAFE_MODE = bool(data["safe_mode"])
+
+    config.USE_GPU_ACCELERATION = use_gpu
+    config.GPU_CODEC = gpu_codec
+    config.RENDER_THREADS = threads
+    config.FPS_DIVERSIFY = fps_div
+    if not fps_div and fixed_fps > 0:
+        config.FPS = fixed_fps
+    if resolution in ("1080p", "720p", "540p"):
+        config.RENDER_RESOLUTION_MODE = resolution
+
+    # Persist directly into .env so choices remain after restarts
+    try:
+        from settings_service import _save_to_env_file
+        _save_to_env_file()
+    except Exception:
+        pass
+
+    res_dims = config.RESOLUTIONS.get(config.RENDER_RESOLUTION_MODE, (1080, 1920))
+    mode_text = "Hızlı Güvenli Mod" if config.RENDER_SAFE_MODE else "Tam Kural (Tüm Efektler Aktif)"
+
+    return {
+        "status": "ok",
+        "message": f"Donanım ve Render ayarları başarıyla kaydedildi! (GPU: {'h264_nvenc' if use_gpu else 'CPU libx264'}, Mod: {mode_text}, Çözünürlük: {config.RENDER_RESOLUTION_MODE} [{res_dims[0]}x{res_dims[1]}])",
+        "current_config": {
+            "use_gpu": config.USE_GPU_ACCELERATION,
+            "gpu_codec": config.GPU_CODEC,
+            "render_threads": config.RENDER_THREADS,
+            "fps_diversify": config.FPS_DIVERSIFY,
+            "fps": getattr(config, "FPS", 30.0),
+            "resolution": config.RENDER_RESOLUTION_MODE,
+            "safe_mode": config.RENDER_SAFE_MODE
+        }
+    }
+
 

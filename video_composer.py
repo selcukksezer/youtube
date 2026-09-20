@@ -46,7 +46,7 @@ def cleanup_stray_ffmpeg_processes():
 
 class MoviePyProgressLogger(ProgressBarLogger):
     def __init__(self, callback=None, cancel_check=None):
-        super().__init__(init_state=None, bars=None, ignored_bars=None, logged_bars='all', min_time_interval=0, ignore_new_bars=False)
+        super().__init__(init_state=None, bars=None, ignored_bars=None, logged_bars='all', min_time_interval=0, ignore_bars_under=0)
         self.ui_callback = callback
         self.cancel_check = cancel_check
         self.last_log_time = 0.0
@@ -68,15 +68,14 @@ class MoviePyProgressLogger(ProgressBarLogger):
                 import time
                 now = time.time()
                 frame_pct = int((value / total) * 100)
-                # Canlı ilerleme: Her 1.2 saniyede bir veya her %4 karede bir hem terminale hem UI'a bas
-                if (now - self.last_log_time >= 1.2) or (frame_pct >= self.last_frame_pct + 4) or value >= total:
+                # Canlı ilerleme: Her 0.8 saniyede bir veya her %2 karede bir hem terminale hem UI'a bas
+                if (now - self.last_log_time >= 0.8) or (frame_pct >= self.last_frame_pct + 2) or value >= total:
                     self.last_log_time = now
                     self.last_frame_pct = frame_pct
-                    overall_pct = int(80 + (value / total) * 16)
-                    msg = f"Kareler Full HD kodlanıyor: %{frame_pct} ({int(value)}/{int(total)} kare)"
+                    # overall_pct: export aşaması %75-98 arası (daha geniş pencere)
+                    overall_pct = int(75 + (value / total) * 23)
+                    msg = f"[FFmpeg Export] %{frame_pct} ({int(value)}/{int(total)} kare kodlandı)"
                     print(f"  [Composer] {msg}", flush=True)
-                    # Free temporary NumPy frame arrays from RAM
-                    gc.collect()
                     if self.ui_callback:
                         try:
                             self.ui_callback(overall_pct, msg)
@@ -87,50 +86,59 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                   bgm_track=None, bgm_volume=None, subtitle_opts=None,
                   progress_callback=None, cancel_check=None,
                   split_screen=False, anti_duplicate=True, watermark_path=None,
-                  enable_ken_burns=True, enable_section2_filters=True, gameplay_path=None):
+                  enable_ken_burns=True, enable_section2_filters=True, gameplay_path=None,
+                  niche_id="", audio_premastered=False):
     print(f"\n  [Composer] Building video with 500-Item Optimization Pipeline (Items 71-79)...")
-    W, H = config.VIDEO_WIDTH, config.VIDEO_HEIGHT
+    W, H = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
+    print(f"  [Composer] Hedef Çözünürlük: {W}x{H} (Mod: {getattr(config, 'RENDER_RESOLUTION_MODE', '1080p')})", flush=True)
 
     if cancel_check and cancel_check():
         raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
     # Apply Voice Humanizer (Studio Warmth EQ + -14 LUFS EBU R128 Loudness) (Items 150-162)
+    # Skip when DirectorPlan AudioMaster already produced the final bed.
     mastered_audio = audio_path
-    try:
-        from voice_humanizer import voice_humanizer
-        eq_audio = output_path.rsplit(".", 1)[0] + "_eq.wav"
-        eq_audio = voice_humanizer.apply_studio_eq_and_warmth(audio_path, eq_audio)
-        mastered_audio = eq_audio
-        print("  [Composer] [VoiceHumanizer] Studio Warmth EQ applied.")
+    if audio_premastered:
+        print("  [Composer] Audio premastered by DirectorPlan AudioMaster — voice chain skipped.")
+    else:
+        try:
+            from voice_humanizer import voice_humanizer
+            eq_audio = output_path.rsplit(".", 1)[0] + "_eq.wav"
+            eq_audio = voice_humanizer.apply_studio_eq_and_warmth(audio_path, eq_audio)
+            mastered_audio = eq_audio
+            print("  [Composer] [VoiceHumanizer] Studio Warmth EQ applied.")
 
-        # Item 141: Insert subtle breaths between natural narration sections.
-        breaths_audio = output_path.rsplit(".", 1)[0] + "_breaths.wav"
-        mastered_audio = voice_humanizer.inject_natural_breaths(eq_audio, breaths_audio, interval_seconds=8.0)
-        print("  [Composer] [VoiceHumanizer] Natural breath layer injected (Item 141).")
+            breaths_audio = output_path.rsplit(".", 1)[0] + "_breaths.wav"
+            mastered_audio = voice_humanizer.inject_natural_breaths(eq_audio, breaths_audio, interval_seconds=8.0)
+            print("  [Composer] [VoiceHumanizer] Natural breath layer injected (Item 141).")
 
-        # Item 145: Add a very light room ambience/reverb layer.
-        room_audio = output_path.rsplit(".", 1)[0] + "_room.wav"
-        from voice_humanizer import mix_pink_noise_into_narration
-        mastered_audio = mix_pink_noise_into_narration(mastered_audio, room_audio, noise_db=-34.0, noise_type="room")
-        print("  [Composer] [VoiceHumanizer] Light room ambience applied (Item 145).")
+            intro_audio = output_path.rsplit(".", 1)[0] + "_intro112.wav"
+            from voice_humanizer import prepend_whoosh_ding_to_narration
+            mastered_audio = prepend_whoosh_ding_to_narration(mastered_audio, intro_audio)
+            if word_timings:
+                for wt in word_timings:
+                    wt["offset"] = wt.get("offset", 0.0) + 0.2
+            print("  [Composer] [VoiceHumanizer] Item 112 Whoosh+Ding intro uygulandı.")
 
-        # Normalize after the voice layers so output stays at the loudness target.
-        norm_audio = output_path.rsplit(".", 1)[0] + "_norm.wav"
-        mastered_audio = voice_humanizer.normalize_ebu_r128(mastered_audio, norm_audio)
+            room_audio = output_path.rsplit(".", 1)[0] + "_room.wav"
+            from voice_humanizer import mix_pink_noise_into_narration
+            mastered_audio = mix_pink_noise_into_narration(mastered_audio, room_audio, noise_db=-32.0, noise_type="room")
+            print("  [Composer] [VoiceHumanizer] Light room ambience applied (Item 145).")
 
-        # Item 87: 0.4s Sonic Brand Chime Watermark
-        sonic_audio = output_path.rsplit(".", 1)[0] + "_sonic.wav"
-        mastered_audio = voice_humanizer.inject_sonic_brand_watermark(mastered_audio, sonic_audio)
-        print("  [Composer] [VoiceHumanizer] 0.4s Sonic Brand Chime Watermark injected (Item 87).")
+            norm_audio = output_path.rsplit(".", 1)[0] + "_norm.wav"
+            mastered_audio = voice_humanizer.normalize_ebu_r128(mastered_audio, norm_audio)
 
-        # Item 101: Ses Hızı Dalgalanması (Audio Speed Jitter %98 - %102)
-        if enable_section2_filters:
-            jitter_audio = output_path.rsplit(".", 1)[0] + "_jitter.wav"
-            mastered_audio = voice_humanizer.apply_audio_jitter(mastered_audio, jitter_audio, min_speed=0.985, max_speed=1.015)
-            print("  [Composer] [VoiceHumanizer] Ses hızı mikro dalgalanması uygulandı (Madde 101).")
-    except Exception as vhe:
-        print(f"  [Composer] Voice humanizer notice: {vhe}")
-        mastered_audio = audio_path
+            sonic_audio = output_path.rsplit(".", 1)[0] + "_sonic.wav"
+            mastered_audio = voice_humanizer.inject_sonic_brand_watermark(mastered_audio, sonic_audio)
+            print("  [Composer] [VoiceHumanizer] 0.4s Sonic Brand Chime Watermark injected (Item 87).")
+
+            if enable_section2_filters:
+                jitter_audio = output_path.rsplit(".", 1)[0] + "_jitter.wav"
+                mastered_audio = voice_humanizer.apply_audio_jitter(mastered_audio, jitter_audio, min_speed=0.985, max_speed=1.015)
+                print("  [Composer] [VoiceHumanizer] Ses hızı mikro dalgalanması uygulandı (Madde 101).")
+        except Exception as vhe:
+            print(f"  [Composer] Voice humanizer notice: {vhe}")
+            mastered_audio = audio_path
 
     # Measure exact narration audio duration
     import wave
@@ -146,13 +154,30 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         except Exception as e:
             print(f"    Audio duration read error: {e}")
 
-    # Scale scene clip durations to match exact audio length BEFORE mixing SFX
+    # When premastered, Director already fitted timeline — skip composer re-fit
     total_scene_dur = sum(sc.get("duration", 7) for sc in scene_clips)
-    if audio_dur > 2.0 and total_scene_dur > 0:
-        scale = audio_dur / total_scene_dur
-        print(f"  [Composer] Scaling scene clip durations (Scale: {scale:.2f}x, Audio: {audio_dur:.1f}s)...")
-        for sc in scene_clips:
-            sc["duration"] = round(sc.get("duration", 7) * scale, 2)
+    if (not audio_premastered) and audio_dur > 2.0 and total_scene_dur > 0:
+        ratio = audio_dur / total_scene_dur
+        if ratio > 1.06:
+            from voice.audio_dsp import fit_audio_to_duration
+            fitted_audio = output_path.rsplit(".", 1)[0] + "_fitted.wav"
+            prev_dur = audio_dur
+            mastered_audio, audio_dur, speed_factor = fit_audio_to_duration(
+                mastered_audio, fitted_audio, total_scene_dur, tolerance=0.06
+            )
+            if speed_factor > 1.01 and word_timings:
+                for wt in word_timings:
+                    wt["offset"] = wt.get("offset", 0.0) / speed_factor
+                    wt["duration"] = wt.get("duration", 0.0) / speed_factor
+            print(
+                f"  [Composer] Ses senaryo bütçesine uyarlandı "
+                f"({prev_dur:.1f}s → {audio_dur:.1f}s, hedef {total_scene_dur:.1f}s, ×{ratio:.2f} hızlandırıldı)."
+            )
+        elif ratio < 0.94:
+            scale = audio_dur / total_scene_dur
+            print(f"  [Composer] Kısa ses — sahne süreleri ayarlanıyor (×{scale:.2f}, Audio: {audio_dur:.1f}s)...")
+            for sc in scene_clips:
+                sc["duration"] = round(sc.get("duration", 7) * scale, 2)
 
     # Step A: SFX mixing on narration audio (using scaled scene durations for perfect sync)
     processed_audio = mastered_audio
@@ -164,9 +189,10 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             sfx_volume=getattr(config, "SFX_VOLUME", 0.20), scene_clips=scene_clips
         )
 
-        # Madde 155 & Madde 154: Sahne geçişi Riser (0.25s) ve Kanca 45Hz Sub-Bass darbesi
+        # Madde 155: Riser/Whoosh — sahne geçişlerinde (add_sfx ile çiftlenmesin diye whoosh oradan kaldırıldı)
+        # Madde 154/157/158/159: add_sfx_to_narration içinde sahne içeriğine göre uygulanır
         try:
-            from voice_humanizer import sync_riser_whoosh_transitions, inject_sub_bass_impact
+            from voice_humanizer import sync_riser_whoosh_transitions
             scene_cut_times = []
             cur_time = 0.0
             for sc in scene_clips[:-1]:
@@ -176,42 +202,6 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 riser_audio = output_path.rsplit(".", 1)[0] + "_risers.wav"
                 processed_audio = sync_riser_whoosh_transitions(processed_audio, scene_cut_times, riser_audio)
                 print(f"  [Composer] [Item 155] Sahne geçişleri için {len(scene_cut_times)} adet 250ms Riser/Whoosh senkronize edildi.")
-
-            sub_audio = output_path.rsplit(".", 1)[0] + "_subbass.wav"
-            sub_time = min(2.5, scene_clips[0].get("duration", 3.0) * 0.7) if scene_clips else 2.0
-            processed_audio = inject_sub_bass_impact(processed_audio, sub_audio, timestamp_sec=sub_time)
-            print(f"  [Composer] [Item 154] Kanca vurgusuna 45Hz Sub-Bass Impact darbesi mikslendi (t={sub_time:.2f}s).")
-
-            # Madde 157: Korku, gerilim veya karanlık temalarda Kalp Atışı (Heartbeat) alt katmanı
-            has_tension = any(any(k in str(sc.get("scene_description", "")).lower() for k in ("korku", "gerilim", "horror", "mystery", "dark", "şok", "karanlık")) for sc in scene_clips)
-            if has_tension:
-                from voice_humanizer import inject_heartbeat_layer
-                hb_audio = output_path.rsplit(".", 1)[0] + "_heartbeat.wav"
-                processed_audio = inject_heartbeat_layer(processed_audio, hb_audio, start_sec=1.5, duration_sec=4.0, volume=0.30)
-                print("  [Composer] [Item 157] Gerilim sahnesine Kalp Atışı (Heartbeat) alt katmanı mikslendi.")
-
-            # Madde 158: Soru, quiz veya geri sayım anında Saat Tik-Tak Sesi (Ticking Clock)
-            has_question = any("?" in str(sc.get("narration", "")) or "quiz" in str(sc.get("scene_description", "")).lower() for sc in scene_clips)
-            if has_question:
-                from voice_humanizer import inject_ticking_clock
-                q_time = 2.0
-                elapsed = 0.0
-                for sc in scene_clips:
-                    if "?" in str(sc.get("narration", "")):
-                        q_time = elapsed
-                        break
-                    elapsed += sc.get("duration", 7)
-                clk_audio = output_path.rsplit(".", 1)[0] + "_clock.wav"
-                processed_audio = inject_ticking_clock(processed_audio, clk_audio, timestamp_sec=q_time, duration=3.0, volume=0.35)
-                print(f"  [Composer] [Item 158] Soru/Quiz anına 3s Saat Tik-Tak sesi mikslendi (t={q_time:.2f}s).")
-
-            # Madde 159: Belge, ifşa veya ekrana yazı dökülme sahnelerinde Daktilo Sesi (Typewriter SFX)
-            has_document = any(any(k in str(sc.get("scene_description", "")).lower() for k in ("belge", "yazı", "typewriter", "daktilo", "rapor", "metin")) for sc in scene_clips)
-            if has_document:
-                from voice_humanizer import inject_typewriter_sfx
-                tw_audio = output_path.rsplit(".", 1)[0] + "_typewriter.wav"
-                processed_audio = inject_typewriter_sfx(processed_audio, tw_audio, timestamp_sec=2.0, duration=2.0, volume=0.30)
-                print("  [Composer] [Item 159] Ekrana yazı dökülme sahnesine Daktilo Sesi mikslendi.")
 
             # Madde 167 & 168: Quiz Doğru Cevap Ding (1800Hz Kristal Zil) ve Yanlış Cevap Buzzer (120Hz Testere Dişi)
             has_quiz = any("quiz" in str(sc.get("scene_description", "")).lower() or "soru" in str(sc.get("scene_description", "")).lower() for sc in scene_clips)
@@ -244,7 +234,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     if not chosen_bgm and getattr(config, "ENABLE_BGM", True):
         # Item 169: Müzik BPM Eşleştirmesi (Niş Temposu: Motivasyon 120-130 BPM, Felsefe/Gizem 70-85 BPM)
         from bgm_manager import match_bgm_track_to_niche
-        niche_hint = (title or "") + " " + " ".join(str(s.get("scene_description", "")) for s in scene_clips[:2])
+        niche_hint = (niche_id or title or "") + " " + " ".join(str(s.get("scene_description", "")) for s in scene_clips[:2])
         matched_track = match_bgm_track_to_niche(niche_hint)
         chosen_bgm = os.path.basename(matched_track) if matched_track else ""
 
@@ -299,7 +289,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 try:
                     enable_pip = sc.get("enable_pip", False)
                     pip_path = sc.get("pip_path", None)
-                    badge_label = sc.get("badge_label") or f"{idx + 1}/{total_scenes}"
+                    badge_label = sc.get("badge_label")
                     clip_seg = _prep(
                         p, d, W, H,
                         split_screen=split_screen,
@@ -347,30 +337,41 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         # Concatenate sequentially with method="chain" (zero double-encoding, low memory, fast single pass)
         combined = concatenate_videoclips(segs, method="chain")
 
-        if enable_section2_filters:
+        if enable_section2_filters and not getattr(config, 'RENDER_SAFE_MODE', True):
             emoji_events = build_emoji_events_from_timings(word_timings, scene_clips)
             if emoji_events:
                 emoji_overlay = generate_emoji_subtitle_overlay(
                     W, H, combined.duration, emoji_events, fps=combined.fps or config.FPS
                 )
-                combined = CompositeVideoClip([combined, emoji_overlay], size=(W, H))
-                combined.duration = sum(float(sc.get("duration", 3.0)) for sc in scene_clips)
+                if emoji_overlay:
+                    combined = CompositeVideoClip([combined, emoji_overlay], size=(W, H))
+                    combined.duration = sum(float(sc.get("duration", 3.0)) for sc in scene_clips)
             combined = apply_heartbeat_zoom(combined, bpm=60.0)
             combined = apply_particle_overlay(combined, particle_type="spark", particle_count=30)
             combined = apply_speaker_avatar_overlay(combined, avatar_size=96)
-        if anti_duplicate:
+        elif getattr(config, 'RENDER_SAFE_MODE', True):
+            print("  [Composer] [Item 125] Emoji animasyon katmanı: RENDER_SAFE_MODE aktif, bypass edildi.")
+
+        if anti_duplicate and not getattr(config, 'RENDER_SAFE_MODE', True):
             print("  [Composer] Applying anti-duplicate filter (Item 50)...")
             combined = apply_anti_duplicate(combined)
+        elif anti_duplicate:
+            print("  [Composer] [Item 50] Anti-duplicate: FFmpeg GPU renk filtreleme aktif, MoviePy CPU bypass edildi.")
+
         if watermark_path and os.path.exists(watermark_path):
             print("  [Composer] Overlaying watermark logo (Item 60)...")
             combined = overlay_watermark(combined, watermark_path)
-        combined = apply_end_card_to_video(
-            combined,
-            duration=3.0,
-            channel_name="Abone Ol",
-            cta_text="Takip Et ve bildirimleri ac!"
-        )
-        print("  [Composer] End card overlay applied (Item 126).")
+
+        if not getattr(config, 'RENDER_SAFE_MODE', True):
+            combined = apply_end_card_to_video(
+                combined,
+                duration=3.0,
+                channel_name="Abone Ol",
+                cta_text="Takip Et ve bildirimleri ac!"
+            )
+            print("  [Composer] End card overlay applied (Item 126).")
+        else:
+            print("  [Composer] [Item 126] End card overlay: RENDER_SAFE_MODE aktif, bypass edildi.")
 
         # Item 138: Dinamik İlerleme Çubuğu (Neon progress bar)
         if enable_section2_filters:
@@ -382,13 +383,50 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         if cancel_check and cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
-        # Item 74: Kare Hızı (FPS) Çeşitlendirmesi (29.97, 30.02 fps)
-        # Limit encoding threads to 2 and disable GPU OpenCL to keep PC cool and prevent driver crashes
-        export_fps = getattr(combined, "fps", 30.0) or 30.0
-        print(f"  [Composer] Exporting with diversified FPS: {export_fps:.2f} (Item 74, threads=2)...", flush=True)
+        # Item 74: Kare Hızı (FPS) Çeşitlendirmesi (Anti-fingerprint mikro varyasyon: 29.97, 30.00, 30.02, 29.95, 30.04)
+        import random
+        if getattr(config, "FPS_DIVERSIFY", True):
+            fps_pool = [29.97, 30.00, 30.02, 29.95, 30.04]
+            export_fps = random.choice(fps_pool)
+        else:
+            export_fps = 30.0
+
+        cpu_cores = os.cpu_count() or 16
+        render_threads = int(getattr(config, 'RENDER_THREADS', 8) or 8)
+        if render_threads <= 1:
+            render_threads = max(4, min(8, cpu_cores // 2))
+
+        use_gpu = getattr(config, "USE_GPU_ACCELERATION", True)
+        gpu_codec = getattr(config, "GPU_CODEC", "h264_nvenc")
+        
+        # Donanım hızlandırma yapılandırması (RTX 3070 NVENC vs CPU libx264)
+        if use_gpu and gpu_codec == "h264_nvenc":
+            chosen_codec = "h264_nvenc"
+            codec_preset = "p2"
+            extra_params = ["-cq", "20", "-b:v", "0", "-pix_fmt", "yuv420p"]
+            mode_desc = f"🚀 NVIDIA RTX GPU NVENC (preset={codec_preset}, threads={render_threads})"
+        else:
+            chosen_codec = "libx264"
+            codec_preset = "ultrafast"
+            extra_params = ["-tune", "fastdecode", "-pix_fmt", "yuv420p"]
+            mode_desc = f"⚡ AMD Ryzen CPU (threads={render_threads}/{cpu_cores}, preset={codec_preset})"
+
+        print(f"  [Composer] Exporting: FPS={export_fps:.2f} (Item 74) | Motor: {mode_desc}", flush=True)
         render_logger = MoviePyProgressLogger(callback=progress_callback, cancel_check=cancel_check)
-        combined.write_videofile(tmp, fps=export_fps, codec="libx264",
-                                 preset="ultrafast", audio=False, threads=2, logger=render_logger)
+
+        try:
+            combined.write_videofile(tmp, fps=export_fps, codec=chosen_codec,
+                                     preset=codec_preset, audio=False, threads=render_threads,
+                                     ffmpeg_params=extra_params, logger=render_logger)
+        except Exception as enc_err:
+            if chosen_codec == "h264_nvenc":
+                print(f"  [Composer] [Uyarı] NVENC donanım hatası ({enc_err}). Otomatik CPU libx264 motoruna geçiliyor...", flush=True)
+                combined.write_videofile(tmp, fps=export_fps, codec="libx264",
+                                         preset="ultrafast", audio=False, threads=render_threads,
+                                         ffmpeg_params=["-tune", "fastdecode", "-pix_fmt", "yuv420p"],
+                                         logger=render_logger)
+            else:
+                raise
 
         if cancel_check and cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
@@ -400,6 +438,17 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         create_karaoke_subtitles(word_timings, ass, style_opts=subtitle_opts)
         create_srt_file(word_timings, srt)
 
+        # Final Audio Mastering Pass: Ensure volume is strictly normalized to -14 LUFS YouTube standard
+        try:
+            from voice_humanizer import normalize_ebu_r128
+            master_norm_audio = output_path.rsplit(".", 1)[0] + "_master_norm.wav"
+            norm_result = normalize_ebu_r128(final_audio, master_norm_audio, target_lufs=-14.0)
+            if norm_result and os.path.exists(norm_result):
+                final_audio = norm_result
+                print("  [Composer] [AudioMaster] Final audio normalized to -14.0 LUFS EBU R128 standard.")
+        except Exception as nae:
+            print(f"  [Composer] Final audio normalization notice: {nae}")
+
         print(f"  [Composer] Merging audio + subtitles...")
         ok = _merge(tmp, final_audio, ass, srt, output_path)
 
@@ -410,42 +459,26 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             thumb_path = output_path.rsplit(".", 1)[0] + "_thumb.jpg"
             extract_frame0_thumbnail(output_path, thumb_path)
 
-            # Scramble MD5/SHA256 hash (Item 429)
-            from effects_engine import scramble_mp4_hash
-            scramble_mp4_hash(output_path)
-
-            # Rule 30: Apply MP4 free atom size variation (avoid duplicate template byte size)
-            try:
-                from anti_detect_engine import anti_detect_engine
-                size_res = anti_detect_engine.apply_video_size_variation(output_path)
-                if size_res.get("success"):
-                    print(f"  [Composer] [Kural 30] Dosya Boyutu Varyasyonu uygulandı: +{size_res['delta_kb']} KB 'free' atomu.")
-            except Exception as se:
-                print(f"  [Composer] Boyut varyasyonu uyarısı: {se}")
-
-            # Rule 29: Spoof file ctime/mtime (15-45 minutes into past)
-            try:
-                import random, time
-                past_secs = random.randint(900, 2700)
-                aged_time = time.time() - past_secs
-                os.utime(output_path, (aged_time, aged_time))
-                print(f"  [Composer] [Kural 29] Dosya meta verisi {past_secs // 60} dk geçmişe yaşlandırıldı (ctime spoofing).")
-            except Exception as ute:
-                print(f"  [Composer] utime uyarısı: {ute}")
-
             sync_path = output_path.rsplit(".", 1)[0] + "_synced.mp4"
             synced_output = enforce_av_duration_sync(output_path, sync_path)
             if synced_output == sync_path and os.path.exists(sync_path):
                 os.replace(sync_path, output_path)
 
-            metadata_path = output_path.rsplit(".", 1)[0] + "_metadata.mp4"
-            titled_output = clean_video_metadata(
-                output_path,
-                metadata_path,
-                title=title or os.path.splitext(os.path.basename(output_path))[0]
-            )
-            if titled_output == metadata_path and os.path.exists(metadata_path):
-                os.replace(metadata_path, output_path)
+            # P2-02: unified post-render humanization (Rules 29/30 + Items 127/128/429)
+            try:
+                from anti_detect.post_render import apply_post_render_humanization
+                post = apply_post_render_humanization(
+                    output_path,
+                    title=title or os.path.splitext(os.path.basename(output_path))[0],
+                )
+                if post.get("size_delta_kb"):
+                    print(f"  [Composer] [Kural 30] Dosya Boyutu Varyasyonu: +{post['size_delta_kb']} KB.")
+                if post.get("aged_minutes"):
+                    print(f"  [Composer] [Kural 29] Dosya {post['aged_minutes']} dk geçmişe yaşlandırıldı.")
+                if post.get("metadata_applied"):
+                    print("  [Composer] [Items 127+128] NLE metadata imzası uygulandı.")
+            except Exception as se:
+                print(f"  [Composer] PostRender uyarısı: {se}")
 
             # Manuel Yükleme Bilgi Paketi Oluşturma (Rules 80, 83)
             try:
@@ -555,14 +588,44 @@ def _merge(vid, aud, ass, srt, out):
     vignette_vf = get_ffmpeg_vignette_filter(angle=0.18)
     base_vf = f"{color_vf},{unsharp_vf},{grain_vf},{vignette_vf}"
 
+    # Donanim Hizlandirma Yapilandirmasi (RTX NVENC vs Multi-thread CPU)
+    use_gpu = getattr(config, "USE_GPU_ACCELERATION", True)
+    gpu_codec = getattr(config, "GPU_CODEC", "h264_nvenc")
+    render_threads = int(getattr(config, "RENDER_THREADS", 8) or 8)
+
+    def execute_ffmpeg_pass(vf_string):
+        """Attempts GPU NVENC encoding first, automatically falling back to CPU multi-threading."""
+        if use_gpu and gpu_codec == "h264_nvenc":
+            gpu_cmd = [
+                ffmpeg_exe, "-y", "-hwaccel", "cuda", "-i", base_vid, "-i", rel_aud,
+                "-vf", vf_string,
+                "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+                "-movflags", "+faststart", base_out
+            ]
+            r = subprocess.run(gpu_cmd, cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if r.returncode == 0 and os.path.exists(out):
+                return True, r
+            else:
+                print(f"    [Composer] NVENC merge uyarisi ({r.stderr.decode('utf-8', errors='ignore')[:120]}), CPU'ya geciliyor...", flush=True)
+
+        # CPU Fallback (Multi-threaded libx264)
+        cpu_cmd = [
+            ffmpeg_exe, "-y", "-i", base_vid, "-i", rel_aud,
+            "-vf", vf_string,
+            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode",
+            "-threads", str(render_threads), "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            "-movflags", "+faststart", base_out
+        ]
+        r = subprocess.run(cpu_cmd, cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return (r.returncode == 0 and os.path.exists(out)), r
+
     # Try 1: ASS karaoke
     if os.path.exists(ass) and os.path.getsize(ass) > 50:
         vf_chain = f"{base_vf},ass={base_ass}"
-        r = subprocess.run([ffmpeg_exe, "-y", "-i", base_vid, "-i", rel_aud,
-            "-vf", vf_chain, "-c:v", "libx264", "-c:a", "aac", "-b:a", "320k", "-ar", "48000",
-            "-preset", "fast", "-movflags", "+faststart", base_out],
-            cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if r.returncode == 0 and os.path.exists(out):
+        success, r = execute_ffmpeg_pass(vf_chain)
+        if success:
             print(f"    [OK] Karaoke subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
             return True
         print(f"    ASS failed ({r.stderr.decode('utf-8', errors='ignore')[:150]}), trying SRT...")
@@ -574,23 +637,18 @@ def _merge(vid, aud, ass, srt, out):
             f"PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,Outline=3,"
             f"BackColour=&H80000000,BorderStyle=4,Alignment=2,MarginV=300'"
         )
-        r = subprocess.run([ffmpeg_exe, "-y", "-i", base_vid, "-i", rel_aud,
-            "-vf", srt_vf, "-c:v", "libx264", "-c:a", "aac", "-b:a", "320k", "-ar", "48000",
-            "-preset", "fast", "-movflags", "+faststart", base_out],
-            cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if r.returncode == 0 and os.path.exists(out):
+        success, r = execute_ffmpeg_pass(srt_vf)
+        if success:
             print(f"    [OK] SRT subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
             return True
         print(f"    SRT failed, trying no subs...")
 
     # Try 3: No subs (apply unsharp, static grain & vignette filters)
-    r = subprocess.run([ffmpeg_exe, "-y", "-i", base_vid, "-i", rel_aud,
-        "-vf", base_vf, "-c:v", "libx264", "-c:a", "aac", "-b:a", "320k", "-ar", "48000",
-        "-preset", "fast", "-movflags", "+faststart", base_out],
-        cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    if r.returncode == 0 and os.path.exists(out):
-        print(f"    Video created with Unsharp, Static Grain & Vignette (no subtitles, 320k AAC 48k)")
+    success, r = execute_ffmpeg_pass(base_vf)
+    if success:
+        print(f"    Video created with Unsharp, Static Grain & Vignette (no subtitles, 192k AAC 48k)")
         return True
+    return False
     return False
 
 
@@ -611,7 +669,9 @@ def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_lab
         c = apply_speed_ramp(c)
 
     # Item 78: Görsel Aynalama (Horizontal Flip Content ID Koruması)
-    if enable_section2:
+    # Metin kartları (Reddit açılış kartı vb.) ters dönmemesi için hariç tutulur
+    is_text_card = any(k in path.lower() for k in ("reddit", "card", "text", "title"))
+    if enable_section2 and not is_text_card:
         c = apply_horizontal_flip(c)
 
     # Süre senkronizasyonu
@@ -648,13 +708,8 @@ def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_lab
     if enable_section2:
         c = apply_multi_layer_overlay(c, opacity=0.10)
 
-    # Item 72: Renk Derecelendirme (±%1.5 gamma, kontrast, doygunluk)
-    if enable_section2:
-        c = apply_color_grading_jitter(c, jitter_range=0.015)
-
-    # Item 71: Perceptual Hashing (pHash) Modülasyonu (%0.5 piksel gürültüsü)
-    if enable_section2:
-        c = inject_pixel_noise(c, intensity=0.005)
+    # Item 72 & 71: Renk Derecelendirme ve pHash Gürültüsü — sadece FFmpeg merge aşamasında uygulanır
+    # (RENDER_SAFE_MODE: _prep içinde bypass, _merge'deki FFmpeg filtreleri zaten var)
 
     return c
 
@@ -740,8 +795,8 @@ def enforce_av_duration_sync(video_path: str, output_path: str,
             "-filter_complex", filter_str.format(diff=diff),
             "-map", "[v]",
             "-map", "[a]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-c:a", "aac", "-b:a", "320k", "-ar", "48000",
+            "-c:v", "libx264", "-preset", "ultrafast", "-threads", "2", "-crf", "18",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             output_path
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)

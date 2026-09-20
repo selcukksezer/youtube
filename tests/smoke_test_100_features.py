@@ -203,7 +203,14 @@ class SmokeTest100Features(unittest.TestCase):
 
     def test_063_064_web_dashboard_and_routes(self):
         """Items 63 & 64: FastAPI routes registered."""
-        routes = [route.path for route in app.routes]
+        routes = []
+        for r in app.routes:
+            if hasattr(r, "path"):
+                routes.append(r.path)
+            elif hasattr(r, "original_router") and hasattr(r.original_router, "routes"):
+                for sr in r.original_router.routes:
+                    if hasattr(sr, "path"):
+                        routes.append(sr.path)
         self.assertIn("/api/niches", routes)
         self.assertIn("/api/subtitle_presets", routes)
         self.assertIn("/api/rss/sources", routes)

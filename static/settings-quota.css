@@ -1,0 +1,315 @@
+/* Sidebar settings / quota panel — scoped to .sidebar-status-panel */
+
+.sidebar-status-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Header + theme picker */
+.ssp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.ssp-head-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.ssp-head-title i {
+    color: var(--primary);
+    font-size: 10px;
+}
+
+.ssp-theme-picker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.theme-picker-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.theme-dots-sm .theme-dot {
+    width: 12px;
+    height: 12px;
+    border-width: 1.5px;
+}
+
+.theme-dots-sm .theme-dot.active {
+    transform: scale(1.1);
+    box-shadow: 0 0 6px var(--primary-glow);
+    border-color: rgba(255, 255, 255, 0.85);
+}
+
+/* Quota card */
+.ssp-quota-card {
+    cursor: pointer;
+    padding: 10px;
+    font-size: 11px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ssp-quota-card:hover {
+    border-color: color-mix(in srgb, var(--primary) 35%, var(--border-subtle));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.ssp-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+/* Render readiness hint */
+.ssp-render-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 8px 3px 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--primary) 10%, transparent);
+    color: var(--text-main);
+    border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+    min-width: 0;
+    flex: 1;
+}
+
+.ssp-render-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--primary);
+}
+
+.ssp-render-badge.ready .ssp-render-dot { background: #34d399; }
+.ssp-render-badge.ready-local .ssp-render-dot,
+.ssp-render-badge.ready-fallback .ssp-render-dot { background: var(--primary); }
+.ssp-render-badge.ready-low .ssp-render-dot,
+.ssp-render-badge.wait-rpm .ssp-render-dot { background: #fbbf24; }
+.ssp-render-badge.blocked .ssp-render-dot { background: #f87171; }
+
+.ssp-render-badge.ready {
+    background: rgba(52, 211, 153, 0.1);
+    border-color: rgba(52, 211, 153, 0.25);
+}
+
+.ssp-render-badge.ready-low,
+.ssp-render-badge.wait-rpm {
+    background: rgba(251, 191, 36, 0.1);
+    border-color: rgba(251, 191, 36, 0.25);
+}
+
+.ssp-render-badge.blocked {
+    background: rgba(248, 113, 113, 0.1);
+    border-color: rgba(248, 113, 113, 0.25);
+}
+
+#mini-render-hint-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ssp-details-btn {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.ssp-details-btn:hover {
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--border-subtle));
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* Engine row */
+.ssp-engine-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.ssp-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.ssp-engine-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.25;
+    word-break: break-word;
+}
+
+/* RPM / RPD meters */
+.ssp-meter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.ssp-meter {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 7px 8px;
+    min-width: 0;
+}
+
+.ssp-meter-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px;
+    margin-bottom: 5px;
+}
+
+.ssp-meter-val {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-main);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ssp-meter-track {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.ssp-meter-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 2px;
+    background: var(--primary);
+    transition: width 0.35s ease;
+}
+
+.ssp-meter-fill.is-warn {
+    background: #fbbf24;
+}
+
+.ssp-meter-fill.is-danger {
+    background: #f87171;
+}
+
+.ssp-meter-unit {
+    font-size: 9px;
+    color: var(--text-muted);
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Footer chips */
+.ssp-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.ssp-cost-chip {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.ssp-status-chip {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary);
+    border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.ssp-status-chip.status-ok {
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary);
+}
+
+.ssp-status-chip.status-warn {
+    background: rgba(251, 191, 36, 0.12);
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.25);
+}
+
+.ssp-status-chip.status-local {
+    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    color: var(--primary);
+}
+
+/* Overall health bar */
+.ssp-health-bar {
+    margin-top: 0;
+}
+
+.ssp-quota-card .quota-bar-fill {
+    background: var(--primary);
+    transition: width 0.35s ease, background 0.2s ease;
+}
+
+.ssp-quota-card .quota-bar-fill.fill-warn {
+    background: #fbbf24;
+}
+
+.ssp-quota-card .quota-bar-fill.fill-ok {
+    background: var(--primary);
+}
+
+.ssp-quota-card .quota-bar-fill.fill-local {
+    background: var(--primary);
+    opacity: 0.65;
+}
+
+.ssp-reset-note {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}

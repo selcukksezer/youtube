@@ -4,6 +4,8 @@ YouTube Shorts Advanced Viral Trend Scanner — Scrapes, analyzes & extracts dee
 import requests, re, json, urllib.parse
 from typing import List, Dict, Any
 
+from research_service import extract_format_fingerprint_from_title
+
 CATEGORIES = {
     "all": "",
     "science": "bilim teknoloji uzay",
@@ -112,6 +114,8 @@ def _format_trend_card(v_id: str, title: str, view_text: str, pub_time: str, cha
     elif "?" in title:
         hook_type = "❓ Merak Uyandıran Soru Kancası"
 
+    format_fingerprint = extract_format_fingerprint_from_title(title, hook_analysis=hook_type)
+
     return {
         "video_id": v_id,
         "title": title,
@@ -121,13 +125,14 @@ def _format_trend_card(v_id: str, title: str, view_text: str, pub_time: str, cha
         "thumbnail": thumb_url or f"https://i.ytimg.com/vi/{v_id}/hqdefault.jpg",
         "viral_score": score,
         "hook_analysis": hook_type,
+        "format_fingerprint": format_fingerprint,
         "url": f"https://www.youtube.com/shorts/{v_id}",
         "script_prompt": title
     }
 
 def _get_fallback_viral_trends(topic: str) -> List[Dict[str, Any]]:
     """Comprehensive fallback trend insights."""
-    return [
+    cards = [
         {
             "video_id": "trend_1",
             "title": f"{topic} Hakkında Kimsenin Bilmediği 3 Korkunç Gerçek",
@@ -177,3 +182,9 @@ def _get_fallback_viral_trends(topic: str) -> List[Dict[str, Any]]:
             "script_prompt": f"Bu Bilgiyi Öğrenmeden Önce {topic} Hakkında Hiçbir Şey Bilmiyordunuz"
         }
     ]
+    for card in cards:
+        card["format_fingerprint"] = extract_format_fingerprint_from_title(
+            card["title"],
+            hook_analysis=card.get("hook_analysis", ""),
+        )
+    return cards

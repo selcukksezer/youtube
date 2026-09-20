@@ -45,5 +45,6 @@ from anti_detect import (
     apply_video_size_variation,
     generate_stealth_js,
     get_chrome_cli_args,
+    apply_post_render_humanization,
     __all__,
 )

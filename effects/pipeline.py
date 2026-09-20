@@ -17,6 +17,10 @@ def apply_anti_duplicate(clip: VideoFileClip, intensity: float = 1.0) -> VideoFi
     Item 50: Anti-Tekrar (Anti-Duplicate) & Hash Modifier.
     Modifies video properties invisibly to prevent YouTube's "Reused Content" flags.
     """
+    import config
+    if getattr(config, 'RENDER_SAFE_MODE', True):
+        # Anti-duplicate is already applied on GPU in FFmpeg _merge via color_vf, grain_vf, vignette_vf
+        return clip
     try:
         factor = 1.0 + random.uniform(-0.02, 0.02) * intensity
         modified = clip.fx(vfx.colorx, factor)
@@ -54,6 +58,9 @@ def enforce_3s_broll_rule(clip: VideoFileClip, max_duration: float = 3.2) -> Vid
     """
     if clip.duration <= max_duration:
         return clip
+    import config
+    if getattr(config, 'RENDER_SAFE_MODE', True):
+        return clip
     try:
         subclips = []
         t = 0.0
@@ -62,12 +69,12 @@ def enforce_3s_broll_rule(clip: VideoFileClip, max_duration: float = 3.2) -> Vid
             sub_end = min(t + max_duration, clip.duration)
             sub = clip.subclip(t, sub_end)
             if flip:
-                sub = sub.fx(vfx.resize, 1.03).crop(x_center=sub.w / 2, y_center=sub.h / 2, width=clip.w, height=clip.h)
+                sub = sub.crop(x_center=sub.w / 2, y_center=sub.h / 2, width=clip.w, height=clip.h)
             subclips.append(sub)
             t = sub_end
             flip = not flip
 
-        res = concatenate_videoclips(subclips, method="compose")
+        res = concatenate_videoclips(subclips, method="chain")
         res.duration = clip.duration
         return res
     except Exception as e:

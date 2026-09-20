@@ -27,9 +27,7 @@ def apply_studio_eq_and_warmth(input_wav: str, output_wav: str) -> str:
         "equalizer=f=120:t=q:w=2.5:g=-2.5,"
         "equalizer=f=220:t=q:w=1.2:g=2.5,"
         "equalizer=f=4000:t=q:w=2.5:g=-2.0,"
-        "equalizer=f=7200:t=q:w=2.0:g=-2.0,"
-        "equalizer=f=11000:t=q:w=1.5:g=1.5,"
-        "compand=attacks=0.02:decays=0.15:points=-80/-80|-24/-20|-12/-10|0/-6:gain=2"
+        "equalizer=f=11000:t=q:w=1.5:g=1.5"
     )
 
     cmd = [
@@ -44,6 +42,34 @@ def apply_studio_eq_and_warmth(input_wav: str, output_wav: str) -> str:
     if res.returncode == 0 and os.path.exists(output_wav):
         return output_wav
     return input_wav
+
+
+def apply_deesser_compand_master(input_wav: str, output_wav: str) -> str:
+    """
+    Items 146-147: Master narration de-esser + dynamic compression.
+    Tames 6-8 kHz sibilance (S/Ş/P) and closes whisper-to-shout dynamic range.
+    """
+    if not os.path.exists(input_wav):
+        return input_wav
+
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    af_chain = (
+        "equalizer=f=6500:t=q:w=2.0:g=-3.0,"
+        "equalizer=f=7500:t=q:w=2.0:g=-2.5,"
+        "compand=attacks=0.03:decays=0.2:points=-70/-70|-24/-18|-10/-8|0/-4:gain=1.5"
+    )
+    cmd = [
+        ffmpeg_exe, "-y",
+        "-i", input_wav,
+        "-af", af_chain,
+        "-c:a", "pcm_s16le",
+        output_wav,
+    ]
+    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if res.returncode == 0 and os.path.exists(output_wav):
+        return output_wav
+    return input_wav
+
 
 # ─── ITEM 150: Yüksek Geçiren Filtre (High-Pass Filter @ 80Hz) ───────────────
 
@@ -140,7 +166,7 @@ def mix_wide_stereo_with_center_vocal(bg_music_wav: str, vocal_wav: str, output_
         filter_complex = (
             f"[0:a]extrastereo=m={stereo_width}:c=1,volume={music_vol}[bg_wide];"
             f"[1:a]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1,volume={vocal_vol}[vocal_center];"
-            f"[bg_wide][vocal_center]amix=inputs=2:duration=first:dropout_transition=0[out]"
+            f"[bg_wide][vocal_center]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]"
         )
         cmd = [
             ffmpeg_exe, "-y",
@@ -319,7 +345,7 @@ def inject_natural_breaths(narration_wav: str, output_wav: str, interval_seconds
             ffmpeg_exe, "-y",
             "-i", narration_wav,
             "-i", breath_wav,
-            "-filter_complex", f"[1:a]adelay={delay_ms}|{delay_ms},volume=0.25[b1];[0:a][b1]amix=inputs=2:duration=first[out]",
+            "-filter_complex", f"[1:a]adelay={delay_ms}|{delay_ms},volume=0.25[b1];[0:a][b1]amix=inputs=2:duration=first:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -346,7 +372,7 @@ def inject_sonic_brand_watermark(narration_wav: str, output_wav: str) -> str:
             ffmpeg_exe, "-y",
             "-i", narration_wav,
             "-i", chime_wav,
-            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            "-filter_complex", "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -414,7 +440,7 @@ def apply_phase_aligned_mix(narration_wav: str, music_wav: str, output_wav: str,
         filter_complex = (
             f"[0:a]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1[narr_center];"
             f"[1:a]volume={music_volume},stereowiden=delay=20:feedback=0.25:crossfeed=0.2:drymix=0.8[music_wide];"
-            f"[narr_center][music_wide]amix=inputs=2:duration=first:dropout_transition=0[combined];"
+            f"[narr_center][music_wide]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[combined];"
             f"[combined]asplit=2[c_low][c_high];"
             f"[c_low]lowpass=f={cutoff_hz},pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1[mono_bass];"
             f"[c_high]highpass=f={cutoff_hz}[stereo_mids_highs];"
@@ -716,6 +742,70 @@ def run_mobile_device_audio_check(voice_or_mix_wav: str,
         return {"passed": True, "error": str(e), "mobile_readiness_score": 85, "recommendations": [f"Basit kontrol: {e}"]}
 
 
+# ─── Audio duration fit (Shorts scene budget sync) ───────────────────────────
+
+def _build_atempo_chain(speed_factor: float) -> str:
+    """Build FFmpeg atempo filter chain (each stage limited to 0.5–2.0)."""
+    filters = []
+    remaining = max(0.5, min(4.0, speed_factor))
+    while remaining > 2.001:
+        filters.append("atempo=2.0")
+        remaining /= 2.0
+    while remaining < 0.499:
+        filters.append("atempo=0.5")
+        remaining /= 0.5
+    if abs(remaining - 1.0) > 0.004:
+        filters.append(f"atempo={remaining:.4f}")
+    return ",".join(filters)
+
+
+def _read_wav_duration(path: str) -> float:
+    import wave
+    try:
+        with wave.open(path, "rb") as wf:
+            return wf.getnframes() / float(wf.getframerate())
+    except Exception:
+        return 0.0
+
+
+def fit_audio_to_duration(input_audio: str, output_audio: str,
+                          target_duration: float, tolerance: float = 0.06) -> tuple:
+    """
+    Speed up or slow down narration so it matches the scene budget.
+    Returns (output_path, new_duration, speed_factor).
+    speed_factor > 1 means audio was sped up; word timings should be divided by it.
+    """
+    if not os.path.exists(input_audio) or target_duration <= 0:
+        return input_audio, _read_wav_duration(input_audio), 1.0
+
+    current = _read_wav_duration(input_audio)
+    if current <= 0:
+        return input_audio, 0.0, 1.0
+
+    ratio = current / target_duration
+    if abs(ratio - 1.0) <= tolerance:
+        return input_audio, current, 1.0
+
+    af = _build_atempo_chain(ratio)
+    if not af:
+        return input_audio, current, 1.0
+
+    try:
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        cmd = [
+            ffmpeg_exe, "-y", "-i", input_audio,
+            "-af", af, "-c:a", "pcm_s16le", output_audio,
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if res.returncode == 0 and os.path.exists(output_audio):
+            new_dur = _read_wav_duration(output_audio)
+            return output_audio, new_dur, ratio
+    except Exception as e:
+        print(f"    [AudioFit] Notice: {e}")
+
+    return input_audio, current, 1.0
+
+
 # ─── ITEM 175: Heyecanlı Anlarda Ses Hızlanması (Audio Tempo Acceleration) ─────
 
 def accelerate_audio_tempo(input_audio: str, output_audio: str,
@@ -778,7 +868,7 @@ def apply_reverse_reverb_whisper(input_wav: str, output_wav: str,
             f"[0:a]asplit=2[dry][segment];"
             f"[segment]atrim={tail_start}:{duration},asetpts=PTS-STARTPTS,"
             f"areverse,aecho=0.8:0.85:50|80:0.4|0.3,areverse,volume={wet_mix}[rev_tail];"
-            f"[dry][rev_tail]amix=inputs=2:duration=first:dropout_transition=0[out]"
+            f"[dry][rev_tail]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]"
         )
 
         cmd = [
@@ -910,10 +1000,10 @@ def mix_intro_punch_bgm(narration_wav: str, music_wav: str, output_wav: str,
         )
 
         filter_complex = (
-            f"[0:a]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1[narr_center];"
+            f"[0:a]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1,asplit=2[narr_sc][narr_mix];"
             f"[1:a]volume=eval=frame:volume='{vol_expr}',stereowiden=delay=20:feedback=0.25:crossfeed=0.2:drymix=0.8[music_punched];"
-            f"[music_punched][narr_center]sidechaincompress=threshold=0.025:ratio=12:attack=80:release=200[ducked];"
-            f"[narr_center][ducked]amix=inputs=2:duration=first:dropout_transition=0[out]"
+            f"[music_punched][narr_sc]sidechaincompress=threshold=0.025:ratio=12:attack=80:release=200[ducked];"
+            f"[narr_mix][ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]"
         )
 
         cmd = [

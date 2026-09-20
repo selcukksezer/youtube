@@ -97,10 +97,10 @@ def mix_narration_and_bgm(narration_path, bgm_path, output_path, volume=0.12, ta
         "-stream_loop", "-1", "-i", bgm_path,
         "-filter_complex",
         (
-            "[0:a]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1[narration_center];"
+            "[0:a]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1,asplit=2[narr_sc][narr_mix];"
             f"[1:a]volume={volume},stereowiden=delay=20:feedback=0.25:crossfeed=0.2:drymix=0.8,equalizer=f=2000:t=q:w=1.0:g=-4.5{mute_filter}[bgm_wide];"
-            "[bgm_wide][narration_center]sidechaincompress=threshold=0.025:ratio=12:attack=80:release=200[ducked];"
-            f"[narration_center][ducked]amix=inputs=2:duration=first:dropout_transition={dropout_val}[aout]"
+            "[bgm_wide][narr_sc]sidechaincompress=threshold=0.025:ratio=12:attack=80:release=200[ducked];"
+            f"[narr_mix][ducked]amix=inputs=2:duration=first:dropout_transition={dropout_val}:normalize=0[aout]"
         ),
         "-map", "[aout]",
         "-c:a", "pcm_s16le",
@@ -294,23 +294,78 @@ def synthesize_niche_tempo_bgm(niche_id: str, duration: float = 25.0, output_pat
     return output_path
 
 
+def parse_bgm_bpm(bgm_path: str = "", default_bpm: float = 120.0) -> float:
+    """
+    P2-21: Derive BPM from track filename (advisory beat grid).
+    Full audio BPM analysis deferred — filename heuristics match Item 102/169.
+    """
+    if not bgm_path:
+        return default_bpm
+    fname = os.path.basename(bgm_path).lower()
+    if any(k in fname for k in ("lofi", "calm", "philosophy", "stoic", "mystery")):
+        return 78.0
+    if any(k in fname for k in ("dramatic", "history", "epic")):
+        return 85.0
+    if any(k in fname for k in ("motivation", "fitness", "energetic", "drill", "phonk")):
+        return 125.0
+    if any(k in fname for k in ("quiz", "news")):
+        return 120.0
+    return default_bpm
+
+
+def compute_scene_beat_hints(
+    scenes: list,
+    bgm_path: str = None,
+    bpm: float = None,
+) -> list:
+    """
+    P2-21: Advisory beat-aligned cut hints — does NOT mutate scene durations.
+    Returns per-scene dicts: beat_hint_ms, suggested_cut_ms, delta_ms, bpm.
+    """
+    if not scenes:
+        return []
+    bpm = bpm if bpm is not None else parse_bgm_bpm(bgm_path or "")
+    beat_interval_ms = (60.0 / bpm) * 1000.0
+    total_ms = sum(
+        float(getattr(s, "duration", None) or (s.get("duration") if isinstance(s, dict) else 3.0))
+        * 1000.0
+        for s in scenes
+    ) + 10000.0
+    beats_ms = []
+    curr = beat_interval_ms
+    while curr < total_ms:
+        beats_ms.append(round(curr, 1))
+        curr += beat_interval_ms
+
+    hints = []
+    accum_ms = 0.0
+    for sc in scenes:
+        dur_s = float(
+            getattr(sc, "duration", None) or (sc.get("duration") if isinstance(sc, dict) else 3.0)
+        )
+        target_ms = accum_ms + dur_s * 1000.0
+        if beats_ms:
+            closest = min(beats_ms, key=lambda b: abs(b - target_ms))
+            hints.append({
+                "beat_hint_ms": round(closest, 1),
+                "suggested_cut_ms": round(closest, 1),
+                "actual_cut_ms": round(target_ms, 1),
+                "delta_ms": round(closest - target_ms, 1),
+                "bpm": bpm,
+            })
+        else:
+            hints.append({"beat_hint_ms": round(target_ms, 1), "bpm": bpm})
+        accum_ms = target_ms
+    return hints
+
+
 def detect_bgm_bpm_and_beats(bgm_path: str, duration: float = 60.0, default_bpm: float = 120.0) -> list:
     """
     Item 102 & 169: BGM Beat-Syncing (Ritim Tespiti).
     Müziğin temposuna (BPM) göre ritim vuruş (beat) zaman damgalarını hesaplar.
     Varsayılan hip-hop/lo-fi/energetic tempoda (100-128 BPM) vuruş ızgarası üretir.
     """
-    bpm = default_bpm
-    if bgm_path:
-        fname = os.path.basename(bgm_path).lower()
-        if any(k in fname for k in ("lofi", "calm", "philosophy", "stoic", "mystery")):
-            bpm = 78.0
-        elif any(k in fname for k in ("dramatic", "history", "epic")):
-            bpm = 85.0
-        elif any(k in fname for k in ("motivation", "fitness", "energetic", "drill", "phonk")):
-            bpm = 125.0
-        elif any(k in fname for k in ("quiz", "news")):
-            bpm = 120.0
+    bpm = parse_bgm_bpm(bgm_path, default_bpm=default_bpm)
 
     beat_interval = 60.0 / bpm
     beats = []

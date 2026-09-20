@@ -11,9 +11,23 @@ ENV/
 
 # Environment and Secret Keys
 .env
+.env.local
+.env.*.local
+!.env.example
+!.env.vault
 *.pem
 *.key
+credentials.json
 tokens/
+
+# Test / temp artifacts
+.pytest_cache/
+_tmp_*/
+_pytest_*.txt
+reddit_debug*.html
+
+# Cursor local
+.cursor/
 
 # Generated Output & Media (Large binary files)
 output/*

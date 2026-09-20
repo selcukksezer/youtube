@@ -1,10 +1,22 @@
 """Tests for roadmap audio items 146-149."""
+import os
+import tempfile
 import unittest
 
+from voice.audio_dsp import apply_deesser_compand_master
 from voice_humanizer import VoiceHumanizer
 
 
 class TestSection3Items146to149(unittest.TestCase):
+    def test_item_146_147_deesser_compand_master(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            inp = os.path.join(tmp, "in.wav")
+            out = os.path.join(tmp, "out.wav")
+            with open(inp, "wb") as f:
+                f.write(b"RIFF" + b"\x00" * 40)
+            result = apply_deesser_compand_master(inp, out)
+            self.assertEqual(result, inp)
+
     def test_item_148_speech_rhythm_uses_hook_body_and_question_rates(self):
         segments = VoiceHumanizer.build_speech_rhythm_segments(
             "Bunu hemen bilmelisin! Asıl gerçek şimdi başlıyor. Sence neden böyle?"

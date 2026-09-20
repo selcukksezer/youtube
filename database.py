@@ -45,6 +45,9 @@ def init_db():
         if "proof_path" not in columns:
             try: cursor.execute("ALTER TABLE videos ADD COLUMN proof_path TEXT")
             except Exception: pass
+        if "channel_slug" not in columns:
+            try: cursor.execute("ALTER TABLE videos ADD COLUMN channel_slug TEXT DEFAULT 'default'")
+            except Exception: pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS scenes (
@@ -153,7 +156,93 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_scenes_video_id ON scenes(video_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_batch_status ON batch_jobs(status)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_source_assets_hash ON source_assets(content_hash)")
+
+        # P2-24 / Item 447: contributor & asset ID copyright blocklist
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS stock_blocklist (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                block_key TEXT NOT NULL UNIQUE,
+                block_type TEXT NOT NULL DEFAULT 'id',
+                reason TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_blocklist_key ON stock_blocklist(block_key)")
+        _seed_stock_blocklist(cursor)
         conn.commit()
+
+_blocklist_cache: Optional[set] = None
+
+
+def _env_blocklist_entries() -> List[tuple]:
+    """Parse STOCK_BLOCKLIST_IDS and STOCK_BLOCKLIST_CONTRIBUTORS from env."""
+    import os
+    rows = []
+    ids_raw = os.getenv("STOCK_BLOCKLIST_IDS", "")
+    for token in ids_raw.split(","):
+        key = token.strip()
+        if key:
+            rows.append((key, "id", "env blocklist"))
+    contrib_raw = os.getenv("STOCK_BLOCKLIST_CONTRIBUTORS", "")
+    for token in contrib_raw.split(","):
+        name = token.strip()
+        if name:
+            rows.append((f"contributor:{name.lower()}", "contributor", "env blocklist"))
+    return rows
+
+
+def _seed_stock_blocklist(cursor) -> None:
+    for block_key, block_type, reason in _env_blocklist_entries():
+        cursor.execute(
+            "INSERT OR IGNORE INTO stock_blocklist (block_key, block_type, reason) VALUES (?, ?, ?)",
+            (block_key, block_type, reason),
+        )
+
+
+def refresh_stock_blocklist_cache() -> set:
+    global _blocklist_cache
+    with get_connection() as conn:
+        rows = conn.execute("SELECT block_key FROM stock_blocklist").fetchall()
+    _blocklist_cache = {str(r["block_key"]) for r in rows}
+    return _blocklist_cache
+
+
+def get_stock_blocklist_keys() -> set:
+    global _blocklist_cache
+    if _blocklist_cache is None:
+        return refresh_stock_blocklist_cache()
+    return _blocklist_cache
+
+
+def add_stock_blocklist(block_key: str, block_type: str = "id", reason: str = "") -> bool:
+    key = str(block_key or "").strip()
+    if not key:
+        return False
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO stock_blocklist (block_key, block_type, reason) VALUES (?, ?, ?)",
+            (key, block_type, reason),
+        )
+        conn.commit()
+    refresh_stock_blocklist_cache()
+    return True
+
+
+def is_stock_blocklisted(
+    source_key: str = "",
+    asset_id: str = "",
+    contributor: str = "",
+) -> bool:
+    """True when asset ID or contributor is on the copyright blocklist."""
+    keys = get_stock_blocklist_keys()
+    for candidate in (source_key, asset_id, contributor):
+        if candidate and candidate in keys:
+            return True
+    if contributor:
+        lowered = contributor.lower()
+        if lowered in keys or f"contributor:{lowered}" in keys:
+            return True
+    return False
 
 def source_asset_was_used(source_key: str, content_hash: Optional[str] = None) -> bool:
     """Checks persistent source history, which survives video deletion and restarts."""
@@ -187,13 +276,18 @@ def cleanup_stale_tasks():
     except Exception:
         pass
 
-def add_video_record(keyword: str, language: str = "en", ai_provider: str = "Gemini") -> int:
+def add_video_record(
+    keyword: str,
+    language: str = "en",
+    ai_provider: str = "Gemini",
+    channel_slug: str = "default",
+) -> int:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO videos (keyword, title, status, language, ai_provider)
-            VALUES (?, ?, 'processing', ?, ?)
-        """, (keyword, keyword, language, ai_provider))
+            INSERT INTO videos (keyword, title, status, language, ai_provider, channel_slug)
+            VALUES (?, ?, 'processing', ?, ?, ?)
+        """, (keyword, keyword, language, ai_provider, channel_slug or "default"))
         conn.commit()
         return cursor.lastrowid
 

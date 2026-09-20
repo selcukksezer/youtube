@@ -212,13 +212,12 @@ def generate_pure_math_sfx(output_path: str, wave_type: str = "sine",
 def build_scene_sfx_events(scene_clips):
     """Returns non-copyrighted SFX events from scene metadata (Items 154-155)."""
     events, elapsed = [], 0.0
-    shock_terms = ("şok", "inanılmaz", "korkunç", "dehşet", "gerçek", "gizli", "imkansız")
-    tension_terms = ("korku", "gerilim", "tehdit", "tehlike", "dehşet")
+    # Madde 154/157/158/159: sahne içeriğine göre SFX (Whoosh → Madde 155 sync_riser, burada yok)
+    shock_terms = ("şok", "inanılmaz", "korkunç", "dehşet", "gizli", "imkansız", "şok edici")
+    tension_terms = ("korku", "gerilim", "tehdit", "tehlike", "paranormal", "horror")
     quiz_terms = ("tahmin", "kaç saniye", "süren var", "doğru cevap", "quiz")
-    type_terms = ("liste", "madde", "yaz", "adım")
+    type_terms = ("daktilo", "typewriter", "belge", "rapor", "ekrana yaz")
     for index, scene in enumerate(scene_clips or []):
-        if index:
-            events.append({"sound": "whoosh", "at": max(0.0, elapsed - 0.25)})
         searchable = " ".join(str(scene.get(key, "")) for key in ("narration", "scene_description", "title")).lower()
         if any(term in searchable for term in shock_terms):
             events.append({"sound": "sub_impact", "at": elapsed})
@@ -270,7 +269,7 @@ def add_sfx_to_narration(narration_audio_path, scene_durations, output_path, sfx
         filter_parts.append(f"[{idx+1}:a]adelay={delay_ms}|{delay_ms},volume={sfx_volume}[sfx{idx}]")
 
     mix_inputs = "".join(f"[sfx{i}]" for i in range(len(events)))
-    filter_complex = f"{';'.join(filter_parts)};[0:a]{mix_inputs}amix=inputs={len(events)+1}:duration=first:dropout_transition=2[outa]"
+    filter_complex = f"{';'.join(filter_parts)};[0:a]{mix_inputs}amix=inputs={len(events)+1}:duration=first:dropout_transition=0:normalize=0[outa]"
 
     cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y"] + inputs + [
         "-filter_complex", filter_complex,

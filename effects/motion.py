@@ -170,6 +170,9 @@ def apply_out_of_focus_reveal(clip: VideoFileClip, blur_duration: float = 0.35) 
     0.3 - 0.4 saniye içinde hızla netleşir.
     """
     try:
+        import config as _cfg
+        if getattr(_cfg, 'RENDER_SAFE_MODE', True):
+            return clip
         w, h = clip.size
         blur_dur = min(blur_duration, clip.duration / 2)
 
@@ -201,7 +204,16 @@ def apply_heartbeat_zoom(clip, bpm: float = 60.0, scale_min: float = 1.00, scale
     """
     Item 114 – Görsel Büyüme/Küçülme Nefesi (Heartbeat Zoom).
     Görsele kalp atışı gibi hafif ritmik boyut değişimi verir.
+    NOT: RENDER_SAFE_MODE=True iken bypass edilir (per-frame cv2.resize → GPU/RAM aşırı yükü).
     """
+    try:
+        import config as _cfg
+        if getattr(_cfg, 'RENDER_SAFE_MODE', True):
+            print(f"    [Item 114] Heartbeat zoom: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return clip
+    except Exception:
+        pass
+
     period = 60.0 / bpm  # Döngü süresi (saniye)
 
     def zoom_factor(t):

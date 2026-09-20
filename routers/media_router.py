@@ -1,10 +1,13 @@
 """
-Background music (BGM) and subtitle presets router.
+Background music (BGM), TTS preview, and subtitle presets router.
 """
 import os
 import shutil
+import uuid
 from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi.responses import FileResponse
 import config
+from api_models import TtsPreviewRequest
 from bgm_manager import list_bgm_tracks
 from subtitle_generator import SUBTITLE_PRESETS
 
@@ -17,6 +20,58 @@ ALLOWED_BGM_EXTS = {'.mp3', '.wav', '.m4a', '.aac', '.ogg'}
 def get_bgm_list():
     tracks = list_bgm_tracks()
     return {"tracks": tracks}
+
+
+@router.get("/api/tts/voices")
+def get_tts_voices(refresh: bool = False):
+    """Full TTS voice catalog (Edge TR/EN + ElevenLabs when configured)."""
+    from tts_voices import get_voice_catalog
+    return get_voice_catalog(force_refresh=refresh)
+
+
+@router.post("/api/tts/preview")
+def tts_preview(req: TtsPreviewRequest):
+    """Short narration sample — Edge TTS (0 TL) or Gemini TTS when enabled."""
+    sample = (req.text or "Merhaba, bu kısa ses önizlemesidir.").strip()[:280]
+    lang = (req.language or config.LANGUAGE or "tr").lower()
+    gender = req.voice_gender or "male"
+    if gender == "auto":
+        from voice_humanizer import select_voice_gender
+        gender = select_voice_gender("", sample)
+
+    from tts_voices import resolve_voice, voice_gender_for_id
+
+    orig_lang = config.LANGUAGE
+    orig_voice = config.TTS_VOICE
+    orig_gender = config.TTS_GENDER
+    try:
+        config.LANGUAGE = lang
+        config.TTS_VOICE = resolve_voice(lang, voice_id=req.tts_voice, gender=gender)
+        config.TTS_GENDER = voice_gender_for_id(config.TTS_VOICE, lang)
+
+        out_dir = os.path.join(config.AUDIO_DIR, "previews")
+        os.makedirs(out_dir, exist_ok=True)
+        wav_path = os.path.join(out_dir, f"preview_{uuid.uuid4().hex[:10]}.wav")
+
+        from tts_engine import generate_narration_with_timing, active_tts_provider
+        generate_narration_with_timing(sample, wav_path, natural_pauses=False)
+        if not os.path.isfile(wav_path):
+            raise HTTPException(502, "Önizleme sesi üretilemedi")
+
+        return FileResponse(
+            wav_path,
+            media_type="audio/wav",
+            filename="voice_preview.wav",
+            headers={"X-TTS-Provider": active_tts_provider()},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Ses önizleme hatası: {e}") from e
+    finally:
+        config.LANGUAGE = orig_lang
+        config.TTS_VOICE = orig_voice
+        config.TTS_GENDER = orig_gender
 
 
 @router.post("/api/bgm/upload")

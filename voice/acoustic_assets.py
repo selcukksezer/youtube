@@ -128,9 +128,17 @@ def ensure_whoosh_ding_intro() -> str:
     print(f"    [Item 112] Whoosh+Ding intro sentezlendi: 200ms → {intro_path}")
     return intro_path
 
+def _ff_err(stderr: bytes, limit: int = 200) -> str:
+    """Decode FFmpeg stderr safely on Windows (cp1254 / mixed encodings)."""
+    if not stderr:
+        return ""
+    return stderr.decode("utf-8", errors="replace")[:limit]
+
+
 def prepend_whoosh_ding_to_narration(narration_wav: str, output_wav: str) -> str:
     """
     Item 112 – Whoosh+Ding intro sesini narration başına birleştirir.
+    Uses filter_complex concat (not concat demuxer) so non-ASCII Windows paths work.
     """
     intro = ensure_whoosh_ding_intro()
     if not os.path.exists(narration_wav) or not os.path.exists(intro):
@@ -138,28 +146,26 @@ def prepend_whoosh_ding_to_narration(narration_wav: str, output_wav: str) -> str
 
     try:
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        concat_file = tempfile.mktemp(suffix="_whoosh_concat.txt")
-        with open(concat_file, "w") as f:
-            f.write(f"file '{os.path.abspath(intro)}'\n")
-            f.write(f"file '{os.path.abspath(narration_wav)}'\n")
-
+        # Avoid concat demuxer file lists — they break on paths like Users\selçuk\...
         cmd = [
             ffmpeg_exe, "-y",
-            "-f", "concat", "-safe", "0",
-            "-i", concat_file,
+            "-i", intro,
+            "-i", narration_wav,
+            "-filter_complex",
+            (
+                "[0:a]aformat=sample_fmts=s16:sample_rates=44100:channel_layouts=stereo[a0];"
+                "[1:a]aformat=sample_fmts=s16:sample_rates=44100:channel_layouts=stereo[a1];"
+                "[a0][a1]concat=n=2:v=0:a=1[out]"
+            ),
+            "-map", "[out]",
             "-c:a", "pcm_s16le",
-            output_wav
+            output_wav,
         ]
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         if res.returncode == 0 and os.path.exists(output_wav):
             print(f"    [Item 112] Whoosh+Ding intro eklendi → {output_wav}")
-            try:
-                os.remove(concat_file)
-            except Exception:
-                pass
             return output_wav
-        else:
-            print(f"    [Item 112] Concat hatası: {res.stderr.decode()[:200]}")
+        print(f"    [Item 112] Concat hatası: {_ff_err(res.stderr)}")
     except Exception as e:
         print(f"    [Item 112] Hata: {e}")
 
@@ -235,11 +241,11 @@ def mix_pink_noise_into_narration(narration_wav: str, output_wav: str,
         if noise_type == "room":
             filter_complex = (
                 f"[0:a]aecho=0.6:0.5:40|60:0.4|0.3[reverb];"
-                f"[reverb][1:a]amix=inputs=2:duration=first:dropout_transition=0.5[out]"
+                f"[reverb][1:a]amix=inputs=2:duration=first:dropout_transition=0.5:normalize=0[out]"
             )
         else:
             filter_complex = (
-                f"[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0.5[out]"
+                f"[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0.5:normalize=0[out]"
             )
 
         cmd = [
@@ -260,7 +266,7 @@ def mix_pink_noise_into_narration(narration_wav: str, output_wav: str,
                 pass
             return output_wav
         else:
-            print(f"    [Item 108] FFmpeg hatası: {res.stderr.decode()[:200]}")
+            print(f"    [Item 108] FFmpeg hatası: {_ff_err(res.stderr)}")
 
     except Exception as e:
         print(f"    [Item 108] Pink noise karıştırma hatası: {e}")
@@ -328,7 +334,7 @@ def inject_id3_tags(mp3_path: str,
             os.replace(tmp_out, mp3_path)
             print(f"    [Item 119] ID3 etiketleri enjekte edildi: title='{title}', artist='{artist}', encoder='{encoder_tag}'")
         else:
-            print(f"    [Item 119] ID3 enjeksiyon hatası: {res.stderr.decode()[:200]}")
+            print(f"    [Item 119] ID3 enjeksiyon hatası: {_ff_err(res.stderr)}")
             try:
                 os.remove(tmp_out)
             except Exception:
@@ -404,7 +410,7 @@ def inject_sub_bass_impact(audio_wav: str, output_wav: str, timestamp_sec: float
             "-i", audio_wav,
             "-i", sub_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[sub];[0:a][sub]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[sub];[0:a][sub]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -495,7 +501,7 @@ def sync_riser_whoosh_transitions(audio_wav: str, scene_cut_times: list, output_
             mix_inputs.append(f"[r{idx}]")
 
         total_inputs = len(mix_inputs)
-        filter_str = ";".join(filter_parts) + f";{''.join(mix_inputs)}amix=inputs={total_inputs}:duration=first:dropout_transition=0[out]"
+        filter_str = ";".join(filter_parts) + f";{''.join(mix_inputs)}amix=inputs={total_inputs}:duration=first:dropout_transition=0:normalize=0[out]"
 
         cmd = [
             ffmpeg_exe, "-y",
@@ -601,7 +607,7 @@ def apply_tape_stop_to_audio(audio_wav: str, output_wav: str, stop_timestamps: l
             mix_inputs.append(f"[ts{idx}]")
 
         total = len(mix_inputs)
-        filter_str = ";".join(filter_parts) + f";{''.join(mix_inputs)}amix=inputs={total}:duration=first:dropout_transition=0[out]"
+        filter_str = ";".join(filter_parts) + f";{''.join(mix_inputs)}amix=inputs={total}:duration=first:dropout_transition=0:normalize=0[out]"
 
         cmd = [
             ffmpeg_exe, "-y",
@@ -691,7 +697,7 @@ def inject_heartbeat_layer(audio_wav: str, output_wav: str, start_sec: float = 0
             "-i", audio_wav,
             "-i", hb_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[hb];[0:a][hb]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[hb];[0:a][hb]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -776,7 +782,7 @@ def inject_ticking_clock(audio_wav: str, output_wav: str, timestamp_sec: float =
             "-i", audio_wav,
             "-i", clock_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[clk];[0:a][clk]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[clk];[0:a][clk]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -862,7 +868,7 @@ def inject_typewriter_sfx(audio_wav: str, output_wav: str, timestamp_sec: float 
             "-i", audio_wav,
             "-i", typewriter_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[tw];[0:a][tw]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[tw];[0:a][tw]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -939,7 +945,7 @@ def inject_quiz_ding(audio_wav: str, output_wav: str, timestamp_sec: float = 0.0
             "-i", audio_wav,
             "-i", ding_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[ding];[0:a][ding]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[ding];[0:a][ding]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -1021,7 +1027,7 @@ def inject_quiz_buzzer(audio_wav: str, output_wav: str, timestamp_sec: float = 0
             "-i", audio_wav,
             "-i", buzzer_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[buzz];[0:a][buzz]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[buzz];[0:a][buzz]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -1130,7 +1136,7 @@ def inject_monologue_pause_and_swallow(audio_wav: str, output_wav: str,
             mix_inputs.append(f"[sw{idx}]")
 
         total = len(mix_inputs)
-        filter_str = ";".join(filter_parts) + f";{''.join(mix_inputs)}amix=inputs={total}:duration=first:dropout_transition=0[out]"
+        filter_str = ";".join(filter_parts) + f";{''.join(mix_inputs)}amix=inputs={total}:duration=first:dropout_transition=0:normalize=0[out]"
 
         cmd = [
             ffmpeg_exe, "-y",
@@ -1226,7 +1232,7 @@ def inject_vinyl_crackle_layer(audio_wav: str, output_wav: str, volume_db: float
             "-stream_loop", "-1",
             "-i", crackle_sfx,
             "-filter_complex",
-            f"[1:a]volume=1.0[crk];[0:a][crk]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume=1.0[crk];[0:a][crk]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -1310,7 +1316,7 @@ def inject_dramatic_piano_layer(audio_wav: str, output_wav: str,
             "-i", audio_wav,
             "-i", piano_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[pno];[0:a][pno]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[pno];[0:a][pno]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -1396,7 +1402,7 @@ def inject_cyberpunk_synth_bass(audio_wav: str, output_wav: str,
             "-i", audio_wav,
             "-i", synth_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[syn];[0:a][syn]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[syn];[0:a][syn]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -1544,7 +1550,7 @@ def inject_room_ambience(audio_wav: str, output_wav: str,
             "-i", audio_wav,
             "-stream_loop", "-1", "-i", ambience_path,
             "-filter_complex",
-            f"[1:a]volume={volume}[amb];[0:a][amb]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume}[amb];[0:a][amb]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -1617,7 +1623,7 @@ def inject_sub_kick_hit(audio_wav: str, output_wav: str,
             "-i", audio_wav,
             "-i", kick_sfx,
             "-filter_complex",
-            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[kck];[0:a][kck]amix=inputs=2:duration=first:dropout_transition=0[out]",
+            f"[1:a]volume={volume},adelay={delay_ms}|{delay_ms}[kck];[0:a][kck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]",
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav

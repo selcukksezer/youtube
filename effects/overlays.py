@@ -57,6 +57,8 @@ def apply_multi_layer_overlay(clip: VideoFileClip, opacity: float = 0.10, overla
     Tek bir stok video kullanılmamalı; ana videonun üzerine %10 opaklıkta toz,
     ışık sızıntısı (light leak) veya doku katmanı bindirilmelidir.
     """
+    if getattr(config, 'RENDER_SAFE_MODE', True):
+        return clip
     try:
         w, h = clip.size
         asset_file = os.path.join(config.ASSETS_DIR, f"{overlay_type}.mp4")
@@ -89,9 +91,9 @@ def overlay_graphic_badge(
 ) -> VideoFileClip:
     """
     Item 82: Metin İçi Görsel Çıkartmalar (Stickers / Badges / Counters).
-    Ekrana konuyla ilgili ikonlar, sayaçlar veya vurgu çıkartmaları eklenerek video orijinal
-    bir grafik ürüne dönüştürülür.
     """
+    if not label or getattr(config, 'RENDER_SAFE_MODE', True):
+        return clip
     try:
         badge_w, badge_h = 320, 76
         img = PIL.Image.new("RGBA", (badge_w, badge_h), (0, 0, 0, 0))
@@ -265,7 +267,16 @@ def apply_speaker_avatar_overlay(base_clip, avatar_path: str = None,
     """
     Item 118 – Avatar/Maskot Overlay Bindirmesi.
     Retro piksel sanat karakterini videonun köşesine yerleştirir.
+    NOT: RENDER_SAFE_MODE=True iken bypass edilir (animated position → her kare hesaplama).
     """
+    try:
+        import config as _cfg
+        if getattr(_cfg, 'RENDER_SAFE_MODE', True):
+            print(f"    [Item 118] Avatar overlay: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
     import tempfile
 
     if not avatar_path or not os.path.exists(avatar_path):
@@ -334,6 +345,9 @@ def generate_emoji_subtitle_overlay(width: int, height: int, duration: float,
     """
     Item 125 – Altyazılarda Emoji Animasyonu.
     """
+    if getattr(config, 'RENDER_SAFE_MODE', True) or not emoji_events:
+        print("    [Item 125] Emoji animasyon katmanı: RENDER_SAFE_MODE aktif, bypass edildi.")
+        return None
     emoji_size_base = max(60, width // 12)
 
     def make_frame(t):
@@ -520,6 +534,9 @@ def apply_end_card_to_video(base_clip, duration: float = 3.0,
     """
     Item 126 – Kapanış kartını videonun son N saniyesine ekler.
     """
+    if getattr(config, 'RENDER_SAFE_MODE', True):
+        print(f"    [Item 126] End card overlay: RENDER_SAFE_MODE aktif, bypass edildi.")
+        return base_clip
     w, h = base_clip.size
     dur = base_clip.duration
     fps = base_clip.fps or 30.0
@@ -674,7 +691,16 @@ def apply_dynamic_progress_bar(base_clip, bar_height: int = 4,
                                position: str = "bottom"):
     """
     Item 138 – Temel klibin üzerine dinamik neon ilerleme çubuğu bindirir.
+    NOT: RENDER_SAFE_MODE=True iken bypass edilir (tüm video süresince per-frame çizim).
     """
+    try:
+        import config as _cfg
+        if getattr(_cfg, 'RENDER_SAFE_MODE', True):
+            print(f"    [Item 138] Dinamik ilerleme çubuğu: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
     w, h = base_clip.size
     dur = base_clip.duration
     fps = base_clip.fps or 30.0

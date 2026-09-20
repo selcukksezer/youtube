@@ -6,12 +6,15 @@ import json
 import re
 from openai import OpenAI
 import config
+from api_models import validate_generated_plan_errors
 from .prompts import get_rotated_system_prompt, PROMPT_TR, PROMPT_EN
 from .fallback import _generate_procedural_fallback_scenes
 from .enrichment import (
     enrich_cinematic_search_queries,
-    enforce_visual_cadence_14
+    enforce_visual_cadence_14,
+    verify_and_correct_hallucinations,
 )
+from .narration_validate import scene_narration_issues, validate_and_fix_scenes
 
 
 def _call(client, params):
@@ -22,6 +25,26 @@ def _call(client, params):
             del params["response_format"]
             return client.chat.completions.create(**params)
         raise e
+
+
+_SCHEMA_RETRY_HINT = (
+    "\n\nSCHEMA: Return a JSON object with a non-empty 'scenes' array. "
+    "Each scene MUST include 'narration' (non-empty string) and either "
+    "'search_queries' (string array) or 'scene_description'. "
+    "Optional 'duration' must be a positive number."
+)
+
+
+def _schema_valid(data) -> bool:
+    return not validate_generated_plan_errors(data)
+
+
+def _parse_provider_json(raw: str):
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+    return _clean_json(raw)
 
 
 def _clean_json(text):
@@ -42,7 +65,36 @@ def _clean_json(text):
     return None
 
 
-def generate_scenes(title: str, niche_type: str = None, language: str = None) -> dict:
+def _build_competitor_fingerprint_block(fp: dict, lang: str = "tr") -> str:
+    """P2-04: inject trend/content-gap competitor format into system prompt."""
+    if not fp:
+        return ""
+    scene_count = int(fp.get("scene_count") or 14)
+    hook_style = fp.get("hook_style") or "Gizem / Merak Kancası"
+    avg_dur = float(fp.get("avg_scene_duration") or round(42.0 / max(1, scene_count), 1))
+    if lang == "en":
+        return (
+            f"\n\nCOMPETITOR FORMAT FINGERPRINT (mirror this viral structure — mandatory):\n"
+            f"- Target scene count: {scene_count}\n"
+            f"- Hook style: {hook_style}\n"
+            f"- Average scene duration: {avg_dur}s\n"
+            f"- Match competitor pacing and hook energy while keeping original narration."
+        )
+    return (
+        f"\n\nRAKİP FORMAT FİNGERPRINT (viral yapıyı yansıt — zorunlu):\n"
+        f"- Hedef sahne sayısı: {scene_count}\n"
+        f"- Kanca stili: {hook_style}\n"
+        f"- Ortalama sahne süresi: {avg_dur}s\n"
+        f"- Rakip tempo ve kanca enerjisini koruyarak özgün anlatım yaz."
+    )
+
+
+def generate_scenes(
+    title: str,
+    niche_type: str = None,
+    language: str = None,
+    format_fingerprint: dict = None,
+) -> dict:
     lang = language or getattr(config, "LANGUAGE", "tr")
     if niche_type:
         try:
@@ -52,6 +104,10 @@ def generate_scenes(title: str, niche_type: str = None, language: str = None) ->
             prompt = get_rotated_system_prompt(base_lang=lang)
     else:
         prompt = get_rotated_system_prompt(base_lang=lang)
+
+    fp_block = _build_competitor_fingerprint_block(format_fingerprint, lang=lang)
+    if fp_block:
+        prompt = prompt + fp_block
 
     if lang == "en":
         user_msg = (
@@ -96,22 +152,33 @@ def generate_scenes(title: str, niche_type: str = None, language: str = None) ->
 
             resp = _call(client, params)
             raw = resp.choices[0].message.content.strip()
-            if "```json" in raw:
-                raw = raw.split("```json")[1].split("```")[0].strip()
-            elif "```" in raw:
-                raw = raw.split("```")[1].split("```")[0].strip()
-
-            data = _clean_json(raw)
+            data = _parse_provider_json(raw)
             if not data:
                 print(f"  [{provider_name}] JSON ayrıştırma başarısız, retrying...")
                 params["temperature"] = 0.3
                 resp2 = _call(client, params)
-                raw2 = resp2.choices[0].message.content.strip()
-                if "```" in raw2:
-                    raw2 = raw2.split("```json")[-1].split("```")[0].strip() if "```json" in raw2 else raw2.split("```")[1].split("```")[0].strip()
-                data = _clean_json(raw2)
+                data = _parse_provider_json(resp2.choices[0].message.content.strip())
 
-            if data and "scenes" in data and len(data["scenes"]) > 0:
+            if data and not _schema_valid(data):
+                schema_errs = validate_generated_plan_errors(data)
+                print(f"  [{provider_name}] Schema invalid ({schema_errs[0]}), strict retry...")
+                schema_params = dict(
+                    params,
+                    temperature=0.2,
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": user_msg + _SCHEMA_RETRY_HINT},
+                    ],
+                )
+                resp3 = _call(client, schema_params)
+                retry_data = _parse_provider_json(resp3.choices[0].message.content.strip())
+                if retry_data and _schema_valid(retry_data):
+                    data = retry_data
+                else:
+                    print(f"  [{provider_name}] Schema retry failed — next provider")
+                    data = None
+
+            if data and _schema_valid(data):
                 print(f"  [{provider_name}] OK: Senaryo basariyla uretildi")
                 break
         except Exception as e:
@@ -121,6 +188,48 @@ def generate_scenes(title: str, niche_type: str = None, language: str = None) ->
     if not data or not data.get("scenes"):
         print(f"  [BİLGİ] AI servisleri yanıt vermedi ({last_error}). Akıllı Prosedürel Senaryo Motoru devreye alındı.")
         data = _generate_procedural_fallback_scenes(title, niche_type=niche_type, language=lang)
+
+    halluc = verify_and_correct_hallucinations(data.get("scenes", []), topic=title)
+    data["scenes"] = halluc.get("scenes", data.get("scenes", []))
+    if not halluc.get("verified"):
+        print(f"  [SceneGenerator] Halüsinasyon uyarısı: {halluc.get('hallucination_issues')}")
+
+    data["scenes"], narr_issues = validate_and_fix_scenes(data.get("scenes", []))
+    if narr_issues:
+        print(f"  [SceneGenerator] Kopuk cümle düzeltmesi: {narr_issues}")
+        # One strict retry when provider chain still has headroom
+        retry_msg = (
+            user_msg
+            + "\n\nKRITIK: Her sahne narration alanı 1-2 TAM cümle olmalı (drama: 8-12 kelime, . ! ? ile bitmeli). "
+            "Asla yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). "
+            "Her sahne kendi başına anlamlı olmalı — fiil iki sahneye bölünmemeli."
+        )
+        for provider_name, api_key, base_url, model_name in providers:
+            if data.get("scenes") and not any(
+                scene_narration_issues((s.get("narration") or "")) for s in data["scenes"]
+            ):
+                break
+            print(f"  [{provider_name}] Kopuk cümle — sıkı retry")
+            try:
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                params = dict(
+                    model=model_name,
+                    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": retry_msg}],
+                    temperature=0.4, max_tokens=4000,
+                )
+                if "Gemini" in provider_name or "OpenAI" in provider_name:
+                    params["response_format"] = {"type": "json_object"}
+                resp = _call(client, params)
+                raw = resp.choices[0].message.content.strip()
+                if "```" in raw:
+                    raw = raw.split("```json")[-1].split("```")[0].strip() if "```json" in raw else raw.split("```")[1].split("```")[0].strip()
+                retry_data = _clean_json(raw)
+                if retry_data and retry_data.get("scenes"):
+                    data = retry_data
+                    data["scenes"], narr_issues = validate_and_fix_scenes(data["scenes"])
+                    break
+            except Exception as e:
+                print(f"  [SceneGenerator] Retry failed ({provider_name}): {e}")
 
     for s in data.get("scenes", []):
         if "search_query" in s and "search_queries" not in s:
@@ -134,29 +243,39 @@ def generate_scenes(title: str, niche_type: str = None, language: str = None) ->
         if "search_queries" in s:
             s["search_queries"] = enrich_cinematic_search_queries(s["search_queries"], mood=s.get("mood", "epic"))
 
-    # Enforce optimal Shorts duration: 38-48s (Madde 494)
+    # Preserve AI-assigned pacing; scale total to 38-48s band (Madde 494)
     target_total = 42.0
-    if len(data["scenes"]) >= 14:
-        for s in data["scenes"]:
-            s["duration"] = 3.0
-    else:
-        current_total = sum(s.get("duration", 3.0) for s in data["scenes"])
-        if current_total <= 0:
-            current_total = len(data["scenes"]) * 3.0
+    scenes_list = data["scenes"]
+    current_total = sum(float(s.get("duration") or 3.0) for s in scenes_list)
+    if current_total <= 0:
+        current_total = len(scenes_list) * 3.0
+    if current_total < 38.0 or current_total > 48.0:
         scale = target_total / current_total
-        for s in data["scenes"]:
-            s["duration"] = round(max(1.8, min(8.0, s.get("duration", 3.0) * scale)), 1)
+        for s in scenes_list:
+            s["duration"] = round(max(1.8, min(6.0, float(s.get("duration") or 3.0) * scale)), 1)
 
     # Apply 14 visual cuts cadence if eligible (Madde 88)
     data["scenes"] = enforce_visual_cadence_14(data["scenes"], min_cadence=14)
 
-    # Final normalization to ensure 38-48s compliance (Madde 494)
-    total = sum(s["duration"] for s in data["scenes"])
+    # Final soft normalization — preserve relative AI pacing within 38-48s
+    total = sum(float(s.get("duration") or 3.0) for s in data["scenes"])
     if total < 38.0 or total > 48.0:
-        per_scene = round(42.0 / max(1, len(data["scenes"])), 1)
+        scale = target_total / max(total, 1.0)
         for s in data["scenes"]:
-            s["duration"] = per_scene
+            s["duration"] = round(max(1.8, min(6.0, float(s.get("duration") or 3.0) * scale)), 1)
 
     total = sum(s["duration"] for s in data["scenes"])
+    data["full_narration"] = " ".join(
+        (s.get("narration") or "").strip() for s in data["scenes"] if (s.get("narration") or "").strip()
+    )
+    remaining = [
+        i for i, s in enumerate(data["scenes"])
+        if scene_narration_issues(s.get("narration") or "")
+    ]
+    if remaining:
+        print(f"  [SceneGenerator] UYARI: {len(remaining)} sahne hâlâ kopuk cümle içeriyor")
+    if format_fingerprint:
+        data["format_fingerprint"] = format_fingerprint
+
     print(f"  [SceneGenerator] Sahne Sayısı: {len(data['scenes'])}, Toplam Süre: {total}s | Tema: {data.get('visual_theme', '-')}")
     return data

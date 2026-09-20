@@ -28,7 +28,8 @@ def apply_smart_crop(clip: VideoFileClip, target_w: int, target_h: int, blur_int
 
     # If already roughly 9:16 portrait, simply resize to fill
     if abs(aspect - target_aspect) < 0.05:
-        return clip.resize(height=target_h).crop(x_center=clip.w / 2, y_center=clip.h / 2, width=target_w, height=target_h)
+        c_fill = clip.resize(height=target_h) if clip.h != target_h else clip
+        return c_fill.crop(x_center=c_fill.w / 2, y_center=c_fill.h / 2, width=target_w, height=target_h)
 
     # Horizontal or square video: blurred background + centered crisp video
     try:
@@ -50,9 +51,9 @@ def apply_smart_crop(clip: VideoFileClip, target_w: int, target_h: int, blur_int
         bg = ImageClip(np.array(blurred_bg)).set_duration(clip.duration)
 
         # Center foreground: fits horizontally within target_w without distortion
-        fg = clip.resize(width=target_w)
+        fg = clip.resize(width=target_w) if clip.w != target_w else clip
         if fg.h > target_h:
-            fg = clip.resize(height=target_h)
+            fg = fg.resize(height=target_h)
 
         fg = fg.set_position("center")
         composite = CompositeVideoClip([bg, fg], size=(target_w, target_h))
@@ -60,7 +61,8 @@ def apply_smart_crop(clip: VideoFileClip, target_w: int, target_h: int, blur_int
         return composite
     except Exception as e:
         print(f"    [SmartCrop] Fallback due to: {e}")
-        return clip.resize(height=target_h).crop(x_center=clip.w / 2, y_center=clip.h / 2, width=target_w, height=target_h)
+        c_fill = clip.resize(height=target_h) if clip.h != target_h else clip
+        return c_fill.crop(x_center=c_fill.w / 2, y_center=c_fill.h / 2, width=target_w, height=target_h)
 
 def create_split_screen_clip(
     top_clip: VideoFileClip,

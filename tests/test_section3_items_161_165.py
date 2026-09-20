@@ -71,7 +71,8 @@ class TestSection3Items161to165(unittest.TestCase):
         # Plain text konuşma dostu alias testi
         plain_res = apply_pronunciation_library(sample, engine_type="plain")
         self.assertIn("Niçe", plain_res)
-        self.assertIn("Markus Oryelyus", plain_res)
+        self.assertIn("Marküs Avreliyus", plain_res)
+        self.assertNotIn("Orianus", plain_res)
 
     def test_item_162_ebu_r128_loudness_normalization(self):
         """Madde 162: YouTube standardı olan -14 LUFS ve -1.5 dBTP normalizasyon doğrulaması."""

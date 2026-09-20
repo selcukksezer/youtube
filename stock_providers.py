@@ -35,6 +35,12 @@ def search_pexels(query):
     for video in response.json().get("videos", []):
         file = _pick_pexels_file(video.get("video_files", []))
         if file:
+            user = video.get("user") or {}
+            contributor = ""
+            if user.get("id"):
+                contributor = f"pexels:{user['id']}"
+            elif user.get("name"):
+                contributor = f"contributor:{str(user['name']).lower()}"
             results.append({
                 "source": "pexels",
                 "id": f"px_{video['id']}",
@@ -44,7 +50,8 @@ def search_pexels(query):
                 "url": file["link"],
                 "fw": file.get("width", 0),
                 "fh": file.get("height", 0),
-                "thumbnail": video.get("image", "")
+                "thumbnail": video.get("image", ""),
+                "contributor": contributor,
             })
     return results
 
@@ -64,6 +71,8 @@ def search_pixabay(query):
             file = video.get("videos", {}).get(quality, {})
             if file.get("url"):
                 thumb = f"https://i.vimeocdn.com/video/{video.get('picture_id')}_640x360.jpg" if video.get("picture_id") else ""
+                user_name = str(video.get("user") or "").strip()
+                contributor = f"contributor:{user_name.lower()}" if user_name else ""
                 results.append({
                     "source": "pixabay",
                     "id": f"pb_{video['id']}",
@@ -73,7 +82,8 @@ def search_pixabay(query):
                     "url": file["url"],
                     "fw": file.get("width", 0),
                     "fh": file.get("height", 0),
-                    "thumbnail": thumb
+                    "thumbnail": thumb,
+                    "contributor": contributor,
                 })
                 break
     return results

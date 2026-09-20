@@ -3,15 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ShortsAI Studio Ultimate Pro — 100 Özellikli Otonom YouTube Shorts İş İstasyonu</title>
-    <meta name="description" content="R10.net tabanlı 100 niş ve otomasyon özelliği ile donatılmış, 0 TL maliyetli YouTube Shorts üretim ve dağıtım stüdyosu.">
+    <title>ShortsAI Studio — YouTube Shorts Üretim</title>
+    <meta name="description" content="Konu gir, senaryo üret, kalite kontrolünden geçir ve Shorts render al.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=5.3">
+    <link rel="stylesheet" href="/static/settings-quota.css?v=1.0">
+    <script>
+        // F5 ve Sekme Kalıcılık Koruyucusu (Flicker & Reset Önleyici)
+        (function() {
+            try {
+                var hash = (window.location.hash || '').replace('#', '').trim();
+                var saved = hash || localStorage.getItem('activeShortsTab') || 'studio';
+                if (saved && saved !== 'studio') {
+                    var style = document.createElement('style');
+                    style.id = 'early-tab-style';
+                    style.innerHTML = '.tab-pane { display: none !important; } #pane-' + saved + ' { display: block !important; }';
+                    document.head.appendChild(style);
+                }
+            } catch (e) {}
+        })();
+    </script>
 </head>
-<body data-theme="violet">
+<body data-theme="violet" class="produce-neutral">
     <div class="app-container">
         <!-- SOL SİDEBAR NAVİGASYON -->
         <aside class="sidebar">
@@ -20,8 +36,8 @@
                     <i class="fa-solid fa-bolt-lightning"></i>
                 </div>
                 <div class="brand-info">
-                    <h1>ShortsAI <span class="badge-pro">ULTIMATE PRO</span></h1>
-                    <p class="brand-sub">100-FEATURE ENTERPRISE OS</p>
+                    <h1>ShortsAI Studio</h1>
+                    <p class="brand-sub">Shorts üretim iş istasyonu</p>
                 </div>
             </div>
 
@@ -33,111 +49,141 @@
             </div>
 
             <nav class="nav-links">
-                <div class="nav-section-title">ANA ÇALIŞMA ALANI</div>
+                <div class="nav-section-title nav-section-primary">ÜRET</div>
                 <button class="nav-btn active" data-tab="studio" id="nav-btn-studio">
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    <span>Hızlı Üretim Stüdyosu</span>
+                    <span>Stüdyo</span>
                     <span class="nav-hotkey">⌘1</span>
                 </button>
                 <button class="nav-btn" data-tab="timeline" id="nav-btn-timeline">
                     <i class="fa-solid fa-sliders"></i>
-                    <span>Sahne & Kurgu Editörü</span>
+                    <span>Sahne Editörü</span>
                     <span class="nav-badge" id="badge-scene-count">0</span>
                 </button>
                 <button class="nav-btn" data-tab="niches" id="nav-btn-niches">
                     <i class="fa-solid fa-shapes"></i>
-                    <span>35 Niş & Viral Kütüphane</span>
-                    <span class="nav-badge highlight">35 Niş</span>
+                    <span>Niş Kütüphanesi</span>
                 </button>
 
-                <div class="nav-section-title">OTOMASYON & BOTLAR</div>
-                <button class="nav-btn" data-tab="rss-bot" id="nav-btn-rss">
-                    <i class="fa-solid fa-rss"></i>
-                    <span>Oto-Haber & RSS Botu</span>
-                    <span class="nav-badge pulse">Canlı</span>
-                </button>
-                <button class="nav-btn" data-tab="batch" id="nav-btn-batch">
-                    <i class="fa-solid fa-layer-group"></i>
-                    <span>Toplu Üretim & CSV Kuyruğu</span>
-                    <span class="nav-badge" id="badge-batch-count">0</span>
-                </button>
-                <button class="nav-btn" data-tab="growth" id="nav-btn-growth">
-                    <i class="fa-solid fa-chart-line"></i>
-                    <span>Büyüme & Algoritma Lab</span>
-                </button>
-                <button class="nav-btn" data-tab="roadmap500" id="nav-btn-roadmap500">
-                    <i class="fa-solid fa-list-check text-warning"></i>
-                    <span>500 Madde Gezgini</span>
-                    <span class="nav-badge highlight">500</span>
-                </button>
+                <details class="nav-collapsible">
+                    <summary class="nav-section-title nav-collapsible-summary">Otomasyon <i class="fa-solid fa-chevron-down nav-collapse-icon"></i></summary>
+                    <button class="nav-btn" data-tab="rss-bot" id="nav-btn-rss">
+                        <i class="fa-solid fa-rss"></i>
+                        <span>RSS & Haber Botu</span>
+                    </button>
+                    <button class="nav-btn" data-tab="batch" id="nav-btn-batch">
+                        <i class="fa-solid fa-layer-group"></i>
+                        <span>Toplu Üretim</span>
+                        <span class="nav-badge" id="badge-batch-count">0</span>
+                    </button>
+                    <button class="nav-btn" data-tab="growth" id="nav-btn-growth">
+                        <i class="fa-solid fa-chart-line"></i>
+                        <span>Büyüme Lab</span>
+                    </button>
+                </details>
 
-                <div class="nav-section-title">STİL & MEDYA LABORATUVARI</div>
-                <button class="nav-btn" data-tab="effects" id="nav-btn-effects">
-                    <i class="fa-solid fa-gamepad"></i>
-                    <span>Split-Screen & Görsel FX</span>
-                </button>
-                <button class="nav-btn" data-tab="subtitles" id="nav-btn-subtitles">
-                    <i class="fa-solid fa-closed-captioning"></i>
-                    <span>CapCut Karaoke Altyazı</span>
-                </button>
-                <button class="nav-btn" data-tab="audio" id="nav-btn-audio">
-                    <i class="fa-solid fa-headphones"></i>
-                    <span>Ses, SFX & Müzik Konsolu</span>
-                </button>
+                <details class="nav-collapsible">
+                    <summary class="nav-section-title nav-collapsible-summary">Stil & Araçlar <i class="fa-solid fa-chevron-down nav-collapse-icon"></i></summary>
+                    <button class="nav-btn" data-tab="effects" id="nav-btn-effects">
+                        <i class="fa-solid fa-gamepad"></i>
+                        <span>Split-Screen & FX</span>
+                    </button>
+                    <button class="nav-btn" data-tab="subtitles" id="nav-btn-subtitles">
+                        <i class="fa-solid fa-closed-captioning"></i>
+                        <span>Altyazı Stilleri</span>
+                    </button>
+                    <button class="nav-btn" data-tab="audio" id="nav-btn-audio">
+                        <i class="fa-solid fa-headphones"></i>
+                        <span>Ses & Müzik</span>
+                    </button>
+                    <button class="nav-btn" data-tab="roadmap500" id="nav-btn-roadmap500">
+                        <i class="fa-solid fa-list-check"></i>
+                        <span>Yol Haritası</span>
+                    </button>
+                </details>
 
-                <div class="nav-section-title">YÖNETİM & DAĞITIM</div>
-                <button class="nav-btn" data-tab="channels" id="nav-btn-channels">
-                    <i class="fa-brands fa-youtube"></i>
-                    <span>Kanal & Otomatik Yayın</span>
-                </button>
-                <button class="nav-btn" data-tab="gallery" id="nav-btn-gallery">
-                    <i class="fa-solid fa-photo-film"></i>
-                    <span>Video Galerisi</span>
-                    <span class="nav-badge" id="badge-gallery-count">0</span>
-                </button>
-                <button class="nav-btn" data-tab="settings" id="nav-btn-settings">
-                    <i class="fa-solid fa-gear"></i>
-                    <span>API & Sistem Ayarları</span>
-                </button>
+                <details class="nav-collapsible">
+                    <summary class="nav-section-title nav-collapsible-summary">Yönetim <i class="fa-solid fa-chevron-down nav-collapse-icon"></i></summary>
+                    <button class="nav-btn" data-tab="channels" id="nav-btn-channels">
+                        <i class="fa-brands fa-youtube"></i>
+                        <span>Kanal & Yayın</span>
+                    </button>
+                    <button class="nav-btn" data-tab="gallery" id="nav-btn-gallery">
+                        <i class="fa-solid fa-photo-film"></i>
+                        <span>Galeri</span>
+                        <span class="nav-badge" id="badge-gallery-count">0</span>
+                    </button>
+                    <button class="nav-btn" data-tab="settings" id="nav-btn-settings">
+                        <i class="fa-solid fa-gear"></i>
+                        <span>Ayarlar</span>
+                    </button>
+                </details>
             </nav>
 
             <div class="sidebar-bottom">
-                <!-- Tema Renk Seçici -->
-                <div class="theme-accent-row">
-                    <span>Tema Rengi:</span>
-                    <div class="theme-dots">
-                        <span class="theme-dot violet active" data-color="violet" title="Elektrik Mor"></span>
-                        <span class="theme-dot cyan" data-color="cyan" title="Cyber Cyan"></span>
-                        <span class="theme-dot emerald" data-color="emerald" title="Zümrüt Yeşil"></span>
-                        <span class="theme-dot amber" data-color="amber" title="Neon Amber"></span>
+                <div class="sidebar-status-panel">
+                    <div class="ssp-head">
+                        <span class="ssp-head-title"><i class="fa-solid fa-palette"></i> Görünüm</span>
+                        <div class="ssp-theme-picker">
+                            <span class="theme-picker-label">Tema</span>
+                            <div class="theme-dots theme-dots-sm">
+                                <span class="theme-dot violet active" data-color="violet" title="Elektrik Mor"></span>
+                                <span class="theme-dot cyan" data-color="cyan" title="Cyber Cyan"></span>
+                                <span class="theme-dot emerald" data-color="emerald" title="Zümrüt Yeşil"></span>
+                                <span class="theme-dot amber" data-color="amber" title="Neon Amber"></span>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <div class="quota-mini-card" id="sidebar-quota-card" style="cursor: pointer;" title="Detaylı Kota & API Panelini Aç">
-                    <div class="quota-row">
-                        <span>Aktif AI Motoru:</span>
-                        <strong id="mini-ai-name">Kontrol Ediliyor...</strong>
+                    <div class="quota-mini-card ssp-quota-card" id="sidebar-quota-card" title="Detaylı Kota &amp; API Panelini Aç">
+                        <div class="ssp-card-head">
+                            <div class="ssp-render-badge" id="mini-render-hint">
+                                <span class="ssp-render-dot" id="mini-render-dot" aria-hidden="true"></span>
+                                <span id="mini-render-hint-text">Kontrol ediliyor…</span>
+                            </div>
+                            <button type="button" class="ssp-details-btn" id="btn-sidebar-quota-link" aria-label="Kota detayları">
+                                <i class="fa-solid fa-chart-pie"></i>
+                            </button>
+                        </div>
+
+                        <div class="ssp-engine-row">
+                            <span class="ssp-label">AI Motor</span>
+                            <strong id="mini-ai-name" class="ssp-engine-name">Kontrol Ediliyor...</strong>
+                        </div>
+
+                        <div class="ssp-meter-grid">
+                            <div class="ssp-meter">
+                                <div class="ssp-meter-top">
+                                    <span class="ssp-label">Anlık Hız</span>
+                                    <strong id="mini-quota-rpm-display" class="ssp-meter-val">—</strong>
+                                </div>
+                                <div class="ssp-meter-track">
+                                    <div class="ssp-meter-fill" id="mini-rpm-fill"></div>
+                                </div>
+                                <span class="ssp-meter-unit">RPM</span>
+                            </div>
+                            <div class="ssp-meter">
+                                <div class="ssp-meter-top">
+                                    <span class="ssp-label">Günlük İstek</span>
+                                    <strong id="mini-quota-rpd-display" class="ssp-meter-val">—</strong>
+                                </div>
+                                <div class="ssp-meter-track">
+                                    <div class="ssp-meter-fill" id="mini-rpd-fill"></div>
+                                </div>
+                                <span class="ssp-meter-unit" id="mini-rpd-remaining">— kaldı</span>
+                            </div>
+                        </div>
+
+                        <div class="ssp-footer-row">
+                            <span class="ssp-cost-chip">0.00 TL · 0 TL Stack</span>
+                            <span id="mini-quota-badge" class="ssp-status-chip">Bağlantı Bekleniyor</span>
+                        </div>
+
+                        <div class="quota-bar-wrapper ssp-health-bar">
+                            <div class="quota-bar-fill" id="mini-quota-fill"></div>
+                        </div>
+                        <div id="mini-quota-reset-text" class="ssp-reset-note" style="display: none;"></div>
                     </div>
-                    <div class="quota-row">
-                        <span>Anlık Hız (RPM):</span>
-                        <strong id="mini-quota-rpm-display" style="color: #38bdf8;">-</strong>
-                    </div>
-                    <div class="quota-row">
-                        <span>Günlük İstek (RPD):</span>
-                        <strong id="mini-quota-rpd-display" style="color: #a855f7;">-</strong>
-                    </div>
-                    <div class="quota-row">
-                        <span>Üretim Maliyeti:</span>
-                        <strong class="text-success">0.00 TL (0 TL Stack)</strong>
-                    </div>
-                    <div class="quota-row" id="mini-quota-status-row">
-                        <span>Kota Durumu:</span>
-                        <span id="mini-quota-badge" class="badge-status-normal" style="color: #38bdf8; font-size: 11px; font-weight: 600;">Bağlantı Bekleniyor</span>
-                    </div>
-                    <div class="quota-bar-wrapper">
-                        <div class="quota-bar-fill" id="mini-quota-fill" style="width: 100%; background: #38bdf8;"></div>
-                    </div>
-                    <div id="mini-quota-reset-text" style="font-size: 10px; color: #94a3b8; margin-top: 4px; display: none;"></div>
                 </div>
             </div>
         </aside>
@@ -150,7 +196,6 @@
                 <div class="header-left">
                     <div class="title-row">
                         <h2 id="current-page-title">Hızlı Üretim Stüdyosu</h2>
-                        <span class="pro-chip"><i class="fa-solid fa-circle-check"></i> 500 / 500 Yol Haritası Aktif (%100)</span>
                     </div>
                     <p id="current-page-desc">Konunuzu belirleyin, 35 niş arasından seçim yapın ve tek tıkla viral Shorts üretin.</p>
                 </div>
@@ -175,6 +220,12 @@
                             <span id="header-quota-summary" style="font-weight: 600; color: #f8fafc;">AI: Gemini (%100)</span>
                             <span class="quota-rpm-tag" id="header-quota-tag" style="background: rgba(168, 85, 247, 0.25); color: #c084fc; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700;">0/15 RPM</span>
                         </div>
+                        <!-- Canlı Terminal / Render Durumu Butonu -->
+                        <button type="button" class="btn btn-sm btn-outline" id="header-btn-open-terminal" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; background: rgba(56, 189, 248, 0.08); cursor: pointer;" title="Canlı Render Konsolu & Terminal Loglarını Aç">
+                            <i class="fa-solid fa-terminal"></i>
+                            <span id="header-terminal-text">Terminal</span>
+                            <span id="header-render-badge" style="display: none; background: #10b981; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 700;">%0</span>
+                        </button>
                     </div>
 
                     <div class="header-chip highlight" id="chip-server-health">
@@ -191,7 +242,7 @@
                     <i class="fa-solid fa-shuffle text-warning"></i>
                     <span>Rastgele Niş Seç & Konu Üret</span>
                 </button>
-                <button class="quick-action-btn" id="qa-latest-news">
+                <button class="quick-action-btn" id="qa-latest-news" data-niche-family="news">
                     <i class="fa-solid fa-newspaper text-danger"></i>
                     <span>Son Dakika Flaş Haber Çek</span>
                 </button>
@@ -207,6 +258,13 @@
 
             <!-- SEKME 1: HIZLI ÜRETİM STÜDYOSU -->
             <section class="tab-pane active" id="pane-studio">
+                <nav class="studio-flow-rail" id="studio-flow-rail" aria-label="Üretim akışı">
+                    <span class="flow-step is-active" data-flow="topic"><span class="flow-num">1</span> Konu</span>
+                    <i class="fa-solid fa-chevron-right flow-arrow" aria-hidden="true"></i>
+                    <span class="flow-step" data-flow="timeline"><span class="flow-num">2</span> Senaryo</span>
+                    <i class="fa-solid fa-chevron-right flow-arrow" aria-hidden="true"></i>
+                    <span class="flow-step" data-flow="render"><span class="flow-num">3</span> Render</span>
+                </nav>
                 <div class="studio-grid">
                     <!-- Sol Form Bölümü -->
                     <div class="studio-form-card glass-box">
@@ -219,7 +277,7 @@
                         </div>
 
                         <!-- CANLI YAPAY ZEKA KOTA & SAĞLIK BARI -->
-                        <div class="ai-quota-strip mt-2 mb-3" id="studio-ai-quota-strip" style="display: flex; align-items: center; justify-content: space-between; background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(168, 85, 247, 0.25); padding: 8px 12px; border-radius: 8px; font-size: 12px;">
+                        <div class="ai-quota-strip mt-2 mb-3" id="studio-ai-quota-strip" style="display: flex; align-items: center; justify-content: space-between; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(148, 163, 184, 0.18); padding: 8px 12px; border-radius: 8px; font-size: 12px;">
 
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span class="pulse-dot green" id="studio-ai-pulse"></span>
@@ -244,11 +302,26 @@
                                 <i class="fa-solid fa-heading"></i>
                                 <input type="text" id="input-topic" placeholder="Örn: Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı" value="Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı">
                             </div>
+                            <div id="topic-suggest-panel" class="topic-suggest-panel hidden" aria-live="polite">
+                                <div class="topic-suggest-header">
+                                    <span id="topic-suggest-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Nişe Uygun Konu Önerileri</span>
+                                    <button type="button" class="topic-suggest-close" id="btn-close-topic-suggest" title="Kapat">&times;</button>
+                                </div>
+                                <div id="topic-suggest-body" class="topic-suggest-body"></div>
+                                <div class="topic-suggest-footer">
+                                    <button type="button" class="btn btn-sm btn-outline" id="btn-retry-topic-suggest"><i class="fa-solid fa-rotate-right"></i> Yeniden Öner</button>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-row-2">
                             <div class="form-field">
-                                <label for="select-niche"><i class="fa-solid fa-shapes text-warning"></i> Niş Şablonu (35 Niş)</label>
+                                <label for="select-niche" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                                    <span><i class="fa-solid fa-shapes text-warning"></i> Niş Şablonu (35 Niş)</span>
+                                    <span id="niche-lock-badge" class="niche-tag hidden" style="background:rgba(16,185,129,.18);color:#34d399;font-size:10px;" title="Konu ile otomatik kilitlendi">
+                                        <i class="fa-solid fa-lock"></i> <span id="niche-lock-label">—</span>
+                                    </span>
+                                </label>
                                 <select id="select-niche" class="select-styled">
                                     <!-- Dinamik doldurulur -->
                                 </select>
@@ -273,23 +346,61 @@
                                 </select>
                             </div>
                             <div class="form-field">
-                                <label for="select-voice-gender"><i class="fa-solid fa-headset text-secondary"></i> Seslendirmen</label>
-                                <select id="select-voice-gender" class="select-styled">
-                                    <option value="auto">Otomatik Ses (Konu ve Nişe Göre)</option>
-                                    <option value="male">Doğal Erkek Ses (Ahmet / Guy)</option>
-                                    <option value="female">Doğal Kadın Ses (Emel / Jenny)</option>
+                                <label for="select-tts-voice"><i class="fa-solid fa-headset text-secondary"></i> Seslendirmen (Edge / ElevenLabs)</label>
+                                <div style="display:flex;gap:8px;align-items:stretch;">
+                                    <select id="select-tts-voice" class="select-styled" style="flex:1;">
+                                        <option value="auto">Otomatik (konu / nişe göre)</option>
+                                    </select>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-preview-voice" title="Seçili sesi dinle" style="white-space:nowrap;">
+                                        <i class="fa-solid fa-volume-high"></i> Dinle
+                                    </button>
+                                </div>
+                                <small style="color:#94a3b8;font-size:11px;">Edge TTS (0 TL) veya ElevenLabs Free (API key ile). TR içerik için ElevenLabs çok dilli sesler de uygundur.</small>
+                            </div>
+                            <div class="form-field mt-2">
+                                <label for="studio-bgm-track"><i class="fa-solid fa-music text-primary"></i> Fon Müziği (Render)</label>
+                                <select id="studio-bgm-track" class="select-styled">
+                                    <option value="">Otomatik / yok</option>
                                 </select>
+                                <small style="color:#94a3b8;font-size:11px;">Ses &amp; Müzik sekmesi ile senkron — boş bırakırsanız VoiceLab/Pixabay otomatik seçer.</small>
                             </div>
                         </div>
 
+                        
+                        <div class="form-field mt-3">
+                            <label for="select-render-resolution" style="display: flex; justify-content: space-between; align-items: center;">
+                                <span><i class="fa-solid fa-gauge-high text-warning"></i> Render Çözünürlüğü &amp; Hız Modu</span>
+                                <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; font-size: 10px;">Testler İçin 540p / 720p Önerilir</span>
+                            </label>
+                            <select id="select-render-resolution" class="select-styled" style="font-weight: 600;">
+                                <option value="1080p" selected>1080x1920 (Full HD — YouTube Shorts Final)</option>
+                                <option value="720p">720x1280 (Hızlı HD — 2.2x Daha Hızlı)</option>
+                                <option value="540p">540x960 (Ultra Hızlı Geliştirici Testi — 4x Kat Daha Hızlı!)</option>
+                            </select>
+                            <small style="color: #94a3b8; font-size: 11px; display: block; margin-top: 4px;">
+                                Video testleri ve sahne denemelerinde <strong>540p</strong> veya <strong>720p</strong> seçerek saniyeler içinde export alabilirsiniz.
+                            </small>
+                        </div>
+
+                        <div class="form-field mt-2">
+                            <label for="select-studio-safe-mode" style="display: flex; justify-content: space-between; align-items: center;">
+                                <span><i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Efekt Derinliği &amp; Kural Modu</span>
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 10px;">Ayarlar ile Senkron</span>
+                            </label>
+                            <select id="select-studio-safe-mode" class="select-styled" style="font-size: 12px; font-weight: 500;">
+                                <option value="false">Tam Kural Modu (Tüm 100 Kural, Emojiler, Rozetler &amp; B-Roll Açık)</option>
+                                <option value="true">Hızlı Güvenli Mod (GPU Donanım Filtreleri, 15-35 FPS Hızlı Render)</option>
+                            </select>
+                        </div>
+
                         <div class="mt-3" id="niche-production-profile" style="border: 1px solid rgba(34, 211, 238, 0.22); background: rgba(8, 47, 73, 0.22); border-radius: 8px; padding: 12px;"></div>
-                        <div class="mt-2" style="display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <div class="mt-2" data-niche-family="news stoic" style="display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap;">
                             <span style="font-size: 11px; color: var(--text-muted);">Resmi YouTube Data API v3 ile son 24 saat araştırması</span>
                             <button class="btn btn-secondary btn-sm" id="btn-load-niche-trends"><i class="fa-solid fa-chart-line"></i> Son 24 Saat Trendlerini Getir</button>
                         </div>
-                        <div class="mt-2" id="niche-trends-results" style="display: none;"></div>
+                        <div class="mt-2" id="niche-trends-results" data-niche-family="news stoic" style="display: none;"></div>
 
-                        <div class="mt-3" style="border-top: 1px solid rgba(148,163,184,.16); padding-top: 12px;">
+                        <div class="mt-3" data-niche-family="stoic" style="border-top: 1px solid rgba(148,163,184,.16); padding-top: 12px;">
                             <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
                                 <strong style="font-size: 12px; color: #fbbf24;"><i class="fa-solid fa-magnifying-glass"></i> YouTube Studio İçerik Boşlukları</strong>
                                 <span style="font-size: 10px; color: var(--text-muted);">Araştırma > İçerik boşlukları sonuçlarını yapıştırın</span>
@@ -301,14 +412,19 @@
                             <div class="mt-2" id="content-gap-results" style="display: none;"></div>
                         </div>
 
-                        <div class="mt-3" id="reddit-research-panel" style="display: none; border-top: 1px solid rgba(148,163,184,.16); padding-top: 12px;">
+                        <div class="mt-3" id="whatsapp-hint-panel" data-niche-family="whatsapp" style="display: none; border-top: 1px solid rgba(148,163,184,.16); padding-top: 12px;">
+                            <strong style="font-size: 12px; color: #25D366;"><i class="fa-brands fa-whatsapp"></i> Chat Hikayesi Modu</strong>
+                            <p style="font-size: 11px; color: #94a3b8; margin-top: 6px;">Split-screen açık tutulur; sahneler mesaj balonu akışına göre üretilir. Görsel aramalar: <code>smartphone chat screen</code>, <code>WhatsApp bubble UI</code>.</p>
+                        </div>
+
+                        <div class="mt-3" id="reddit-research-panel" data-niche-family="reddit" style="display: none; border-top: 1px solid rgba(148,163,184,.16); padding-top: 12px;">
                             <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
                                 <strong style="font-size: 12px; color: #ff6b35;"><i class="fa-brands fa-reddit"></i> Reddit Kaynak Araştırması</strong>
                                 <span style="font-size: 10px; color: var(--text-muted);">Kaynak kartı + özgün anlatım</span>
                             </div>
                             <div class="form-row-2 mt-2">
-                                <div class="form-field"><select id="select-reddit-subreddit" class="select-styled"><option value="AITA">r/AITA</option><option value="tifu">r/tifu</option><option value="relationships">r/relationships</option></select></div>
-                                <div class="form-field"><button class="btn btn-secondary btn-sm w-100" id="btn-load-reddit-posts"><i class="fa-solid fa-comments"></i> Güncel Gönderileri Getir</button></div>
+                                <div class="form-field"><select id="select-reddit-subreddit" class="select-styled"><option value="AITA">r/AITA (Haksız mıyım?)</option><option value="confession">r/confession (Gizli İtiraflar)</option><option value="tifu">r/tifu (Bugün Mahvettim)</option><option value="TrueOffMyChest">r/TrueOffMyChest (İç Dökme)</option><option value="relationships">r/relationships (İlişki Draması)</option><option value="NuclearRevenge">r/NuclearRevenge (Ağır İntikam)</option><option value="AskReddit">r/AskReddit (Viral Sorular)</option></select></div>
+                                <div class="form-field"><button class="btn btn-secondary btn-sm w-100" id="btn-load-reddit-posts"><i class="fa-solid fa-arrows-rotate"></i> Güncel Gönderileri Getir</button></div>
                             </div>
                             <div class="mt-2" id="reddit-post-results"></div>
                         </div>
@@ -327,6 +443,18 @@
                                         <small>Altta Subway Surfers / Parkour oynanışı</small>
                                     </div>
                                 </label>
+                                <div class="form-field mt-2" id="gameplay-category-wrap" style="display:none;grid-column:1/-1;">
+                                    <label for="select-gameplay-category"><i class="fa-solid fa-gamepad text-success"></i> Gameplay Havuzu</label>
+                                    <select id="select-gameplay-category" class="select-styled">
+                                        <option value="auto">Otomatik (nişe göre)</option>
+                                        <option value="mobile_game">Mobil Oyun</option>
+                                        <option value="soap_cutting">Sabun Kesme / ASMR</option>
+                                        <option value="satisfying">Satisfying / Rahatlatıcı</option>
+                                        <option value="parkour">Parkour Oyunu</option>
+                                        <option value="subway_surfers_style">Subway Surfers / Runner</option>
+                                    </select>
+                                    <small style="color:#94a3b8;font-size:11px;">Son 75 videoda aynı gameplay klibi tekrarlanmaz.</small>
+                                </div>
                                 <label class="switch-item" title="Mikro renk, parlaklık ve görünmez piksel watermark ile telif/kopya önleme">
                                     <input type="checkbox" id="chk-anti-duplicate" checked>
                                     <span class="switch-slider"></span>
@@ -354,18 +482,21 @@
                             </div>
                         </div>
 
-                        <!-- Viral Algoritma Göstergesi -->
-                        <div class="algorithm-score-box mt-3">
-                            <div class="score-header">
-                                <span><i class="fa-solid fa-fire text-danger"></i> Algoritma & Tutunma (Retention) Skoru</span>
-                                <strong class="text-success" id="algo-score-val">98 / 100 (Kusursuz)</strong>
+                        <!-- Pre-render kalite paneli (plan-derived, canlı) -->
+                        <div class="studio-quality-panel mt-3" id="studio-quality-panel">
+                            <div class="sqp-header">
+                                <span><i class="fa-solid fa-shield-halved"></i> Render Öncesi Kalite</span>
+                                <span class="sqp-status-badge waiting" id="sqp-status-badge">Senaryo bekleniyor</span>
                             </div>
-                            <div class="score-checks">
-                                <span class="check-pill active"><i class="fa-solid fa-check"></i> İlk 3s Kanca (Hook)</span>
-                                <span class="check-pill active"><i class="fa-solid fa-check"></i> Sonsuz Döngü (Loop)</span>
-                                <span class="check-pill active"><i class="fa-solid fa-check"></i> Audio Ducking (%12)</span>
-                                <span class="check-pill active"><i class="fa-solid fa-check"></i> 3-4 Kelime Altyazı</span>
+                            <div class="sqp-pills" id="sqp-pills">
+                                <span class="sqp-pill neutral" id="sqp-cadence"><i class="fa-solid fa-film"></i> Cadence: —</span>
+                                <span class="sqp-pill neutral" id="sqp-words"><i class="fa-solid fa-font"></i> Kelime: —</span>
+                                <span class="sqp-pill neutral" id="sqp-duration"><i class="fa-solid fa-clock"></i> Süre: —</span>
+                                <span class="sqp-pill neutral" id="sqp-clips"><i class="fa-solid fa-clone"></i> Klip: —</span>
+                                <span class="sqp-pill neutral" id="sqp-narration"><i class="fa-solid fa-comment-dots"></i> Anlatım: —</span>
+                                <span class="sqp-pill neutral" id="sqp-plagiarism"><i class="fa-solid fa-fingerprint"></i> Özgünlük: —</span>
                             </div>
+                            <ul class="sqp-issues hidden" id="sqp-issues"></ul>
                         </div>
 
                         <div class="form-actions mt-4">
@@ -478,6 +609,8 @@
                 </div>
             </section>
 
+            <!-- SEKME 2:
+
             <!-- SEKME 2: SAHNE & ZAMAN ÇİZELGESİ EDİTÖRÜ — 500 Madde Uyumlu -->
             <section class="tab-pane" id="pane-timeline">
                 <div class="timeline-header glass-box mb-3">
@@ -502,9 +635,9 @@
                             <i class="fa-solid fa-film"></i>
                             <span id="chip-cadence-text">Cadence: 0/14</span>
                         </div>
-                        <div class="compliance-chip" id="chip-32s-violations" title="Madde 76: Hiçbir görsel 3.2 sn'den uzun durmamalı">
+                        <div class="compliance-chip" id="chip-32s-violations" title="Madde 76: 3.2sn üstü sahneler uyarı — AI tempo serbest">
                             <i class="fa-solid fa-triangle-exclamation"></i>
-                            <span id="chip-32s-text">3.2sn İhlali: 0</span>
+                            <span id="chip-32s-text">3.2sn Uyarı: 0</span>
                         </div>
                         <div class="compliance-chip" id="chip-duplicates" title="Madde 247: Arka arkaya aynı tip görsel yasak">
                             <i class="fa-solid fa-clone"></i>
@@ -559,30 +692,177 @@
                 </div>
             </section>
 
-            <!-- SEKME 3: 35 NİŞ & VİRAL KÜTÜPHANE -->
+            <!-- SEKME 3: 35 NİŞ & VİRAL KÜTÜPHANE (Advanced v2.0) -->
             <section class="tab-pane" id="pane-niches">
-                <div class="glass-box mb-3">
-                    <div class="box-header">
-                        <i class="fa-solid fa-shapes text-warning"></i>
-                        <div>
-                            <h3>35 R10 Viral Niş Şablonları</h3>
-                            <p>Her niş özel sistem prompt'u, viral kanca kalıbı ve kurgu kurallarıyla donatılmıştır.</p>
+
+                <!-- === HEADER & SEARCH BAR === -->
+                <div class="glass-box mb-3" style="background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(6,182,212,0.08));">
+                    <div class="box-header" style="align-items:flex-start; flex-wrap:wrap; gap:16px;">
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <div style="width:48px;height:48px;background:linear-gradient(135deg,#8b5cf6,#06b6d4);border-radius:14px;display:flex;align-items:center;justify-content:center;">
+                                <i class="fa-solid fa-shapes" style="font-size:22px;color:#fff;"></i>
+                            </div>
+                            <div>
+                                <h3 style="margin:0;font-size:20px;">35 R10 Viral Niş Kütüphanesi</h3>
+                                <p style="margin:0;font-size:12px;color:#94a3b8;">RPM analizi · Viral skor · A/B Hook varyantları · Collision Engine</p>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;flex:1;min-width:260px;justify-content:flex-end;flex-wrap:wrap;">
+                            <div style="position:relative;flex:1;min-width:200px;">
+                                <i class="fa-solid fa-search" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#64748b;font-size:12px;pointer-events:none;"></i>
+                                <input id="niche-search-input" type="text" placeholder="Niş ara..." style="width:100%;padding:8px 10px 8px 32px;background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.2);border-radius:8px;color:#e2e8f0;font-size:13px;box-sizing:border-box;" />
+                            </div>
+                            <button id="btn-niche-view-grid" class="btn btn-secondary" style="padding:8px 12px;font-size:12px;" title="Grid Görünüm">
+                                <i class="fa-solid fa-grip"></i>
+                            </button>
+                            <button id="btn-niche-view-list" class="btn btn-secondary" style="padding:8px 12px;font-size:12px;" title="Liste Görünüm">
+                                <i class="fa-solid fa-list"></i>
+                            </button>
                         </div>
                     </div>
-                    <div class="niche-filter-bar mt-3">
-                        <button class="filter-pill active" data-cat="all">Tümü (35 Niş)</button>
-                        <button class="filter-pill" data-cat="Haber & Güncel">Haber & Güncel</button>
-                        <button class="filter-pill" data-cat="Felsefe & Kişisel Gelişim">Felsefe & Psikoloji</button>
-                        <button class="filter-pill" data-cat="Quiz & Oyun">Quiz & Oyun</button>
-                        <button class="filter-pill" data-cat="Finans & Yatırım">Finans & Kripto</button>
-                        <button class="filter-pill" data-cat="Bilim & Merak">Bilim & Gizem</button>
-                        <button class="filter-pill" data-cat="Ürün İnceleme & Satış">Affiliate & Ürün</button>
+
+                    <!-- Advanced Filter Row -->
+                    <div style="margin-top:16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;flex:1;">
+                            <button class="filter-pill active" data-cat="all">Tümü</button>
+                            <button class="filter-pill" data-cat="Felsefe">Felsefe & Psikoloji</button>
+                            <button class="filter-pill" data-cat="Hikaye">Hikaye & Reddit</button>
+                            <button class="filter-pill" data-cat="Finans">Finans & Kripto</button>
+                            <button class="filter-pill" data-cat="Quiz">Quiz & Oyun</button>
+                            <button class="filter-pill" data-cat="Bilim">Bilim & Gizem</button>
+                            <button class="filter-pill" data-cat="Teknoloji">Teknoloji & AI</button>
+                            <button class="filter-pill" data-cat="Spor">Spor & Futbol</button>
+                            <button class="filter-pill" data-cat="Sağlık">Sağlık & Spor</button>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <select id="niche-sort-select" class="select-styled" style="font-size:12px;padding:6px 10px;min-width:160px;">
+                                <option value="viral_score">🔥 En Viral Skoru</option>
+                                <option value="rpm">💰 En Yüksek RPM</option>
+                                <option value="retention">👁 En Yüksek Retention</option>
+                                <option value="competition_low">🟢 En Az Rekabet</option>
+                                <option value="alphabetic">🔤 Alfabetik</option>
+                            </select>
+                            <select id="niche-rpm-filter" class="select-styled" style="font-size:12px;padding:6px 10px;min-width:140px;">
+                                <option value="all">Tüm RPM Aralıkları</option>
+                                <option value="low">Düşük ($2-7)</option>
+                                <option value="mid">Orta ($8-15)</option>
+                                <option value="high">Yüksek ($16+)</option>
+                            </select>
+                            <select id="niche-viral-filter" class="select-styled" style="font-size:12px;padding:6px 10px;min-width:130px;">
+                                <option value="all">Tüm Viral Skorlar</option>
+                                <option value="70">70+ Skor</option>
+                                <option value="85">85+ Skor</option>
+                                <option value="90">90+ Skor (Elite)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Stats Row -->
+                    <div style="margin-top:14px;display:flex;gap:12px;flex-wrap:wrap;">
+                        <div id="niche-stat-total" style="background:rgba(139,92,246,0.15);border:1px solid rgba(139,92,246,0.3);border-radius:8px;padding:8px 14px;font-size:12px;color:#c4b5fd;">
+                            <i class="fa-solid fa-layer-group"></i> <span id="niche-count-shown">35</span> Niş
+                        </div>
+                        <div style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:8px;padding:8px 14px;font-size:12px;color:#fbbf24;">
+                            <i class="fa-solid fa-crown"></i> En İyi Avg Viral: <span id="niche-stat-avg-viral">--</span>
+                        </div>
+                        <div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.25);border-radius:8px;padding:8px 14px;font-size:12px;color:#34d399;">
+                            <i class="fa-solid fa-dollar-sign"></i> En Yüksek RPM: <span id="niche-stat-top-rpm">--</span>
+                        </div>
+                        <div style="background:rgba(6,182,212,0.1);border:1px solid rgba(6,182,212,0.25);border-radius:8px;padding:8px 14px;font-size:12px;color:#67e8f9;">
+                            <i class="fa-solid fa-globe"></i> Tier-1 Uyumlu: <span id="niche-stat-tier1">--</span> Niş
+                        </div>
                     </div>
                 </div>
 
-                <div class="niches-cards-grid" id="niches-cards-grid">
-                    <!-- 35 niş kartı JavaScript ile doldurulur -->
+                <!-- === TOOL PANELS (Leaderboard + Compare + Collision) === -->
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;" class="niche-tools-grid">
+
+                    <!-- Compare Tool -->
+                    <div class="glass-box" style="padding:16px;">
+                        <div class="box-header" style="margin-bottom:12px;">
+                            <i class="fa-solid fa-chart-bar text-info"></i>
+                            <div>
+                                <h3 style="font-size:14px;margin:0;">⚡ Niş Karşılaştırma Aracı</h3>
+                                <p style="font-size:11px;margin:0;color:#94a3b8;">İki nişi RPM, viral skor ve retention ile karşılaştır</p>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <select id="compare-niche-a" class="select-styled" style="flex:1;font-size:12px;min-width:0;"></select>
+                            <span style="color:#8b5cf6;font-weight:bold;font-size:16px;">VS</span>
+                            <select id="compare-niche-b" class="select-styled" style="flex:1;font-size:12px;min-width:0;"></select>
+                        </div>
+                        <button id="btn-compare-niches" class="btn btn-secondary w-100 mt-2" style="font-size:12px;">
+                            <i class="fa-solid fa-scale-balanced"></i> Karşılaştır
+                        </button>
+                        <div id="compare-result" style="margin-top:10px;display:none;"></div>
+                    </div>
+
+                    <!-- Collision Engine -->
+                    <div class="glass-box" style="padding:16px;background:linear-gradient(135deg,rgba(139,92,246,0.08),rgba(244,63,94,0.05));">
+                        <div class="box-header" style="margin-bottom:12px;">
+                            <i class="fa-solid fa-bolt text-warning"></i>
+                            <div>
+                                <h3 style="font-size:14px;margin:0;">🔥 Niş Melezleme (Collision Engine)</h3>
+                                <p style="font-size:11px;margin:0;color:#94a3b8;">İki nişi birleştir — benzersiz hibrit içerik oluştur</p>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <select id="collision-niche-a" class="select-styled" style="flex:1;font-size:12px;min-width:0;"></select>
+                            <span style="color:#f59e0b;font-weight:bold;font-size:16px;">✕</span>
+                            <select id="collision-niche-b" class="select-styled" style="flex:1;font-size:12px;min-width:0;"></select>
+                        </div>
+                        <button id="btn-collide-niches" class="btn btn-primary w-100 mt-2" style="font-size:12px;">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Melezle & Önizle
+                        </button>
+                        <div id="collision-result" style="margin-top:10px;display:none;"></div>
+                    </div>
                 </div>
+
+                <!-- === NICHE CARDS GRID === -->
+                <div class="niches-cards-grid" id="niches-cards-grid">
+                    <div class="empty-state-box"><i class="fa-solid fa-spinner fa-spin"></i><p>Niş kütüphanesi yükleniyor...</p></div>
+                </div>
+
+                <!-- === NICHE DETAIL MODAL === -->
+                <div id="niche-detail-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.75);backdrop-filter:blur(8px);overflow-y:auto;padding:20px;">
+                    <div style="max-width:860px;margin:0 auto;background:linear-gradient(135deg,#0f1629,#1a1f3c);border:1px solid rgba(139,92,246,0.3);border-radius:20px;overflow:hidden;">
+                        <div id="niche-modal-header" style="padding:24px 28px;background:linear-gradient(135deg,rgba(139,92,246,0.2),rgba(6,182,212,0.1));display:flex;justify-content:space-between;align-items:flex-start;">
+                            <div style="display:flex;gap:14px;align-items:center;">
+                                <div id="niche-modal-icon-wrap" style="width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;flex-shrink:0;"></div>
+                                <div>
+                                    <h2 id="niche-modal-title" style="margin:0;font-size:20px;"></h2>
+                                    <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;" id="niche-modal-badges"></div>
+                                </div>
+                            </div>
+                            <button id="btn-close-niche-modal" style="background:rgba(255,255,255,0.1);border:none;color:#94a3b8;width:34px;height:34px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">✕</button>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;" id="niche-modal-body">
+                            <!-- Left: Stats -->
+                            <div style="padding:22px;border-right:1px solid rgba(148,163,184,0.1);">
+                                <h4 style="font-size:13px;color:#8b5cf6;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px;">📊 Performans Analizi</h4>
+                                <div id="niche-modal-stats"></div>
+                                <h4 style="font-size:13px;color:#06b6d4;text-transform:uppercase;letter-spacing:0.5px;margin:18px 0 10px;">🔑 Trend Anahtar Kelimeler</h4>
+                                <div id="niche-modal-keywords" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+                                <h4 style="font-size:13px;color:#f59e0b;text-transform:uppercase;letter-spacing:0.5px;margin:18px 0 10px;">📡 Güncel Trend Konular</h4>
+                                <div id="niche-modal-trends" style="max-height:180px;overflow-y:auto;"></div>
+                            </div>
+                            <!-- Right: A/B Hooks -->
+                            <div style="padding:22px;">
+                                <h4 style="font-size:13px;color:#10b981;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:14px;">🧪 A/B Hook Varyantları</h4>
+                                <div id="niche-modal-ab-hooks"></div>
+                                <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px;">
+                                    <button id="btn-modal-use-niche" class="btn btn-primary w-100">
+                                        <i class="fa-solid fa-arrow-right"></i> Bu Nişle Stüdyoya Git
+                                    </button>
+                                    <button id="btn-modal-load-trends" class="btn btn-secondary w-100" style="font-size:12px;">
+                                        <i class="fa-solid fa-arrows-rotate"></i> Trend Konuları Yenile
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </section>
 
             <!-- SEKME 4: OTO-HABER & RSS BOTU -->
@@ -813,8 +1093,8 @@
                     <div class="box-header">
                         <i class="fa-solid fa-compass text-warning"></i>
                         <div>
-                            <h3>500 Maddelik Nihai Yol Haritası & Algoritma Konsolu</h3>
-                            <p>Tüm 500 kural ve teknik parametre doğrudan sistem mimarisine entegre edilmiştir. Arayıp filtreleyebilirsiniz.</p>
+                            <h3>Özellik Yol Haritası</h3>
+                            <p>Sistem özellikleri ve teknik parametreler — arayıp filtreleyebilirsiniz.</p>
                         </div>
                     </div>
                     
@@ -823,7 +1103,7 @@
                             <input type="text" id="input-roadmap-search" class="input-styled" placeholder="500 madde içinde ara (örn: pHash, nefes, proxy, loop, 3 saniye, whisper)...">
                         </div>
                         <div style="display: flex; align-items: center; justify-content: flex-end;">
-                            <span class="pro-chip" id="roadmap-counter-badge"><i class="fa-solid fa-circle-check"></i> 500 / 500 Madde Aktif (%100)</span>
+                            <span class="pro-chip" id="roadmap-counter-badge"><i class="fa-solid fa-circle-check"></i> Özellikler yüklendi</span>
                         </div>
                     </div>
 
@@ -978,6 +1258,16 @@
                         <div class="form-field mt-3">
                             <label for="select-bgm-track">Kayıtlı Fon Müzikleri</label>
                             <select id="select-bgm-track" class="select-styled"></select>
+                        </div>
+                        <div class="form-field mt-3">
+                            <label for="input-bgm-upload">Özel BGM Yükle (MP3/WAV/M4A)</label>
+                            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                                <input type="file" id="input-bgm-upload" accept=".mp3,.wav,.m4a,.aac,.ogg" hidden>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btn-bgm-upload">
+                                    <i class="fa-solid fa-upload"></i> Dosya Seç &amp; Yükle
+                                </button>
+                                <span id="bgm-upload-status" style="font-size:11px;color:#94A3B8;"></span>
+                            </div>
                         </div>
                         <div class="form-field mt-3">
                             <label>Audio Ducking Seviyesi (Konuşma Anında Müzik)</label>
@@ -1238,6 +1528,118 @@
 
             <!-- SEKME 12: SİSTEM & APİ AYARLARI -->
             <section class="tab-pane" id="pane-settings">
+                <!-- DONANIM & RENDER HIZLANDIRMA PANELİ (RTX 3070, Ryzen 7, 32GB RAM) -->
+                <div class="glass-box mb-4" style="border-color: rgba(56, 189, 248, 0.35);">
+                    <div class="box-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <i class="fa-solid fa-microchip text-primary" style="font-size: 24px;"></i>
+                            <div>
+                                <h3 style="margin: 0; font-size: 16px;">Sistem Donanımı & Render Hızlandırma Motoru</h3>
+                                <p style="margin: 2px 0 0; font-size: 12px; color: #94a3b8;">Bilgisayarınızın donanımına (RTX GPU, CPU Çekirdekleri, RAM) göre optimize edilmiş maksimum render performansı.</p>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline" id="btn-detect-hardware-now">
+                            <i class="fa-solid fa-rotate"></i> Donanımı Yeniden Tara
+                        </button>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 16px;">
+                        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                            <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase;">İşlemci (CPU):</span>
+                            <div id="hw-cpu-name" style="font-size: 13px; font-weight: 700; color: #f8fafc; margin-top: 4px;"><i class="fa-solid fa-spinner fa-spin"></i> Donanım taranıyor...</div>
+                            <div id="hw-cpu-threads" style="font-size: 11px; color: #38bdf8; margin-top: 2px;">-</div>
+                        </div>
+                        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                            <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase;">Grafik Kartı (GPU):</span>
+                            <div id="hw-gpu-name" style="font-size: 13px; font-weight: 700; color: #4ade80; margin-top: 4px;"><i class="fa-solid fa-spinner fa-spin"></i> Donanım taranıyor...</div>
+                            <div id="hw-gpu-nvenc" style="font-size: 11px; color: #a3e635; margin-top: 2px;">-</div>
+                        </div>
+                        <div style="background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+                            <span style="font-size: 11px; color: #94a3b8; text-transform: uppercase;">Sistem Belleği (RAM):</span>
+                            <div id="hw-ram-total" style="font-size: 13px; font-weight: 700; color: #c084fc; margin-top: 4px;"><i class="fa-solid fa-spinner fa-spin"></i> Donanım taranıyor...</div>
+                            <div id="hw-ram-avail" style="font-size: 11px; color: #94a3b8; margin-top: 2px;">-</div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 16px; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                        <div style="max-width: 650px;">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="badge" style="background: #10b981; color: #fff; font-size: 11px;">Önerilen Maksimum Profil</span>
+                                <strong id="hw-recommended-label" style="font-size: 13px; color: #f8fafc;"><i class="fa-solid fa-spinner fa-spin"></i> Sistem profili belirleniyor...</strong>
+                            </div>
+                            <p id="hw-recommended-desc" style="font-size: 12px; color: #cbd5e1; margin: 4px 0 0;">
+                                Bilgisayarınızın işlemci çekirdekleri ve ekran kartı hızlandırma yeteneklerine göre en yüksek render hızı ayarlanıyor.
+                            </p>
+                        </div>
+                        <button type="button" class="btn btn-primary" id="btn-apply-hardware-max" style="white-space: nowrap;">
+                            <i class="fa-solid fa-bolt"></i> Donanımıma Göre Maksimum Hızda Yapılandır
+                        </button>
+                    </div>
+
+                    <!-- MANUEL DONANIM & RENDER AYARLARI FORMU -->
+                    <div style="margin-top: 16px; border-top: 1px dashed rgba(255,255,255,0.12); padding-top: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h4 style="margin: 0; font-size: 13px; color: #f8fafc; display: flex; align-items: center; gap: 8px;">
+                                <i class="fa-solid fa-sliders text-info"></i> Manuel Render & Performans Ayarları
+                            </h4>
+                            <span style="font-size: 11px; color: #94a3b8;">İstediğiniz donanım parametrelerini serbestçe belirleyin</span>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                            <div>
+                                <label style="font-size: 12px; color: #cbd5e1; display: block; margin-bottom: 4px;">Render Motoru / Codec:</label>
+                                <select id="select-hw-codec" class="input-styled" style="width: 100%; font-size: 12px;">
+                                    <option value="h264_nvenc">🚀 Donanım Çipi (NVENC / Hızlandırılmış)</option>
+                                    <option value="libx264">⚡ Yazılımsal CPU (libx264 Çoklu Çekirdek)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; color: #cbd5e1; display: block; margin-bottom: 4px;">Kullanılacak CPU Thread Sayısı:</label>
+                                <select id="select-hw-threads" class="input-styled" style="width: 100%; font-size: 12px;">
+                                    <!-- Dinamik olarak kullanıcının CPU'suna göre doldurulur -->
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; color: #cbd5e1; display: block; margin-bottom: 4px;">Kare Hızı (FPS) Modu:</label>
+                                <select id="select-hw-fps-mode" class="input-styled" style="width: 100%; font-size: 12px;">
+                                    <option value="diversify" selected>Madde 74: Algoritmik Çeşitlendirme (29.97, 30.02 fps)</option>
+                                    <option value="30">Sabit 30.0 FPS (YouTube Shorts Standart)</option>
+                                    <option value="24">Sabit 24.0 FPS (Sinematik / Hızlı Render)</option>
+                                    <option value="60">Sabit 60.0 FPS (Ultra Akıcı / Ağır Yük)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; color: #cbd5e1; display: block; margin-bottom: 4px;">Çözünürlük & Hız Modu:</label>
+                                <select id="select-hw-resolution" class="input-styled" style="width: 100%; font-size: 12px;">
+                                    <option value="1080p">⚡ 1080x1920 (Full HD Final Kalite)</option>
+                                    <option value="720p">🚀 720x1280 (Hızlı HD - 2.2x Hızlı)</option>
+                                    <option value="540p">⚡⚡ 540x960 (Ultra Hızlı Test - 4x Hızlı)</option>
+                                </select>
+                            </div>
+                            <div style="grid-column: span 2;">
+                                <label style="font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <span><i class="fa-solid fa-shield-halved text-warning"></i> Render Güvenlik & Efekt Derinliği (RENDER_SAFE_MODE):</span>
+                                    <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; font-size: 10px;">100-Madde Kural Kontrolü</span>
+                                </label>
+                                <select id="select-hw-safe-mode" class="input-styled" style="width: 100%; font-size: 12px; font-weight: 500;">
+                                    <option value="false">🎬 Tam Kural & Maksimum Zenginlik (Safe Mode OFF: 100 Kural, Emoji Katmanları, 3s B-Roll, Rozetler)</option>
+                                    <option value="true">⚡ Hızlı Güvenli Mod (Safe Mode ON: GPU Donanım Filtreleri, Aşırı Isınma Koruması, 15-35 FPS)</option>
+                                </select>
+                                <small style="color: #94a3b8; font-size: 11px; display: block; margin-top: 4px;">
+                                    * <strong>Tam Kural Modu:</strong> RTX 3070 ve Ryzen 7 sisteminiz için uygundur; videonun tüm görsel kurallarını eksiksiz uygular.<br>
+                                    * <strong>Hızlı Güvenli Mod:</strong> Ağır per-frame Python çizimlerini atlayıp render'ı 1-2 dakikada tamamlar.
+                                </small>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+                            <button type="button" class="btn btn-outline btn-sm" id="btn-save-hardware-manual" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); padding: 6px 14px;">
+                                <i class="fa-solid fa-floppy-disk"></i> Manuel Ayarları Kaydet & Uygula
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid-2-col">
                     <div class="glass-box">
                         <div class="box-header">
@@ -1248,9 +1650,59 @@
                             </div>
                         </div>
 
-                        <div class="form-field mt-3">
+                        <div class="form-field mt-2">
                             <label>Google Gemini API Key</label>
-                            <input type="password" id="input-key-gemini" class="input-styled" placeholder="AQ.Ab8...">
+                            <input type="password" id="input-key-gemini" class="input-styled" placeholder="AIza... veya AQ.Ab8...">
+                            <small style="color:#94a3b8;font-size:11px;">Google AI Pro / AI Studio anahtarı — aistudio.google.com</small>
+                        </div>
+
+                        <!-- Google AI Pro Hub -->
+                        <div class="glass-box mt-3" id="google-ai-pro-panel" style="background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.35);padding:14px;border-radius:12px;">
+                            <div class="box-header" style="margin-bottom:10px;">
+                                <i class="fa-brands fa-google text-info"></i>
+                                <div>
+                                    <h3 style="font-size:15px;margin:0;">Google AI Pro — Model & Kota Merkezi</h3>
+                                    <p style="margin:2px 0 0;font-size:11px;color:#94a3b8;">Senaryo · Nano Banana görsel · Veo video · Grounding · Kota</p>
+                                </div>
+                            </div>
+                            <div id="gai-plan-blurb" style="font-size:12px;color:#cbd5e1;margin-bottom:10px;"></div>
+                            <div id="gai-quota-strip" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"></div>
+                            <div class="form-field mt-2">
+                                <label>Senaryo Modeli</label>
+                                <select id="select-gemini-script-model" class="select-styled"></select>
+                            </div>
+                            <div class="form-field mt-2">
+                                <label>Görsel Modeli (Nano Banana)</label>
+                                <select id="select-gemini-image-model" class="select-styled"></select>
+                            </div>
+                            <div class="form-field mt-2">
+                                <label>Video Modeli (Veo)</label>
+                                <select id="select-gemini-video-model" class="select-styled"></select>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
+                                <label><input type="checkbox" id="chk-gai-image" checked> Nano Banana görsel</label>
+                                <label><input type="checkbox" id="chk-gai-video"> Veo video (ücretli)</label>
+                                <label><input type="checkbox" id="chk-gai-grounding"> Google Search grounding</label>
+                                <label><input type="checkbox" id="chk-gai-prefer-img"> Sahne için AI görseli tercih et</label>
+                                <label><input type="checkbox" id="chk-gai-tts"> Gemini TTS (deneysel)</label>
+                                <label><input type="checkbox" id="chk-gai-embed"> Embedding stok skoru</label>
+                                <label style="grid-column:span 2;"><input type="checkbox" id="chk-rf-bgm" checked> Telifsiz BGM otomatik (Pixabay/Mixkit/VoiceLab)</label>
+                            </div>
+                            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
+                                <button type="button" class="btn btn-sm btn-outline" id="btn-gai-refresh"><i class="fa-solid fa-rotate"></i> Modelleri & Kotayı Yenile</button>
+                                <button type="button" class="btn btn-sm btn-outline" id="btn-gai-test-image"><i class="fa-solid fa-image"></i> Test Görsel</button>
+                                <button type="button" class="btn btn-sm btn-outline" id="btn-gai-test-video"><i class="fa-solid fa-film"></i> Test Veo</button>
+                                <button type="button" class="btn btn-sm btn-outline" id="btn-voicelab-seed"><i class="fa-solid fa-music"></i> VoiceLab Paketi İndir</button>
+                                <button type="button" class="btn btn-sm btn-outline" id="btn-rf-fetch-bgm"><i class="fa-solid fa-download"></i> Telifsiz BGM Getir</button>
+                            </div>
+                            <div id="gai-catalog-list" style="max-height:180px;overflow:auto;margin-top:10px;font-size:11px;color:#94a3b8;"></div>
+                            <div id="gai-status" style="font-size:11px;margin-top:8px;display:none;"></div>
+                        </div>
+                        <div class="form-field mt-2">
+                            <label>ElevenLabs API Key (Free Tier TTS)</label>
+                            <input type="password" id="input-key-elevenlabs" class="input-styled" placeholder="sk_...">
+                            <small style="color:#94a3b8;font-size:11px;">elevenlabs.io — ~10k karakter/ay ücretsiz. Ses listesini açar.</small>
+                            <div id="elevenlabs-quota-strip" style="display:none;margin-top:8px;font-size:11px;color:#cbd5e1;"></div>
                         </div>
                         <div class="form-field mt-2">
                             <label>DeepSeek API Key (Opsiyonel)</label>
@@ -1353,6 +1805,15 @@
             </div>
             <pre class="terminal-body" id="terminal-log-body"></pre>
         </div>
+    </div>
+
+    <!-- YÜZEN CANLI TERMİNAL TETİKLEYİCİ (Dock gizlendiğinde veya sayfa yenilendiğinde aktif) -->
+    <div id="floating-terminal-trigger" style="display: none; position: fixed; bottom: 24px; right: 24px; z-index: 9998;">
+        <button type="button" class="btn btn-primary" id="btn-floating-open-terminal" style="box-shadow: 0 10px 25px rgba(56, 189, 248, 0.45); border-radius: 30px; padding: 10px 18px; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2);">
+            <i class="fa-solid fa-terminal"></i>
+            <span>Canlı Terminal & İlerleme</span>
+            <span id="floating-render-pct" style="background: rgba(0,0,0,0.35); padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; color: #38bdf8;">%0</span>
+        </button>
     </div>
 
     <!-- YAPAY ZEKA KOTA & HIZ LİMİTİ DETAY MODALI -->
@@ -1472,7 +1933,8 @@
     <!-- BİLDİRİM TOAST ALANI -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="/static/app.js?v=1.1"></script>
+    <script src="/static/hardware_panel.js?v=5.1"></script>
+    <script src="/static/app.js?v=5.4"></script>
 </body>
 </html>
 

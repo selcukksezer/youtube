@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 
 PRONUNCIATION_LIBRARY = {
     # Antik Roma & Yunan Filozofları
-    "Marcus Aurelius": {"ipa": "ˈmɑːrkəs ɔːˈriːliəs", "spoken": "Markus Oryelyus"},
+    "Marcus Aurelius": {"ipa": "ˈmɑːrkəs ɔːˈriːliəs", "spoken": "Marküs Avreliyus"},
     "Nietzsche": {"ipa": "ˈniːtʃə", "spoken": "Niçe"},
     "Friedrich Nietzsche": {"ipa": "ˈfriːdrɪx ˈniːtʃə", "spoken": "Fridrih Niçe"},
     "Socrates": {"ipa": "ˈsɒkrətiːz", "spoken": "Sokrates"},
@@ -43,10 +43,11 @@ PRONUNCIATION_LIBRARY = {
     "Cleopatra": {"ipa": "ˌkliːəˈpætrə", "spoken": "Kleopatra"},
 }
 
+# Relative deltas vs neutral; tts_engine rebases onto config.TTS_RATE for Shorts pace.
 SPEECH_RHYTHM = {
-    "hook": "+10%",
-    "body": "+2%",
-    "question": "-5%",
+    "hook": "+10%",   # → base+8 (punchy open)
+    "body": "+2%",    # → base (config.TTS_RATE, typically +18%)
+    "question": "-5%",  # → base-8 (slight hold on questions)
 }
 
 def apply_pronunciation_library(text: str, engine_type: str = "plain") -> str:
@@ -77,6 +78,7 @@ def sanitize_ai_cliches(text: str) -> str:
         (r'\b(abone\s+olmayı\s+ve\s+beğenmeyi\s+unutmayın)[!.,;:]*\s*', ''),
         (r'^\s*(hello\s+(everyone|guys)|welcome\s+to\s+my\s+channel)[!.,;:]*\s*', ''),
         (r'\b(sonuç olarak|sonuçta)\b[,:]?\s*', ''),
+        (r'\b(bu nedenle|bu yüzden|dolayısıyla)\b[,:]?\s*', ''),
         (r'\b(özetle|özetlemek gerekirse)\b[,:]?\s*', ''),
         (r'\b(kısacası)\b[,:]?\s*', ''),
         (r'\b(göz kamaştırıcı|büyüleyici bir şekilde)\b\s*', 'etkileyici '),
@@ -100,6 +102,11 @@ def sanitize_ai_cliches(text: str) -> str:
         cleaned = cleaned[0].upper() + cleaned[1:]
     return cleaned
 
+
+# Alias for pipeline/compiler imports (P1-09)
+cleanse_ai_cliches = sanitize_ai_cliches
+
+
 def clean_narration_for_speech(text: str) -> str:
     """
     Seslendirmede (TTS) robotik olarak harf harf veya isim olarak okunan
@@ -109,6 +116,11 @@ def clean_narration_for_speech(text: str) -> str:
         return ""
 
     t = sanitize_ai_cliches(text)
+
+    # 0. Strip SSML if any upstream path still injects markup (Item 93)
+    t = re.sub(r'(?i)</?speak\b[^>]*>|</?prosody\b[^>]*>|</?break\b[^>]*/?>', ' ', t)
+    t = re.sub(r'(?i)xmlns[^=]*=\s*["\'][^"\']*["\']|xml:lang\s*=\s*["\'][^"\']*["\']', ' ', t)
+    t = re.sub(r'<[^>]+>', ' ', t)
 
     # 1. Unicode Emojileri temizle
     t = re.sub(r'[\U00010000-\U0010ffff]', '', t)
@@ -130,6 +142,7 @@ def clean_narration_for_speech(text: str) -> str:
 
     # 6. Fazla boşlukları temizle
     t = re.sub(r'\s+', ' ', t).strip()
+    t = apply_pronunciation_library(t, engine_type="plain")
     return t
 
 def build_speech_rhythm_segments(text: str) -> List[Dict[str, Any]]:

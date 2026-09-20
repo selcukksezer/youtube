@@ -4,8 +4,10 @@ BOTH files are ALWAYS written to guarantee subtitles work.
 Item 107: Font rotation pool (TheBoldFont, Anton, Outfit, Poppins, Montserrat, Bebas Neue).
 Item 116: Drop shadow açı ve bulanıklık varyasyonu — her videoda farklı.
 """
+import re
 import config
 import random
+from viral_retention_engine import ViralRetentionEngine
 
 # ─── ITEM 107: Altyazı Yazı Tipi Rotasyonu ──────────────────────────────────
 # TheBoldFont, Anton, Outfit ve Poppins arasında geçiş; asla aynı font kalmaz.
@@ -74,28 +76,44 @@ SUBTITLE_PRESETS = {
         "highlight_color": "#FFD700",
         "stroke_color": "#000000",
         "stroke_width": 4,
-        "font_size": 56
+        "font_size": 56,
+        "font_name": "Anton",
+        "uppercase": True,
+        "glow": True,
+        "y_position": 0.75,
     },
     "cyber_green": {
         "color": "#FFFFFF",
         "highlight_color": "#00FF66",
         "stroke_color": "#051A0A",
         "stroke_width": 4,
-        "font_size": 54
+        "font_size": 54,
+        "font_name": "Bebas Neue",
+        "uppercase": True,
+        "glow": True,
+        "y_position": 0.75,
     },
     "red_fire": {
         "color": "#FFFFFF",
         "highlight_color": "#FF3333",
         "stroke_color": "#1A0000",
         "stroke_width": 4,
-        "font_size": 56
+        "font_size": 56,
+        "font_name": "Anton",
+        "uppercase": True,
+        "glow": True,
+        "y_position": 0.75,
     },
     "clean_white": {
         "color": "#F0F0F0",
         "highlight_color": "#00D4FF",
         "stroke_color": "#000000",
         "stroke_width": 3,
-        "font_size": 52
+        "font_size": 52,
+        "font_name": "Montserrat",
+        "uppercase": True,
+        "glow": True,
+        "y_position": 0.75,
     }
 }
 
@@ -109,48 +127,130 @@ def hex_to_ass_color(val, alpha="00", default_black=False):
         return f"&H{alpha}{b}{g}{r}&".upper()
     return f"&H{alpha}000000&".upper() if default_black else f"&H{alpha}FFFFFF&".upper()
 
+_SSML_TOKEN_RE = re.compile(
+    r"(?i)^(speak|xmlns|xml:?lang|synthesis|prosody|break|version=?|"
+    r"http|https|www\.|w3\.org|1\.0|tr-TR|en-US|ms/?|time=?|"
+    r"rate=?|pitch=?|volume=?|xml|lang)$"
+)
+_SSML_FRAGMENT_RE = re.compile(
+    r"(?i)(xmlns|xml:lang|<speak|</speak>|<break|<prosody|synthesis|"
+    r"http://www\.w3\.org|version\s*=\s*[\"']?1\.0)"
+)
+
+
+def _is_ssml_junk_token(text: str) -> bool:
+    """True if Edge WordBoundary leaked SSML markup into karaoke timings."""
+    t = (text or "").strip().strip("\"'`=<>/")
+    if not t:
+        return True
+    if _SSML_TOKEN_RE.match(t.replace('"', "").replace("'", "")):
+        return True
+    if _SSML_FRAGMENT_RE.search(t):
+        return True
+    # Bare attribute crumbs: version="1.0" xml:lang="tr-TR"
+    low = t.lower()
+    if any(k in low for k in ("xmlns", "xml:lang", "w3.org", "<speak", "</speak", "<break")):
+        return True
+    return False
+
+
+def align_words_whisper(timings: list, audio_path: str = None) -> list:
+    """
+    P2-23 stub (Item 413): optional Whisper word-level alignment.
+    When WHISPER_ALIGN=false (default), returns timings unchanged.
+    Future: run faster-whisper on audio_path and resync word boundaries.
+    """
+    if not getattr(config, "WHISPER_ALIGN", False):
+        return timings or []
+    # Stub — full Whisper integration deferred; passthrough until model wired.
+    return timings or []
+
+
 def _clean_timings(timings):
-    """Filters out empty words, lone emojis or unwanted symbols from subtitle tokens."""
-    import re
+    """Filters empty words, emojis, SSML leaks, and junk symbols from subtitle tokens."""
     cleaned = []
     for item in timings:
         w = item.get("text", "")
+        if _is_ssml_junk_token(w):
+            continue
         # Remove emojis and odd symbols
         w_clean = re.sub(r'[\U00010000-\U0010ffff]', '', w)
         w_clean = re.sub(r'[\u2000-\u32ff]', '', w_clean)
         w_clean = re.sub(r'[#*_~^\\/|<>@=`~=\[\]{}]', '', w_clean).strip()
-        if w_clean:
-            cleaned.append({
-                "text": w_clean,
-                "offset": item.get("offset", 0.0),
-                "duration": item.get("duration", 0.0)
-            })
+        w_clean = re.sub(r'(?i)\b(xmlns|xml:lang|speak|prosody|synthesis)\b', '', w_clean).strip()
+        if _is_ssml_junk_token(w_clean) or not w_clean:
+            continue
+        # Drop tokens that are mostly punctuation / markup debris
+        letters = re.sub(r"[^\wÀ-ÿ]", "", w_clean, flags=re.UNICODE)
+        if len(letters) < 1:
+            continue
+        cleaned.append({
+            "text": w_clean,
+            "offset": item.get("offset", 0.0),
+            "duration": item.get("duration", 0.0)
+        })
     return cleaned
 
+def _resolve_subtitle_layout(opts, target_w, target_h):
+    """Items 206 & 265: safe zone margins + max words per frame."""
+    safe = ViralRetentionEngine.get_subtitles_safe_zone(
+        screen_height=target_h, screen_width=target_w
+    )
+    max_words = safe.get("max_words_per_frame", 4)
+    bottom_margin = safe["bottom_ui_margin"]
+
+    y_pos = opts.get("y_position")
+    if y_pos is None:
+        y_pos = 1.0 - (bottom_margin / target_h)  # default: top of safe bottom zone (~0.75)
+    y_pos = max(0.1, min(0.9, float(y_pos)))
+
+    margin_v = int((1.0 - y_pos) * target_h)
+    margin_v = max(margin_v, bottom_margin)  # enforce bottom 25% UI margin
+    return max_words, margin_v
+
+
+def _format_word(text, uppercase=False):
+    return text.upper() if uppercase else text
+
+
+def _active_word_tags(highlight_ass, primary_ass, glow=False):
+    """Item 91: karaoke highlight + micro-pulse; neon glow for CapCut presets."""
+    glow_tags = r"\blur3\shad2\be1" if glow else ""
+    open_tag = "{" + rf"\c{highlight_ass}\b1\fscx106\fscy106" + glow_tags + "}"
+    close_tag = "{" + rf"\c{primary_ass}\b0\fscx100\fscy100" + "}"
+    return open_tag, close_tag
+
+
 def create_karaoke_subtitles(timings, path, max_dur=9999.0, style_opts=None):
+    opts = style_opts or {}
     timings = _clean_timings(timings or [])
+    timings = align_words_whisper(timings, audio_path=opts.get("audio_path"))
     if not timings:
         open(path, "w").close()
         return path
 
-    opts = style_opts or {}
     font_size = opts.get("font_size", getattr(config, "SUBTITLE_FONT_SIZE", 54))
     primary_hex = opts.get("color", getattr(config, "SUBTITLE_COLOR", "#FFFFFF"))
     highlight_hex = opts.get("highlight_color", getattr(config, "SUBTITLE_HIGHLIGHT_COLOR", "#FFD700"))
     stroke_hex = opts.get("stroke_color", getattr(config, "SUBTITLE_STROKE_COLOR", "#000000"))
     stroke_width = opts.get("stroke_width", getattr(config, "SUBTITLE_STROKE_WIDTH", 4))
-    y_pos = opts.get("y_position", getattr(config, "SUBTITLE_Y_POSITION", 0.8))
-    # Item 107: Yazı tipi rotasyonu — her oturumda farklı font
-    font_name = opts.get("font_name", get_session_subtitle_font())
+    uppercase = opts.get("uppercase", False)
+    glow = opts.get("glow", False)
+    # Item 107: preset font_name overrides session rotation
+    font_name = opts.get("font_name") or get_session_subtitle_font()
     # Item 116: Drop Shadow açı ve derinlik varyasyonu
     shadow_params = get_session_shadow_params()
     shadow_depth = opts.get("shadow_depth", shadow_params["depth"])
     print(f"  [Item 107] Altyazı fontu: {font_name}")
     print(f"  [Item 116] Drop shadow: açı={shadow_params['angle']}°, derinlik={shadow_depth}px")
 
-    # Calculate MarginV for 1920 height
-    # 0.8 y_position means 80% down -> 20% margin from bottom = 384px
-    margin_v = int((1.0 - max(0.1, min(0.9, y_pos))) * config.VIDEO_HEIGHT)
+    # Target resolution scaling (1080p, 720p, 540p)
+    target_w, target_h = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
+    scale_factor = target_h / 1920.0
+    scaled_font_size = max(18, int(font_size * scale_factor))
+    scaled_stroke_width = max(1, int(stroke_width * scale_factor))
+    scaled_shadow_depth = max(1, int(shadow_depth * scale_factor))
+    max_words, margin_v = _resolve_subtitle_layout(opts, target_w, target_h)
 
     primary_ass = hex_to_ass_color(primary_hex)
     highlight_ass = hex_to_ass_color(highlight_hex)
@@ -159,20 +259,21 @@ def create_karaoke_subtitles(timings, path, max_dur=9999.0, style_opts=None):
     ass_header = f"""[Script Info]
 Title: Karaoke Subtitles
 ScriptType: v4.00+
-PlayResX: {config.VIDEO_WIDTH}
-PlayResY: {config.VIDEO_HEIGHT}
+PlayResX: {target_w}
+PlayResY: {target_h}
 ScaledBorderAndShadow: yes
 WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: K,{font_name},{font_size},{primary_ass},{highlight_ass},{stroke_ass},&H80000000,-1,0,0,0,100,100,2,0,1,{stroke_width},{shadow_depth},2,2,40,40,{margin_v},1
+Style: K,{font_name},{scaled_font_size},{primary_ass},{highlight_ass},{stroke_ass},&H80000000,-1,0,0,0,100,100,2,0,1,{scaled_stroke_width},{scaled_shadow_depth},2,2,40,40,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    groups = _group(timings, 3)
+    groups = _group(timings, max_words)
+    open_tag, close_tag = _active_word_tags(highlight_ass, primary_ass, glow=glow)
     events = []
     for g in groups:
         if g[0]["offset"] >= max_dur: break
@@ -183,19 +284,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if we - ws < 0.1: we = ws + 0.15
             parts = []
             for wj, w in enumerate(g):
+                word = _format_word(w["text"], uppercase)
                 if wj == wi:
-                    # Item 91: Metin Üstü Dinamik Vurgu (Text Highlighting & Micro Pulse)
-                    parts.append(rf"{{\c{highlight_ass}\b1\fscx106\fscy106}}" + w["text"] + rf"{{\c{primary_ass}\b0\fscx100\fscy100}}")
+                    parts.append(open_tag + word + close_tag)
                 else:
-                    parts.append(w["text"])
+                    parts.append(word)
             events.append(f"Dialogue: 0,{_at(ws)},{_at(we)},K,,0,0,0,,{' '.join(parts)}")
     with open(path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(events) + "\n")
     print(f"  [Subs] Karaoke ASS (Vector Engine Item 94): {len(events)} events (Highlight: {highlight_hex} Item 91)")
     return path
 
-def create_srt_file(timings, path, max_dur=9999.0):
+def create_srt_file(timings, path, max_dur=9999.0, audio_path: str = None):
     timings = _clean_timings(timings or [])
+    timings = align_words_whisper(timings, audio_path=audio_path)
     if not timings:
         open(path, "w").close()
         return path

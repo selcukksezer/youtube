@@ -10,6 +10,7 @@ import time
 import threading
 import webbrowser
 import platform
+import asyncio
 
 # Ensure UTF-8 console output on Windows and Mac
 if hasattr(sys.stdout, 'reconfigure'):
@@ -59,8 +60,26 @@ def free_port_if_occupied(port: int = 8000):
         print(f"[*] Port kontrol bildirimi: {e}")
 
 
+def _configure_windows_asyncio():
+    """Suppress benign ConnectionResetError spam when SSE clients disconnect on Windows."""
+    if platform.system() != "Windows":
+        return
+
+    def _handler(loop, context):
+        exc = context.get("exception")
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+            return
+        loop.default_exception_handler(context)
+
+    try:
+        asyncio.get_event_loop_policy().get_event_loop().set_exception_handler(_handler)
+    except Exception:
+        pass
+
+
 def launch_web():
     """Starts the FastAPI Web Dashboard."""
+    _configure_windows_asyncio()
     url = "http://127.0.0.1:8000"
     os_name = "macOS" if platform.system() == "Darwin" else "Windows" if platform.system() == "Windows" else platform.system()
     
@@ -71,7 +90,8 @@ def launch_web():
     print(f"  YouTube Shorts Ultimate — Web Studio ({os_name})")
     print("=" * 60)
     print(f"\nSunucu başlatılıyor: {url}")
-    print("Tarayıcınız otomatik olarak açılacaktır...\n")
+    print("Tarayıcınız otomatik olarak açılacaktır...")
+    print("[*] Plan API: POST /api/plan/validate, POST /api/plan/repair\n")
 
     # Launch browser in a background thread
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()

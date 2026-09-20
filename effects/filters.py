@@ -150,7 +150,16 @@ def generate_particle_overlay_frames(
 def apply_particle_overlay(base_clip, particle_type: str = "snow", particle_count: int = 80):
     """
     Item 111 – Ana klibe parçacık efekti bindirir.
+    NOT: RENDER_SAFE_MODE=True iken bypass edilir (tüm video kareleri için bellek yükü oluşturur).
     """
+    try:
+        import config as _cfg
+        if getattr(_cfg, 'RENDER_SAFE_MODE', True):
+            print(f"    [Item 111] Parçacık efekti: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
     w, h = base_clip.size
     dur = base_clip.duration
     fps = base_clip.fps or 30.0

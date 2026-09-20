@@ -5,15 +5,125 @@
 - Smart scoring: resolution + orientation + duration
 - scene_description matching for better relevance
 """
-import os, hashlib, requests, re, time, subprocess
+import os, hashlib, requests, re, time, subprocess, json
 import imageio_ffmpeg
 import config
 import database
 from stock_providers import ALL_SOURCES
 
-_used_ids: set = set()
+# P1-12: published IDs persist cross-job; job-local IDs block only within one render
+_published_ids: set = set()
+_job_used_ids: set = set()
 _used_hashes: set = set()
 _source_counter: int = 0  # Round-robin counter
+_USED_PERSIST_PATH = os.path.join(
+    getattr(config, "BASE_DIR", os.path.dirname(os.path.abspath(__file__))),
+    "data",
+    "used_stock_ids.json",
+)
+
+# Backward-compatible alias (published-only set for legacy imports/tests)
+_used_ids = _published_ids
+
+
+def _load_persisted_used_ids() -> set:
+    try:
+        if os.path.exists(_USED_PERSIST_PATH):
+            with open(_USED_PERSIST_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            ids = data.get("ids") if isinstance(data, dict) else data
+            return set(str(x) for x in (ids or []))
+    except Exception:
+        pass
+    return set()
+
+
+def _persist_published_ids() -> None:
+    try:
+        os.makedirs(os.path.dirname(_USED_PERSIST_PATH), exist_ok=True)
+        # Cap growth — keep most recent ~4000 ids
+        ids = list(_published_ids)
+        if len(ids) > 4000:
+            ids = ids[-4000:]
+        with open(_USED_PERSIST_PATH, "w", encoding="utf-8") as f:
+            json.dump({"ids": ids}, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"  [Fetcher] used_ids persist notice: {e}")
+
+
+def _blocked_stock_ids() -> set:
+    return _published_ids | _job_used_ids
+
+
+def _stock_candidate_blocked(v: dict) -> bool:
+    """P2-24: skip published, job-local, and copyright-blocklisted stock."""
+    vid = str(v.get("id", ""))
+    source_key = f"{v.get('source', '')}:{vid}"
+    if not vid:
+        return True
+    if vid in _blocked_stock_ids():
+        return True
+    contributor = str(v.get("contributor", "") or "")
+    return database.is_stock_blocklisted(source_key, vid, contributor)
+
+
+# Warm published set from disk — failed/cancelled jobs do not pollute this pool
+_published_ids.update(_load_persisted_used_ids())
+
+
+def commit_published_stock_ids(extra_ids=None) -> int:
+    """P1-12: persist stock IDs only after successful publish/render."""
+    global _published_ids
+    commit = set(extra_ids or []) | set(_job_used_ids)
+    if not commit:
+        return 0
+    _published_ids.update(commit)
+    _persist_published_ids()
+    return len(commit)
+
+
+def discard_job_stock_ids() -> None:
+    """Drop job-local IDs without persisting (cancel/fail)."""
+    _job_used_ids.clear()
+
+
+def count_pool_candidates(
+    queries,
+    target_duration=7,
+    scene_description="",
+    narration="",
+    visual_intent=None,
+    must_exclude=None,
+) -> int:
+    """P1-12: count unscored stock pool size for a narrow query (no download)."""
+    if isinstance(queries, str):
+        queries = [queries]
+    seen: set = set()
+    total = 0
+    blocked = _blocked_stock_ids()
+    for query in queries[:4]:
+        for _src_name, src_fn in ALL_SOURCES:
+            try:
+                results = src_fn(query) or []
+            except Exception:
+                results = []
+            for v in results:
+                vid = str(v.get("id", ""))
+                if not vid or vid in seen:
+                    continue
+                seen.add(vid)
+                source_key = f"{v['source']}:{vid}"
+                if vid in blocked or _stock_candidate_blocked(v) or database.source_asset_was_used(source_key):
+                    continue
+                sc = _score(
+                    v,
+                    target_duration,
+                    narration=narration or scene_description,
+                    visual_intent=visual_intent,
+                )
+                if sc > 0:
+                    total += 1
+    return total
 
 
 def _file_hash(p):
@@ -24,7 +134,8 @@ def _file_hash(p):
     return h.hexdigest()
 
 
-def _score(v, target_dur):
+def _score(v, target_dur, narration="", visual_intent=None, recent_texts=None):
+    """Technical score + semantic relevance (DirectorPlan visual intent)."""
     w, h, d = v["width"], v["height"], v["duration"]
     if d < 3: return -1
     s = 0.0
@@ -34,6 +145,37 @@ def _score(v, target_dur):
     s += 25 if d >= target_dur else 15 if d >= target_dur*0.7 else 8 if d >= target_dur*0.4 else 2
     if d > 60: s -= 5
     if 5 <= d <= 30: s += 10
+
+    # Semantic layer — title/tags/url text vs narration + intent
+    cand_text = " ".join(str(v.get(k, "")) for k in ("title", "tags", "description", "url", "id"))
+    try:
+        from director.visual_intent import semantic_relevance_score, text_contains_excluded, VisualIntent
+        intent = visual_intent
+        if isinstance(intent, dict):
+            from director.schema import VisualIntent as VI
+            intent = VI.from_dict(intent)
+        if intent and text_contains_excluded(cand_text, getattr(intent, "must_exclude", [])):
+            return -1
+        s += semantic_relevance_score(cand_text, narration or "", intent)
+    except Exception:
+        pass
+
+    # Adjacent-scene diversity penalty (stronger — avoid visual echo)
+    if recent_texts:
+        low = cand_text.lower()
+        url_low = str(v.get("url", "")).lower()
+        for prev in recent_texts[-5:]:
+            if not prev:
+                continue
+            prev_l = prev.lower()
+            if prev_l in low or prev_l in url_low:
+                s -= 18
+            # Token overlap diversity
+            prev_toks = set(re.findall(r"[a-z0-9]{4,}", prev_l))
+            cand_toks = set(re.findall(r"[a-z0-9]{4,}", low))
+            overlap = prev_toks & cand_toks
+            if len(overlap) >= 2:
+                s -= 8 * min(3, len(overlap))
     return s
 
 def _download(url, path, cancel_check=None):
@@ -142,16 +284,44 @@ def _generate_fallback_clip(scene_index, project_dir, target_duration=7):
 
 def search_and_download(queries, scene_index, project_dir, target_duration=7,
                         scene_description="", preferred_source=None, cancel_check=None,
-                        allow_custom=True):
+                        allow_custom=True, narration="", visual_intent=None,
+                        must_exclude=None, recent_texts=None):
     global _source_counter
 
     if isinstance(queries, str):
         queries = [queries]
 
-    # Add general fallback queries to search list
-    extended_queries = list(queries)
-    for fallback_q in ["abstract motion", "space stars", "nature aerial", "dark background"]:
+    # Merge must_exclude from intent
+    exclude = list(must_exclude or [])
+    if isinstance(visual_intent, dict):
+        exclude.extend(visual_intent.get("must_exclude") or [])
+        if not narration:
+            narration = visual_intent.get("subject", "")
+    elif visual_intent is not None:
+        exclude.extend(getattr(visual_intent, "must_exclude", []) or [])
+
+    # Drop queries that themselves contain excluded pollution terms
+    clean_queries = []
+    for q in queries:
+        ql = (q or "").lower()
+        if exclude and any(ex.lower() in ql for ex in exclude):
+            continue
+        clean_queries.append(q)
+    if not clean_queries:
+        # Fall back to intent subject only
+        if isinstance(visual_intent, dict) and visual_intent.get("search_queries"):
+            clean_queries = list(visual_intent["search_queries"])
+        elif visual_intent is not None and getattr(visual_intent, "search_queries", None):
+            clean_queries = list(visual_intent.search_queries)
+        else:
+            clean_queries = list(queries)
+
+    # Add general fallback queries — skip if they hit must_exclude
+    extended_queries = list(clean_queries)
+    for fallback_q in ["cinematic atmosphere", "dramatic light particles", "nature aerial", "architectural detail"]:
         if fallback_q not in extended_queries:
+            if exclude and any(ex.lower() in fallback_q for ex in exclude):
+                continue
             extended_queries.append(fallback_q)
 
     # Item 98: Kendi Çektiğiniz Arka Plan Kütüphanesi (Custom 4K/HD Footage Pool)
@@ -166,7 +336,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
             # Filter unused custom clips
             available_custom = [
                 f for f in custom_files
-                if f not in _used_ids and not database.source_asset_was_used(f"custom:{_file_hash(f)}")
+                if f not in _blocked_stock_ids() and not database.source_asset_was_used(f"custom:{_file_hash(f)}")
             ]
             if not available_custom:
                 custom_files = []
@@ -177,7 +347,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
             if raw_custom:
                 source_hash = _file_hash(raw_custom)
                 database.record_source_asset(f"custom:{source_hash}", raw_custom, source_hash, "custom")
-                _used_ids.add(raw_custom)
+                _job_used_ids.add(raw_custom)
                 selected_custom = slice_random_background_loop(raw_custom, project_dir, scene_index, target_duration=target_duration)
                 print(f"    [OK] [KENDİ ÇEKİM HAVUZU - Madde 98 & 139] Özel kütüphane klibi dinamik kesildi: {os.path.basename(selected_custom)}")
                 return selected_custom
@@ -188,6 +358,9 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
         source_order = [
             source for source in ALL_SOURCES
             if source[0].lower() == preferred_source.lower()
+        ] + [
+            source for source in ALL_SOURCES
+            if source[0].lower() != preferred_source.lower()
         ]
     else:
         n = len(ALL_SOURCES)
@@ -210,13 +383,18 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
         if not all_results:
             continue
 
-        # Score and deduplicate
+        # Score and deduplicate (technical + semantic)
         scored = []
         for v in all_results:
             source_key = f"{v['source']}:{v['id']}"
-            if v["id"] in _used_ids or database.source_asset_was_used(source_key):
+            if _stock_candidate_blocked(v) or database.source_asset_was_used(source_key):
                 continue
-            sc = _score(v, target_duration)
+            sc = _score(
+                v, target_duration,
+                narration=narration or scene_description,
+                visual_intent=visual_intent,
+                recent_texts=recent_texts,
+            )
             if sc > 0:
                 scored.append((sc, v))
 
@@ -237,7 +415,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
                     os.remove(path)
                     continue
                 database.record_source_asset(f"{v['source']}:{v['id']}", v["url"], fh, v["source"])
-                _used_ids.add(v["id"])
+                _job_used_ids.add(v["id"])
                 _used_hashes.add(fh)
                 print(f"    [OK] [{v['source'].upper()}] {v['fw']}x{v['fh']} {v['duration']}s score:{sc:.0f}")
                 return path
@@ -256,8 +434,9 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
 
 
 def reset_used_videos():
-    global _used_ids, _used_hashes, _source_counter
-    _used_ids.clear()
+    """P1-12: clear job-local dedup; published pool stays for cross-job diversity."""
+    global _used_hashes, _source_counter
+    _job_used_ids.clear()
     _used_hashes.clear()
     _source_counter = 0
 
@@ -294,8 +473,6 @@ def generate_ai_image_clip(
 
     print(f"  [Item 113] AI görsel üretiliyor: '{scene_description[:60]}...'")
 
-    # Prompt oluştur: Türkçe → İngilizce çeviri gerekebilir ancak
-    # modern modeller Türkçe promptu anlıyor; sinematik stil öneki eklenir.
     full_prompt = (
         f"{style_prefix}{scene_description}. "
         f"Vertical 9:16 aspect ratio, professional photography, no text, no watermark."
@@ -303,8 +480,30 @@ def generate_ai_image_clip(
 
     image_path = None
 
-    # ── FAL.ai Flux-Schnell API (Öncelikli) ──────────────────────────────────
-    if config.FAL_API_KEY:
+    # ── Google AI Pro / Nano Banana (öncelikli — Madde 113 + Gemini API) ──
+    # Item 416: skip if circuit open (429 spam kills render speed)
+    gemini_ok = getattr(config, "USE_GEMINI_IMAGE_GEN", True) and getattr(config, "GEMINI_API_KEY", "")
+    if gemini_ok:
+        try:
+            from system_resilience import circuit_breaker
+            if not circuit_breaker.can_execute("gemini_image"):
+                gemini_ok = False
+                print("    [Item 113] gemini_image devre açık — stok/FAL'a düşülüyor")
+        except Exception:
+            pass
+    if gemini_ok:
+        try:
+            from google_ai_hub import save_generated_image
+            tmp_gemini = tempfile.mktemp(suffix="_gemini_ai.png")
+            saved = save_generated_image(full_prompt, tmp_gemini)
+            if saved and os.path.exists(saved):
+                image_path = saved
+                print(f"    [Item 113] Google Nano Banana görsel: {saved}")
+        except Exception as e:
+            print(f"    [Item 113] Gemini image notice: {e}")
+
+    # ── FAL.ai Flux-Schnell API ──────────────────────────────────────────
+    if not image_path and config.FAL_API_KEY:
         try:
             import json
             headers = {
@@ -377,33 +576,10 @@ def generate_ai_image_clip(
         except Exception as e:
             print(f"    [Item 113] Stability AI hatası: {e}")
 
-    # ── API'ler yoksa placeholder oluştur ─────────────────────────────────────
+    # ── API'ler yoksa None dön (Böylece sistem gerçek stok videoya fallback yapar) ──
     if not image_path:
-        print(f"    [Item 113] API bulunamadı, sinematik placeholder görsel üretiliyor...")
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            import random
-            # Gradient arka plan
-            img = Image.new("RGB", (width, height))
-            draw = ImageDraw.Draw(img)
-            colors = [
-                ((10, 10, 30), (60, 20, 80)),    # Koyu mor
-                ((5, 20, 40), (20, 80, 120)),     # Koyu mavi
-                ((20, 10, 10), (80, 30, 20)),     # Koyu kırmızı
-                ((10, 20, 10), (20, 60, 40)),     # Koyu yeşil
-            ]
-            top_c, bot_c = random.choice(colors)
-            for y in range(height):
-                r = int(top_c[0] + (bot_c[0] - top_c[0]) * y / height)
-                g = int(top_c[1] + (bot_c[1] - top_c[1]) * y / height)
-                b = int(top_c[2] + (bot_c[2] - top_c[2]) * y / height)
-                draw.line([(0, y), (width, y)], fill=(r, g, b))
-            tmp_img = tempfile.mktemp(suffix="_placeholder.jpg")
-            img.save(tmp_img, quality=95)
-            image_path = tmp_img
-        except Exception as e:
-            print(f"    [Item 113] Placeholder üretme hatası: {e}")
-            return None
+        print(f"    [Item 113] AI görsel yok/kota/devre — stok videoya geçiliyor.")
+        return None
 
     # ── Görsel → Video (Ken Burns hareketi) ─────────────────────────────────
     try:
@@ -446,6 +622,35 @@ def generate_ai_image_clip(
     return None
 
 
+def generate_veo_scene_clip(
+    scene_description: str,
+    output_path: str,
+    duration: float = 6.0,
+) -> str:
+    """Google Veo clip for a scene (requires USE_GEMINI_VIDEO_GEN + paid quota)."""
+    if not getattr(config, "USE_GEMINI_VIDEO_GEN", False):
+        return None
+    if not getattr(config, "GEMINI_API_KEY", ""):
+        return None
+    try:
+        from google_ai_hub import generate_veo_video
+        prompt = (
+            f"{scene_description}. Vertical 9:16 YouTube Shorts B-roll, cinematic motion, "
+            f"no text overlays, no watermark, photorealistic."
+        )
+        print(f"  [GoogleAI/Veo] Sahne videosu: '{scene_description[:50]}...'")
+        saved = generate_veo_video(
+            prompt,
+            output_path,
+            duration_seconds=int(max(4, min(8, duration))),
+        )
+        if saved and os.path.exists(saved):
+            return saved
+    except Exception as e:
+        print(f"  [GoogleAI/Veo] Notice: {e}")
+    return None
+
+
 # ─── ITEM 130: İki Farklı Stok Sağlayıcıyı Karıştırma ───────────────────────
 
 # Kaynak dağılımı takibi — mevcut video üretim oturumunda hangi sağlayıcı kaç kez kullanıldı
@@ -460,6 +665,115 @@ def reset_session_source_counts() -> None:
     """Item 130 – Oturum kaynak sayaçlarını sıfırlar."""
     for k in _SESSION_SOURCE_COUNTS:
         _SESSION_SOURCE_COUNTS[k] = 0
+
+
+def _source_label_from_path(clip_path: str) -> str:
+    """Infer stock provider label from downloaded clip filename."""
+    if not clip_path:
+        return "failed"
+    basename = os.path.basename(clip_path).lower()
+    for label in ("pexels", "pixabay", "coverr", "mixkit", "videvo"):
+        if label in basename:
+            return label
+    if any(tag in basename for tag in ("ai_gen", "gemini", "veo", "_ai.")):
+        return "ai"
+    if "reddit" in basename or "procedural_fallback" in basename or "custom" in basename:
+        return "local"
+    return "unknown"
+
+
+def fetch_scene_clip(
+    search_queries,
+    scene_index,
+    project_dir,
+    target_duration=7,
+    scene_description="",
+    mood="epic",
+    cancel_check=None,
+    narration="",
+    visual_intent=None,
+    must_exclude=None,
+    recent_texts=None,
+    allow_custom=True,
+    preferred_source=None,
+):
+    """
+    P0-05 / Item 130 – Per-scene multi-provider stock fetch.
+    Rotates primary provider via _pick_next_source; on failure tries ≥1 alternate.
+    """
+    if isinstance(search_queries, str):
+        search_queries = [search_queries]
+
+    stock_sources = ["pexels", "pixabay", "coverr", "mixkit", "videvo"]
+    primary = (preferred_source or _pick_next_source(scene_index)).lower()
+    if primary == "ai":
+        primary = stock_sources[scene_index % len(stock_sources)]
+
+    attempted = []
+
+    def _try(source_name):
+        attempted.append(source_name)
+        return search_and_download(
+            search_queries,
+            scene_index,
+            project_dir,
+            target_duration=target_duration,
+            scene_description=scene_description,
+            preferred_source=source_name,
+            cancel_check=cancel_check,
+            narration=narration,
+            visual_intent=visual_intent,
+            must_exclude=must_exclude,
+            recent_texts=recent_texts,
+            allow_custom=allow_custom,
+        )
+
+    clip_path = _try(primary)
+
+    if not clip_path:
+        alt_order = sorted(
+            [s for s in stock_sources if s != primary],
+            key=lambda s: _SESSION_SOURCE_COUNTS.get(s, 0),
+        )
+        for alt in alt_order:
+            if cancel_check and cancel_check():
+                return None
+            print(
+                f"    [MultiSource] Scene {scene_index}: "
+                f"[{primary.upper()}] failed -> trying [{alt.upper()}]"
+            )
+            clip_path = _try(alt)
+            if clip_path:
+                break
+
+    if not clip_path:
+        tried = ", ".join(s.upper() for s in attempted)
+        print(f"    [MultiSource] Scene {scene_index}: exhausted providers ({tried})")
+        return None
+
+    label = _source_label_from_path(clip_path)
+    if label in _SESSION_SOURCE_COUNTS:
+        _SESSION_SOURCE_COUNTS[label] = _SESSION_SOURCE_COUNTS.get(label, 0) + 1
+
+    try:
+        from system_resilience import verify_stock_video_integrity
+        integrity = verify_stock_video_integrity(
+            clip_path, min_duration=min(1.0, target_duration * 0.3)
+        )
+        if not integrity.get("valid"):
+            print(
+                f"    [MultiSource] ffprobe reject {os.path.basename(clip_path)}: "
+                f"{integrity.get('reason')}"
+            )
+            try:
+                os.remove(clip_path)
+            except OSError:
+                pass
+            return None
+    except Exception:
+        pass
+
+    return clip_path
 
 
 def _pick_next_source(scene_index: int) -> str:
@@ -546,34 +860,18 @@ def fetch_multi_source_clips(scenes: list, project_dir: str,
             used_source = "ai" if clip_path else None
 
         if not clip_path:
-            # Normal fetch pipeline — kaynak sayacı güncelleme dahil
             clip_path = fetch_scene_clip(
                 search_queries=scene.get("search_queries", [query]),
                 scene_index=i,
                 project_dir=project_dir,
                 target_duration=duration,
                 scene_description=scene_desc,
-                mood=scene.get("mood", "epic")
+                mood=scene.get("mood", "epic"),
             )
-
             if clip_path:
-                # Dosya adından kaynak label'ı çıkar
-                basename = os.path.basename(clip_path).lower()
-                if "pexels" in basename:
-                    used_source = "pexels"
-                elif "pixabay" in basename:
-                    used_source = "pixabay"
-                elif "coverr" in basename:
-                    used_source = "coverr"
-                elif "mixkit" in basename:
-                    used_source = "mixkit"
-                elif "videvo" in basename:
-                    used_source = "mixkit"
-                else:
-                    used_source = "pexels"  # Varsayılan
+                used_source = _source_label_from_path(clip_path)
 
         if clip_path and used_source:
-            _SESSION_SOURCE_COUNTS[used_source] = _SESSION_SOURCE_COUNTS.get(used_source, 0) + 1
             results.append((i, clip_path, used_source))
             print(f"    [Item 130] Sahne {i}: [{used_source.upper()}] {os.path.basename(clip_path)}")
         else:

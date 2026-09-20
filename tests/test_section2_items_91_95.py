@@ -6,12 +6,14 @@ Unit tests for Section 2 Items 91 - 95:
 94. Metinleri Resim Olarak Basmama (Vector ASS with ScaledBorderAndShadow)
 95. Çift Stok Katmanı (Picture-in-Picture / PIP Analytical Card or B-roll)
 """
+import re
 import unittest
 import os
 import tempfile
 from moviepy.editor import ColorClip
 
-from subtitle_generator import create_karaoke_subtitles, hex_to_ass_color
+from subtitle_generator import create_karaoke_subtitles, hex_to_ass_color, SUBTITLE_PRESETS
+from viral_retention_engine import ViralRetentionEngine
 from effects_engine import get_ffmpeg_vignette_filter, apply_pip_overlay
 from voice_humanizer import VoiceHumanizer
 import config
@@ -79,15 +81,47 @@ class TestSection2Items91To95(unittest.TestCase):
             tmp_path = tmp.name
 
         try:
-            create_karaoke_subtitles(timings, tmp_path)
+            create_karaoke_subtitles(timings, tmp_path, style_opts=SUBTITLE_PRESETS["capcut_yellow"])
             with open(tmp_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # Ensure Script Info specifies standard ASS vector properties
             self.assertIn("ScriptType: v4.00+", content)
             self.assertIn("ScaledBorderAndShadow: yes", content)
-            self.assertIn("PlayResX: 1080", content)
-            self.assertIn("PlayResY: 1920", content)
+            target_w, target_h = config.get_target_resolution()
+            self.assertIn(f"PlayResX: {target_w}", content)
+            self.assertIn(f"PlayResY: {target_h}", content)
+            # Item 91 glow + uppercase on CapCut preset
+            self.assertIn(r"\blur3", content)
+            self.assertIn("VEKTÖREL", content)
+            # Items 206/265 safe zone: bottom margin >= 25%
+            safe = ViralRetentionEngine.get_subtitles_safe_zone(
+                screen_height=target_h, screen_width=target_w
+            )
+            style_line = [l for l in content.splitlines() if l.startswith("Style: K,")][0]
+            margin_v = int(style_line.split(",")[-2])
+            self.assertGreaterEqual(margin_v, safe["bottom_ui_margin"])
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def test_item_91_max_words_per_frame(self):
+        """Items 206/265: karaoke groups respect max 4 words per on-screen frame."""
+        timings = [
+            {"text": f"w{i}", "offset": i * 0.2, "duration": 0.2}
+            for i in range(8)
+        ]
+        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            create_karaoke_subtitles(timings, tmp_path, style_opts=SUBTITLE_PRESETS["capcut_yellow"])
+            with open(tmp_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            for line in content.splitlines():
+                if not line.startswith("Dialogue:"):
+                    continue
+                plain = re.sub(r"\{[^}]*\}", "", line.split(",,")[-1])
+                self.assertLessEqual(len(plain.split()), 4)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

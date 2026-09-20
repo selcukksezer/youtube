@@ -108,8 +108,13 @@ def verify_stock_video_integrity(video_path: str, min_duration: float = 1.0) -> 
     İndirilen stok klibin genişliği, yüksekliği ve süresi ffprobe ile kontrol edilir;
     bozuk veya 0 baytlık dosyalar kurgudan elenir.
     """
-    if not os.path.exists(video_path) or os.path.getsize(video_path) < 1000:
-        return {"valid": False, "reason": "Dosya mevcut değil veya 1KB altı."}
+    if not os.path.exists(video_path):
+        return {"valid": False, "reason": "Dosya mevcut değil."}
+    size = os.path.getsize(video_path)
+    if size == 0:
+        return {"valid": False, "reason": "0 bayt dosya."}
+    if size < 1000:
+        return {"valid": False, "reason": "Dosya 1KB altı."}
 
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     try:
@@ -123,12 +128,21 @@ def verify_stock_video_integrity(video_path: str, min_duration: float = 1.0) -> 
         if len(output) >= 2:
             w = int(output[0])
             h = int(output[1])
+            min_side = min(w, h)
+            if min_side < 720:
+                return {
+                    "valid": False,
+                    "width": w,
+                    "height": h,
+                    "aspect_ratio": "vertical" if h > w else "horizontal",
+                    "reason": f"720p altı ({w}x{h})",
+                }
             return {
-                "valid": w >= 360 and h >= 360,
+                "valid": True,
                 "width": w,
                 "height": h,
                 "aspect_ratio": "vertical" if h > w else "horizontal",
-                "reason": "OK"
+                "reason": "OK",
             }
     except Exception as e:
         return {"valid": False, "reason": str(e)}

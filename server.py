@@ -3,8 +3,10 @@ YouTube Shorts Ultimate — FastAPI Backend Server
 Modular architecture with separated routers and async execution services.
 """
 import os
+import sys
+import asyncio
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import config
@@ -28,15 +30,28 @@ from routers import (
     media_router,
     research_router,
     channel_router,
-    system_router
+    system_router,
+    google_ai_router,
 )
 
 app = FastAPI(title="YouTube Shorts Ultimate Web Dashboard")
 
 
+def _windows_asyncio_exception_handler(loop, context):
+    exc = context.get("exception")
+    if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+        return
+    loop.default_exception_handler(context)
+
+
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     database.cleanup_stale_tasks()
+    if sys.platform == "win32":
+        try:
+            asyncio.get_running_loop().set_exception_handler(_windows_asyncio_exception_handler)
+        except Exception:
+            pass
 
 
 app.add_middleware(
@@ -54,6 +69,7 @@ app.include_router(media_router)
 app.include_router(research_router)
 app.include_router(channel_router)
 app.include_router(system_router)
+app.include_router(google_ai_router)
 
 # Serve BGM audio files for in-browser audio playback
 if not os.path.exists(config.BGM_DIR):
@@ -73,6 +89,14 @@ STATIC_DIR = os.path.join(config.BASE_DIR, "static")
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR, exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    icon_path = os.path.join(STATIC_DIR, "favicon.ico")
+    if os.path.exists(icon_path):
+        return FileResponse(icon_path)
+    return Response(status_code=204)
 
 
 @app.get("/")
