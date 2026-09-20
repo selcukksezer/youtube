@@ -33,6 +33,21 @@ def _normalize_text(text: str) -> str:
     return text.strip()
 
 
+
+def _get_ngrams(words: List[str], n: int = 3) -> set:
+    """Metinden n-gram kümeleri oluşturur."""
+    return set(tuple(words[i:i+n]) for i in range(len(words) - n + 1))
+
+def _jaccard_similarity(text_a: str, text_b: str, n: int = 3) -> float:
+    """Jaccard n-gram benzerliği."""
+    ngrams_a = _get_ngrams(_extract_words(text_a), n)
+    ngrams_b = _get_ngrams(_extract_words(text_b), n)
+    intersection = ngrams_a.intersection(ngrams_b)
+    union = ngrams_a.union(ngrams_b)
+    if not union:
+        return 0.0
+    return len(intersection) / len(union)
+
 def _extract_words(text: str) -> List[str]:
     return _normalize_text(text).split()
 
@@ -73,19 +88,26 @@ def _difflib_similarity(text_a: str, text_b: str) -> float:
     return difflib.SequenceMatcher(None, norm_a, norm_b).ratio()
 
 
-def compute_similarity(text_a: str, text_b: str, method: str = "combined") -> float:
+def compute_similarity(text_a: str, text_b: str, method: str = "robust") -> float:
     """
     İki metin arasındaki benzerlik skorunu hesaplar.
-    method: "difflib" | "tfidf" | "combined"
+    method: "difflib" | "tfidf" | "jaccard" | "combined" | "robust"
     """
     if method == "difflib":
         return _difflib_similarity(text_a, text_b)
     elif method == "tfidf":
         return _cosine_similarity_tfidf(text_a, text_b)
-    else:
+    elif method == "jaccard":
+        return _jaccard_similarity(text_a, text_b)
+    elif method == "combined":
         dl = _difflib_similarity(text_a, text_b)
         tf = _cosine_similarity_tfidf(text_a, text_b)
         return dl * 0.4 + tf * 0.6
+    else:
+        dl = _difflib_similarity(text_a, text_b)
+        tf = _cosine_similarity_tfidf(text_a, text_b)
+        jc = _jaccard_similarity(text_a, text_b, n=3)
+        return (dl * 0.3) + (tf * 0.5) + (jc * 0.2)
 
 
 def _load_db() -> List[dict]:
@@ -126,7 +148,7 @@ def add_script_to_db(script_text: str, keyword: str = "", title: str = "") -> No
 def check_script_originality(
     new_script: str,
     threshold: float = SIMILARITY_THRESHOLD,
-    method: str = "combined",
+    method: str = "robust",
     keyword: str = "",
     title: str = "",
     auto_add_if_approved: bool = True

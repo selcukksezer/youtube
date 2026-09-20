@@ -15,6 +15,8 @@ DEFAULT_RSS_FEEDS = {
     "webtekno": {"name": "Webtekno - Teknoloji", "url": "https://www.webtekno.com/rss.xml"},
     "shiftdelete": {"name": "ShiftDelete - Teknoloji", "url": "https://shiftdelete.net/feed"},
     "coin_turk": {"name": "CoinTürk - Kripto Para", "url": "https://coin-turk.com/feed"},
+    "google_news_tr": {"name": "Google News TR", "url": "https://news.google.com/rss?hl=tr&gl=TR&ceid=TR:tr"},
+    "twitter_trends_mock": {"name": "Twitter/X Trendleri (Mock)", "url": "https://nitter.net/search/rss?f=tweets&q=%23gundem"} # Not: Gerçek Twitter RSS API'si public olmadığından Nitter veya alternatif feed proxy kullanılabilir.
 }
 
 def clean_html(raw_html: str) -> str:
@@ -68,5 +70,5 @@ def fetch_rss_feed(feed_url: str, max_items: int = 5) -> List[Dict[str, Any]]:
 
 def get_breaking_news_topics(source_key: str = "aa_guncel", max_items: int = 5) -> List[Dict[str, Any]]:
     """Fetches breaking news from configured default RSS feeds."""
-    feed_info = DEFAULT_RSS_FEEDS.get(source_key, DEFAULT_RSS_FEEDS["aa_guncel"])
+    feed_info = DEFAULT_RSS_FEEDS.get(source_key, DEFAULT_RSS_FEEDS["google_news_tr"])
     return fetch_rss_feed(feed_info["url"], max_items=max_items)

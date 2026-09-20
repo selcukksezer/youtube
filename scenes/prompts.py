@@ -99,7 +99,7 @@ def get_rotated_system_prompt(base_lang: str = "tr") -> str:
     """
     global _ROTATION_INDEX
     if base_lang == "tr":
-        prompt = PROMPT_VARIANTS_TR[_ROTATION_INDEX % len(PROMPT_VARIANTS_TR)]
+        prompt = PROMPT_VARIANTS_TR[(_ROTATION_INDEX // 20) % len(PROMPT_VARIANTS_TR)]
     else:
         prompt = PROMPT_EN
     _ROTATION_INDEX += 1
