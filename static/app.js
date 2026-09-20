@@ -3003,14 +3003,18 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch('/api/config');
             const data = await res.json();
-            if (data.keys) {
-                if (data.keys.gemini) document.getElementById('input-key-gemini').placeholder = '●●●●●●●● (Kayıtlı)';
-                if (data.keys.pexels) document.getElementById('input-key-pexels').placeholder = '●●●●●●●● (Kayıtlı)';
-                if (data.keys.pixabay) document.getElementById('input-key-pixabay').placeholder = '●●●●●●●● (Kayıtlı)';
-                if (data.keys.elevenlabs) {
-                    const elInput = document.getElementById('input-key-elevenlabs');
-                    if (elInput) elInput.placeholder = '●●●●●●●● (Kayıtlı)';
-                }
+            if (data.keys || data.key_hints) {
+                const hint = (id, configured, hintKey) => {
+                    const el = document.getElementById(id);
+                    if (!el || !configured) return;
+                    const masked = data.key_hints?.[hintKey];
+                    el.value = '';
+                    el.placeholder = masked ? `${masked} (Kayıtlı)` : '•••••••• (Kayıtlı)';
+                };
+                hint('input-key-gemini', data.keys?.gemini, 'gemini');
+                hint('input-key-pexels', data.keys?.pexels, 'pexels');
+                hint('input-key-pixabay', data.keys?.pixabay, 'pixabay');
+                hint('input-key-elevenlabs', data.keys?.elevenlabs, 'elevenlabs');
             }
             if (data.elevenlabs) renderElevenlabsQuota(data.elevenlabs);
             if (data.google_ai) {
@@ -3628,27 +3632,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            if (res.ok) {
-                showToast('Sistem ayarları + Google AI Pro modelleri kaydedildi!');
-                await loadGoogleAiProPanel();
-                await loadTtsVoiceCatalog(true);
-                const cfg = await (await fetch('/api/config')).json();
-                if (cfg.elevenlabs) renderElevenlabsQuota(cfg.elevenlabs);
+            let body = {};
+            try { body = await res.json(); } catch (_) {}
+            if (!res.ok) {
+                const detail = body.detail || body.message || `HTTP ${res.status}`;
+                showToast(`Ayar kaydedilemedi: ${detail}`, 'error');
+                return;
             }
+            if (elevenlabsKey) {
+                showToast('ElevenLabs key kaydedildi');
+                const elInput = document.getElementById('input-key-elevenlabs');
+                if (elInput) {
+                    const masked = body.key_hints?.elevenlabs || ('••••' + elevenlabsKey.slice(-4));
+                    elInput.value = '';
+                    elInput.placeholder = `${masked} (Kayıtlı)`;
+                }
+            } else {
+                showToast('Sistem ayarları + Google AI Pro modelleri kaydedildi!');
+            }
+            await loadGoogleAiProPanel();
+            await loadTtsVoiceCatalog(true);
+            const cfg = await (await fetch('/api/config')).json();
+            if (cfg.elevenlabs) renderElevenlabsQuota(cfg.elevenlabs);
         } catch (e) {
-            alert('Ayar kaydetme hatası: ' + e.message);
+            showToast('Ayar kaydetme hatası: ' + e.message, 'error');
         }
     });
 
     // ══════════════════════════════════════════════════════════════
     // TOAST BİLDİRİM FONKSİYONU
     // ══════════════════════════════════════════════════════════════
-    function showToast(msg) {
+    function showToast(msg, type = 'success') {
         const container = document.getElementById('toast-container');
         if (!container) return;
         const toast = document.createElement('div');
         toast.className = 'toast';
-        toast.innerHTML = `<i class="fa-solid fa-circle-check text-primary"></i> <span>${msg}</span>`;
+        const icon = type === 'error'
+            ? 'fa-circle-xmark text-danger'
+            : (type === 'warning' || type === 'warn')
+                ? 'fa-triangle-exclamation text-warning'
+                : 'fa-circle-check text-primary';
+        toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${msg}</span>`;
         container.appendChild(toast);
         setTimeout(() => {
             toast.style.opacity = '0';

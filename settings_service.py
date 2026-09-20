@@ -1,7 +1,33 @@
 """Runtime configuration queries and updates for the dashboard."""
-from typing import Any, Dict
+import os
+from typing import Any, Dict, Tuple
 
 import config
+
+
+def mask_api_key(value: str) -> str:
+    """Mask secret for UI — never expose full key."""
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if len(v) <= 4:
+        return "••••"
+    return "••••" + v[-4:]
+
+
+def _key_hints() -> Dict[str, str]:
+    return {
+        "gemini": mask_api_key(config.GEMINI_API_KEY),
+        "openai": mask_api_key(config.OPENAI_API_KEY),
+        "deepseek": mask_api_key(config.DEEPSEEK_API_KEY),
+        "grok": mask_api_key(config.GROK_API_KEY),
+        "pexels": mask_api_key(config.PEXELS_API_KEY),
+        "pixabay": mask_api_key(config.PIXABAY_API_KEY),
+        "youtube_data": mask_api_key(config.YOUTUBE_DATA_API_KEY),
+        "reddit_id": mask_api_key(config.REDDIT_CLIENT_ID),
+        "reddit_secret": mask_api_key(config.REDDIT_CLIENT_SECRET),
+        "elevenlabs": mask_api_key(getattr(config, "ELEVENLABS_API_KEY", "")),
+    }
 
 
 def _elevenlabs_dashboard_info() -> Dict[str, Any]:
@@ -36,6 +62,7 @@ def get_dashboard_config() -> Dict[str, Any]:
             "reddit": bool(config.REDDIT_CLIENT_ID and config.REDDIT_CLIENT_SECRET),
             "elevenlabs": bool(getattr(config, "ELEVENLABS_API_KEY", "")),
         },
+        "key_hints": _key_hints(),
         "elevenlabs": _elevenlabs_dashboard_info(),
         "subtitle": {"color": config.SUBTITLE_COLOR, "highlight_color": config.SUBTITLE_HIGHLIGHT_COLOR, "font_size": config.SUBTITLE_FONT_SIZE, "y_position": config.SUBTITLE_Y_POSITION},
         "audio": {"enable_bgm": config.ENABLE_BGM, "bgm_volume": config.BGM_VOLUME, "default_bgm_track": config.DEFAULT_BGM_TRACK},
@@ -95,6 +122,7 @@ def apply_dashboard_config(data: Any) -> None:
         value = getattr(data, field, None)
         if value is not None:
             setattr(config, target, value)
+            os.environ[target] = str(value)
             if target == "ELEVENLABS_API_KEY":
                 from tts_voices import clear_elevenlabs_voice_cache
                 clear_elevenlabs_voice_cache()
@@ -117,13 +145,17 @@ def apply_dashboard_config(data: Any) -> None:
     if getattr(data, "gemini_model", None) and config.GEMINI_API_KEY:
         config.AI_MODEL = config.GEMINI_MODEL
     refresh_ai_provider()
-    _save_to_env_file()
+    ok, err = _save_to_env_file()
+    if not ok:
+        raise RuntimeError(f".env dosyasına yazılamadı: {err}")
 
 
-def _save_to_env_file() -> None:
-    import os
-    env_path = os.path.join(config.BASE_DIR, ".env")
-    env_vars = {
+def _env_file_path() -> str:
+    return os.path.join(config.BASE_DIR, ".env")
+
+
+def _dashboard_env_updates() -> Dict[str, str]:
+    return {
         "GEMINI_API_KEY": config.GEMINI_API_KEY or "",
         "GEMINI_MODEL": getattr(config, "GEMINI_MODEL", "gemini-flash-lite-latest") or "",
         "GEMINI_IMAGE_MODEL": getattr(config, "GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image") or "",
@@ -156,10 +188,34 @@ def _save_to_env_file() -> None:
         "RENDER_THREADS": str(getattr(config, "RENDER_THREADS", 8)),
         "USE_GPU_ACCELERATION": str(getattr(config, "USE_GPU_ACCELERATION", True)).lower(),
     }
-    lines = [f"{k}={v}" for k, v in env_vars.items()]
+
+
+def _save_to_env_file() -> Tuple[bool, str]:
+    """Merge dashboard keys into .env (preserve unrelated entries)."""
+    from dotenv import dotenv_values, set_key
+
+    env_path = _env_file_path()
+    updates = _dashboard_env_updates()
     try:
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+        env_dir = os.path.dirname(env_path)
+        if env_dir:
+            os.makedirs(env_dir, exist_ok=True)
+        if not os.path.isfile(env_path):
+            with open(env_path, "a", encoding="utf-8"):
+                pass
+        for key, value in updates.items():
+            set_key(env_path, key, value if value is not None else "", quote_mode="never")
+        # Verify write when ElevenLabs key is configured
+        el_key = getattr(config, "ELEVENLABS_API_KEY", "") or ""
+        if el_key:
+            saved = (dotenv_values(env_path).get("ELEVENLABS_API_KEY") or "").strip()
+            if saved != el_key:
+                return False, "ELEVENLABS_API_KEY .env içinde doğrulanamadı"
         print(f"  [BILGI] Yapilandirma .env dosyasina kaydedildi: {env_path}")
-    except Exception as e:
-        print(f"  [UYARI] .env dosyasi kaydedilemedi: {e}")
+        return True, env_path
+    except OSError as exc:
+        print(f"  [UYARI] .env dosyasi kaydedilemedi: {exc}")
+        return False, str(exc)
+    except Exception as exc:
+        print(f"  [UYARI] .env dosyasi kaydedilemedi: {exc}")
+        return False, str(exc)

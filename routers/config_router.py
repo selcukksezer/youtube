@@ -4,7 +4,7 @@ Configuration and API key testing router.
 from fastapi import APIRouter, HTTPException
 import requests
 from api_models import ConfigUpdateModel, KeyTestRequest
-from settings_service import apply_dashboard_config, get_dashboard_config
+from settings_service import apply_dashboard_config, get_dashboard_config, _key_hints
 
 router = APIRouter(tags=["Config"])
 
@@ -16,8 +16,19 @@ def get_config():
 
 @router.post("/api/config")
 def update_config(data: ConfigUpdateModel):
-    apply_dashboard_config(data)
-    return {"status": "ok", "message": "Configuration updated successfully"}
+    try:
+        apply_dashboard_config(data)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    saved = []
+    if data.elevenlabs_key:
+        saved.append("elevenlabs")
+    return {
+        "status": "ok",
+        "message": "Configuration updated successfully",
+        "saved_keys": saved,
+        "key_hints": _key_hints(),
+    }
 
 
 @router.post("/api/keys/test")
