@@ -384,6 +384,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
 
         # Item 74: Kare Hızı (FPS) Çeşitlendirmesi (29.97, 30.02 fps)
         # Limit encoding threads to 2 and disable GPU OpenCL to keep PC cool and prevent driver crashes
+        export_fps = getattr(combined, "fps", 30.0) or 30.0
         print(f"  [Composer] Exporting with diversified FPS: {export_fps:.2f} (Item 74, threads=2)...", flush=True)
         render_logger = MoviePyProgressLogger(callback=progress_callback, cancel_check=cancel_check)
         combined.write_videofile(tmp, fps=export_fps, codec="libx264",
