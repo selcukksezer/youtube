@@ -43,6 +43,33 @@ def get_color_grading_ffmpeg_filter(jitter_range: float = 0.015) -> str:
     sat = 1.0 + random.uniform(-jitter_range, jitter_range)
     return f"eq=gamma={gamma:.4f}:contrast={contrast:.4f}:saturation={sat:.4f}"
 
+
+def get_scene_brightness_alternation_filter(scene_index: int, pulse_range: float = 0.10) -> str:
+    """
+    Item 272: Görsel Parlaklık Dalgalanması.
+    Karanlık↔parlak sahne alternasyonu retinayı uyarmak için gamma/contrast kaydırır.
+    """
+    jitter = random.uniform(0, pulse_range * 0.25)
+    if scene_index % 2 == 0:
+        gamma = 0.88 - jitter
+        contrast = 0.96
+        brightness = -0.04
+    else:
+        gamma = 1.10 + jitter
+        contrast = 1.06
+        brightness = 0.05
+    return f"eq=gamma={gamma:.4f}:contrast={contrast:.4f}:brightness={brightness:.4f}"
+
+
+def apply_scene_brightness_alternation(clip: VideoFileClip, scene_index: int = 0) -> VideoFileClip:
+    """Item 272: MoviePy yolunda sahne bazlı parlaklık alternasyonu."""
+    try:
+        factor = 0.90 if scene_index % 2 == 0 else 1.12
+        return clip.fx(vfx.colorx, factor)
+    except Exception:
+        return clip
+
+
 def get_phash_ffmpeg_noise_filter() -> str:
     """Item 71: Ultra-fast FFmpeg noise filter (0.5% pixel noise)."""
     return "noise=alls=1:allf=t+u"

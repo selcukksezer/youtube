@@ -2,11 +2,17 @@
 SQLite Database Persistence Layer for Shorts Video Creators (shorts.db)
 Architecturally optimized with WAL mode, foreign key constraints, error tracking and cleanup.
 """
-import os, sqlite3, time
+import hashlib
+import os
+import shutil
+import sqlite3
+import time
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 import config
 
 DB_PATH = os.path.join(config.BASE_DIR, "shorts.db")
+BACKUP_DIR = os.path.join(config.BASE_DIR, "data", "backups")
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH, timeout=15.0)
@@ -47,6 +53,9 @@ def init_db():
             except Exception: pass
         if "channel_slug" not in columns:
             try: cursor.execute("ALTER TABLE videos ADD COLUMN channel_slug TEXT DEFAULT 'default'")
+            except Exception: pass
+        if "share_decision" not in columns:
+            try: cursor.execute("ALTER TABLE videos ADD COLUMN share_decision TEXT")
             except Exception: pass
 
         cursor.execute("""
@@ -327,6 +336,34 @@ def get_recent_videos(limit: int = 50) -> List[Dict[str, Any]]:
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
 
+def get_video_by_id(video_id: int) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM videos WHERE id = ?", (video_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def update_share_decision(video_id: int, decision: str) -> bool:
+    """decision: 'keep' (manual upload) or 'discarded'."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE videos SET share_decision = ? WHERE id = ?",
+            (decision, video_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def delete_video_by_id(video_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 def delete_video_by_filename(filename: str) -> bool:
     """Deletes database entry when a video file is deleted."""
     with get_connection() as conn:
@@ -448,8 +485,93 @@ def update_managed_channel_status(
         cursor.execute(sql, tuple(params))
         conn.commit()
 
+def encrypted_db_backup(
+    dest_dir: Optional[str] = None,
+    passphrase: Optional[str] = None,
+    keep: int = 7,
+) -> Optional[str]:
+    """
+    Item 439: Encrypted SQLite backup (PBKDF2 + XOR stream, env_vault compatible).
+    Uses DB_BACKUP_PASSPHRASE or ENV_VAULT_PASSPHRASE from environment when set.
+    """
+    if not os.path.isfile(DB_PATH):
+        return None
+    out_dir = dest_dir or BACKUP_DIR
+    os.makedirs(out_dir, exist_ok=True)
+    secret = (
+        passphrase
+        or os.getenv("DB_BACKUP_PASSPHRASE")
+        or os.getenv("ENV_VAULT_PASSPHRASE")
+        or "youtubeoto-local-backup"
+    )
+    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    plain_copy = os.path.join(out_dir, f"shorts_{stamp}.db")
+    enc_path = os.path.join(out_dir, f"shorts_{stamp}.db.enc")
+    shutil.copy2(DB_PATH, plain_copy)
+    salt = os.urandom(16)
+    key = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, 480_000, dklen=32)
+    with open(plain_copy, "rb") as src:
+        payload = src.read()
+    block = key
+    encrypted = bytearray(len(payload))
+    pos = 0
+    while pos < len(payload):
+        block = hashlib.sha256(block).digest()
+        take = min(len(block), len(payload) - pos)
+        for i in range(take):
+            encrypted[pos + i] = payload[pos + i] ^ block[i]
+        pos += take
+    with open(enc_path, "wb") as out:
+        out.write(b"YTDBKP1\x00")
+        out.write(salt)
+        out.write(bytes(encrypted))
+    try:
+        os.remove(plain_copy)
+    except OSError:
+        pass
+    backups = sorted(
+        [f for f in os.listdir(out_dir) if f.endswith(".db.enc")],
+        reverse=True,
+    )
+    for old in backups[keep:]:
+        try:
+            os.remove(os.path.join(out_dir, old))
+        except OSError:
+            pass
+    print(f"[DB Backup] Encrypted backup written: {enc_path}")
+    return enc_path
+
+
+def maybe_schedule_encrypted_db_backup() -> Optional[str]:
+    """Run encrypted_db_backup when ENABLE_DB_BACKUP=true (Item 439)."""
+    if os.getenv("ENABLE_DB_BACKUP", "false").lower() not in ("1", "true", "yes"):
+        return None
+    interval_h = float(os.getenv("DB_BACKUP_INTERVAL_HOURS", "24") or "24")
+    marker = os.path.join(BACKUP_DIR, ".last_backup_ts")
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    now = time.time()
+    last = 0.0
+    if os.path.isfile(marker):
+        try:
+            with open(marker, encoding="utf-8") as fh:
+                last = float(fh.read().strip() or "0")
+        except Exception:
+            last = 0.0
+    if now - last < interval_h * 3600:
+        return None
+    path = encrypted_db_backup()
+    if path:
+        with open(marker, "w", encoding="utf-8") as fh:
+            fh.write(str(now))
+    return path
+
+
 # Initial schema creation on module load
 init_db()
+try:
+    maybe_schedule_encrypted_db_backup()
+except Exception:
+    pass
 
 if __name__ == "__main__":
     print(f"Database initialized and verified at {DB_PATH}")

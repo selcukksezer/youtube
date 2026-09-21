@@ -8,6 +8,21 @@ import re
 import config
 
 
+EN_TOPIC_MAP = {
+    "bitcoin": "bitcoin crypto candlestick chart",
+    "crypto": "cryptocurrency trading terminal",
+    "forex": "forex trading desk monitors",
+    "trading": "live trading desk screens",
+    "livetrading": "live trading stream desk",
+    "live trading": "live trading broadcast desk",
+    "gold": "gold bullion trading chart",
+    "ethereum": "ethereum crypto chart screen",
+    "banknifty": "india bank nifty index chart",
+    "btc": "bitcoin price chart screen",
+    "borsa": "stock exchange trading floor",
+    "altcoin": "altcoin crypto market screen",
+}
+
 TR_EN_TOPIC_MAP = {
     "düğün": "wedding bride altar", "evlilik": "wedding marriage", "eş": "couple spouse betrayal",
     "borç": "secret debt money", "para": "cash money bank", "kredi": "bank loan debt documents",
@@ -24,18 +39,33 @@ TR_EN_TOPIC_MAP = {
     "psikoloji": "human psychology mind brain", "bilim": "science laboratory discovery",
     "uzay": "space galaxy universe stars", "motivasyon": "workout fitness athlete",
     "haber": "breaking news broadcast studio", "kripto": "bitcoin crypto trading chart",
+    "altın": "gold bullion trading chart", "borsa": "stock market trading floor",
     "tarih": "ancient historical battlefield", "ürün": "viral smart gadget lifestyle"
 }
 
 
+def sanitize_topic_title(title: str) -> str:
+    """Strip emojis, hashtags and live-stream noise; keep semantic topic text."""
+    t = (title or "").strip()
+    t = re.sub(r"[\U00010000-\U0010ffff]", "", t)
+    t = re.sub(r"[\u2600-\u27bf\ufe00-\ufe0f]", "", t)
+    t = re.sub(r"#[\w]+", " ", t)
+    t = re.sub(r"[^\w\s\-&]", " ", t, flags=re.UNICODE)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t or "Canlı Piyasa Özeti"
+
+
 def _detect_niche_and_terms(title: str, body: str = ""):
-    clean_title = re.sub(r'[^\w\s-]', '', title).strip()
+    clean_title = sanitize_topic_title(title)
     words = [w for w in clean_title.split() if len(w) > 2]
     combined_text = f"{title} {body}".lower()
 
     matched_en = []
+    for en_k, en_v in EN_TOPIC_MAP.items():
+        if en_k in combined_text:
+            matched_en.append(en_v)
     for tr_k, en_v in TR_EN_TOPIC_MAP.items():
-        if tr_k in combined_text:
+        if tr_k in combined_text and en_v not in matched_en:
             matched_en.append(en_v)
 
     if matched_en:
@@ -44,6 +74,19 @@ def _detect_niche_and_terms(title: str, body: str = ""):
         main_kw = "dramatic cinematic mystery"
 
     return clean_title, main_kw, words, matched_en
+
+
+_CRYPTO_TOPIC_HINTS = (
+    "bitcoin", "crypto", "kripto", "forex", "trading", "livetrading", "live trading",
+    "gold", "altın", "borsa", "banknifty", "ethereum", "eth ", "btc", "altcoin",
+)
+
+
+def _topic_is_crypto_market(title: str, body: str = "", niche_type: str = None) -> bool:
+    if niche_type == "8_crypto_market":
+        return True
+    combined = f"{title} {body}".lower()
+    return any(k in combined for k in _CRYPTO_TOPIC_HINTS)
 
 
 def _generate_reddit_confession_scenes(clean_title: str, combined_text: str, is_tr: bool):
@@ -335,43 +378,163 @@ def _generate_news_flash_scenes(clean_title: str, is_tr: bool):
     }
 
 
-def _generate_stoic_scenes(clean_title: str, is_tr: bool):
+def _stoic_variant_index(clean_title: str, variation_seed: int = 0) -> int:
+    base = sum(ord(c) for c in clean_title.lower()) + (variation_seed * 17)
+    return base % 4
+
+
+def _build_stoic_narrations(clean_title: str, is_tr: bool, variation_seed: int = 0) -> list:
+    """
+    Topic-seeded Stoic narrations — each variant weaves user title through the arc so
+    different UI topics produce distinct full_narration (not just scene 1).
+    """
+    topic = clean_title.strip() or ("Stoacılık" if is_tr else "Stoicism")
+    variant = _stoic_variant_index(topic, variation_seed)
+
+    if is_tr:
+        variants = [
+            [
+                f"'{topic}' dediğinde çoğu kişi motivasyon arar; Stoacılar ise zihinsel disiplin arar.",
+                f"Marcus Aurelius Meditations'ta şunu yazar: '{topic}' gibi dış olaylar seni değil, verdiğin tepki tanımlar.",
+                "Kontrol edemediğin haberler, yorumlar ve başkalarının hüsranı senin huzurunu çalmak için gelmez.",
+                f"Seneca der ki acının çoğu gerçekte değil, '{topic}' hakkında kurduğun senaryolarda başlar.",
+                "Öfkeyi bir silah sanırsın ama o elinde tuttuğun kor ateştir; önce seni yakarsın.",
+                f"Bugün '{topic}' seni sarsarsa, nefes al — tepki vermeden önce üç saniye bekle.",
+                "Epiktetos: 'Seni inciten olay değil, o olaya yüklediğin anlamdır.'",
+                f"2000 yıllık felsefe şunu öğretir: {topic} senin kontrol alanın değil; tutumun kontrol alanındır.",
+                "Sabah aynaya bakıp şunu söyle: Bugün zor insanlar, gürültü ve belirsizlik göreceğim.",
+                "Onların davranışı senin karakterini değil; senin sabrını test eden antrenmandır.",
+                "Disiplin, iyi hissettiğinde değil; en çok dağılmak istediğinde doğru olanı seçmektir.",
+                f"'{topic}' kriz anında panik yerine prosedür seç: ne biliyorum, ne yapabilirim, neyi bırakmalıyım?",
+                "Zihnini eğitmezsen, algoritma ve kaos zihnini senin yerine yönetir.",
+                f"Peki '{topic}' karşısında bugün hangi stoacı cevabı seçeceksin? Yorumlarda yaz.",
+            ],
+            [
+                f"Çoğu insan '{topic}' duyunca hemen çözüm ister; bilge insan önce sınırını çizer.",
+                "Marcus Aurelius: 'Gününü başkalarının hatasıyla zehirleme.'",
+                f"'{topic}' seni endişelendiriyorsa, liste yap: kontrol edebilirim / edemem.",
+                "Kontrol edemediklerin için harcadığın her dakika, hayatından çalınmış bir dakikadır.",
+                "Seneca: 'Mutluluk, dışarıda aranan bir şey değil; içeride inşa edilen bir alışkanlıktır.'",
+                f"Stres anında '{topic}' kelimesini tekrarlama; nefesini ve omuzlarını gevşet.",
+                "Epiktetos'un Dichotomy of Control'ü: ya eyleme geç ya da bırak.",
+                f"Antik Roma'da imparator bile '{topic}' karşısında sakin kalmayı antrenman sayardı.",
+                "Gürültülü dünyada sessizlik bir lüks değil; bilinçli bir savunma hattıdır.",
+                f"'{topic}' hakkındaki korkunu büyüten şey, kanıt değil — varsayımlarındır.",
+                "Disiplin spor salonu gibidir: her tekrar zihnini bir sonraki fırtınaya hazırlar.",
+                "Zorluk seni kırmak için gelmez; hangi değerlerin gerçek olduğunu göstermek için gelir.",
+                "Kendi sözleşmeni yaz: Bugün panik yok, sadece net adımlar.",
+                f"'{topic}' seni bugün yener mi, yoksa sen mi eğitirsin? Yorumlarda buluşalım.",
+            ],
+            [
+                f"'{topic}' konusu viral olabilir; stoacı zihin ise kalıcı olmayı seçer.",
+                "Marcus Aurelius sabah günlüğünde kendine sorardı: Bugün hangi zayıf tepkilerim var?",
+                f"'{topic}' seni kızdırdığında, önce bedenini dinle: çene, omuz, kalp hızı.",
+                "Dış dünya değişmez; değişen tek şey olaylara verdiğin anlamdır.",
+                "Seneca: 'Bazen iyileşmek için konuşmayı bırakmak gerekir.'",
+                f"'{topic}' tartışmasına girmek zorunda değilsin; susmak da stratejidir.",
+                "Epiktetos: 'İnsanları değiştirmeye çalışma; kendi tepkini eğit.'",
+                f"2000 yıllık bilgelik '{topic}' için sihirli cevap vermez; sihirli alışkanlık verir.",
+                "Her sabah iki dakika: bugün neyi kabul ediyorum, neyi reddediyorum?",
+                "Başkalarının kaosu senin acil durumun değildir; sınır çizmek saygıdır.",
+                "Disiplin, duyguyu bastırmak değil; duyguyu yönetmek için pratik yapmaktır.",
+                f"'{topic}' geçer; senin bugün seçtiğin karakter kalır.",
+                "Zihnini koru — çünkü orası hayatının gerçek komuta merkezidir.",
+                "Bugün hangi stoacı alışkanlığı deneyeceksin? Yorumlarda paylaş.",
+            ],
+            [
+                f"'{topic}' gibi konular beynini tehdit moduna sokar; stoacılık güven modunu inşa eder.",
+                "Marcus Aurelius: 'Engel yolun kendisidir.'",
+                f"'{topic}' seni gece uyutuyorsa, yarın sabah ilk işin kontrol listesi olsun.",
+                "Endişe, çözülmemiş problemlerin hayalidir; eylem, endişenin panzehiridir.",
+                "Seneca: 'Zamanımız dar; israf edersek hayat kısa gelir.'",
+                f"'{topic}' için harcadığın enerjiyi, yapabileceğin tek küçük adıma kaydır.",
+                "Epiktetos: 'Özgürlük, dış koşullara değil; iç kararlarına bağlıdır.'",
+                f"Antik felsefe '{topic}' sorusuna cevap değil; cevap verme biçimi öğretir.",
+                "Sabah rutini: telefon yok, üç derin nefes, bir net niyet cümlesi.",
+                "Başkalarının beklentisi senin görevin değil; kendi ahlaki pusulan görevindir.",
+                "Disiplin, motivasyon bittiğinde devreye giren gerçek sistemdir.",
+                f"'{topic}' fırtınası geçince ayakta kalan, en çok pratik yapan kişidir.",
+                "Zihnini eğit; yoksa gürültü senin yerine karar verir.",
+                f"'{topic}' karşısında stoacı cevabın ne? Yorumlarda tartışalım.",
+            ],
+        ]
+        return variants[variant]
+
+    en_variants = [
+        [
+            f"When people hear '{topic}', they chase motivation — Stoics train mental discipline.",
+            f"Marcus Aurelius wrote: events like '{topic}' do not define you; your response does.",
+            "Other people's chaos is not a license to surrender your inner peace.",
+            f"Seneca warned we suffer more from stories about '{topic}' than from facts.",
+            "Anger feels like a weapon, but it is a coal that burns your hand first.",
+            f"If '{topic}' shakes you today, pause three seconds before reacting.",
+            "Epictetus: you are disturbed not by events, but by your judgment of them.",
+            f"Two thousand years of wisdom: '{topic}' is outside your control; attitude is inside.",
+            "Each morning expect noise, rude people, and uncertainty.",
+            "Their behavior tests your patience — not your identity.",
+            "Discipline is choosing the right action when you least feel like it.",
+            f"In a '{topic}' crisis, ask: what do I know, what can I do, what must I release?",
+            "Train your mind, or algorithms and chaos will train it for you.",
+            f"What Stoic response will you choose about '{topic}' today? Comment below.",
+        ],
+        [
+            f"'{topic}' makes most people panic; the wise draw boundaries first.",
+            "Marcus Aurelius: do not poison your day with another person's fault.",
+            f"Worried about '{topic}'? Split a list: controllable vs uncontrollable.",
+            "Every minute spent on the uncontrollable is stolen from your life.",
+            "Seneca: happiness is a habit built inside, not found outside.",
+            f"When stressed about '{topic}', relax breath and shoulders before speaking.",
+            "Epictetus: act on what you control, release what you cannot.",
+            f"Even emperors practiced calm responses to shocks like '{topic}'.",
+            "Silence is not luxury — it is deliberate defense.",
+            f"Fear about '{topic}' grows from assumptions, not proof.",
+            "Discipline is repetition that prepares you for the next storm.",
+            "Hardship reveals which values are real.",
+            "Write a daily contract: no panic, only clear steps.",
+            f"Will '{topic}' defeat you today, or will you train through it? Comment.",
+        ],
+        [
+            f"'{topic}' may trend; a Stoic mind chooses what endures.",
+            "Marcus Aurelius asked each morning: which weak reactions must I watch?",
+            f"When '{topic}' angers you, scan your body: jaw, shoulders, heartbeat.",
+            "The world may not change; your interpretation always can.",
+            "Seneca: sometimes healing begins when you stop arguing.",
+            f"You do not owe a debate about '{topic}' — silence is strategy.",
+            "Epictetus: train your response, not other people.",
+            f"Ancient wisdom offers no magic answer to '{topic}' — only habits.",
+            "Two minutes each morning: what do I accept, what do I refuse?",
+            "Someone else's chaos is not your emergency.",
+            "Discipline is practice, not suppression.",
+            f"'{topic}' will pass; today's character choice remains.",
+            "Protect your mind — it is your real command center.",
+            "Which Stoic habit will you test today? Comment below.",
+        ],
+        [
+            f"Topics like '{topic}' trigger threat mode; Stoicism builds safety through practice.",
+            "Marcus Aurelius: the obstacle is the way.",
+            f"If '{topic}' keeps you awake, tomorrow's first task is a control checklist.",
+            "Worry imagines unsolved problems; action is the antidote.",
+            "Seneca: life is short if we waste time.",
+            f"Shift energy about '{topic}' into one small executable step.",
+            "Epictetus: freedom depends on inner decisions, not outer conditions.",
+            f"Philosophy does not answer '{topic}' — it teaches how to respond.",
+            "Morning routine: no phone, three breaths, one clear intention.",
+            "Other people's expectations are not your duty.",
+            "Discipline runs when motivation stops.",
+            f"After the '{topic}' storm, whoever practiced most stays standing.",
+            "Train your mind, or noise decides for you.",
+            f"What is your Stoic answer to '{topic}'? Join the discussion.",
+        ],
+    ]
+    return en_variants[variant]
+
+
+def _generate_stoic_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0):
     """
     Constructs 14-scene Stoic philosophy format (Tone: deep, calm, disciplined, masculine).
+    User topic is woven through all scenes; variation_seed rotates template on retry (#104).
     """
-    narrations_tr = [
-        f"{clean_title} karşısında zihnini sarsılmaz bir kaleye dönüştürecek Stoacı bilgelik...",
-        "Marcus Aurelius yüzyıllar önce şunu yazmıştı: 'Başına gelenleri değil, onlara verdiğin tepkiyi kontrol edebilirsin.'",
-        "İnsanların çoğu dış dünyadaki kaosa öfkelenerek kendi huzurunu kendi elleriyle yok eder.",
-        "Oysa bilge bir insan, kontrol edemediği hiçbir şey için bir saniye bile kaygılanmaz.",
-        "Seneca'nın dediği gibi: 'Gerçekte başımıza gelen felaketlerden çok, zihnimizde yarattığımız korkular yüzünden acı çekeriz.'",
-        "Öfke, bir başkasına fırlatmak için eline aldığın kor bir ateştir; ilk önce senin elini yakar.",
-        "Zihninde her sabah şu gerçeği kabul et: Bugün nankör, kaba ve açgözlü insanlarla karşılaşacaksın.",
-        "Ama onların kusurları seni zehirleyemez; çünkü sen onlara benzememeyi seçtin.",
-        "Epiktetos bize hatırlatır: 'Seni yaralayan söylenen sözler değil, o sözlere yüklediğin anlamdır.'",
-        "Hayatın fırtınaları seni sarsabilir ama kökleri derin olan bir çınarı hiçbir rüzgar deviremez.",
-        "Disiplin, hissettiğin duyguların kölesi olmak yerine eylemlerinin efendisi olmaktır.",
-        "Zorluklar bir engel değil; bilakis seni çelikleştiren birer antrenmandır.",
-        "Zihnini kontrol et, yoksa zihnin seni ve kaderini kontrol eder.",
-        "Peki sen bugün öfkeni mi seçeceksin, yoksa içsel huzurunu mu? Yorumlarda buluşalım!"
-    ]
-    narrations_en = [
-        f"Ancient Stoic wisdom to transform your mind into an invincible fortress against {clean_title}...",
-        "Marcus Aurelius wrote centuries ago: 'You have power over your mind, not outside events. Realize this, and you will find strength.'",
-        "Most people destroy their own peace of mind by reacting with outrage to the chaos of the outside world.",
-        "Yet a truly wise individual never wastes a single second worrying about what lies beyond their control.",
-        "As Seneca famously remarked: 'We suffer more often in imagination than in reality.'",
-        "Anger is like a burning coal you pick up to throw at someone else; it always burns your own hand first.",
-        "Remind yourself every single morning: today you will encounter rude, ungrateful, and arrogant people.",
-        "Their flaws cannot harm you, because you have made the conscious choice not to become like them.",
-        "Epictetus teaches us: 'Men are disturbed not by things, but by the view which they take of them.'",
-        "The storms of life may shake your branches, but no wind can uproot a tree whose roots run deep into virtue.",
-        "Discipline is never being the slave of your temporary emotions, but the absolute master of your deliberate actions.",
-        "Adversity is not an obstacle; it is the fiery forge that shapes unyielding character and inner strength.",
-        "Rule your mind with clarity, or your untrained mind will rule and ruin your destiny.",
-        "Will you choose reactionary anger today, or unbreakable inner peace? Share your thoughts in the comments!"
-    ]
-    narrations = narrations_tr if is_tr else narrations_en
+    narrations = _build_stoic_narrations(clean_title, is_tr, variation_seed)
     visuals = [
         ("Ancient marble statue of Marcus Aurelius under dramatic side lighting", ["marcus aurelius marble statue", "ancient roman bust sculpture", "stoic statue dramatic lighting"]),
         ("Ancient Roman Colosseum at sunset with dramatic sun rays", ["rome colosseum sunset drone", "ancient roman ruins colosseum", "epic golden sunset rome"]),
@@ -479,7 +642,228 @@ def _generate_dark_psychology_scenes(clean_title: str, is_tr: bool):
     }
 
 
-def _generate_procedural_fallback_scenes(title: str, niche_type: str = None, raw_body: str = "", language: str = None) -> dict:
+def _generate_astrology_horoscope_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0):
+    """
+    14-scene astrology / weekly horoscope format (Tone: mystical, intriguing, ranking).
+    Covers burç yorumu, şanslı burçlar, aşk/para/kariyer sıralaması.
+    """
+    topic = clean_title.strip() or ("Haftalık Burç Yorumu" if is_tr else "Weekly Horoscope")
+    variant = (sum(ord(c) for c in topic.lower()) + variation_seed * 11) % 2
+
+    if is_tr:
+        narrations_variants = [
+            [
+                f"Bu hafta gökyüzü {topic} için kritik bir dönemeçte — üç burç özellikle parlayacak! ✨🔮",
+                "Merkür retrosu bitiyor; iletişim ve karar verme enerjisi yeniden açılıyor. 🌙",
+                "Şanslı burç listesinde üçüncü sırada Yengeç: duygusal sezgileri bu hafta altın değerinde. 🦀",
+                "İkinci sırada Aslan: kariyer kapıları ve tanınma fırsatları kapıda bekliyor. ♌",
+                "Birinci sırada Koç: para ve girişim enerjisi tavan yapıyor — fırsatları kaçırma! ♈💰",
+                "Aşk tarafında Terazi ve Balık bu hafta en uyumlu çiftler arasında öne çıkıyor. 💕",
+                "Boğa burcu için sabır haftası: acele karar vermek pahalıya patlayabilir. 🐂",
+                "İkizler meraklı zihniyle yeni bağlantılar kuruyor; sosyal medya etkileşimi artıyor. ♊",
+                "Akrep derin dönüşüm enerjisi taşıyor; eski alışkanlıkları bırakma zamanı. 🦂",
+                "Oğlak disiplinli adımlarla hedeflerine yaklaşıyor; patron dikkatini çekebilir. ♑",
+                "Kova yenilikçi fikirleriyle dikkat çekiyor; beklenmedik teklifler gelebilir. ♒",
+                "Başak detaycılığı bu hafta avantaj; küçük düzenlemeler büyük fark yaratır. ♍",
+                f"Özet: {topic} haftasında ana tema dönüşüm, fırsat ve sezgisel kararlar. 🌟",
+                "Kendi burcunu yoruma yaz — bu hafta seni ne bekliyor birlikte bakalım! 💬♈",
+            ],
+            [
+                f"Astrolojik radar açık! {topic} — Ay'ın burç değiştirmesi herkesi etkileyecek. 🌕🔮",
+                "Venüs açıları aşk ve para konularında beklenmedik sürprizler getiriyor. 💫",
+                "Üçüncü şanslı burç Yay: seyahat ve genişleme enerjisi bu hafta güçlü. ♐",
+                "İkinci şanslı burç Terazi: denge ve ortaklık fırsatları ön planda. ⚖️",
+                "Haftanın yıldızı Balık: sezgi ve yaratıcılık para kapılarını açıyor! ♓✨",
+                "Koç ve Akrep arasında tutkulu ama zorlu bir hafta — sabır şart. 🔥",
+                "Boğa maddi konularda istikrar arıyor; yatırım kararlarını ertelemek akıllıca. 💎",
+                "İkizler hızlı zihinle çoklu projeler arasında gidip geliyor; odaklan! ♊",
+                "Yengeç aile ve ev konularında duygusal yoğunluk yaşıyor. 🏠",
+                "Aslan sahne ışığı arıyor — liderlik fırsatını değerlendir. 👑",
+                "Başak sağlık ve rutin düzenlemeleri için ideal bir hafta. 🌿",
+                "Oğlak uzun vadeli planları gözden geçirmeli; sabır meyve verecek. 📈",
+                f"{topic} özeti: Ay döngüsü kararları hızlandırıyor — dinle ve harekete geç. 🌙",
+                "Burcunu yoruma bırak, haftalık yorum serisinde seni de okuyalım! 💬",
+            ],
+        ]
+        narrations = narrations_variants[variant]
+    else:
+        narrations = [
+            f"This week the stars align for {topic} — three zodiac signs will shine brightest! ✨🔮",
+            "Mercury retrograde is ending; communication and clarity return to the cosmic stage. 🌙",
+            "Third luckiest sign: Cancer — emotional intuition is pure gold this week. 🦀",
+            "Second place goes to Leo — career doors and recognition await bold moves. ♌",
+            "Number one: Aries — money and initiative energy peak; seize the moment! ♈💰",
+            "In love, Libra and Pisces form the most harmonious pairings this week. 💕",
+            "Taurus faces a patience test; rushing financial decisions could backfire. 🐂",
+            "Gemini's curious mind sparks new connections; social engagement surges. ♊",
+            "Scorpio carries deep transformation energy; release old patterns now. 🦂",
+            "Capricorn approaches goals with disciplined steps; bosses take notice. ♑",
+            "Aquarius innovates boldly; unexpected offers may arrive out of nowhere. ♒",
+            "Virgo's attention to detail pays off; small tweaks create big results. ♍",
+            f"Wrap-up for {topic}: transformation, opportunity, and intuitive choices dominate. 🌟",
+            "Comment your sign below — let's see what the cosmos has in store for you! 💬",
+        ]
+
+    visuals = [
+        ("Mystical galaxy nebula with glowing zodiac wheel overlay", ["zodiac wheel galaxy nebula", "astrology chart mystical purple", "constellation stars night sky"]),
+        ("Mercury planet retrograde animation with cosmic trail", ["mercury planet space cosmic", "astrology retrograde symbol", "solar system planets motion"]),
+        ("Cancer crab constellation glowing in deep blue starfield", ["cancer zodiac constellation stars", "crab constellation night sky", "mystical zodiac symbol"]),
+        ("Leo lion constellation golden rays dramatic lighting", ["leo zodiac constellation golden", "lion constellation stars dramatic", "fire sign astrology"]),
+        ("Aries ram constellation fiery red cosmic background", ["aries zodiac constellation fire", "ram constellation stars red", "first zodiac sign cosmic"]),
+        ("Libra scales and Pisces fish romantic starry overlay", ["libra pisces zodiac love", "romantic constellation couple stars", "astrology love compatibility"]),
+        ("Taurus bull constellation earthy green mystical tones", ["taurus zodiac constellation earth", "bull constellation green mystical", "earth sign astrology"]),
+        ("Gemini twins constellation dual glowing figures", ["gemini zodiac twins constellation", "dual stars mystical sky", "air sign astrology"]),
+        ("Scorpio scorpion constellation deep violet transformation", ["scorpio zodiac constellation dark", "scorpion stars violet sky", "transformation astrology"]),
+        ("Capricorn goat constellation mountain peak stars", ["capricorn zodiac mountain stars", "goat constellation night peak", "ambition astrology symbol"]),
+        ("Aquarius water bearer constellation futuristic blue", ["aquarius zodiac constellation blue", "water bearer stars futuristic", "innovation astrology"]),
+        ("Virgo maiden constellation clean golden starlight", ["virgo zodiac constellation golden", "maiden constellation clean stars", "detail astrology symbol"]),
+        ("Full moon over zodiac wheel montage all twelve signs", ["full moon zodiac wheel", "astrology montage all signs", "lunar cycle zodiac chart"]),
+        ("Host pointing at camera inviting zodiac comment engagement", ["astrology youtube outro subscribe", "zodiac comment engagement card", "mystical direct camera portrait"]),
+    ]
+
+    moods = ["mysterious", "calm", "bright", "epic", "energetic", "calm", "calm", "energetic",
+             "dark", "calm", "energetic", "calm", "epic", "bright"]
+    scenes = []
+    for i in range(14):
+        desc, queries = visuals[i]
+        scenes.append({
+            "scene_number": i + 1,
+            "narration": narrations[i],
+            "scene_description": desc,
+            "search_queries": queries,
+            "duration": 3.0,
+            "mood": moods[i],
+            "beat_type": "hook" if i == 0 else "climax" if i == 4 else "resolution" if i == 13 else "conflict",
+        })
+
+    return {
+        "title": topic if is_tr else f"Weekly Horoscope: {topic}",
+        "visual_theme": "mystical astrology zodiac galaxy purple gold stars",
+        "full_narration": " ".join(narrations),
+        "scenes": scenes,
+    }
+
+
+def _crypto_variant_index(clean_title: str, variation_seed: int = 0) -> int:
+    base = sum(ord(c) for c in clean_title.lower()) + (variation_seed * 13)
+    return base % 2
+
+
+def _generate_crypto_market_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0):
+    """
+    14-scene live trading / crypto market format (Tone: urgent, analytical, fast-paced).
+    Topic-seeded for gold, bitcoin, forex and live-stream titles.
+    """
+    topic = clean_title.strip() or ("Canlı Kripto Piyasa" if is_tr else "Live Crypto Market")
+    variant = _crypto_variant_index(topic, variation_seed)
+    has_gold = any(k in topic.lower() for k in ("gold", "altın", "altin"))
+    has_banknifty = "banknifty" in topic.lower()
+
+    if is_tr:
+        gold_line = "Altın ve Bitcoin aynı ekranda ayrı hikâye anlatıyor — dikkat!" if has_gold else "Bitcoin grafiği şu an tüm piyasayı belirliyor!"
+        bank_line = "Bank Nifty tarafında da volatilite tavan yaptı!" if has_banknifty else "Forex masalarında dolar endeksi tüm hesabı değiştiriyor!"
+        narrations_variants = [
+            [
+                f"CANLI YAYIN! {topic} — piyasalar şu an nefesini tutmuş durumda! 📈🔴",
+                "İlk bakışta Bitcoin tarafında satış baskısı artıyor, hacim de yükseliyor. ⚡",
+                gold_line + " 💰",
+                "Kritik destek seviyesinin kırılması durumunda domino etkisi başlayabilir. 🎯",
+                "Balinaların cüzdan hareketleri son saatlerde ciddi şekilde arttı. 🐋",
+                bank_line + " 🌏",
+                "Makro veri takvimi bugün yatırımcıları iki yöne de zorlayabilir. 📊",
+                "Kaldıraçlı pozisyonlar likidasyon bölgesine çok daha yakın görünüyor. ⚠️",
+                "Teknik analistlere göre direnç testi başarısız olursa satış hızlanır. 📉",
+                "Risk yönetimi olmayan trader bu volatilitede hesabını koruyamaz. 🛡️",
+                "Kısa vadeli scalp fırsatı var ama stop-loss şart — affetmez! ⏱️",
+                "Uzun vadeli yatırımcı için panik satış genelde en pahalı hatadır. 🧠",
+                f"Özet: {topic} seansında ana tema volatilite ve seviye oyunu. 🔥",
+                "Sen bu grafikte long mu short mu kalırdın? Yorumlarda yaz, takipte kal! 💬",
+            ],
+            [
+                f"Flaş piyasa! {topic} canlı takipte — bir sonraki mum her şeyi değiştirebilir! 🚨",
+                "Açılış mumu güçlü geldi ama üst fitil satıcı baskısını ele veriyor. 🕯️",
+                "Ethereum tarafı Bitcoin'e göre daha agresif hareket ediyor. ⚡",
+                gold_line + " 🪙",
+                "Haber akışı pozitif olsa bile fiyat tepki vermiyorsa dikkat! 📰",
+                "Asya seansından gelen hacim Avrupa açılışına taşınıyor. 🌏",
+                bank_line + " 📈",
+                "Funding oranları aşırıya kaçtığında düzeltme ihtimali artar. ⚖️",
+                "Whale Alert tarafında borsaya büyük transfer geldi — izle! 🐋",
+                "Stop avı sonrası ters hareket gelirse FOMO tuzağına düşme. 🎯",
+                "Günlük plan: seviye, hacim ve haber — duygusal tepki yok. 📋",
+                "Kripto piyasası 7/24 açık; uyku yok ama disiplin var. 🌙",
+                f"Bugünkü {topic} özeti: trend mi yoksa tuzak mı, karar anı yakın. 🔥",
+                "Long mu short mu? Cevabını yoruma bırak, bir sonraki canlı yayında görüşürüz! 💬",
+            ],
+        ]
+        narrations = narrations_variants[variant]
+    else:
+        narrations_variants = [
+            [
+                f"LIVE NOW! {topic} — markets are holding their breath at this level! 📈🔴",
+                "Bitcoin is facing rising sell pressure while volume keeps climbing. ⚡",
+                "Gold and Bitcoin are telling two different stories on the same screen! 💰" if has_gold else "Bitcoin is steering the entire risk market right now! 💰",
+                "A break below key support could trigger a fast domino move. 🎯",
+                "Whale wallet flows spiked hard in the last hour — watch closely. 🐋",
+                "Bank Nifty volatility is spiking on the India desk!" if has_banknifty else "Forex desks are repricing the dollar index in real time. 🌏",
+                "Today's macro calendar can push traders both ways within minutes. 📊",
+                "Leveraged positions are sitting dangerously close to liquidation zones. ⚠️",
+                "If resistance fails, analysts expect accelerated downside momentum. 📉",
+                "Without risk management, this volatility will erase accounts fast. 🛡️",
+                "Scalp setups exist, but only with strict stop-loss discipline. ⏱️",
+                "For long-term holders, panic selling is usually the most expensive mistake. 🧠",
+                f"Wrap-up for {topic}: volatility and level games dominate this session. 🔥",
+                "Would you stay long or short here? Comment below and stay tuned! 💬",
+            ],
+        ]
+        narrations = narrations_variants[0]
+
+    visuals = [
+        ("Live crypto trading desk with multiple glowing charts and price tickers", ["live trading desk multiple monitors", "crypto trader workstation screens", "real time market dashboard"]),
+        ("Bitcoin candlestick chart zoom with red and green volume bars pulsing", ["bitcoin candlestick chart closeup", "crypto price chart screen", "trading terminal bitcoin"]),
+        ("Gold bullion bars beside digital bitcoin coin on dark finance desk", ["gold bullion trading desk", "bitcoin gold coin closeup", "precious metal crypto finance"]),
+        ("Trader finger hovering over buy sell buttons during volatile market open", ["trader hands keyboard urgent", "stock market sell button closeup", "financial stress trading desk"]),
+        ("Whale alert notification overlay on blockchain wallet transfer screen", ["crypto whale wallet transfer", "blockchain transaction alert screen", "large bitcoin movement chart"]),
+        ("Forex and crypto split screen with dollar index and BTC price", ["forex trading screens split", "dollar index chart monitor", "multi asset trading desk"]),
+        ("Economic calendar release countdown on professional trading workstation", ["economic calendar trading screen", "macro data release finance", "market news countdown monitor"]),
+        ("Liquidation heatmap glowing red on crypto derivatives dashboard", ["crypto liquidation heatmap screen", "leverage trading risk dashboard", "futures market red zone"]),
+        ("Technical analyst drawing support resistance lines on chart tablet", ["technical analysis chart lines", "support resistance trading screen", "financial analyst tablet chart"]),
+        ("Risk management checklist sticky notes beside trading keyboard", ["risk management trading desk", "stop loss strategy notes", "disciplined trader workspace"]),
+        ("Fast scalping chart with one minute candles and tight spreads", ["scalping chart one minute candles", "fast trading screen closeup", "day trader monitor action"]),
+        ("Calm investor reviewing portfolio during market crash red screens", ["investor calm portfolio review", "long term crypto holder desk", "market crash screens background"]),
+        ("Split montage of gold chart bitcoin chart and live stream overlay", ["gold chart bitcoin split screen", "live trading overlay finance", "multi chart market recap"]),
+        ("Host looking at camera asking viewers to comment long or short", ["trader direct camera finance", "live stream outro subscribe", "crypto youtube shorts ending"]),
+    ]
+
+    moods = ["urgent", "dramatic", "energetic", "tense", "dark", "urgent", "calm", "dramatic", "energetic", "calm", "energetic", "calm", "epic", "bright"]
+    scenes = []
+    for i in range(14):
+        desc, queries = visuals[i]
+        scenes.append({
+            "scene_number": i + 1,
+            "narration": narrations[i],
+            "scene_description": desc,
+            "search_queries": queries,
+            "duration": 3.0,
+            "mood": moods[i],
+            "beat_type": "hook" if i == 0 else "climax" if i == 7 else "resolution" if i == 13 else "conflict",
+        })
+
+    return {
+        "title": topic if is_tr else f"Live Market: {topic}",
+        "visual_theme": "live crypto finance trading urgent red green charts",
+        "full_narration": " ".join(narrations),
+        "scenes": scenes,
+    }
+
+
+def _generate_procedural_fallback_scenes(
+    title: str,
+    niche_type: str = None,
+    raw_body: str = "",
+    language: str = None,
+    variation_seed: int = 0,
+) -> dict:
     """
     Failsafe procedural scene generator when external AI models are inaccessible.
     Guarantees rich 14-scene retention-friendly script structure with pure English search terms.
@@ -498,13 +882,25 @@ def _generate_procedural_fallback_scenes(title: str, niche_type: str = None, raw
     if niche_type in ("1_news_flash", "57_rss_breaking") or any(k in title.lower() for k in ["son dakika", "flaş", "haber", "açıklama", "deprem", "karar"]):
         return _generate_news_flash_scenes(clean_title, is_tr)
 
-    # 3. Stoic Philosophy
-    if niche_type in ("6_stoic_philosophy", "36_stoic_cyberpunk") or any(k in title.lower() for k in ["stoa", "marcus aurelius", "seneca", "felsefe"]):
-        return _generate_stoic_scenes(clean_title, is_tr)
+    # 3. Stoic Philosophy — niche_type from UI takes precedence over generic "felsefe" keyword
+    if niche_type in ("6_stoic_philosophy", "36_stoic_cyberpunk") or any(
+        k in title.lower() for k in ["stoa", "marcus aurelius", "seneca", "felsefe"]
+    ):
+        return _generate_stoic_scenes(clean_title, is_tr, variation_seed=variation_seed)
 
     # 4. Dark Psychology & Body Language
     if niche_type in ("7_dark_psychology", "38_dark_psych_parkour") or any(k in title.lower() for k in ["karanlık psikoloji", "manipülasyon", "beden dili"]):
         return _generate_dark_psychology_scenes(clean_title, is_tr)
+
+    # 5. Astrology & daily horoscope
+    if niche_type == "18_astrology_horoscope" or any(
+        k in combined for k in ["burç", "burcu", "astroloji", "horoskop", "zodyak", "zodiac", "horoscope"]
+    ):
+        return _generate_astrology_horoscope_scenes(clean_title, is_tr, variation_seed=variation_seed)
+
+    # 6. Crypto / live trading / forex market
+    if _topic_is_crypto_market(title, raw_body, niche_type=niche_type):
+        return _generate_crypto_market_scenes(clean_title, is_tr, variation_seed=variation_seed)
 
     # Standard general fallback (14 scenes, dynamic English keywords)
     primary_kw = matched_en[0] if matched_en else "cinematic nature discovery"

@@ -21,6 +21,9 @@ from .fallback import (
 
 from .enrichment import (
     enrich_cinematic_search_queries,
+    enrich_continuous_motion_hints,
+    enrich_audio_visual_contrast_scenes,
+    enrich_plan_scenes,
     enforce_visual_cadence_14,
     verify_and_correct_hallucinations,
     verify_or_enrich_transformative_value,
@@ -48,6 +51,9 @@ __all__ = [
     "_detect_niche_and_terms",
     "_generate_procedural_fallback_scenes",
     "enrich_cinematic_search_queries",
+    "enrich_continuous_motion_hints",
+    "enrich_audio_visual_contrast_scenes",
+    "enrich_plan_scenes",
     "enforce_visual_cadence_14",
     "verify_and_correct_hallucinations",
     "verify_or_enrich_transformative_value",

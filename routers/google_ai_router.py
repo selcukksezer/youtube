@@ -42,7 +42,7 @@ def api_google_ai_generate_image(req: GoogleAIGenerateImageRequest):
     out_dir = os.path.join(config.OUTPUT_DIR, "google_ai")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"img_{abs(hash(req.prompt)) % 10_000_000}.png")
-    saved = save_generated_image(req.prompt, path, model=req.model)
+    saved = save_generated_image(req.prompt, path, model=req.model, force=True)
     if not saved:
         raise HTTPException(502, "Gorsel uretilemedi — model/kota veya billing kontrol edin")
     return {

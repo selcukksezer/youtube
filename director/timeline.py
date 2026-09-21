@@ -189,6 +189,10 @@ def _condense_narration(text: str, max_words: int) -> str:
     if not out:
         out = _shorten_sentence(text, max_words)
 
+    if not out and text:
+        from scenes.narration_validate import _append_minimal_completion
+        out = _append_minimal_completion(_shorten_sentence(text, max(MIN_WORDS_PER_SCENE, max_words)))
+
     while out and len(out.split()) > max_words and len(kept) > 1:
         kept.pop()
         out = " ".join(kept).strip()

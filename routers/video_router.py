@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import config
 import database
-from api_models import VideoRenderRequest, PlanValidateRequest, PlanRepairRequest
+from api_models import VideoRenderRequest, PlanValidateRequest, PlanRepairRequest, ShareDecisionRequest
 from server_core import (
     render_lock,
     is_rendering_active,
@@ -141,6 +141,60 @@ def get_gallery():
     return {"videos": videos}
 
 
+@router.post("/api/videos/{video_id}/share-decision")
+def video_share_decision(video_id: int, req: ShareDecisionRequest):
+    """
+    Post-render manual upload flow (Item 133 / 471).
+    keep  → proof + SEO + assets preserved for YouTube dispute/manual upload
+    discard → delete video, proof bundle, project assets, audio temps
+    """
+    from proof_archiver import proof_archiver
+
+    video = database.get_video_by_id(video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video kaydı bulunamadı.")
+
+    decision = (req.decision or "").strip().lower()
+    if decision not in ("keep", "discard"):
+        raise HTTPException(status_code=400, detail="decision 'keep' veya 'discard' olmalı.")
+
+    filename = video.get("filename") or ""
+    channel_slug = video.get("channel_slug") or "default"
+    project_slug = req.project_slug or (os.path.splitext(filename)[0] if filename else None)
+
+    if decision == "keep":
+        if filename:
+            proof_archiver.mark_share_kept(filename)
+        database.update_share_decision(video_id, "keep")
+        return {
+            "status": "ok",
+            "decision": "keep",
+            "message": "Proof ve SEO paketi saklandı. YouTube'a manuel yükleyebilirsiniz.",
+            "youtube_upload_url": "https://www.youtube.com/upload",
+        }
+
+    if not filename:
+        database.update_share_decision(video_id, "discarded")
+        database.delete_video_by_id(video_id)
+        return {"status": "ok", "decision": "discard", "message": "Kayıt silindi (dosya yoktu).", "deleted": []}
+
+    result = proof_archiver.discard_video_bundle(
+        filename,
+        channel_slug=channel_slug,
+        project_slug=project_slug,
+    )
+    database.update_share_decision(video_id, "discarded")
+    database.delete_video_by_id(video_id)
+
+    return {
+        "status": "ok",
+        "decision": "discard",
+        "message": "Video ve ilişkili dosyalar silindi.",
+        "deleted_count": len(result.get("deleted") or []),
+        "errors": result.get("errors") or [],
+    }
+
+
 @router.delete("/api/gallery/{filename}")
 def delete_video(filename: str):
     safe_filename = os.path.basename(filename)
@@ -192,6 +246,13 @@ def _plan_gate_result(
 
     if auto_repair and plan_in.get("scenes"):
         plan_in, fixes, repaired = apply_auto_repair_if_needed(plan_in)
+
+    if plan_in.get("scenes"):
+        try:
+            from scenes.enrichment import enrich_plan_scenes
+            plan_in = enrich_plan_scenes(plan_in, lang=language)
+        except Exception:
+            pass
 
     if recompile:
         director = compile_director_plan(

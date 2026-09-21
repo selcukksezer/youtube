@@ -49,6 +49,13 @@ SADECE JSON FORMATINDA YANIT VER:
 """
 
 
+def finalize_seo_title(title: str, lang: str = "tr") -> str:
+    """Items 346-348: curiosity → single-word caps → 45-60 char limit."""
+    title = inject_curiosity_words(title, lang=lang)
+    title = format_capital_hook_word(title)
+    return enforce_title_length_limit(title)
+
+
 def enforce_title_length_limit(title: str, min_len: int = 40, max_len: int = 60) -> str:
     """
     Item 346: Başlık Uzunluğu Sınırı.
@@ -116,7 +123,40 @@ def enforce_three_hashtag_rule(title_or_desc: str, niche_tag: str, general_tag: 
     return " ".join(tags)
 
 
-def build_natural_seo_description(keyword: str, hook: str = "", bullet_points: Optional[List[str]] = None, tags: Optional[List[str]] = None, source_name: str = "") -> str:
+def prepend_description_engagement_question(description: str, keyword: str = "", lang: str = "tr") -> str:
+    """
+    Item 383: Açıklamaya Kısa Soru Yazma.
+    Açıklamanın ilk satırına etkileşim sorusu ekler.
+    """
+    low = description.lower()
+    if description.strip().startswith("💬") or "ne düşünüyorsunuz" in low or "what do you think" in low:
+        return description
+    if lang == "en":
+        question = f"💬 What do you think about {keyword or 'this topic'}? Share your take below!\n\n"
+    else:
+        question = "💬 Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım!\n\n"
+    return question + description.lstrip()
+
+
+def _infer_legal_disclaimer_category(keyword: str, niche: str = "") -> Optional[str]:
+    """Item 485: finans/sağlık nişlerinde yasal uyarı kategorisi."""
+    blob = f"{keyword} {niche}".lower()
+    if any(k in blob for k in ("finans", "borsa", "kripto", "yatırım", "para", "crypto", "finance", "money")):
+        return "finance"
+    if any(k in blob for k in ("sağlık", "tıbbi", "fitness", "health", "medical", "diyet")):
+        return "health"
+    return None
+
+
+def build_natural_seo_description(
+    keyword: str,
+    hook: str = "",
+    bullet_points: Optional[List[str]] = None,
+    tags: Optional[List[str]] = None,
+    source_name: str = "",
+    niche: str = "",
+    lang: str = "tr",
+) -> str:
     """
     Item 352: Açıklama Kısmına Doğal Metin (Narrative Description).
     Yalnızca etiket doldurmak yerine 2-3 cümlelik akıcı, aranabilir YouTube SEO paragrafı kurar.
@@ -135,6 +175,12 @@ def build_natural_seo_description(keyword: str, hook: str = "", bullet_points: O
     # 3-hashtag rule
     tag_block = enforce_three_hashtag_rule("", niche_tag=keyword.split()[0], general_tag="viral")
     desc += f"\n\n{tag_block}"
+    desc = prepend_description_engagement_question(desc, keyword=keyword, lang=lang)
+    # Item 485: Topluluk ihtarı önleme — finans/sağlık açıklamasına yasal uyarı
+    disc_cat = _infer_legal_disclaimer_category(keyword, niche)
+    if disc_cat:
+        from proof_archiver import ProofArchiver
+        desc += f"\n\n{ProofArchiver.generate_legal_disclaimer(disc_cat, lang=lang)}"
     return desc
 
 
@@ -214,8 +260,45 @@ def append_research_source_reference(description: str, keyword: str = "", source
     return description.rstrip() + source_block
 
 
-def generate_viral_seo_metadata(keyword: str, source_name: str = "") -> dict:
-    fallback_title = enforce_title_length_limit(f"{keyword}: Bu Gerçeği ASLA Unutmayın #Shorts")
+def enrich_seo_with_retention_metadata(seo_data: dict, retention_metadata: dict = None, lang: str = "tr") -> dict:
+    """
+    Items 209-210: spotted mistake bait + polarizing dilemma → SEO/yorum paketi.
+    """
+    if not retention_metadata:
+        return seo_data
+
+    seo_data = dict(seo_data or {})
+    mistake = (retention_metadata.get("spotted_mistake_bait") or "").strip()
+    dilemma = retention_metadata.get("polarizing_dilemma") or {}
+    dilemma_q = (dilemma.get("question") or "").strip()
+
+    pinned = (seo_data.get("pinned_comment") or "").strip()
+    if mistake and mistake not in pinned:
+        seo_data["pinned_comment"] = f"{pinned}\n\n🎯 {mistake}".strip() if pinned else mistake
+        seo_data["spotted_mistake_bait"] = mistake
+
+    desc = (seo_data.get("seo_description") or "").strip()
+    if dilemma_q and dilemma_q not in desc:
+        choices = ""
+        if dilemma.get("choice_a") and dilemma.get("choice_b"):
+            choices = f" ({dilemma['choice_a']} vs {dilemma['choice_b']})"
+        block = f"\n\n💬 Tartışma: {dilemma_q}{choices}"
+        seo_data["seo_description"] = desc + block
+        seo_data["polarizing_dilemma"] = dilemma
+
+    bait = retention_metadata.get("pinned_comment_bait") or {}
+    if bait.get("video_cta") and not seo_data.get("video_cta"):
+        seo_data["video_cta"] = bait["video_cta"]
+
+    for key in ("share_cta", "bookmark_cta", "role_play_hook"):
+        if retention_metadata.get(key):
+            seo_data[key] = retention_metadata[key]
+
+    return seo_data
+
+
+def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_metadata: dict = None) -> dict:
+    fallback_title = finalize_seo_title(f"{keyword}: Bu Gerçeği ASLA Unutmayın #Shorts")
     fallback = {
         "hook_text": f"{keyword} hakkında kimsenin bilmediği gerçekler!",
         "seo_title": fallback_title,
@@ -226,7 +309,7 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "") -> dict:
     }
 
     if not config.AI_PROVIDER or not config.AI_API_KEY:
-        return fallback
+        return enrich_seo_with_retention_metadata(fallback, retention_metadata)
 
     print(f"\n  [Viral SEO Agent] '{keyword}' için SEO ve Kanca verileri üretiliyor...")
 
@@ -249,17 +332,26 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "") -> dict:
         data = _clean_json(raw)
 
         if data and "seo_title" in data:
-            # Enforce 45-60 char length and capital word rules
-            data["seo_title"] = enforce_title_length_limit(format_capital_hook_word(data["seo_title"]))
+            raw_title = data["seo_title"]
+            try:
+                from research_service import align_title_to_youtube_search
+                align = align_title_to_youtube_search(keyword, raw_title, lang="tr")
+                if align.get("aligned_title"):
+                    raw_title = align["aligned_title"]
+                    data["search_alignment"] = align
+            except Exception:
+                pass
+            data["seo_title"] = finalize_seo_title(raw_title)
             # Auto-append investigative source reference
             data["seo_description"] = append_research_source_reference(data.get("seo_description", ""), keyword=keyword, source_name=source_name)
+            data["seo_description"] = prepend_description_engagement_question(data["seo_description"], keyword=keyword, lang="tr")
             print(f"    [OK] Viral SEO verileri başarıyla üretildi.")
             try:
                 from quota_manager import quota_tracker
                 quota_tracker.record_call(config.AI_PROVIDER or "Gemini")
             except Exception:
                 pass
-            return data
+            return enrich_seo_with_retention_metadata(data, retention_metadata)
     except Exception as e:
         print(f"    [UYARI] Viral SEO Agent hatası: {e}. Fallback kullanılıyor.")
         try:
@@ -268,7 +360,111 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "") -> dict:
         except Exception:
             pass
 
-    return fallback
+    return enrich_seo_with_retention_metadata(fallback, retention_metadata)
+
+
+def generate_related_video_bridge(
+    shorts_title: str,
+    long_form_url: str,
+    long_form_title: str = "",
+) -> Dict[str, str]:
+    """
+    Items 313 & 361: Shorts → kanal içi video köprüsü metadata paketi.
+    Açıklamaya popüler Short/uzun video linki ekler; Studio 'Related video' alanına yapıştırılır (manuel upload).
+    """
+    long_title = (long_form_title or shorts_title).strip()
+    description_block = (
+        f"\n\n🔗 Tam video: {long_title}\n{long_form_url.strip()}\n"
+        f"(Shorts'tan uzun videoya trafik köprüsü — Item 313)"
+    )
+    return {
+        "related_video_url": long_form_url.strip(),
+        "related_video_title": long_title,
+        "description_append": description_block,
+        "studio_upload_note": "YouTube Studio → Shorts details → Related video alanına URL ekle.",
+        "shorts_end_screen_note": "Shorts end screen N/A — açıklama + related video link kullan.",
+    }
+
+
+def generate_end_screen_guidance(
+    shorts_title: str,
+    long_form_url: str = "",
+    long_form_title: str = "",
+) -> Dict[str, Any]:
+    """
+    Item 392: Kart ve Bitiş Ekranı (End Screens).
+    Shorts'ta end screen yok; masaüstü izleyiciler için açıklama + related video linkleri.
+    """
+    placeholder_url = long_form_url.strip() or "https://youtube.com/@YOURCHANNEL"
+    bridge = generate_related_video_bridge(shorts_title, placeholder_url, long_form_title)
+    return {
+        **bridge,
+        "item": "392",
+        "end_screen_action": (
+            "Shorts end screen eklenemez — açıklama linklerini ve Related video alanını canlı tutun."
+        ),
+    }
+
+
+def generate_competitor_analysis_brief(topic: str, lang: str = "tr") -> Dict[str, Any]:
+    """
+    Item 395: Rakip Kanal Analizi.
+    Aynı nişte son 48 saatte patlayan videoları tarama + farklı format önerisi.
+    """
+    from trending_scanner import scan_youtube_shorts_trends, _get_fallback_viral_trends
+
+    try:
+        trends = scan_youtube_shorts_trends(topic, time_filter="day")
+        if not trends:
+            trends = _get_fallback_viral_trends(topic)
+    except Exception:
+        trends = _get_fallback_viral_trends(topic)
+
+    top3 = trends[:3]
+    competitors = [
+        {
+            "title": t.get("title", ""),
+            "views_label": t.get("views", ""),
+            "channel": t.get("channel", ""),
+            "viral_score": t.get("viral_score", 0),
+            "format_hint": t.get("hook_analysis", ""),
+        }
+        for t in top3
+    ]
+    action = (
+        "Son 48 saatte patlayan 3 rakip videosunu inceleyin; aynı konuyu farklı formatla işleyin."
+        if lang == "tr"
+        else "Review top 3 competitor breakout videos from the last 48h; cover the same topic in a new format."
+    )
+    return {
+        "item": "395",
+        "topic": topic,
+        "competitors": competitors,
+        "action": action,
+        "studio_note": "Studio → Analytics → Content → rakip videoların retention eğrisini karşılaştırın.",
+        "data_source": "trending_scanner_stub",
+    }
+
+
+def get_channel_contact_guidance(business_email: str = "", lang: str = "tr") -> Dict[str, str]:
+    """
+    Item 396: Kanal Hakkında Kısmında İletişim.
+    Sponsorluklar için resmi iş e-postası Studio About alanına eklenmeli.
+    """
+    email = (business_email or "business@yourchannel.com").strip()
+    if lang == "en":
+        return {
+            "item": "396",
+            "business_email": email,
+            "about_section_text": f"Business inquiries: {email}",
+            "studio_action": "YouTube Studio → Customization → Basic info → Description → add business email.",
+        }
+    return {
+        "item": "396",
+        "business_email": email,
+        "about_section_text": f"İş birlikleri ve sponsorluk: {email}",
+        "studio_action": "YouTube Studio → Özelleştirme → Temel bilgiler → Açıklama → iş e-postası ekleyin.",
+    }
 
 
 def generate_title_variants(main_title: str, keyword: str = "") -> list:
@@ -278,11 +474,11 @@ def generate_title_variants(main_title: str, keyword: str = "") -> list:
     """
     kw = keyword or main_title
     fallback_variants = [
-        enforce_title_length_limit(f"{kw} Hakkında Kimsenin BİLMEDİĞİ Gerçek #Shorts"),
-        enforce_title_length_limit(f"Bu {kw} Sırrını Öğrenince ŞOK Olacaksınız #Shorts"),
-        enforce_title_length_limit(f"{kw}: Gizli Kalmış İNANILMAZ Detaylar #Shorts"),
-        enforce_title_length_limit(f"Neden {kw}? Asıl GERÇEK Burada #Shorts"),
-        enforce_title_length_limit(f"{kw}: Uzmanların SAKLADIĞI Bilgi #Shorts"),
+        finalize_seo_title(f"{kw} Hakkında Kimsenin BİLMEDİĞİ Gerçek #Shorts"),
+        finalize_seo_title(f"Bu {kw} Sırrını Öğrenince ŞOK Olacaksınız #Shorts"),
+        finalize_seo_title(f"{kw}: Gizli Kalmış İNANILMAZ Detaylar #Shorts"),
+        finalize_seo_title(f"Neden {kw}? Asıl GERÇEK Burada #Shorts"),
+        finalize_seo_title(f"{kw}: Uzmanların SAKLADIĞI Bilgi #Shorts"),
     ]
 
     if not config.AI_PROVIDER or not config.AI_API_KEY:
@@ -308,7 +504,7 @@ def generate_title_variants(main_title: str, keyword: str = "") -> list:
         data = _clean_json(raw)
 
         if data and "variants" in data and isinstance(data["variants"], list):
-            variants = [enforce_title_length_limit(format_capital_hook_word(v)) for v in data["variants"] if isinstance(v, str) and len(v) > 5]
+            variants = [finalize_seo_title(v) for v in data["variants"] if isinstance(v, str) and len(v) > 5]
             if len(variants) >= 3:
                 return variants[:5]
 
@@ -316,3 +512,115 @@ def generate_title_variants(main_title: str, keyword: str = "") -> list:
         print(f"    [Item 109] UYARI: {e}. Fallback kullanılıyor.")
 
     return fallback_variants
+
+
+def build_studio_metadata_fields(
+    keyword: str,
+    tags: Optional[List[str]] = None,
+    target_country: str = "TR",
+    lang: str = "tr",
+) -> Dict[str, Any]:
+    """
+    Items 354-360, 364, 366, 368-369, 372-373, 376-378, 391, 393, 404-405:
+    Paste-ready YouTube Studio metadata — auto-upload out of scope.
+    """
+    tag_list = tags or ["shorts", "viral", keyword.replace(" ", "")]
+    schedule = get_optimal_upload_schedule(target_country)
+    return {
+        "item_refs": "354-360,364,366,368-369,372-373,376-378,391,393,404-405",
+        "location_tag": "Turkey" if target_country.upper() == "TR" else "United States",
+        "audience_language": "Turkish" if lang == "tr" else "English",
+        "category_id": "22",
+        "category_label": "People & Blogs",
+        "playlist_suggestion": f"{keyword.split()[0].title()} Shorts Serisi",
+        "tags_csv": ", ".join(tag_list[:30]),
+        "thumbnail_note": "Frame 0 / _thumb.jpg dosyasını Studio thumbnail olarak yükleyin (Item 360).",
+        "publish_frequency": "Günde 1 tutarlı Shorts — hafta sonu 11:00-13:00 ek slot (Item 364).",
+        "channel_trailer_short": f"En iyi performans gösteren Shorts'u kanal fragmanı yapın (Item 366).",
+        "shorts_remix": "Açık bırakın — remix sinyali algoritmaya yardımcı olur (Item 368).",
+        "description_timestamps": "Shorts açıklamasına zaman damgası EKLEMEYİN (Item 369).",
+        "social_links_block": "Instagram / TikTok / Linktree — açıklamanın altına ekleyin (Item 372).",
+        "auto_translate_titles": "Studio → Subtitles → Translate → başlık çevirilerini açın (Item 373).",
+        "handle_tip": "Kısa, akılda kalıcı @handle — arama ve marka için kritik (Item 376).",
+        "title_number_rule": "Başlıkta 1-2 sayı kullanın — CTR artırır (Item 377).",
+        "punctuation_balance": "En fazla 1 ünlem + 1 soru işareti — spam algısını önler (Item 378).",
+        "copyright_match_action": "Content-ID eşleşmesinde ses/görseli değiştirin; sil-yeniden-yükleme yapmayın (Item 391).",
+        "music_credit_line": "Açıklamaya telifsiz müzik kredisi ekleyin (Item 393).",
+        "category_lock": "Kanal niş kategorisini değiştirmeyin — algoritma profili bozulur (Item 404).",
+        "bulk_upload_warning": "Aynı gün 5+ video yüklemeyin — spam riski (Item 405).",
+        "recommended_upload_window": schedule.get("primary_window"),
+        "studio_note": "Tüm alanlar manuel Studio yapıştırma — otomatik upload kapsam dışı.",
+    }
+
+
+def export_seo_operator_pack(
+    keyword: str,
+    title: str = "",
+    source_name: str = "",
+    retention_metadata: Optional[dict] = None,
+    related_video_url: str = "",
+    business_email: str = "",
+    target_country: str = "TR",
+    lang: str = "tr",
+    video_filename: str = "",
+    thumb_path: str = "",
+    total_renders: int = 0,
+) -> Dict[str, Any]:
+    """
+    Batch 4 — B6 SEO operator pack: tüm otomatik SEO metadata + Studio yapıştırma rehberi.
+    Upload otomasyonu kapsam dışı; operatör JSON/TXT ile Studio'da uygular.
+    """
+    from growth_tactics import (
+        generate_studio_engagement_checklist,
+        generate_weekly_live_stream_plan,
+        should_show_notification_bell_cta,
+    )
+    from proof_archiver import ProofArchiver
+
+    clean_title = title or keyword
+    seo_meta = generate_viral_seo_metadata(clean_title, source_name=source_name, retention_metadata=retention_metadata)
+    engagement = generate_studio_engagement_checklist(lang=lang)
+    live_plan = generate_weekly_live_stream_plan(lang=lang)
+    upload_sched = get_optimal_upload_schedule(target_country)
+    cta_timing = calculate_cta_timing(total_duration=float(getattr(config, "TARGET_DURATION", 45.0) or 45.0))
+    studio_fields = build_studio_metadata_fields(
+        keyword=clean_title,
+        tags=seo_meta.get("tags"),
+        target_country=target_country,
+        lang=lang,
+    )
+    end_screen = generate_end_screen_guidance(clean_title, related_video_url)
+    competitor = generate_competitor_analysis_brief(clean_title, lang=lang)
+    contact = get_channel_contact_guidance(business_email, lang=lang)
+    reupload = ProofArchiver.get_reupload_avoidance_guidance(lang=lang)
+    feed_phase = ProofArchiver.analyze_feed_distribution_phase(swipe_rate_pct=35.0)
+    algo_reset = ProofArchiver.get_algorithm_reset_guidance(days_paused=0, lang=lang)
+    traffic = ProofArchiver.analyze_traffic_sources(85.0, 8.0, 5.0)
+    momentum = ProofArchiver.get_channel_momentum_threshold(total_videos=total_renders, avg_views=250)
+    algo_threshold = ProofArchiver.analyze_algorithmic_view_threshold(850)
+    notification_cta = should_show_notification_bell_cta(total_renders)
+
+    return {
+        "pack_type": "seo_operator_pack",
+        "items_covered": "346-410 (automatable subset)",
+        "video_file": video_filename,
+        "thumb_file": thumb_path,
+        "seo": seo_meta,
+        "studio_metadata": studio_fields,
+        "studio_engagement": engagement,
+        "live_stream_plan": live_plan,
+        "upload_schedule": upload_sched,
+        "cta_timing": cta_timing,
+        "channel_master_keywords": get_channel_master_keywords(clean_title),
+        "end_screen_guidance": end_screen,
+        "competitor_analysis": competitor,
+        "channel_contact": contact,
+        "reupload_guidance": reupload,
+        "feed_distribution_advisory": feed_phase,
+        "algorithm_reset_guidance": algo_reset,
+        "traffic_sources_advisory": traffic,
+        "channel_momentum_advisory": momentum,
+        "algorithmic_threshold_advisory": algo_threshold,
+        "notification_bell_cta": notification_cta,
+        "manual_studio_only": True,
+    }

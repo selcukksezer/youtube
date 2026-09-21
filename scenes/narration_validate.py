@@ -113,6 +113,37 @@ def _append_minimal_completion(text: str) -> str:
     return _ensure_terminal(f"{base} {suffix}")
 
 
+_MOOD_ONLY_RE = re.compile(
+    r"^(?:urgent|dramatic|epic|calm|mysterious|energetic|dark|bright|tense|secret|warning|hook|cta)"
+    r"(?:\s+(?:urgent|dramatic|epic|calm|mysterious|energetic|dark|bright|tense|energetic))?\s*[.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def scene_narration_usable(text: str) -> bool:
+    """True when narration has enough semantic content for a Shorts scene."""
+    raw = (text or "").strip()
+    if not raw or raw in {".", "-", "—", "..."}:
+        return False
+    norm = normalize_narration_for_validation(raw)
+    words = norm.split()
+    if len(words) < MIN_WORDS_PER_SCENE:
+        return False
+    if _MOOD_ONLY_RE.match(norm):
+        return False
+    if norm[-1] not in ".!?":
+        return False
+    return True
+
+
+def plan_narration_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0) -> bool:
+    """All scenes must pass scene_narration_usable (guards AI placeholder / half-empty plans)."""
+    if not scenes:
+        return False
+    good = sum(1 for s in scenes if scene_narration_usable(s.get("narration") or ""))
+    return good >= max(1, int(len(scenes) * min_ratio))
+
+
 def scene_narration_issues(text: str, *, normalized: bool = False) -> List[str]:
     """Return issue codes for a single scene narration (uses normalized text by default)."""
     issues: List[str] = []
@@ -317,3 +348,73 @@ def plan_narration_ok(plan: Dict[str, Any]) -> bool:
         if scene_narration_issues((s.get("narration") or "")):
             return False
     return bool(plan.get("scenes"))
+
+
+def _scene_word_total(scenes: List[Dict[str, Any]]) -> int:
+    return sum(len((s.get("narration") or "").split()) for s in scenes)
+
+
+def repair_post_hook_word_budget(plan: Dict[str, Any], max_words: int = 110) -> Dict[str, Any]:
+    """
+    Batch D — soft pre-compile trim after retention hooks.
+    Drops trailing sentences from hook/closing scenes before Director hard condense.
+    """
+    scenes = plan.get("scenes") or []
+    if not scenes:
+        return plan
+    before = _scene_word_total(scenes)
+    if before <= max_words:
+        return plan
+
+    out = copy.deepcopy(plan)
+    scenes_out: List[Dict[str, Any]] = out["scenes"]
+    hook_indices = [0]
+    if len(scenes_out) > 1:
+        hook_indices.append(len(scenes_out) - 1)
+
+    while _scene_word_total(scenes_out) > max_words:
+        trimmed = False
+        for idx in hook_indices:
+            narr = (scenes_out[idx].get("narration") or "").strip()
+            parts = _split_sentences(narr)
+            words = narr.split()
+            if len(parts) > 1 and len(words) > MIN_WORDS_PER_SCENE:
+                scenes_out[idx]["narration"] = " ".join(parts[:-1]).strip()
+                trimmed = True
+                break
+        if not trimmed:
+            break
+
+    while _scene_word_total(scenes_out) > max_words:
+        idx = max(
+            range(len(scenes_out)),
+            key=lambda i: len((scenes_out[i].get("narration") or "").split()),
+        )
+        words = (scenes_out[idx].get("narration") or "").split()
+        if len(words) <= MIN_WORDS_PER_SCENE:
+            break
+        candidate = " ".join(words[:-1]).strip()
+        if scene_narration_usable(candidate):
+            scenes_out[idx]["narration"] = candidate
+        else:
+            break
+
+    total_now = _scene_word_total(scenes_out)
+    if total_now > max_words and scenes_out:
+        share = max(MIN_WORDS_PER_SCENE, max_words // len(scenes_out))
+        for sc in scenes_out:
+            words = (sc.get("narration") or "").split()
+            if len(words) > share + 2:
+                candidate = _ensure_terminal(" ".join(words[:share]).strip())
+                if scene_narration_usable(candidate):
+                    sc["narration"] = candidate
+
+    after = _scene_word_total(scenes_out)
+    out["full_narration"] = " ".join(
+        (s.get("narration") or "").strip()
+        for s in scenes_out
+        if (s.get("narration") or "").strip()
+    )
+    if after < before:
+        out["word_budget_pretrim"] = {"from": before, "to": after, "max": max_words}
+    return out

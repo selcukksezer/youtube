@@ -122,9 +122,12 @@ def api_generate_script(req: ScriptGenerateRequest):
         fair_use_notice = append_research_source_reference("", keyword=req.keyword or "").strip()
         try:
             from director.quality_gate import check_narration_integrity
+            from scenes.enrichment import enrich_plan_scenes
 
             # P2-03: auto-repair first — quality gate helps, never blocks normal scripts
             plan_in = dict(plan)
+            if plan_in.get("scenes"):
+                plan_in = enrich_plan_scenes(plan_in, lang=req.language or config.LANGUAGE)
             fixes: list = []
             repaired = False
             if plan_in.get("scenes"):

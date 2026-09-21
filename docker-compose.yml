@@ -1,13 +1,25 @@
-# P3-29: optional one-service smoke stack
+# Item 422: Docker isolation — API server + isolated volumes
 services:
-  shorts-api:
+  youtubeoto:
     build: .
+    container_name: youtubeoto-app
     ports:
-      - "8000:8000"
-    env_file:
-      - .env
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      RENDER_SAFE_MODE: "false"
+      ENABLE_FFMPEG_GRAPH: "true"
+      ENABLE_DB_BACKUP: "${ENABLE_DB_BACKUP:-false}"
+      DB_BACKUP_PASSPHRASE: "${DB_BACKUP_PASSPHRASE:-}"
     volumes:
       - ./output:/app/output
+      - ./data:/app/data
       - ./assets:/app/assets
       - ./bgm:/app/bgm
+      - ./proofs:/app/proofs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s

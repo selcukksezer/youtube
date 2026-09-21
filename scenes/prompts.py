@@ -2,6 +2,8 @@
 System prompts and prompt rotation strategies for Shorts script generation.
 """
 
+from typing import Optional
+
 PROMPT_TR = """Sen profesyonel bir YouTube Shorts senaristi ve seslendirme yazarısın.
 Verilen başlık için:
 
@@ -93,14 +95,22 @@ Return ONLY JSON:
 
 _ROTATION_INDEX = 0
 
-def get_rotated_system_prompt(base_lang: str = "tr") -> str:
+
+def advance_prompt_rotation(steps: int = 1) -> None:
+    """Force prompt template rotation (Item 104) — used on originality retry."""
+    global _ROTATION_INDEX
+    _ROTATION_INDEX += max(1, steps)
+
+
+def get_rotated_system_prompt(base_lang: str = "tr", *, force_variant: Optional[int] = None) -> str:
     """
     Rotates system prompt template periodically to eliminate structural AI fingerprint
     (Item 104: Prompt Template Rotation).
     """
     global _ROTATION_INDEX
     if base_lang == "tr":
-        prompt = PROMPT_VARIANTS_TR[(_ROTATION_INDEX // 20) % len(PROMPT_VARIANTS_TR)]
+        idx = force_variant if force_variant is not None else (_ROTATION_INDEX // 20) % len(PROMPT_VARIANTS_TR)
+        prompt = PROMPT_VARIANTS_TR[idx % len(PROMPT_VARIANTS_TR)]
     else:
         prompt = PROMPT_EN
     _ROTATION_INDEX += 1

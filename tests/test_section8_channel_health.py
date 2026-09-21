@@ -76,6 +76,14 @@ class TestSection8ChannelHealth(unittest.TestCase):
         self.assertEqual(len(plan["steps"]), 5)
         self.assertIn("Shadowban Reset", plan["protocol_name"])
 
+    def test_item_484_copyright_strike(self):
+        adv = ProofArchiver.get_copyright_strike_advisory(2)
+        self.assertEqual(adv["risk_level"], "high")
+
+    def test_item_495_comment_blocklist(self):
+        bl = ProofArchiver.get_comment_moderation_blocklist("tr")
+        self.assertIn("spam", bl["blocked_words"])
+
 
 if __name__ == "__main__":
     unittest.main()

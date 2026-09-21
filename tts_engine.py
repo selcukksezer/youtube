@@ -161,6 +161,136 @@ def _compose_rate(segment_rate: str, base_rate: str = None) -> str:
     combined = max(-50, min(100, combined))
     return f"+{combined}%" if combined >= 0 else f"{combined}%"
 
+def _segment_pitch(segment: dict) -> str:
+    """Items 142/171/178: Edge-TTS pitch per segment style + emphasis jump."""
+    style = (segment or {}).get("style", "body")
+    text = (segment or {}).get("text", "")
+    if style == "hook":
+        return "+8Hz"
+    if style == "question" or (text or "").strip().endswith("?"):
+        return "+5Hz"
+    if _segment_has_emphasis(text):
+        return "+12Hz"
+    return getattr(config, "TTS_PITCH", "+0Hz") or "+0Hz"
+
+_QUOTE_SEGMENT_RE = re.compile(
+    r'^[«"“\'].*[»"”\']$|(?:dedi\s+ki|demişti|söyledi|quote:|alıntı:|aslında\s+şöyle\s+demişti|she\s+said|he\s+said)',
+    re.I,
+)
+
+_ATTRIBUTION_SPLIT_RE = re.compile(
+    r"^(?P<intro>.+?)\s+(?P<marker>(?:dedi\s+ki|demişti(?:\s+ki)?|söyledi|quote\s*:|alıntı\s*:|"
+    r"aslında\s+şöyle\s+demişti|he\s+said|she\s+said))\s*:?\s*(?P<quote>.+)$",
+    re.I | re.DOTALL,
+)
+
+_INLINE_QUOTE_CHUNK_RE = re.compile(r'^[«"“\'](.+)[»"”\']\.?$', re.DOTALL)
+
+
+def _unwrap_outer_quotes(text: str) -> tuple:
+    """Return (inner_text, was_wrapped)."""
+    t = (text or "").strip()
+    for open_q, close_q in (("«", "»"), ('"', '"'), ('"', '"'), ("'", "'")):
+        if len(t) >= 2 and t.startswith(open_q) and t.endswith(close_q):
+            return t[len(open_q):-len(close_q)].strip(), True
+    return t, False
+
+
+def split_narration_into_voice_segments(text: str):
+    """
+    Item 143: Split RAW narration into narrator vs quote clauses before clean_narration strips quotes.
+    Returns [{"text": str, "is_quote": bool}, ...].
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return []
+
+    inner, was_wrapped = _unwrap_outer_quotes(raw)
+
+    match = _ATTRIBUTION_SPLIT_RE.match(inner)
+    if match:
+        intro = match.group("intro").strip()
+        marker = match.group("marker").strip()
+        quote = _unwrap_outer_quotes(match.group("quote").strip())[0]
+        segments = [{"text": f"{intro} {marker}:", "is_quote": False}]
+        if quote:
+            segments.append({"text": quote, "is_quote": True})
+        return segments
+
+    if was_wrapped:
+        return [{"text": inner, "is_quote": True}]
+
+    if re.search(r'[«"“\']', inner):
+        parts = re.split(r'([«"“\'](?:[^»"”\']+)[»"”\'])', inner)
+        segments = []
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            quoted = _INLINE_QUOTE_CHUNK_RE.match(part)
+            if quoted:
+                segments.append({"text": quoted.group(1).strip(), "is_quote": True})
+            else:
+                segments.append({"text": part, "is_quote": False})
+        if segments:
+            return segments
+
+    return [{"text": inner, "is_quote": False}]
+
+
+def _build_voice_aware_segments(text: str):
+    """Rhythm + dual-voice segments from raw narration (quotes preserved until per-clause clean)."""
+    from voice.script_humanizer import SPEECH_RHYTHM
+
+    raw_sentences = re.findall(r"[^.!?]+[.!?]+|[^.!?]+$", text or "")
+    segments = []
+    for index, raw_sentence in enumerate(raw_sentences):
+        raw_sentence = raw_sentence.strip()
+        if not raw_sentence:
+            continue
+        style = "question" if raw_sentence.rstrip().endswith("?") else "hook" if index == 0 else "body"
+        rate = SPEECH_RHYTHM[style]
+        for part in split_narration_into_voice_segments(raw_sentence):
+            seg_style = "quote" if part["is_quote"] else style
+            segments.append(
+                {
+                    "text": part["text"],
+                    "is_quote": part["is_quote"],
+                    "style": seg_style,
+                    "rate": rate,
+                }
+            )
+    if not segments:
+        for part in split_narration_into_voice_segments(text):
+            segments.append(
+                {
+                    "text": part["text"],
+                    "is_quote": part["is_quote"],
+                    "style": "quote" if part["is_quote"] else "body",
+                    "rate": getattr(config, "TTS_RATE", "+18%"),
+                }
+            )
+    return segments
+
+
+def _is_quote_segment(text: str) -> bool:
+    """Item 143: detect quoted / attributed speech for dual-voice TTS."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _QUOTE_SEGMENT_RE.search(t):
+        return True
+    if t.startswith(('"', '"', '«', "'")) and t.endswith(('"', '"', '»', "'")):
+        return True
+    return any(part.get("is_quote") for part in split_narration_into_voice_segments(t))
+
+
+def _segment_has_emphasis(text: str) -> bool:
+    from voice.script_humanizer import EMPHASIS_KEYWORDS_TR, EMPHASIS_KEYWORDS_EN
+    words = {re.sub(r"[^\w]", "", w).casefold() for w in (text or "").split()}
+    emphasis = {k.casefold() for k in EMPHASIS_KEYWORDS_TR} | {k.casefold() for k in EMPHASIS_KEYWORDS_EN}
+    return bool(words & emphasis)
+
 def _run_coro(coro):
     """Run async TTS safely from sync worker threads (and nested loop cases)."""
     try:
@@ -173,12 +303,13 @@ def _run_coro(coro):
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(asyncio.run, coro).result()
 
-async def _tts(text, mp3_path, rate=None, volume=None):
+async def _tts(text, mp3_path, rate=None, volume=None, pitch=None):
     text = _strip_ssml_markup(text)
     if not (text or "").strip():
         raise ValueError("Empty TTS text")
     comm = edge_tts.Communicate(text=text, voice=config.TTS_VOICE,
-                                 rate=rate or config.TTS_RATE, pitch=config.TTS_PITCH,
+                                 rate=rate or config.TTS_RATE,
+                                 pitch=pitch or config.TTS_PITCH,
                                  volume=volume or "+0%")
     timings = []
     audio_bytes = 0
@@ -205,10 +336,10 @@ async def _tts(text, mp3_path, rate=None, volume=None):
         )
     return mp3_path, _sanitize_word_timings(timings)
 
-async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volume=None):
+async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volume=None, pitch=None):
     """Try spoken text; on NoAudioReceived retry plain cleaned text once."""
     try:
-        return await _tts(spoken_text, mp3_path, rate=rate, volume=volume)
+        return await _tts(spoken_text, mp3_path, rate=rate, volume=volume, pitch=pitch)
     except Exception as first_err:
         err_name = type(first_err).__name__
         if err_name not in ("NoAudioReceived", "ValueError") and "NoAudioReceived" not in str(first_err):
@@ -224,7 +355,7 @@ async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volum
                 os.remove(mp3_path)
             except OSError:
                 pass
-        return await _tts(fallback, mp3_path, rate=rate, volume=volume)
+        return await _tts(fallback, mp3_path, rate=rate, volume=volume, pitch=pitch)
 
 def _concat_wavs(wav_paths, output_path, pause_seconds=0.28):
     """Concatenates matching PCM WAV files while preserving a deterministic duration."""
@@ -279,9 +410,13 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
     print(f"  [TTS/Edge] {config.TTS_VOICE} | {len(text)} chars")
     from voice_humanizer import VoiceHumanizer
     reaction_cues = VoiceHumanizer.extract_reaction_cues(text)
-    segments = VoiceHumanizer.build_speech_rhythm_segments(text)
-    if not segments:
-        segments = [{"text": VoiceHumanizer.clean_narration_for_speech(text), "style": "body", "rate": config.TTS_RATE}]
+    # Item 143: split narrator vs quote on RAW text before clean_narration strips quotes
+    segments = _build_voice_aware_segments(text)
+    # Item 175: Doruk noktasında kademeli %115 tempo eğrisi
+    segments = VoiceHumanizer.apply_climax_tempo_curve(segments, engine_type="plain")
+    from voice.gender import select_quote_voice
+    quote_voice = select_quote_voice(config.TTS_VOICE, getattr(config, "LANGUAGE", "tr"))
+    narrator_voice = config.TTS_VOICE
     temp_dir = tempfile.mkdtemp(prefix="tts_rhythm_")
     wav_paths, timings = [], []
     try:
@@ -289,6 +424,11 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
             plain_text = VoiceHumanizer.clean_narration_for_speech(segment["text"])
             if not plain_text.strip():
                 continue
+            is_quote = bool(segment.get("is_quote")) or segment.get("style") == "quote"
+            if is_quote:
+                config.TTS_VOICE = quote_voice
+            else:
+                config.TTS_VOICE = narrator_voice
             if natural_pauses:
                 # Item 93: use plain ellipsis pauses — Edge TTS reads SSML <break>
                 # tags as spoken words and roughly doubles duration.
@@ -304,16 +444,27 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
             if voice_profile and voice_profile.get("enabled") and voice_profile.get("rate"):
                 rate = voice_profile.get("rate")
             else:
-                rate = _compose_rate(segment.get("rate") or config.TTS_RATE, config.TTS_RATE)
+                seg_rate = segment.get("prosody_rate") or segment.get("rate") or config.TTS_RATE
+                rate = _compose_rate(seg_rate, config.TTS_RATE)
+                # Item 223: hook ≈2× hız hissi (+35% delta on top of composed rate)
+                if segment.get("style") == "hook" or index == 0:
+                    base_pct = _parse_rate_pct(rate)
+                    rate = f"+{min(100, base_pct + 35)}%"
+                # Item 171: vurgu kelimeli segmentlerde ek tempo
+                elif _segment_has_emphasis(plain_text):
+                    base_pct = _parse_rate_pct(rate)
+                    rate = f"+{min(100, base_pct + 8)}%"
+            pitch = _segment_pitch(segment)
             volume = "-22%" if voice_profile and voice_profile.get("enabled") else None
             _, segment_timings = _run_coro(
-                _tts_with_fallback(spoken_text, plain_text, segment_mp3, rate=rate, volume=volume)
+                _tts_with_fallback(spoken_text, plain_text, segment_mp3, rate=rate, volume=volume, pitch=pitch)
             )
             _mp3_to_wav(segment_mp3, segment_wav)
             if not os.path.exists(segment_wav) or os.path.getsize(segment_wav) < 64:
                 raise RuntimeError(f"TTS segment {index} produced no audio")
             wav_paths.append(segment_wav)
             timings.append(segment_timings)
+            config.TTS_VOICE = narrator_voice
         if not wav_paths:
             raise RuntimeError("TTS produced no segments")
         # Short inter-sentence gap; Item 93 pauses already live inside each segment

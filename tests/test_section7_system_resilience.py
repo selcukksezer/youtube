@@ -20,7 +20,7 @@ from system_resilience import (
 class TestSection7SystemResilience(unittest.TestCase):
     def test_item_411_hardware_acceleration(self):
         encoder, args = get_hardware_accelerated_encoder()
-        self.assertIn(encoder, ["h264_videotoolbox", "libx264"])
+        self.assertIn(encoder, ["h264_videotoolbox", "h264_nvenc", "libx264"])
         self.assertIsInstance(args, list)
 
     def test_item_416_circuit_breaker(self):

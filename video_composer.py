@@ -4,18 +4,19 @@ Video composer — MoviePy (video only) + ffmpeg (audio + karaoke subs).
 """
 import os, subprocess, platform, gc, shutil
 from moviepy.editor import VideoFileClip, ColorClip, CompositeVideoClip, concatenate_videoclips, vfx
-import cv2
 
-# Disable OpenCL GPU acceleration and cap threads to 2 to eliminate GPU driver crashes and black screens
 try:
+    import cv2
     cv2.ocl.setUseOpenCL(False)
     cv2.setNumThreads(2)
+except ImportError:
+    cv2 = None  # optional — install opencv-python; motion effects use PIL fallback
 except Exception:
     pass
 
 import config
 from subtitle_generator import create_karaoke_subtitles, create_srt_file
-from bgm_manager import get_bgm_path, mix_narration_and_bgm, align_scenes_to_bgm_beats
+from bgm_manager import get_bgm_path, mix_narration_and_bgm, mix_intro_punch_bgm, align_scenes_to_bgm_beats
 from sfx_manager import add_sfx_to_narration
 from effects_engine import (
     create_split_screen_clip, apply_anti_duplicate,
@@ -27,12 +28,30 @@ from effects_engine import (
     get_ffmpeg_static_grain_filter, overlay_micro_brand_signature,
     get_ffmpeg_vignette_filter, apply_pip_overlay,
     apply_handheld_camera_shake, apply_mask_wipe_transition,
-    apply_out_of_focus_reveal, apply_end_card_to_video, clean_video_metadata,
+    apply_out_of_focus_reveal, apply_censored_blur_bait, apply_end_card_to_video, clean_video_metadata,
+    apply_neon_countdown_overlay, apply_slow_motion_highlight,
+    apply_broll_speed_boost, apply_impact_screen_shake, apply_micro_zoom_out,
     apply_particle_overlay, apply_heartbeat_zoom, apply_speaker_avatar_overlay,
     build_emoji_events_from_timings, generate_emoji_subtitle_overlay,
     apply_alternating_motion, apply_ui_element_overlay,
-    apply_dynamic_progress_bar, get_color_grading_ffmpeg_filter
+    apply_dynamic_progress_bar, apply_sticky_hook_banner_overlay,
+    apply_micro_animated_sticker_overlay, apply_neon_curiosity_opening_graphic,
+    get_color_grading_ffmpeg_filter,
+    apply_scene_brightness_alternation,
+    apply_opening_pattern_interrupt,
+    apply_color_splash_moviepy,
+    apply_affiliate_3d_mockup,
+    apply_share_cta_overlay,
+    apply_bookmark_cta_overlay,
+    apply_corner_radius_to_clip,
+    apply_keyword_white_flash_overlay,
+    apply_infinite_spiral_overlay,
+    apply_time_tunnel_overlay,
+    apply_hybrid_render_overlay,
+    apply_fluid_gradient_background,
+    apply_micro_resolution_crop,
 )
+from viral_retention_engine import ViralRetentionEngine
 
 from proglog import ProgressBarLogger
 
@@ -87,10 +106,16 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                   progress_callback=None, cancel_check=None,
                   split_screen=False, anti_duplicate=True, watermark_path=None,
                   enable_ken_burns=True, enable_section2_filters=True, gameplay_path=None,
-                  niche_id="", audio_premastered=False):
+                  niche_id="", audio_premastered=False, retention_metadata=None,
+                  hybrid_niche="", hybrid_render_overlay=None):
     print(f"\n  [Composer] Building video with 500-Item Optimization Pipeline (Items 71-79)...")
     W, H = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
     print(f"  [Composer] Hedef Çözünürlük: {W}x{H} (Mod: {getattr(config, 'RENDER_RESOLUTION_MODE', '1080p')})", flush=True)
+    _safe = getattr(config, "RENDER_SAFE_MODE", True)
+    if _safe:
+        print("  [Composer] ⚠ RENDER_SAFE_MODE=true — ağır overlay/efektler bypass (Tam Kural için false yap)", flush=True)
+    else:
+        print("  [Composer] RENDER_SAFE_MODE=false — full overlays active", flush=True)
 
     if cancel_check and cancel_check():
         raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
@@ -108,9 +133,20 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             mastered_audio = eq_audio
             print("  [Composer] [VoiceHumanizer] Studio Warmth EQ applied.")
 
+            # Item 193: segment RMS leveller (pre-LUFS)
+            consistent_audio = output_path.rsplit(".", 1)[0] + "_consistent.wav"
+            from voice.audio_dsp import apply_voice_level_consistency
+            mastered_audio = apply_voice_level_consistency(mastered_audio, consistent_audio)
+            print("  [Composer] [VoiceHumanizer] Voice level consistency applied (Item 193).")
+
+            # Item 172: Noise gate — konuşma aralarındaki dijital artıkları kes
+            gated_audio = output_path.rsplit(".", 1)[0] + "_gated.wav"
+            mastered_audio = voice_humanizer.apply_noise_gate(mastered_audio, gated_audio)
+            print("  [Composer] [VoiceHumanizer] Noise gate uygulandı (Madde 172).")
+
             breaths_audio = output_path.rsplit(".", 1)[0] + "_breaths.wav"
-            mastered_audio = voice_humanizer.inject_natural_breaths(eq_audio, breaths_audio, interval_seconds=8.0)
-            print("  [Composer] [VoiceHumanizer] Natural breath layer injected (Item 141).")
+            mastered_audio = voice_humanizer.inject_natural_breaths(eq_audio, breaths_audio, interval_seconds=5.0)
+            print("  [Composer] [VoiceHumanizer] Natural breath layer injected every ~5s (Item 141).")
 
             intro_audio = output_path.rsplit(".", 1)[0] + "_intro112.wav"
             from voice_humanizer import prepend_whoosh_ding_to_narration
@@ -186,13 +222,14 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         sfx_audio = output_path.rsplit(".", 1)[0] + "_sfx_audio.wav"
         processed_audio = add_sfx_to_narration(
             mastered_audio, scene_durs, sfx_audio,
-            sfx_volume=getattr(config, "SFX_VOLUME", 0.20), scene_clips=scene_clips
+            sfx_volume=getattr(config, "SFX_VOLUME", 0.20),
+            scene_clips=scene_clips, word_timings=word_timings
         )
 
         # Madde 155: Riser/Whoosh — sahne geçişlerinde (add_sfx ile çiftlenmesin diye whoosh oradan kaldırıldı)
         # Madde 154/157/158/159: add_sfx_to_narration içinde sahne içeriğine göre uygulanır
         try:
-            from voice_humanizer import sync_riser_whoosh_transitions
+            from voice_humanizer import voice_humanizer, sync_riser_whoosh_transitions
             scene_cut_times = []
             cur_time = 0.0
             for sc in scene_clips[:-1]:
@@ -207,6 +244,45 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             has_quiz = any("quiz" in str(sc.get("scene_description", "")).lower() or "soru" in str(sc.get("scene_description", "")).lower() for sc in scene_clips)
             if has_quiz:
                 from voice_humanizer import inject_quiz_ding, inject_quiz_buzzer
+                from voice.audio_dsp import inject_quiz_thinking_gap
+                gap_insert_at = None
+                elapsed_gap = 0.0
+                for sc in scene_clips:
+                    narr_g = str(sc.get("narration", ""))
+                    combined_g = (narr_g + " " + str(sc.get("scene_description", ""))).lower()
+                    is_q = "?" in narr_g or any(w in combined_g for w in ("soru", "quiz", "question", "cevapla"))
+                    is_ans = any(w in combined_g for w in (
+                        "doğru", "yanlış", "cevap a", "cevap b", "cevap c", "cevap d",
+                        "correct", "wrong", "kazand", "kaybett", "bilemedin"
+                    ))
+                    if is_q and not is_ans:
+                        gap_insert_at = elapsed_gap + float(sc.get("duration", 7.0)) * 0.9
+                        break
+                    elapsed_gap += float(sc.get("duration", 7.0))
+                if gap_insert_at is not None:
+                    gap_audio = output_path.rsplit(".", 1)[0] + "_quiz_gap.wav"
+                    processed_audio = inject_quiz_thinking_gap(
+                        processed_audio, gap_audio, gap_seconds=3.0, insert_at_sec=gap_insert_at
+                    )
+                    print(f"  [Composer] [Item 197] Quiz düşünme boşluğu (3.0s) t={gap_insert_at:.2f}s eklendi.")
+
+                # Item 254: Soru-cevap arası 0.5s gerilim boşluğu (quiz dışı soru→cevap geçişleri)
+                from voice.audio_dsp import inject_pre_answer_tension_gap
+                elapsed_254 = 0.0
+                for sc_idx, sc in enumerate(scene_clips):
+                    narr_254 = str(sc.get("narration", ""))
+                    if "?" in narr_254 and sc_idx + 1 < len(scene_clips):
+                        next_narr = str(scene_clips[sc_idx + 1].get("narration", ""))
+                        if next_narr and "?" not in next_narr[:20]:
+                            gap_at = elapsed_254 + float(sc.get("duration", 7.0)) * 0.92
+                            tension_audio = output_path.rsplit(".", 1)[0] + "_tension_gap.wav"
+                            processed_audio = inject_pre_answer_tension_gap(
+                                processed_audio, tension_audio, gap_seconds=0.5, insert_at_sec=gap_at
+                            )
+                            print(f"  [Composer] [Item 254] Pre-answer tension gap (0.5s) t={gap_at:.2f}s eklendi.")
+                            break
+                    elapsed_254 += float(sc.get("duration", 7.0))
+
                 elapsed_q = 0.0
                 for sc in scene_clips:
                     desc_q = str(sc.get("scene_description", "")).lower()
@@ -222,6 +298,118 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         print(f"  [Composer] [Item 168] Quiz yanlış cevaba 120Hz testere dişi 'Buzzer' SFX mikslendi (t={elapsed_q+0.15:.2f}s).")
                         break
                     elapsed_q += float(sc.get("duration", 7.0))
+            # Madde 176: Gizem/antik nişte cümle sonuna 0.3s reverse reverb
+            has_mystery = any(
+                any(k in str(sc.get(key, "")).lower() for k in ("gizem", "mystery", "antik", "esrarengiz", "legend", "sırr"))
+                for sc in scene_clips for key in ("narration", "scene_description", "keyword")
+            )
+            if has_mystery:
+                rev_audio = output_path.rsplit(".", 1)[0] + "_rev_reverb.wav"
+                processed_audio = voice_humanizer.apply_reverse_reverb_whisper(processed_audio, rev_audio, tail_sec=0.30)
+                print("  [Composer] [Item 176] Gizem nişine reverse reverb (0.3s) mikslendi.")
+
+            # Madde 196: Haber/son dakika nişinde 90ms gap + hızlı tempo
+            niche_hint_196 = (niche_id or title or "").lower()
+            has_news = any(
+                any(k in str(sc.get(key, "")).lower() for k in (
+                    "haber", "news", "son dakika", "flaş", "breaking", "deprem", "kaza"
+                ))
+                for sc in scene_clips for key in ("narration", "scene_description", "keyword")
+            ) or any(k in niche_hint_196 for k in ("news", "haber", "flash", "1_news"))
+            if has_news:
+                from voice.audio_dsp import apply_news_rapid_cadence
+                news_audio = output_path.rsplit(".", 1)[0] + "_news_cadence.wav"
+                processed_audio = apply_news_rapid_cadence(
+                    processed_audio, news_audio, tempo=1.12, max_pause_sec=0.09
+                )
+                print("  [Composer] [Item 196] Haber dili hızlandırması (90ms gap + atempo 1.12) uygulandı.")
+
+            # Madde 181: Tarihi/nostaljik nişte arka plana -28dB vinil plak cızırtısı
+            niche_hint_181 = (niche_id or title or "").lower()
+            has_historic = any(
+                any(k in str(sc.get(key, "")).lower() for k in (
+                    "tarih", "history", "nostalj", "vintage", "eski", "antik", "retro", "plak", "vinyl", "analog"
+                ))
+                for sc in scene_clips for key in ("narration", "scene_description", "keyword")
+            ) or any(k in niche_hint_181 for k in ("tarih", "history", "nostalj", "vintage", "retro", "histor"))
+            if has_historic:
+                vinyl_audio = output_path.rsplit(".", 1)[0] + "_vinyl_crackle.wav"
+                processed_audio = voice_humanizer.inject_vinyl_crackle_layer(
+                    processed_audio, vinyl_audio, volume_db=-28.0
+                )
+                print("  [Composer] [Item 181] Tarihi/nostaljik nişe vinil cızırtısı (-28dB) mikslendi.")
+
+            # Madde 179: Şok ifadelerinde 0.2s mutlak sessizlik
+            from voice.script_humanizer import SHOCK_CUE_PHRASES
+            shock_times = []
+            elapsed_shock = 0.0
+            for sc in scene_clips:
+                narr_q = str(sc.get("narration", "")).lower()
+                for phrase in SHOCK_CUE_PHRASES:
+                    if phrase in narr_q:
+                        shock_times.append(round(elapsed_shock + 0.35, 3))
+                elapsed_shock += float(sc.get("duration", 7.0))
+            if shock_times:
+                shock_audio = output_path.rsplit(".", 1)[0] + "_shock_silence.wav"
+                processed_audio = voice_humanizer.apply_shock_silence_cut(processed_audio, shock_audio, shock_times, silence_sec=0.20)
+                print(f"  [Composer] [Item 179] {len(shock_times)} adet şok sessizlik kesintisi uygulandı.")
+
+            # Madde 177: 40s+ monologlarda yutkunma/duraksama katmanı
+            if audio_dur > 40.0:
+                mono_pause_audio = output_path.rsplit(".", 1)[0] + "_monologue_pause.wav"
+                processed_audio = voice_humanizer.inject_monologue_pause_and_swallow(
+                    processed_audio, mono_pause_audio, interval_seconds=40.0
+                )
+                print("  [Composer] [Item 177] Uzun monologa 40s aralıklı yutkunma/duraksama eklendi.")
+
+            # Item 163: telefon/alıntı sahnelerinde bandpass (tüm narration değil)
+            phone_audio = output_path.rsplit(".", 1)[0] + "_phone_quote.wav"
+            from voice.audio_dsp import apply_telephone_filter_on_quote_scenes
+            processed_audio = apply_telephone_filter_on_quote_scenes(
+                processed_audio, phone_audio, scene_clips
+            )
+            if processed_audio.endswith("_phone_quote.wav"):
+                print("  [Composer] [Item 163] Alıntı/telefon sahnelerine Lo-Fi bandpass uygulandı.")
+
+            niche_hint_audio = (niche_id or title or "").lower()
+            scene_blob = " ".join(
+                str(sc.get(key, "")) for sc in scene_clips for key in ("narration", "scene_description", "keyword")
+            ).lower()
+            combined_audio = f"{niche_hint_audio} {scene_blob}"
+
+            if any(k in combined_audio for k in ("stoic", "felsefe", "philosophy", "duygusal", "poetry", "dini", "manevi", "tarih")):
+                from voice.acoustic_assets import inject_dramatic_piano_layer
+                piano_audio = output_path.rsplit(".", 1)[0] + "_piano182.wav"
+                processed_audio = inject_dramatic_piano_layer(processed_audio, piano_audio, timestamp_sec=1.2, volume=0.28)
+                print("  [Composer] [Item 182] Dramatik piyano katmanı mikslendi.")
+
+            if any(k in combined_audio for k in ("yapay zeka", "ai", "cyber", "tech", "teknoloji", "gelecek", "robot")):
+                from voice.acoustic_assets import inject_cyberpunk_synth_bass
+                synth_audio = output_path.rsplit(".", 1)[0] + "_synth183.wav"
+                processed_audio = inject_cyberpunk_synth_bass(processed_audio, synth_audio, timestamp_sec=0.0, volume=0.22)
+                print("  [Composer] [Item 183] Cyberpunk synth bass mikslendi.")
+
+            if any(k in combined_audio for k in ("haber", "news", "sokak", "street", "borsa", "finans", "kalabalık", "crowd")):
+                from voice.acoustic_assets import inject_room_ambience
+                crowd_audio = output_path.rsplit(".", 1)[0] + "_crowd188.wav"
+                processed_audio = inject_room_ambience(processed_audio, crowd_audio, volume=0.08)
+                print("  [Composer] [Item 188] Oda/kalabalık ambiyansı mikslendi.")
+
+            if any(k in combined_audio for k in (
+                "katedral", "cathedral", "manevi", "dini", "spiritual", "epic", "temple", "ibadet", "dua"
+            )):
+                from voice.audio_dsp import apply_acoustic_reverb_chamber
+                rev_audio = output_path.rsplit(".", 1)[0] + "_reverb191.wav"
+                processed_audio = apply_acoustic_reverb_chamber(processed_audio, rev_audio, room_type="cathedral")
+                print("  [Composer] [Item 191] Akustik yankı odası uygulandı.")
+
+            if any(k in combined_audio for k in (
+                "epic", "trailer", "evren", "cosmos", "hans", "sinema", "film", "destansı", "cosmic"
+            )):
+                from voice.audio_dsp import apply_epic_trailer_deep_voice
+                epic_audio = output_path.rsplit(".", 1)[0] + "_epic195.wav"
+                processed_audio = apply_epic_trailer_deep_voice(processed_audio, epic_audio, pitch_ratio=0.88)
+                print("  [Composer] [Item 195] Derin anlatıcı (trailer) sesi uygulandı.")
         except Exception as se:
             print(f"  [Composer] Audio SFX layers notice: {se}")
 
@@ -241,6 +429,15 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     if chosen_bgm and getattr(config, "ENABLE_BGM", True):
         bgm_p = get_bgm_path(chosen_bgm)
         if bgm_p:
+            # Item 185: son 5s BGM swell (+3.5dB) before mix
+            if audio_dur > 6.0:
+                from bgm_manager import apply_outro_music_swell
+                swelled_bgm = output_path.rsplit(".", 1)[0] + "_bgm_swell.wav"
+                swelled = apply_outro_music_swell(bgm_p, swelled_bgm, total_duration=audio_dur)
+                if swelled and os.path.exists(swelled):
+                    bgm_p = swelled
+                    print("  [Composer] [Item 185] BGM outro swell (+3.5dB son 5s) hazırlandı.")
+
             # Item 102: BGM Beat-Syncing
             if enable_section2_filters:
                 scene_clips = align_scenes_to_bgm_beats(scene_clips, bgm_p)
@@ -256,9 +453,19 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                     tape_stop_times.append(elapsed)
                 elapsed += float(scene.get("duration", 0.0))
             
-            # Item 166: Kapanış Müzik Sönümlemesi (Fade-Out Yok! Keskin Döngü)
-            final_audio = mix_narration_and_bgm(processed_audio, bgm_p, mixed_audio, volume=vol,
-                                               tape_stop_times=tape_stop_times, allow_fade_out=False)
+            # Item 180: İlk 1s müzik %100 vuruşu + anında ducking; Item 166: fade-out yok
+            punch_audio = output_path.rsplit(".", 1)[0] + "_intro_punch.wav"
+            final_audio = mix_intro_punch_bgm(
+                processed_audio, bgm_p, punch_audio,
+                intro_blast_sec=1.0, blast_volume=0.85, ducked_volume=vol
+            )
+            if not final_audio or not os.path.exists(final_audio):
+                final_audio = mix_narration_and_bgm(
+                    processed_audio, bgm_p, mixed_audio, volume=vol,
+                    tape_stop_times=tape_stop_times, allow_fade_out=False
+                )
+            else:
+                print("  [Composer] [Item 180] Müzik giriş vuruşu (%100 ilk 1s) + ducking uygulandı.")
 
             # Item 170: Ses Katmanlarının Faz Uyumu (Phase Alignment: Mono Bas Kilidi <120Hz)
             if final_audio and os.path.exists(final_audio):
@@ -266,6 +473,17 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 phase_aligned_audio = output_path.rsplit(".", 1)[0] + "_phase_aligned.wav"
                 final_audio = lock_bass_frequencies_to_mono(final_audio, phase_aligned_audio, cutoff_hz=120.0)
                 print("  [Composer] [Item 170] Ses katmanları faz uyumu (Phase Alignment: Mono Bas Kilidi <120Hz) uygulandı.")
+
+            # Item 174: Mobil hoparlör mono netlik audit (post-mix advisory log)
+            try:
+                from voice_humanizer import voice_humanizer as _vh
+                mobile_report = _vh.run_mobile_device_audio_check(final_audio, bgm_p)
+                print(
+                    f"  [Composer] [Item 174] Mobil audit: {mobile_report.get('status', 'N/A')} "
+                    f"(score={mobile_report.get('mobile_readiness_score', '?')})"
+                )
+            except Exception:
+                pass
 
 
     segs = []
@@ -303,9 +521,30 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         # Item 73: Mikro-Zoom (Ken Burns Jitter 1.00x -> 1.04x)
                         clip_seg = apply_ken_burns(clip_seg, zoom_start=1.00, zoom_end=1.04)
 
-                    # Item 99: Dinamik Kamera Sallantısı (Handheld Camera Shake)
-                    if sc.get("handheld_shake", False):
-                        clip_seg = apply_handheld_camera_shake(clip_seg, intensity=5.0)
+                    # Item 99: Dinamik Kamera Sallantısı — tüm sahnelerde (enable_section2)
+                    if enable_section2_filters:
+                        shake_intensity = 5.0 if sc.get("handheld_shake", True) else 3.5
+                        clip_seg = apply_handheld_camera_shake(clip_seg, intensity=shake_intensity)
+
+                    # Item 115: Color splash (4. sahne / dramatik mood)
+                    if enable_section2_filters and (
+                        idx == 3
+                        or sc.get("mood") in ("dramatic", "shock", "tehlike")
+                        or sc.get("beat_type") == "climax"
+                    ):
+                        clip_seg = apply_color_splash_moviepy(clip_seg, keep_hue_center=120.0, tolerance=30.0)
+
+                    # Item 105: Affiliate ürün 3D mock-up overlay
+                    if sc.get("affiliate_product") or (
+                        enable_section2_filters
+                        and idx == max(0, len(scene_clips) - 3)
+                        and any(k in (niche_id or title or "").lower() for k in ("affiliate", "wealth", "16_wealth", "monetiz"))
+                    ):
+                        mockup = apply_affiliate_3d_mockup(p, target_w=W, target_h=H)
+                        if mockup:
+                            mockup = mockup.set_duration(d).set_position("center")
+                            clip_seg = CompositeVideoClip([clip_seg, mockup], size=(W, H))
+                            clip_seg.duration = d
 
                     # Item 100: Görsel Maskeleme (Wipe Transition Mask Overlay)
                     if sc.get("wipe_transition", False) and idx > 0:
@@ -315,10 +554,46 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                     # Item 103: Ekran Dışı Odak (İlk sahnede 0.35s netleşme kancası)
                     if idx == 0 and enable_section2_filters:
                         clip_seg = apply_out_of_focus_reveal(clip_seg, blur_duration=0.35)
+                        # Item 211: Merkez censored/blur bait — 3s merak penceresi
+                        clip_seg = apply_censored_blur_bait(clip_seg, reveal_after=3.0)
+                        # Item 201/237: İlk 1.5s pattern interrupt (glitch/zoom punch)
+                        interrupts = ViralRetentionEngine.PATTERN_INTERRUPTS
+                        interrupt_type = interrupts[idx % len(interrupts)]["type"]
+                        if interrupt_type == "warning_badge":
+                            interrupt_type = "glitch_flash"
+                        clip_seg = apply_opening_pattern_interrupt(
+                            clip_seg, interrupt_type=interrupt_type, duration=1.5
+                        )
 
                     # Item 132: Görsel Hareketi Yön Değişimi (Alternating pan/tilt motion)
                     if enable_section2_filters:
                         clip_seg = apply_alternating_motion(clip_seg, scene_index=idx)
+
+                    # Item 272: Karanlık↔parlak sahne alternasyonu
+                    if enable_section2_filters:
+                        clip_seg = apply_scene_brightness_alternation(clip_seg, scene_index=idx)
+
+                    # Item 231: Slow-motion vurgu (climax/cutaway sahnelerde)
+                    if sc.get("slow_motion_highlight") or (
+                        enable_section2_filters and sc.get("is_visual_cutaway")
+                    ):
+                        clip_seg = apply_slow_motion_highlight(clip_seg, speed_factor=0.5)
+
+                    # Item 245: B-roll hızlandırma (cutaway sahnelerde 1.5x)
+                    if enable_section2_filters and sc.get("is_visual_cutaway"):
+                        clip_seg = apply_broll_speed_boost(clip_seg, speed_factor=1.5)
+
+                    # Item 243 / 273: Patlama sarsıntısı veya ses-görsel ters uyum şoku
+                    if enable_section2_filters and (
+                        sc.get("impact_shake")
+                        or sc.get("audio_visual_contrast")
+                        or sc.get("slow_motion_highlight")
+                    ):
+                        clip_seg = apply_impact_screen_shake(clip_seg, intensity=14.0, duration=0.35)
+
+                    # Item 253: Cümle sonu mikro zoom-out
+                    if enable_section2_filters and idx > 0:
+                        clip_seg = apply_micro_zoom_out(clip_seg, zoom_start=1.04, zoom_end=1.00)
 
                     segs.append(clip_seg)
                     print(f"  [Composer] Sahne #{idx+1}/{total_scenes} hazırlandı ({d:.1f}s).", flush=True)
@@ -359,7 +634,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             print("  [Composer] [Item 50] Anti-duplicate: FFmpeg GPU renk filtreleme aktif, MoviePy CPU bypass edildi.")
 
         if watermark_path and os.path.exists(watermark_path):
-            print("  [Composer] Overlaying watermark logo (Item 60)...")
+            print("  [Composer] Overlaying channel watermark logo (Item 381)...")
             combined = overlay_watermark(combined, watermark_path)
 
         if not getattr(config, 'RENDER_SAFE_MODE', True):
@@ -373,19 +648,121 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         else:
             print("  [Composer] [Item 126] End card overlay: RENDER_SAFE_MODE aktif, bypass edildi.")
 
+        # Item 212: Neon geri sayım sayacı (ilk 3s)
+        if enable_section2_filters:
+            combined = apply_neon_countdown_overlay(combined, duration=3.0, position="top_right")
+            print("  [Composer] Neon countdown overlay applied (Item 212).")
+
+        # Item 246: Neon merak açılış grafiği (ilk 2.5s)
+        if enable_section2_filters:
+            combined = apply_neon_curiosity_opening_graphic(combined, duration=2.5, symbol="?")
+            print("  [Composer] Neon curiosity opening graphic applied (Item 246).")
+
         # Item 138: Dinamik İlerleme Çubuğu (Neon progress bar)
         if enable_section2_filters:
             combined = apply_dynamic_progress_bar(combined, bar_height=4, position="bottom")
             print("  [Composer] Dynamic neon progress bar applied (Item 138).")
+
+        # Item 232: Sabit üst kanca banner
+        if enable_section2_filters:
+            banner = ViralRetentionEngine.get_sticky_hook_banner("", mood="warning", lang="tr")
+            combined = apply_sticky_hook_banner_overlay(combined, banner_text=banner)
+            print("  [Composer] Sticky hook banner applied (Item 232).")
+
+        # Item 238: Mikro-animasyonlu çıkartma (ok)
+        if enable_section2_filters:
+            combined = apply_micro_animated_sticker_overlay(combined, sticker="arrow", duration=2.5)
+            print("  [Composer] Micro animated sticker applied (Item 238).")
+
+        # Item 123: Bulanık gradient arka plan (fluid gradient overlay)
+        if enable_section2_filters and not getattr(config, "RENDER_SAFE_MODE", True):
+            combined = apply_fluid_gradient_background(combined)
+            print("  [Composer] Fluid gradient background applied (Item 123).")
+
+        # Items 235-236: Paylaş / Kaydet CTA görsel overlay
+        if enable_section2_filters:
+            meta = retention_metadata or {}
+            topic = title or ""
+            share_text = meta.get("share_cta") or ViralRetentionEngine.generate_share_cta(topic, lang="tr")
+            bookmark_text = meta.get("bookmark_cta") or ViralRetentionEngine.generate_bookmark_cta(topic, lang="tr")
+            share_at = max(0.0, combined.duration * 0.62)
+            bookmark_at = max(0.0, combined.duration * 0.78)
+            combined = apply_share_cta_overlay(combined, cta_text=share_text, start_at=share_at, duration=3.0)
+            combined = apply_bookmark_cta_overlay(combined, cta_text=bookmark_text, start_at=bookmark_at, duration=3.0)
+            print("  [Composer] Share + bookmark CTA overlays applied (Items 235-236).")
+
+        # Item 131 + B5 hybrid UI overlays
+        overlay_spec = hybrid_render_overlay or {}
+        if not overlay_spec and hybrid_niche:
+            try:
+                from hybrid_niches import get_hybrid_render_overlay_spec
+                overlay_spec = get_hybrid_render_overlay_spec(hybrid_niche)
+            except Exception:
+                overlay_spec = {}
+        ui_type = overlay_spec.get("ui_type")
+        if enable_section2_filters and ui_type in ("split_choice", "subtitle_bar"):
+            combined = apply_hybrid_render_overlay(combined, overlay_spec)
+            print(f"  [Composer] [B5] Hybrid structured overlay applied ({ui_type}).")
+        elif enable_section2_filters and ui_type:
+            combined = apply_ui_element_overlay(
+                combined,
+                ui_type=ui_type if ui_type != "imessage" else "ios_notification",
+                header_text=overlay_spec.get("header", title or "Bildirim"),
+                body_text=overlay_spec.get("body", "Sonuna kadar izle!"),
+                start_time=0.6,
+                duration=min(3.5, combined.duration * 0.35),
+            )
+            print(f"  [Composer] [Item 131/B5] Hybrid UI overlay applied ({ui_type}).")
+
+        # Item 260: keyword emphasis white flash (~40% timeline)
+        if enable_section2_filters and word_timings:
+            flash_at = None
+            for wt in word_timings:
+                txt = str(wt.get("text", "")).upper()
+                if any(k in txt for k in ("ASLA", "ŞOK", "GİZLİ", "NEVER", "SECRET", "SHOCK")):
+                    flash_at = float(wt.get("offset", 0.0))
+                    break
+            if flash_at is None and combined.duration > 2.0:
+                flash_at = combined.duration * 0.42
+            if flash_at is not None:
+                combined = apply_keyword_white_flash_overlay(combined, timestamp=flash_at, duration=0.18)
+                print(f"  [Composer] [Item 260] Keyword white flash @ {flash_at:.2f}s.")
+
+        # Item 224: infinite spiral (loop formula or optical hybrid)
+        loop_formula = (retention_metadata or {}).get("loop_formula") or ""
+        if enable_section2_filters and (
+            loop_formula == "infinite_cycle"
+            or overlay_spec.get("overlay") == "spiral"
+        ):
+            combined = apply_infinite_spiral_overlay(combined, duration=min(4.0, combined.duration))
+            print("  [Composer] [Item 224] Infinite spiral overlay applied.")
+
+        # Item 261: time tunnel (price timeline hybrid)
+        if enable_section2_filters and overlay_spec.get("overlay") == "time_tunnel":
+            combined = apply_time_tunnel_overlay(combined, duration=min(3.5, combined.duration))
+            print("  [Composer] [Item 261] Time tunnel overlay applied.")
+
+        # B5 hybrid overlay dispatch (neon_frame, epic_vignette, hybrid_frame, eq_bar, wheel, …)
+        overlay_kind = overlay_spec.get("overlay")
+        if enable_section2_filters and overlay_kind and overlay_kind not in ("spiral", "time_tunnel", "split_screen"):
+            combined = apply_hybrid_render_overlay(combined, overlay_spec)
+            item_ref = overlay_spec.get("item", overlay_kind)
+            print(f"  [Composer] [B5] Hybrid render overlay applied ({item_ref}).")
 
         print(f"  [Composer] Duration: {combined.duration:.1f}s")
 
         if cancel_check and cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
-        # Item 74: Kare Hızı (FPS) Çeşitlendirmesi (Anti-fingerprint mikro varyasyon: 29.97, 30.00, 30.02, 29.95, 30.04)
+        # Item 323: 60 FPS export OR Item 74: FPS mikro çeşitlendirme (29.97–30.04)
         import random
-        if getattr(config, "FPS_DIVERSIFY", True):
+        export_mode = str(getattr(config, "EXPORT_FPS_MODE", "30"))
+        if export_mode == "60":
+            if getattr(config, "FPS_DIVERSIFY", True):
+                export_fps = random.choice([59.94, 60.00, 60.02])
+            else:
+                export_fps = 60.0
+        elif getattr(config, "FPS_DIVERSIFY", True):
             fps_pool = [29.97, 30.00, 30.02, 29.95, 30.04]
             export_fps = random.choice(fps_pool)
         else:
@@ -396,31 +773,30 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         if render_threads <= 1:
             render_threads = max(4, min(8, cpu_cores // 2))
 
+        from system_resilience import get_export_codec_settings
         use_gpu = getattr(config, "USE_GPU_ACCELERATION", True)
-        gpu_codec = getattr(config, "GPU_CODEC", "h264_nvenc")
-        
-        # Donanım hızlandırma yapılandırması (RTX 3070 NVENC vs CPU libx264)
-        if use_gpu and gpu_codec == "h264_nvenc":
-            chosen_codec = "h264_nvenc"
-            codec_preset = "p2"
-            extra_params = ["-cq", "20", "-b:v", "0", "-pix_fmt", "yuv420p"]
-            mode_desc = f"🚀 NVIDIA RTX GPU NVENC (preset={codec_preset}, threads={render_threads})"
-        else:
-            chosen_codec = "libx264"
-            codec_preset = "ultrafast"
-            extra_params = ["-tune", "fastdecode", "-pix_fmt", "yuv420p"]
-            mode_desc = f"⚡ AMD Ryzen CPU (threads={render_threads}/{cpu_cores}, preset={codec_preset})"
+        gpu_codec = getattr(config, "GPU_CODEC", "")
+        chosen_codec, codec_preset, extra_params, mode_desc = get_export_codec_settings(use_gpu, gpu_codec)
+        mode_desc = f"{mode_desc} (threads={render_threads}/{cpu_cores})"
 
         print(f"  [Composer] Exporting: FPS={export_fps:.2f} (Item 74) | Motor: {mode_desc}", flush=True)
         render_logger = MoviePyProgressLogger(callback=progress_callback, cancel_check=cancel_check)
 
+        write_kw = dict(
+            fps=export_fps, codec=chosen_codec, audio=False,
+            threads=render_threads, ffmpeg_params=extra_params, logger=render_logger,
+        )
+        if codec_preset:
+            write_kw["preset"] = codec_preset
         try:
-            combined.write_videofile(tmp, fps=export_fps, codec=chosen_codec,
-                                     preset=codec_preset, audio=False, threads=render_threads,
-                                     ffmpeg_params=extra_params, logger=render_logger)
+            combined.write_videofile(tmp, **write_kw)
         except Exception as enc_err:
-            if chosen_codec == "h264_nvenc":
-                print(f"  [Composer] [Uyarı] NVENC donanım hatası ({enc_err}). Otomatik CPU libx264 motoruna geçiliyor...", flush=True)
+            if chosen_codec in ("h264_nvenc", "h264_videotoolbox"):
+                print(
+                    f"  [Composer] [Uyarı] {chosen_codec} donanım hatası ({enc_err}). "
+                    f"Otomatik CPU libx264 motoruna geçiliyor...",
+                    flush=True,
+                )
                 combined.write_videofile(tmp, fps=export_fps, codec="libx264",
                                          preset="ultrafast", audio=False, threads=render_threads,
                                          ffmpeg_params=["-tune", "fastdecode", "-pix_fmt", "yuv420p"],
@@ -480,34 +856,121 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             except Exception as se:
                 print(f"  [Composer] PostRender uyarısı: {se}")
 
-            # Manuel Yükleme Bilgi Paketi Oluşturma (Rules 80, 83)
+            # Item 124: Mikro çözünürlük manipülasyonu (post-merge FFmpeg crop)
+            if not getattr(config, "RENDER_SAFE_MODE", True):
+                try:
+                    micro_path = output_path.rsplit(".", 1)[0] + "_micro.mp4"
+                    cropped = apply_micro_resolution_crop(output_path, micro_path)
+                    if cropped != output_path and os.path.exists(cropped):
+                        os.replace(cropped, output_path)
+                        print("  [Composer] Micro resolution crop applied (Item 124).")
+                except Exception as mre:
+                    print(f"  [Composer] Item 124 micro crop notice: {mre}")
+
+            # Manuel Yükleme Bilgi Paketi — export_seo_operator_pack (B6 Batch 4)
             try:
                 import json
-                from viral_seo_agent import generate_viral_seo_metadata
+                from viral_seo_agent import export_seo_operator_pack
+                from proof_archiver import proof_archiver
+                from database import get_video_stats
+
                 clean_title = title or os.path.splitext(os.path.basename(output_path))[0]
-                seo_meta = generate_viral_seo_metadata(clean_title)
+                render_stats = get_video_stats()
+                total_renders = int(render_stats.get("total_completed") or 0)
+                script_text = " ".join(
+                    str(sc.get("narration", "")) for sc in scene_clips if sc.get("narration")
+                )
+                borderline_scan = proof_archiver.sanitize_borderline_words(script_text) if script_text else {}
+                operator = export_seo_operator_pack(
+                    keyword=clean_title,
+                    title=clean_title,
+                    retention_metadata=retention_metadata,
+                    lang=str(getattr(config, "LANGUAGE", "tr") or "tr"),
+                    video_filename=os.path.basename(output_path),
+                    thumb_path=os.path.basename(output_path.rsplit(".", 1)[0] + "_thumb.jpg"),
+                    total_renders=total_renders,
+                )
+                seo_meta = operator.get("seo") or {}
+                engagement = operator.get("studio_engagement") or {}
+                live_stream_plan = operator.get("live_stream_plan") or {}
                 manual_pkg = {
+                    **operator,
                     "video_file": os.path.basename(output_path),
                     "title": seo_meta.get("seo_title", clean_title),
                     "description": seo_meta.get("seo_description", ""),
                     "tags": seo_meta.get("tags", []),
                     "pinned_comment": seo_meta.get("pinned_comment", ""),
+                    "render_spec": {
+                        "aspect_ratio": "9:16",
+                        "resolution": "1080x1920",
+                        "video_codec": "h264",
+                        "video_bitrate_mbps": "12-16",
+                        "audio_codec": "aac",
+                        "audio_sample_rate_hz": 48000,
+                        "embedded_subtitles": "ass+srt",
+                        "items": "397-400,403",
+                    },
+                    "borderline_content_scan": borderline_scan,
+                    "channel_health": proof_archiver.build_actionable_channel_health_checklist(
+                        total_videos=total_renders, lang="tr"
+                    ),
                     "rule_80_altered_synthetic": "HAYIR (Yüz klonlama veya manipülasyon yoksa etiket seçilmemeli)",
                     "rule_83_source_reference": "Açıklamaya araştırma ve kaynak referansı eklendi.",
                     "anti_detect_ready": True,
-                    "size_mb": round(os.path.getsize(output_path) / 1048576, 2)
+                    "size_mb": round(os.path.getsize(output_path) / 1048576, 2),
                 }
                 info_json = output_path.rsplit(".", 1)[0] + "_manual_upload_info.json"
                 info_txt = output_path.rsplit(".", 1)[0] + "_manual_upload_guide.txt"
                 with open(info_json, "w", encoding="utf-8") as fj:
                     json.dump(manual_pkg, fj, ensure_ascii=False, indent=2)
+                reupload_guidance = operator.get("reupload_guidance") or {}
+                feed_distribution = operator.get("feed_distribution_advisory") or {}
+                algorithm_reset = operator.get("algorithm_reset_guidance") or {}
+                traffic_advisory = operator.get("traffic_sources_advisory") or {}
+                momentum_advisory = operator.get("channel_momentum_advisory") or {}
+                end_screen = operator.get("end_screen_guidance") or {}
+                competitor_brief = operator.get("competitor_analysis") or {}
+                contact_guidance = operator.get("channel_contact") or {}
+                upload_sched = operator.get("upload_schedule") or {}
+                cta_timing = operator.get("cta_timing") or {}
+                studio_meta = operator.get("studio_metadata") or {}
                 with open(info_txt, "w", encoding="utf-8") as ft:
                     ft.write(
                         f"=== YOUTUBE SHORTS MANUEL YÜKLEME REHBERİ ===\n\n"
                         f"📌 VİDEO BAŞLIĞI:\n{manual_pkg['title']}\n\n"
                         f"📌 VİDEO AÇIKLAMASI (Kural 83 Kaynak ve Fair Use Referanslı):\n{manual_pkg['description']}\n\n"
                         f"📌 VİDEO ETİKETLERİ:\n{', '.join(manual_pkg['tags'])}\n\n"
-                        f"📌 İLK YORUM (Sabitleyin):\n{manual_pkg['pinned_comment']}\n\n"
+                        f"📌 STUDIO METADATA (Items 354-405):\n"
+                        f"Konum: {studio_meta.get('location_tag')} | Dil: {studio_meta.get('audience_language')}\n"
+                        f"Kategori: {studio_meta.get('category_label')} | Playlist: {studio_meta.get('playlist_suggestion')}\n"
+                        f"{studio_meta.get('tags_csv')}\n\n"
+                        f"📌 İLK YORUM (Sabitleyin — Item 350):\n{manual_pkg['pinned_comment']}\n\n"
+                        f"❤️ YORUM KALP (Item 351):\n{engagement.get('heart_action', '')}\n\n"
+                        f"💬 İLK 2 SAAT YORUM YANITI (Item 374):\n{engagement.get('reply_action', '')}\n\n"
+                        f"🛡️ SPAM YORUM FİLTRESİ (Item 375):\n{engagement.get('spam_filter_action', '')}\n\n"
+                        f"📺 CANLI YAYIN PLANI (Item 384):\n{live_stream_plan.get('schedule', '')}\n"
+                        f"{live_stream_plan.get('studio_action', '')}\n\n"
+                        f"🚫 YENİDEN YÜKLEME UYARISI (Item 380):\n{reupload_guidance.get('rule', '')}\n"
+                        f"{reupload_guidance.get('action', '')}\n\n"
+                        f"📈 FEED DAĞITIM İVMESİ (Item 387):\n{feed_distribution.get('message', '')}\n\n"
+                        f"🔄 ALGORİTMA RESET (Item 394):\n{algorithm_reset.get('rule', '')}\n"
+                        f"{algorithm_reset.get('action', '')}\n\n"
+                        f"📊 TRAFİK KAYNAKLARI (Items 406-409):\n{traffic_advisory.get('diagnosis', '')}\n"
+                        f"Shorts Feed hedef: ≥%{traffic_advisory.get('shorts_feed_target_pct', 80):.0f}\n\n"
+                        f"⏳ SABIR EŞİĞİ (Item 410):\n{momentum_advisory.get('message', '')}\n\n"
+                        f"🔗 END SCREEN / LINK (Item 392):\n{end_screen.get('end_screen_action', '')}\n\n"
+                        f"🎯 RAKİP ANALİZİ (Item 395):\n{competitor_brief.get('action', '')}\n\n"
+                        f"📧 KANAL İLETİŞİM (Item 396):\n{contact_guidance.get('about_section_text', '')}\n\n"
+                        f"🎬 RENDER TEKNİK (Items 397-400, 403):\n"
+                        f"9:16 1080x1920 · H.264 12-16 Mbps · AAC 48kHz · ASS/SRT gömülü altyazı\n\n"
+                        f"🛡️ TOPLULUK KELİME TARAMASI (Item 390):\n"
+                        f"{'Temiz' if borderline_scan.get('is_clean', True) else 'Şüpheli kelimeler: ' + ', '.join(borderline_scan.get('flagged_words', []))}\n\n"
+                        f"⏰ YÜKLEME SAATİ (Items 362-363):\n"
+                        f"{upload_sched.get('primary_window', '')} ({upload_sched.get('timezone', '')})\n\n"
+                        f"🔔 CTA ZAMANLAMASI (Item 367):\n"
+                        f"Abone Ol overlay ~{cta_timing.get('cta_start_second', 27)}s — {cta_timing.get('rule_compliance', '')}\n\n"
+                        f"📌 STUDIO KANAL ANAHTAR KELİMELERİ (Item 358):\n"
+                        f"{', '.join(manual_pkg.get('channel_master_keywords', []))}\n\n"
                         f"⚠️ YOUTUBE STUDIO ETİKET AYARI (Kural 80):\n"
                         f"- 'Yapay zeka / Değiştirilmiş içerik mi?' sorusuna 'HAYIR' yanıtını verin.\n"
                         f"  (Kural 80: Yüz klonlama veya haber manipülasyonu olmadığı sürece etiket işaretlenmemelidir;\n"
@@ -707,6 +1170,10 @@ def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_lab
     # Item 75: Görsel Katmanlama (Multi-Layer B-Roll %10 opaklıkta ışık sızıntısı/toz)
     if enable_section2:
         c = apply_multi_layer_overlay(c, opacity=0.10)
+
+    # Item 106: Ana sahne köşe yuvarlama (corner radius)
+    if enable_section2:
+        c = apply_corner_radius_to_clip(c, radius=28)
 
     # Item 72 & 71: Renk Derecelendirme ve pHash Gürültüsü — sadece FFmpeg merge aşamasında uygulanır
     # (RENDER_SAFE_MODE: _prep içinde bypass, _merge'deki FFmpeg filtreleri zaten var)

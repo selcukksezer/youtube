@@ -23,6 +23,15 @@ SIMILARITY_THRESHOLD = 0.45
 # Maksimum veritabanı boyutu (en son N senaryo saklanır)
 MAX_DB_ENTRIES = 500
 
+# Topic overlap below this → discount niche-template boilerplate similarity
+_TOPIC_DIVERGENCE_THRESHOLD = 0.35
+
+_TR_STOPWORDS = frozenset({
+    "ve", "bir", "bu", "için", "ile", "da", "de", "mi", "mu", "mı", "the", "a", "an",
+    "in", "on", "at", "to", "of", "is", "are", "was", "were", "that", "this", "bugün",
+    "hayatını", "hayat", "kurtarabilir", "yıllık", "felsefe", "shorts", "video",
+})
+
 
 def _normalize_text(text: str) -> str:
     if not text:
@@ -50,6 +59,47 @@ def _jaccard_similarity(text_a: str, text_b: str, n: int = 3) -> float:
 
 def _extract_words(text: str) -> List[str]:
     return _normalize_text(text).split()
+
+
+def _topic_token_set(keyword: str, title: str) -> set:
+    """Distinctive topic tokens from user keyword/title (not full script body)."""
+    raw = f"{keyword or ''} {title or ''}".strip()
+    if not raw:
+        return set()
+    return {
+        w for w in _extract_words(raw)
+        if len(w) > 2 and w not in _TR_STOPWORDS
+    }
+
+
+def _topic_overlap(keyword_a: str, title_a: str, keyword_b: str, title_b: str) -> float:
+    """Jaccard overlap on topic seed tokens — separates same-niche, different-topic scripts."""
+    ta = _topic_token_set(keyword_a, title_a)
+    tb = _topic_token_set(keyword_b, title_b)
+    if not ta or not tb:
+        return 0.0
+    inter = ta.intersection(tb)
+    union = ta.union(tb)
+    return len(inter) / len(union) if union else 0.0
+
+
+def _adjust_similarity_for_topic(
+    body_sim: float,
+    new_keyword: str,
+    new_title: str,
+    entry_keyword: str,
+    entry_title: str,
+) -> float:
+    """
+    When user topics diverge within the same niche, procedural templates inflate body
+    similarity. Scale down structural overlap while preserving detection for same-topic copies.
+    """
+    overlap = _topic_overlap(new_keyword, new_title, entry_keyword, entry_title)
+    if overlap >= _TOPIC_DIVERGENCE_THRESHOLD:
+        return body_sim
+    # Low topic overlap: discount boilerplate (floor 0.25 keeps true duplicates detectable)
+    scale = 0.25 + (0.75 * overlap / max(_TOPIC_DIVERGENCE_THRESHOLD, 0.01))
+    return body_sim * scale
 
 
 def _cosine_similarity_tfidf(text_a: str, text_b: str) -> float:
@@ -183,7 +233,14 @@ def check_script_originality(
     norm_new = _normalize_text(new_script)
 
     for entry in entries:
-        sim = compute_similarity(norm_new, entry.get("text", ""), method=method)
+        raw_sim = compute_similarity(norm_new, entry.get("text", ""), method=method)
+        sim = _adjust_similarity_for_topic(
+            raw_sim,
+            keyword,
+            title,
+            entry.get("keyword", ""),
+            entry.get("title", ""),
+        )
         if sim > max_sim:
             max_sim = sim
             matched_title = entry.get("title", entry.get("keyword", "Bilinmiyor"))

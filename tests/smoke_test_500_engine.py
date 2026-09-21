@@ -142,7 +142,7 @@ class Test500ItemEngine(unittest.TestCase):
     # ══════════════════════════════════════════════════════════════
     def test_14_hybrid_niches_completeness(self):
         hybrids = list_all_hybrid_niches()
-        self.assertEqual(len(hybrids), 7)
+        self.assertGreaterEqual(len(hybrids), 20)
         keys = [h["id"] for h in hybrids]
         self.assertIn("stoic_cyberpunk", keys)
         self.assertIn("history_chat", keys)
@@ -150,6 +150,7 @@ class Test500ItemEngine(unittest.TestCase):
         self.assertIn("mystery_earth_zoom", keys)
         self.assertIn("would_you_rather_duel", keys)
         self.assertIn("reddit_asmr", keys)
+        self.assertIn("weird_laws_world_map", keys)
         self.assertIn("ai_tools_screen", keys)
 
     # ══════════════════════════════════════════════════════════════
@@ -202,7 +203,7 @@ class Test500ItemEngine(unittest.TestCase):
         res = self.client.get("/api/hybrid_niches")
         self.assertEqual(res.status_code, 200)
         data = res.json()
-        self.assertEqual(len(data["hybrid_niches"]), 7)
+        self.assertGreaterEqual(len(data["hybrid_niches"]), 20)
 
     def test_20_api_retention_formulas(self):
         res = self.client.get("/api/retention/formulas")

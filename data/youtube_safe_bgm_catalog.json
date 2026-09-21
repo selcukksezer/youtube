@@ -1,0 +1,1304 @@
+{
+  "version": 1,
+  "description": "YouTube'da doğrudan kullanılabilir telifsiz arka plan müzik kataloğu (Mixkit lisansı — Studio Audio Library ile aynı amaç)",
+  "studio_import_note": "YouTube Studio > Audio Library parçalarını bgm/youtube_studio/ klasörüne manuel yükleyebilirsiniz.",
+  "count": 72,
+  "tracks": [
+    {
+      "id": "yt_safe_127",
+      "mixkit_id": 127,
+      "title": "Valley Sunset",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 78,
+      "niche_tags": [
+        "philosophy",
+        "stoic"
+      ],
+      "url": "https://assets.mixkit.co/music/127/127.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_127_valley_sunset.mp3"
+    },
+    {
+      "id": "yt_safe_292",
+      "mixkit_id": 292,
+      "title": "Relax Beat",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 78,
+      "niche_tags": [
+        "philosophy",
+        "meditation"
+      ],
+      "url": "https://assets.mixkit.co/music/292/292.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_292_relax_beat.mp3"
+    },
+    {
+      "id": "yt_safe_139",
+      "mixkit_id": 139,
+      "title": "Spirit in the Woods",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 75,
+      "niche_tags": [
+        "nature",
+        "calm"
+      ],
+      "url": "https://assets.mixkit.co/music/139/139.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_139_spirit_in_the_woods.mp3"
+    },
+    {
+      "id": "yt_safe_184",
+      "mixkit_id": 184,
+      "title": "Vastness",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 72,
+      "niche_tags": [
+        "philosophy",
+        "space"
+      ],
+      "url": "https://assets.mixkit.co/music/184/184.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_184_vastness.mp3"
+    },
+    {
+      "id": "yt_safe_749",
+      "mixkit_id": 749,
+      "title": "Relaxation 05",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 70,
+      "niche_tags": [
+        "wellness",
+        "yoga"
+      ],
+      "url": "https://assets.mixkit.co/music/749/749.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_749_relaxation_05.mp3"
+    },
+    {
+      "id": "yt_safe_588",
+      "mixkit_id": 588,
+      "title": "Feedback Dreams",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "mysterious",
+      "bpm": 74,
+      "niche_tags": [
+        "mystery",
+        "dream"
+      ],
+      "url": "https://assets.mixkit.co/music/588/588.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_588_feedback_dreams.mp3"
+    },
+    {
+      "id": "yt_safe_138",
+      "mixkit_id": 138,
+      "title": "Forest Treasure",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 76,
+      "niche_tags": [
+        "nature",
+        "story"
+      ],
+      "url": "https://assets.mixkit.co/music/138/138.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_138_forest_treasure.mp3"
+    },
+    {
+      "id": "yt_safe_441",
+      "mixkit_id": 441,
+      "title": "Meditation",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 68,
+      "niche_tags": [
+        "meditation",
+        "wellness"
+      ],
+      "url": "https://assets.mixkit.co/music/441/441.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_441_meditation.mp3"
+    },
+    {
+      "id": "yt_safe_571",
+      "mixkit_id": 571,
+      "title": "Voxscape",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "ethereal",
+      "bpm": 80,
+      "niche_tags": [
+        "cinematic",
+        "calm"
+      ],
+      "url": "https://assets.mixkit.co/music/571/571.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_571_voxscape.mp3"
+    },
+    {
+      "id": "yt_safe_607",
+      "mixkit_id": 607,
+      "title": "Forest Walk",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 77,
+      "niche_tags": [
+        "nature",
+        "philosophy"
+      ],
+      "url": "https://assets.mixkit.co/music/607/607.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_607_forest_walk.mp3"
+    },
+    {
+      "id": "yt_safe_443",
+      "mixkit_id": 443,
+      "title": "Serene View",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 75,
+      "niche_tags": [
+        "calm",
+        "lifestyle"
+      ],
+      "url": "https://assets.mixkit.co/music/443/443.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_443_serene_view.mp3"
+    },
+    {
+      "id": "yt_safe_130",
+      "mixkit_id": 130,
+      "title": "Tech House Vibes",
+      "artist": "Mixkit",
+      "genre": "electronic",
+      "mood": "energetic",
+      "bpm": 128,
+      "niche_tags": [
+        "tech",
+        "motivation"
+      ],
+      "url": "https://assets.mixkit.co/music/130/130.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_130_tech_house_vibes.mp3"
+    },
+    {
+      "id": "yt_safe_738",
+      "mixkit_id": 738,
+      "title": "Hip Hop 02",
+      "artist": "Mixkit",
+      "genre": "hip-hop",
+      "mood": "urban",
+      "bpm": 95,
+      "niche_tags": [
+        "motivation",
+        "fitness"
+      ],
+      "url": "https://assets.mixkit.co/music/738/738.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_738_hip_hop_02.mp3"
+    },
+    {
+      "id": "yt_safe_31",
+      "mixkit_id": 31,
+      "title": "Dreaming Big",
+      "artist": "Mixkit",
+      "genre": "inspiring",
+      "mood": "inspirational",
+      "bpm": 120,
+      "niche_tags": [
+        "success",
+        "motivation"
+      ],
+      "url": "https://assets.mixkit.co/music/31/31.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_31_dreaming_big.mp3"
+    },
+    {
+      "id": "yt_safe_623",
+      "mixkit_id": 623,
+      "title": "Deep Urban",
+      "artist": "Mixkit",
+      "genre": "hip-hop",
+      "mood": "dark",
+      "bpm": 90,
+      "niche_tags": [
+        "urban",
+        "mystery"
+      ],
+      "url": "https://assets.mixkit.co/music/623/623.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_623_deep_urban.mp3"
+    },
+    {
+      "id": "yt_safe_371",
+      "mixkit_id": 371,
+      "title": "Cat Walk",
+      "artist": "Mixkit",
+      "genre": "funk",
+      "mood": "fun",
+      "bpm": 105,
+      "niche_tags": [
+        "fun",
+        "lifestyle"
+      ],
+      "url": "https://assets.mixkit.co/music/371/371.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_371_cat_walk.mp3"
+    },
+    {
+      "id": "yt_safe_132",
+      "mixkit_id": 132,
+      "title": "Hazy After Hours",
+      "artist": "Mixkit",
+      "genre": "electronic",
+      "mood": "mysterious",
+      "bpm": 110,
+      "niche_tags": [
+        "night",
+        "mystery"
+      ],
+      "url": "https://assets.mixkit.co/music/132/132.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_132_hazy_after_hours.mp3"
+    },
+    {
+      "id": "yt_safe_466",
+      "mixkit_id": 466,
+      "title": "Games Worldbeat",
+      "artist": "Mixkit",
+      "genre": "cinematic",
+      "mood": "epic",
+      "bpm": 115,
+      "niche_tags": [
+        "history",
+        "epic"
+      ],
+      "url": "https://assets.mixkit.co/music/466/466.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_466_games_worldbeat.mp3"
+    },
+    {
+      "id": "yt_safe_282",
+      "mixkit_id": 282,
+      "title": "Lo-Fi Dreams",
+      "artist": "Mixkit",
+      "genre": "lo-fi",
+      "mood": "lofi",
+      "bpm": 82,
+      "niche_tags": [
+        "philosophy",
+        "study"
+      ],
+      "url": "https://assets.mixkit.co/music/282/282.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_282_lo_fi_dreams.mp3"
+    },
+    {
+      "id": "yt_safe_135",
+      "mixkit_id": 135,
+      "title": "Chill Abstract",
+      "artist": "Mixkit",
+      "genre": "lo-fi",
+      "mood": "lofi",
+      "bpm": 85,
+      "niche_tags": [
+        "study",
+        "calm"
+      ],
+      "url": "https://assets.mixkit.co/music/135/135.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_135_chill_abstract.mp3"
+    },
+    {
+      "id": "yt_safe_580",
+      "mixkit_id": 580,
+      "title": "Hip Hop 01",
+      "artist": "Mixkit",
+      "genre": "hip-hop",
+      "mood": "urban",
+      "bpm": 92,
+      "niche_tags": [
+        "motivation",
+        "street"
+      ],
+      "url": "https://assets.mixkit.co/music/580/580.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_580_hip_hop_01.mp3"
+    },
+    {
+      "id": "yt_safe_897",
+      "mixkit_id": 897,
+      "title": "Trap Beat",
+      "artist": "Mixkit",
+      "genre": "trap",
+      "mood": "dark",
+      "bpm": 140,
+      "niche_tags": [
+        "fitness",
+        "hype"
+      ],
+      "url": "https://assets.mixkit.co/music/897/897.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_897_trap_beat.mp3"
+    },
+    {
+      "id": "yt_safe_32",
+      "mixkit_id": 32,
+      "title": "Pop Beat",
+      "artist": "Mixkit",
+      "genre": "pop",
+      "mood": "pop",
+      "bpm": 118,
+      "niche_tags": [
+        "viral",
+        "general"
+      ],
+      "url": "https://assets.mixkit.co/music/32/32.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_32_pop_beat.mp3"
+    },
+    {
+      "id": "yt_safe_614",
+      "mixkit_id": 614,
+      "title": "Corporate Success",
+      "artist": "Mixkit",
+      "genre": "corporate",
+      "mood": "corporate",
+      "bpm": 115,
+      "niche_tags": [
+        "finance",
+        "business"
+      ],
+      "url": "https://assets.mixkit.co/music/614/614.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_614_corporate_success.mp3"
+    },
+    {
+      "id": "yt_safe_493",
+      "mixkit_id": 493,
+      "title": "Inspiring Cinematic",
+      "artist": "Mixkit",
+      "genre": "cinematic",
+      "mood": "epic",
+      "bpm": 108,
+      "niche_tags": [
+        "history",
+        "dramatic"
+      ],
+      "url": "https://assets.mixkit.co/music/493/493.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_493_inspiring_cinematic.mp3"
+    },
+    {
+      "id": "yt_safe_251",
+      "mixkit_id": 251,
+      "title": "Deep Meditation",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 65,
+      "niche_tags": [
+        "meditation",
+        "wellness"
+      ],
+      "url": "https://assets.mixkit.co/music/251/251.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_251_deep_meditation.mp3"
+    },
+    {
+      "id": "yt_safe_726",
+      "mixkit_id": 726,
+      "title": "Cyberpunk City",
+      "artist": "Mixkit",
+      "genre": "electronic",
+      "mood": "tech",
+      "bpm": 128,
+      "niche_tags": [
+        "technology",
+        "ai"
+      ],
+      "url": "https://assets.mixkit.co/music/726/726.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_726_cyberpunk_city.mp3"
+    },
+    {
+      "id": "yt_safe_993",
+      "mixkit_id": 993,
+      "title": "Yoga Song",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 70,
+      "niche_tags": [
+        "wellness",
+        "yoga"
+      ],
+      "url": "https://assets.mixkit.co/music/993/993.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_993_yoga_song.mp3"
+    },
+    {
+      "id": "yt_safe_169",
+      "mixkit_id": 169,
+      "title": "Nature Meditation",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 72,
+      "niche_tags": [
+        "nature",
+        "philosophy"
+      ],
+      "url": "https://assets.mixkit.co/music/169/169.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_169_nature_meditation.mp3"
+    },
+    {
+      "id": "yt_safe_148",
+      "mixkit_id": 148,
+      "title": "Smooth Meditation",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 68,
+      "niche_tags": [
+        "meditation",
+        "calm"
+      ],
+      "url": "https://assets.mixkit.co/music/148/148.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_148_smooth_meditation.mp3"
+    },
+    {
+      "id": "yt_safe_444",
+      "mixkit_id": 444,
+      "title": "Rest Now",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 74,
+      "niche_tags": [
+        "sleep",
+        "calm"
+      ],
+      "url": "https://assets.mixkit.co/music/444/444.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_444_rest_now.mp3"
+    },
+    {
+      "id": "yt_safe_584",
+      "mixkit_id": 584,
+      "title": "Pilates and Yoga",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 76,
+      "niche_tags": [
+        "wellness",
+        "fitness"
+      ],
+      "url": "https://assets.mixkit.co/music/584/584.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_584_pilates_and_yoga.mp3"
+    },
+    {
+      "id": "yt_safe_324",
+      "mixkit_id": 324,
+      "title": "Deep House Vibes",
+      "artist": "Mixkit",
+      "genre": "deep-house",
+      "mood": "groovy",
+      "bpm": 122,
+      "niche_tags": [
+        "lifestyle",
+        "night"
+      ],
+      "url": "https://assets.mixkit.co/music/324/324.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_324_deep_house_vibes.mp3"
+    },
+    {
+      "id": "yt_safe_140",
+      "mixkit_id": 140,
+      "title": "Ambient Technology",
+      "artist": "Mixkit",
+      "genre": "electronic",
+      "mood": "tech",
+      "bpm": 125,
+      "niche_tags": [
+        "technology",
+        "future"
+      ],
+      "url": "https://assets.mixkit.co/music/140/140.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_140_ambient_technology.mp3"
+    },
+    {
+      "id": "yt_safe_442",
+      "mixkit_id": 442,
+      "title": "Spirit in the Woods 2",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 75,
+      "niche_tags": [
+        "nature",
+        "story"
+      ],
+      "url": "https://assets.mixkit.co/music/442/442.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_442_spirit_in_the_woods_2.mp3"
+    },
+    {
+      "id": "yt_safe_255",
+      "mixkit_id": 255,
+      "title": "Happy Pop",
+      "artist": "Mixkit",
+      "genre": "pop",
+      "mood": "happy",
+      "bpm": 120,
+      "niche_tags": [
+        "fun",
+        "viral"
+      ],
+      "url": "https://assets.mixkit.co/music/255/255.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_255_happy_pop.mp3"
+    },
+    {
+      "id": "yt_safe_260",
+      "mixkit_id": 260,
+      "title": "Dramatic Cinematic",
+      "artist": "Mixkit",
+      "genre": "cinematic",
+      "mood": "dramatic",
+      "bpm": 85,
+      "niche_tags": [
+        "history",
+        "emotional"
+      ],
+      "url": "https://assets.mixkit.co/music/260/260.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_260_dramatic_cinematic.mp3"
+    },
+    {
+      "id": "yt_safe_269",
+      "mixkit_id": 269,
+      "title": "Mysterious Atmosphere",
+      "artist": "Mixkit",
+      "genre": "atmospheres",
+      "mood": "mysterious",
+      "bpm": 72,
+      "niche_tags": [
+        "horror",
+        "mystery"
+      ],
+      "url": "https://assets.mixkit.co/music/269/269.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_269_mysterious_atmosphere.mp3"
+    },
+    {
+      "id": "yt_safe_274",
+      "mixkit_id": 274,
+      "title": "Inspiring Uplift",
+      "artist": "Mixkit",
+      "genre": "inspiring",
+      "mood": "inspirational",
+      "bpm": 122,
+      "niche_tags": [
+        "motivation",
+        "success"
+      ],
+      "url": "https://assets.mixkit.co/music/274/274.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_274_inspiring_uplift.mp3"
+    },
+    {
+      "id": "yt_safe_278",
+      "mixkit_id": 278,
+      "title": "Corporate Tech",
+      "artist": "Mixkit",
+      "genre": "corporate",
+      "mood": "corporate",
+      "bpm": 118,
+      "niche_tags": [
+        "tech",
+        "business"
+      ],
+      "url": "https://assets.mixkit.co/music/278/278.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_278_corporate_tech.mp3"
+    },
+    {
+      "id": "yt_safe_281",
+      "mixkit_id": 281,
+      "title": "Chillout Lounge",
+      "artist": "Mixkit",
+      "genre": "chillout",
+      "mood": "calm",
+      "bpm": 90,
+      "niche_tags": [
+        "lifestyle",
+        "chill"
+      ],
+      "url": "https://assets.mixkit.co/music/281/281.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_281_chillout_lounge.mp3"
+    },
+    {
+      "id": "yt_safe_285",
+      "mixkit_id": 285,
+      "title": "Rock Energy",
+      "artist": "Mixkit",
+      "genre": "rock",
+      "mood": "rock",
+      "bpm": 130,
+      "niche_tags": [
+        "action",
+        "sports"
+      ],
+      "url": "https://assets.mixkit.co/music/285/285.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_285_rock_energy.mp3"
+    },
+    {
+      "id": "yt_safe_288",
+      "mixkit_id": 288,
+      "title": "Jazz Lounge",
+      "artist": "Mixkit",
+      "genre": "jazz",
+      "mood": "jazz",
+      "bpm": 100,
+      "niche_tags": [
+        "culture",
+        "sophisticated"
+      ],
+      "url": "https://assets.mixkit.co/music/288/288.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_288_jazz_lounge.mp3"
+    },
+    {
+      "id": "yt_safe_290",
+      "mixkit_id": 290,
+      "title": "Classical Drama",
+      "artist": "Mixkit",
+      "genre": "classical",
+      "mood": "classical",
+      "bpm": 80,
+      "niche_tags": [
+        "history",
+        "education"
+      ],
+      "url": "https://assets.mixkit.co/music/290/290.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_290_classical_drama.mp3"
+    },
+    {
+      "id": "yt_safe_293",
+      "mixkit_id": 293,
+      "title": "Funk Groove",
+      "artist": "Mixkit",
+      "genre": "funk",
+      "mood": "funk",
+      "bpm": 105,
+      "niche_tags": [
+        "fun",
+        "retro"
+      ],
+      "url": "https://assets.mixkit.co/music/293/293.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_293_funk_groove.mp3"
+    },
+    {
+      "id": "yt_safe_295",
+      "mixkit_id": 295,
+      "title": "World Journey",
+      "artist": "Mixkit",
+      "genre": "world",
+      "mood": "world",
+      "bpm": 95,
+      "niche_tags": [
+        "travel",
+        "culture"
+      ],
+      "url": "https://assets.mixkit.co/music/295/295.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_295_world_journey.mp3"
+    },
+    {
+      "id": "yt_safe_297",
+      "mixkit_id": 297,
+      "title": "Sad Piano",
+      "artist": "Mixkit",
+      "genre": "sad",
+      "mood": "sad",
+      "bpm": 70,
+      "niche_tags": [
+        "emotional",
+        "drama"
+      ],
+      "url": "https://assets.mixkit.co/music/297/297.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_297_sad_piano.mp3"
+    },
+    {
+      "id": "yt_safe_300",
+      "mixkit_id": 300,
+      "title": "Bossa Nova Chill",
+      "artist": "Mixkit",
+      "genre": "bossa-nova",
+      "mood": "jazz",
+      "bpm": 105,
+      "niche_tags": [
+        "lifestyle",
+        "chill"
+      ],
+      "url": "https://assets.mixkit.co/music/300/300.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_300_bossa_nova_chill.mp3"
+    },
+    {
+      "id": "yt_safe_301",
+      "mixkit_id": 301,
+      "title": "Folk Story",
+      "artist": "Mixkit",
+      "genre": "contemporary-folk",
+      "mood": "folk",
+      "bpm": 95,
+      "niche_tags": [
+        "story",
+        "emotional"
+      ],
+      "url": "https://assets.mixkit.co/music/301/301.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_301_folk_story.mp3"
+    },
+    {
+      "id": "yt_safe_302",
+      "mixkit_id": 302,
+      "title": "Dance Pop Energy",
+      "artist": "Mixkit",
+      "genre": "dance-pop",
+      "mood": "pop",
+      "bpm": 125,
+      "niche_tags": [
+        "viral",
+        "fun"
+      ],
+      "url": "https://assets.mixkit.co/music/302/302.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_302_dance_pop_energy.mp3"
+    },
+    {
+      "id": "yt_safe_303",
+      "mixkit_id": 303,
+      "title": "Synthwave Retro",
+      "artist": "Mixkit",
+      "genre": "synthwave",
+      "mood": "retro",
+      "bpm": 118,
+      "niche_tags": [
+        "tech",
+        "cyberpunk"
+      ],
+      "url": "https://assets.mixkit.co/music/303/303.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_303_synthwave_retro.mp3"
+    },
+    {
+      "id": "yt_safe_304",
+      "mixkit_id": 304,
+      "title": "Acoustic Warmth",
+      "artist": "Mixkit",
+      "genre": "acoustic",
+      "mood": "acoustic",
+      "bpm": 90,
+      "niche_tags": [
+        "story",
+        "emotional"
+      ],
+      "url": "https://assets.mixkit.co/music/304/304.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_304_acoustic_warmth.mp3"
+    },
+    {
+      "id": "yt_safe_305",
+      "mixkit_id": 305,
+      "title": "Reggae Chill",
+      "artist": "Mixkit",
+      "genre": "reggae",
+      "mood": "reggae",
+      "bpm": 92,
+      "niche_tags": [
+        "chill",
+        "lifestyle"
+      ],
+      "url": "https://assets.mixkit.co/music/305/305.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_305_reggae_chill.mp3"
+    },
+    {
+      "id": "yt_safe_306",
+      "mixkit_id": 306,
+      "title": "Country Road",
+      "artist": "Mixkit",
+      "genre": "country",
+      "mood": "country",
+      "bpm": 100,
+      "niche_tags": [
+        "story",
+        "lifestyle"
+      ],
+      "url": "https://assets.mixkit.co/music/306/306.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_306_country_road.mp3"
+    },
+    {
+      "id": "yt_safe_307",
+      "mixkit_id": 307,
+      "title": "Drum and Bass Rush",
+      "artist": "Mixkit",
+      "genre": "drum-and-bass",
+      "mood": "energetic",
+      "bpm": 174,
+      "niche_tags": [
+        "fitness",
+        "action"
+      ],
+      "url": "https://assets.mixkit.co/music/307/307.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_307_drum_and_bass_rush.mp3"
+    },
+    {
+      "id": "yt_safe_308",
+      "mixkit_id": 308,
+      "title": "Indie Pop Vibes",
+      "artist": "Mixkit",
+      "genre": "indie-pop",
+      "mood": "indie",
+      "bpm": 115,
+      "niche_tags": [
+        "lifestyle",
+        "viral"
+      ],
+      "url": "https://assets.mixkit.co/music/308/308.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_308_indie_pop_vibes.mp3"
+    },
+    {
+      "id": "yt_safe_309",
+      "mixkit_id": 309,
+      "title": "Blues Rock",
+      "artist": "Mixkit",
+      "genre": "blues-rock",
+      "mood": "rock",
+      "bpm": 110,
+      "niche_tags": [
+        "story",
+        "emotional"
+      ],
+      "url": "https://assets.mixkit.co/music/309/309.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_309_blues_rock.mp3"
+    },
+    {
+      "id": "yt_safe_310",
+      "mixkit_id": 310,
+      "title": "Deep House Night",
+      "artist": "Mixkit",
+      "genre": "deep-house",
+      "mood": "groovy",
+      "bpm": 124,
+      "niche_tags": [
+        "night",
+        "lifestyle"
+      ],
+      "url": "https://assets.mixkit.co/music/310/310.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_310_deep_house_night.mp3"
+    },
+    {
+      "id": "yt_safe_311",
+      "mixkit_id": 311,
+      "title": "Trap Hype",
+      "artist": "Mixkit",
+      "genre": "trap",
+      "mood": "dark",
+      "bpm": 145,
+      "niche_tags": [
+        "fitness",
+        "motivation"
+      ],
+      "url": "https://assets.mixkit.co/music/311/311.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_311_trap_hype.mp3"
+    },
+    {
+      "id": "yt_safe_313",
+      "mixkit_id": 313,
+      "title": "Epic Orchestra",
+      "artist": "Mixkit",
+      "genre": "cinematic",
+      "mood": "epic",
+      "bpm": 112,
+      "niche_tags": [
+        "history",
+        "dramatic"
+      ],
+      "url": "https://assets.mixkit.co/music/313/313.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_313_epic_orchestra.mp3"
+    },
+    {
+      "id": "yt_safe_315",
+      "mixkit_id": 315,
+      "title": "Quiz Game",
+      "artist": "Mixkit",
+      "genre": "electronic",
+      "mood": "playful",
+      "bpm": 120,
+      "niche_tags": [
+        "quiz",
+        "trivia"
+      ],
+      "url": "https://assets.mixkit.co/music/315/315.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_315_quiz_game.mp3"
+    },
+    {
+      "id": "yt_safe_318",
+      "mixkit_id": 318,
+      "title": "Finance News",
+      "artist": "Mixkit",
+      "genre": "corporate",
+      "mood": "corporate",
+      "bpm": 110,
+      "niche_tags": [
+        "finance",
+        "news"
+      ],
+      "url": "https://assets.mixkit.co/music/318/318.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_318_finance_news.mp3"
+    },
+    {
+      "id": "yt_safe_320",
+      "mixkit_id": 320,
+      "title": "Horror Tension",
+      "artist": "Mixkit",
+      "genre": "mysterious",
+      "mood": "mysterious",
+      "bpm": 68,
+      "niche_tags": [
+        "horror",
+        "thriller"
+      ],
+      "url": "https://assets.mixkit.co/music/320/320.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_320_horror_tension.mp3"
+    },
+    {
+      "id": "yt_safe_321",
+      "mixkit_id": 321,
+      "title": "Motivation Rise",
+      "artist": "Mixkit",
+      "genre": "inspiring",
+      "mood": "inspirational",
+      "bpm": 128,
+      "niche_tags": [
+        "motivation",
+        "success"
+      ],
+      "url": "https://assets.mixkit.co/music/321/321.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_321_motivation_rise.mp3"
+    },
+    {
+      "id": "yt_safe_322",
+      "mixkit_id": 322,
+      "title": "Stoic Wisdom",
+      "artist": "Mixkit",
+      "genre": "ambient",
+      "mood": "calm",
+      "bpm": 76,
+      "niche_tags": [
+        "philosophy",
+        "stoic"
+      ],
+      "url": "https://assets.mixkit.co/music/322/322.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_322_stoic_wisdom.mp3"
+    },
+    {
+      "id": "yt_safe_323",
+      "mixkit_id": 323,
+      "title": "Wealth Mindset",
+      "artist": "Mixkit",
+      "genre": "corporate",
+      "mood": "corporate",
+      "bpm": 116,
+      "niche_tags": [
+        "wealth",
+        "finance"
+      ],
+      "url": "https://assets.mixkit.co/music/323/323.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_323_wealth_mindset.mp3"
+    },
+    {
+      "id": "yt_safe_325",
+      "mixkit_id": 325,
+      "title": "AI Future",
+      "artist": "Mixkit",
+      "genre": "electronic",
+      "mood": "tech",
+      "bpm": 130,
+      "niche_tags": [
+        "technology",
+        "ai"
+      ],
+      "url": "https://assets.mixkit.co/music/325/325.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_325_ai_future.mp3"
+    },
+    {
+      "id": "yt_safe_326",
+      "mixkit_id": 326,
+      "title": "Sports Hype",
+      "artist": "Mixkit",
+      "genre": "hip-hop",
+      "mood": "energetic",
+      "bpm": 128,
+      "niche_tags": [
+        "fitness",
+        "sports"
+      ],
+      "url": "https://assets.mixkit.co/music/326/326.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_326_sports_hype.mp3"
+    },
+    {
+      "id": "yt_safe_327",
+      "mixkit_id": 327,
+      "title": "True Crime",
+      "artist": "Mixkit",
+      "genre": "atmospheres",
+      "mood": "mysterious",
+      "bpm": 74,
+      "niche_tags": [
+        "mystery",
+        "crime"
+      ],
+      "url": "https://assets.mixkit.co/music/327/327.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_327_true_crime.mp3"
+    },
+    {
+      "id": "yt_safe_328",
+      "mixkit_id": 328,
+      "title": "Kids Fun",
+      "artist": "Mixkit",
+      "genre": "happy",
+      "mood": "happy",
+      "bpm": 125,
+      "niche_tags": [
+        "fun",
+        "kids"
+      ],
+      "url": "https://assets.mixkit.co/music/328/328.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_328_kids_fun.mp3"
+    },
+    {
+      "id": "yt_safe_329",
+      "mixkit_id": 329,
+      "title": "Documentary",
+      "artist": "Mixkit",
+      "genre": "cinematic",
+      "mood": "dramatic",
+      "bpm": 88,
+      "niche_tags": [
+        "history",
+        "education"
+      ],
+      "url": "https://assets.mixkit.co/music/329/329.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_329_documentary.mp3"
+    },
+    {
+      "id": "yt_safe_330",
+      "mixkit_id": 330,
+      "title": "Morning Coffee",
+      "artist": "Mixkit",
+      "genre": "lo-fi",
+      "mood": "lofi",
+      "bpm": 80,
+      "niche_tags": [
+        "lifestyle",
+        "calm"
+      ],
+      "url": "https://assets.mixkit.co/music/330/330.mp3",
+      "license": "Mixkit License — YouTube & commercial use allowed",
+      "youtube_safe": true,
+      "source": "youtube_safe_catalog",
+      "filename": "yt_safe_330_morning_coffee.mp3"
+    }
+  ]
+}

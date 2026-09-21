@@ -443,6 +443,17 @@ def reset_used_videos():
 
 # ─── ITEM 113: Yapay Zeka ile Çizilmiş Görselleri Kullanma ───────────────────
 
+def _ai_image_providers_available() -> bool:
+    """Item 113 — at least one AI image backend configured."""
+    if getattr(config, "USE_GEMINI_IMAGE_GEN", False) and getattr(config, "GEMINI_API_KEY", ""):
+        return True
+    if getattr(config, "FAL_API_KEY", ""):
+        return True
+    if getattr(config, "STABILITY_API_KEY", ""):
+        return True
+    return False
+
+
 def generate_ai_image_clip(
     scene_description: str,
     output_path: str,
@@ -471,6 +482,9 @@ def generate_ai_image_clip(
     """
     import subprocess, tempfile, base64
 
+    if not _ai_image_providers_available():
+        return None
+
     print(f"  [Item 113] AI görsel üretiliyor: '{scene_description[:60]}...'")
 
     full_prompt = (
@@ -482,7 +496,7 @@ def generate_ai_image_clip(
 
     # ── Google AI Pro / Nano Banana (öncelikli — Madde 113 + Gemini API) ──
     # Item 416: skip if circuit open (429 spam kills render speed)
-    gemini_ok = getattr(config, "USE_GEMINI_IMAGE_GEN", True) and getattr(config, "GEMINI_API_KEY", "")
+    gemini_ok = getattr(config, "USE_GEMINI_IMAGE_GEN", False) and getattr(config, "GEMINI_API_KEY", "")
     if gemini_ok:
         try:
             from system_resilience import circuit_breaker
@@ -791,14 +805,17 @@ def _pick_next_source(scene_index: int) -> str:
     # Toplam 0 ise baştan başla: scene_index'e göre cyclic seçim
     if sum(counts.values()) == 0:
         sources = ["pexels", "pixabay", "coverr", "pexels", "pixabay",
-                   "ai", "mixkit", "pexels", "pixabay", "coverr"]
+                   "mixkit", "pexels", "pixabay", "coverr"]
+        if _ai_image_providers_available():
+            sources = ["pexels", "pixabay", "coverr", "pexels", "pixabay",
+                       "ai", "mixkit", "pexels", "pixabay", "coverr"]
         return sources[scene_index % len(sources)]
 
-    # En az kullanılanı bul (AI her 4 sahnede bir)
+    # En az kullanılanı bul (AI her 4 sahnede bir — yalnızca Item 113 açıksa)
     total = sum(counts.values())
     ai_ratio = counts["ai"] / max(1, total)
 
-    if ai_ratio < 0.25 and scene_index % 4 == 3:
+    if _ai_image_providers_available() and ai_ratio < 0.25 and scene_index % 4 == 3:
         return "ai"
 
     # Pexels ve Pixabay arasında dönüşümlü

@@ -41,6 +41,46 @@ def scan_copyright_risk(clip_names: list, source_labels: list = None) -> dict:
     return {"safe": not flagged, "risk_level": risk_level, "flagged_items": flagged, "safe_items": safe_clips, "recommendations": recommendations}
 
 
+def scan_audio_copyright_risk(track_names: list) -> dict:
+    """Item 190: Audio fingerprint / Content-ID heuristics for BGM track filenames."""
+    flagged, safe_tracks, recommendations = [], [], []
+    for item in track_names or []:
+        item_str = str(item).lower()
+        if any(source in item_str for source in _SAFE_SOURCES):
+            safe_tracks.append(item)
+            continue
+        matched = next((p.pattern for p in _COMPILED_PATTERNS if p.search(item_str)), None)
+        if matched:
+            flagged.append({"item": item, "matched_pattern": matched, "risk": "high"})
+            recommendations.append(
+                f"'{item}' → YouTube Audio Library / royalty_free_ambient ile değiştirin ({matched})"
+            )
+        elif any(k in item_str for k in ("official", "remix", "cover", "soundtrack", "ost")):
+            flagged.append({"item": item, "matched_pattern": "suspicious_audio_keyword", "risk": "medium"})
+            recommendations.append(f"'{item}' → Telifsiz katalogdan doğrulanmış parça seçin.")
+        else:
+            safe_tracks.append(item)
+    risk_level = "high" if any(i["risk"] == "high" for i in flagged) else "medium" if flagged else "low"
+    return {
+        "safe": not flagged,
+        "risk_level": risk_level,
+        "flagged_items": flagged,
+        "safe_items": safe_tracks,
+        "recommendations": recommendations,
+    }
+
+
+def scenes_need_fair_use_enforcement(scenes: list) -> bool:
+    """Item 96: True when any scene search query matches copyright-risk patterns."""
+    queries = []
+    for sc in scenes or []:
+        queries.extend(sc.get("search_queries") or [])
+        if sc.get("is_copyrighted"):
+            return True
+    scan = scan_copyright_risk(queries)
+    return not scan.get("safe", True)
+
+
 def filter_safe_clips(clip_names: list, source_labels: list = None, abort_on_high_risk: bool = False) -> list:
     """Removes items flagged by ``scan_copyright_risk``."""
     scan = scan_copyright_risk(clip_names, source_labels)

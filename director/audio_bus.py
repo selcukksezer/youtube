@@ -151,6 +151,11 @@ def apply_audio_events_to_wav(
         import imageio_ffmpeg
 
         whoosh_path, _, _ = ensure_sfx_files()
+        try:
+            from sfx_manager import _panned_whoosh_path
+            whoosh_path = _panned_whoosh_path(whoosh_path)
+        except Exception:
+            pass
         sfx_dir = os.path.dirname(whoosh_path)
         sound_paths = {
             "whoosh": whoosh_path,
@@ -256,6 +261,56 @@ def master_audio_one_pass(
                 current = voice_humanizer.apply_audio_jitter(current, jit, min_speed=0.985, max_speed=1.015)
             except Exception:
                 pass
+
+        niche_hint = f"{plan.niche_id or ''} {plan.title or ''}".lower()
+        scene_blob = " ".join(
+            str(s.narration or "") for s in (plan.scenes or [])[:6]
+        ).lower()
+        combined = f"{niche_hint} {scene_blob}"
+
+        if manifest.get("item_182_piano", True) and any(
+            k in combined for k in ("stoic", "felsefe", "philosophy", "duygusal", "poetry", "dini", "manevi", "tarih")
+        ):
+            from voice.acoustic_assets import inject_dramatic_piano_layer
+            piano_out = base + "_piano182.wav"
+            current = inject_dramatic_piano_layer(current, piano_out, timestamp_sec=1.2, volume=0.28)
+            print("  [AudioMaster] [Item 182] Dramatik piyano katmanı mikslendi.")
+
+        if manifest.get("item_183_synth_bass", True) and any(
+            k in combined for k in ("yapay zeka", "ai", "cyber", "tech", "teknoloji", "gelecek", "robot")
+        ):
+            from voice.acoustic_assets import inject_cyberpunk_synth_bass
+            synth_out = base + "_synth183.wav"
+            current = inject_cyberpunk_synth_bass(current, synth_out, timestamp_sec=0.0, volume=0.22)
+            print("  [AudioMaster] [Item 183] Cyberpunk synth bass mikslendi.")
+
+        if manifest.get("item_188_crowd_ambience", True) and any(
+            k in combined for k in ("haber", "news", "sokak", "street", "borsa", "finans", "kalabalık", "crowd")
+        ):
+            from voice.acoustic_assets import inject_room_ambience
+            amb_out = base + "_crowd188.wav"
+            current = inject_room_ambience(current, amb_out, volume=0.08)
+            print("  [AudioMaster] [Item 188] Oda/kalabalık ambiyansı mikslendi.")
+
+        if manifest.get("item_191_reverb_chamber", True) and any(
+            k in combined for k in (
+                "katedral", "cathedral", "manevi", "dini", "spiritual", "epic", "temple", "ibadet", "dua"
+            )
+        ):
+            from voice.audio_dsp import apply_acoustic_reverb_chamber
+            rev_out = base + "_reverb191.wav"
+            current = apply_acoustic_reverb_chamber(current, rev_out, room_type="cathedral")
+            print("  [AudioMaster] [Item 191] Akustik yankı odası uygulandı.")
+
+        if manifest.get("item_195_epic_trailer_voice", True) and any(
+            k in combined for k in (
+                "epic", "trailer", "evren", "cosmos", "hans", "sinema", "film", "destansı", "cosmic"
+            )
+        ):
+            from voice.audio_dsp import apply_epic_trailer_deep_voice
+            epic_out = base + "_epic195.wav"
+            current = apply_epic_trailer_deep_voice(current, epic_out, pitch_ratio=0.88)
+            print("  [AudioMaster] [Item 195] Derin anlatıcı (trailer) sesi uygulandı.")
     except Exception as e:
         print(f"  [AudioMaster] Voice chain notice: {e}")
 
@@ -267,13 +322,15 @@ def master_audio_one_pass(
     # BGM
     if bgm_track or True:
         try:
-            from bgm_manager import get_bgm_path, mix_narration_and_bgm, match_bgm_track_to_niche
+            from bgm_manager import get_cached_bgm_path, get_bgm_path, mix_narration_and_bgm, match_bgm_track_to_niche
             chosen = bgm_track
             if not chosen:
                 hint = (plan.niche_id or "") + " " + (plan.title or "")
                 matched = match_bgm_track_to_niche(hint)
                 chosen = os.path.basename(matched) if matched else ""
-            bgm_p = get_bgm_path(chosen) if chosen else None
+            bgm_p = get_cached_bgm_path(chosen) if chosen else get_cached_bgm_path("")
+            if chosen and not bgm_p:
+                bgm_p = get_bgm_path(chosen)
             if bgm_p:
                 mixed = base + "_bgm.wav"
                 tape_stops = collect_tape_stop_times(plan)

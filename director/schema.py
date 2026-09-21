@@ -167,6 +167,7 @@ class DirectorPlan:
 
     def to_legacy_plan(self) -> Dict[str, Any]:
         """Backward-compatible plan.json shape for UI / plagiarism / DB."""
+        meta = self.meta or {}
         return {
             "title": self.title,
             "full_narration": self.full_narration or self.rebuild_full_narration(),
@@ -178,6 +179,10 @@ class DirectorPlan:
             "reddit_post": self.reddit_post,
             "director_plan": True,
             "story_arc": self.story_arc,
+            "hybrid_niche": meta.get("hybrid_niche"),
+            "hybrid_split_screen": meta.get("hybrid_split_screen"),
+            "hybrid_render_overlay": meta.get("hybrid_render_overlay"),
+            "retention_metadata": meta.get("retention_metadata"),
             "scenes": [
                 {
                     "index": s.index,
@@ -252,6 +257,12 @@ DEFAULT_EFFECT_MANIFEST = {
     "item_205_max_3_4_words": True,
     "item_266_cadence_accel": True,
     "item_274_story_arc": True,
+    "item_182_piano": True,
+    "item_183_synth_bass": True,
+    "item_187_stereo_pan": True,
+    "item_188_crowd_ambience": True,
+    "item_191_reverb_chamber": True,
+    "item_195_epic_trailer_voice": True,
     "item_418_ffmpeg_graph": True,
 }
 

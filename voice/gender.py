@@ -66,3 +66,16 @@ def select_dynamic_voice_actor(target_lang: str = "tr", niche_id: str = "",
         "language": lang
     }
 
+
+def select_quote_voice(narrator_voice: str, target_lang: str = "tr") -> str:
+    """
+    Madde 143: Alıntı segmentleri için zıt cinsiyet Edge-TTS sesi (dual-voice diyalog).
+    """
+    lang = (target_lang or "tr").lower()
+    male_voices = {
+        "tr-TR-AhmetNeural", "en-US-ChristopherNeural", "en-US-GuyNeural", "en-US-EricNeural",
+    }
+    if narrator_voice in male_voices:
+        return "tr-TR-EmelNeural" if lang == "tr" else "en-US-JennyNeural"
+    return "tr-TR-AhmetNeural" if lang == "tr" else "en-US-GuyNeural"
+

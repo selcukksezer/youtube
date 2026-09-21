@@ -11,11 +11,55 @@ document.addEventListener('DOMContentLoaded', () => {
     let timelineReviewed = false;
     let qualityPanelGreen = false;
     const PLAN_STORAGE_KEY = 'shortsCurrentPlan';
+    const PLAN_SCHEMA_VERSION = 2;
+
+    function sanitizeTopicTitleForDisplay(title) {
+        let t = (title || '').trim();
+        if (!t) return '';
+        t = t.replace(/[\u{10000}-\u{10FFFF}]/gu, '');
+        t = t.replace(/[\u2600-\u27BF\uFE00-\uFE0F]/g, '');
+        t = t.replace(/#[\w]+/g, ' ');
+        t = t.replace(/[^\w\s\-&]/g, ' ');
+        t = t.replace(/\s+/g, ' ').trim();
+        return t || (title || '').trim();
+    }
+
+    function planHasBrokenNarration(plan) {
+        const scenes = plan?.scenes || [];
+        if (!scenes.length) return true;
+        return scenes.some(sc => {
+            const raw = (sc.narration || '').trim();
+            if (!raw || raw === '.' || raw === '-' || raw === '—' || raw === '...') return true;
+            const norm = raw
+                .replace(/\*\*(?:URGENT|DRAMATIC|EPIC|CALM|MYSTERIOUS|ENERGETIC|DARK|BRIGHT|SECRET|WARNING|HOOK|CTA)\*\*\s*/gi, '')
+                .replace(/[\u{10000}-\u{10FFFF}]/gu, '')
+                .replace(/[\u2600-\u27BF\uFE00-\uFE0F]/g, '')
+                .replace(/[#*_~^\\/|<>@=`\[\]{}]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const words = norm.split(/\s+/).filter(Boolean);
+            if (words.length < 5) return true;
+            return norm.slice(-1) !== '.' && norm.slice(-1) !== '!' && norm.slice(-1) !== '?';
+        });
+    }
+
+    function updateTimelineTopicDesc(plan) {
+        const descEl = document.getElementById('timeline-project-desc');
+        if (!descEl) return;
+        const raw = (inputTopic?.value || plan?.title || '').trim();
+        const clean = sanitizeTopicTitleForDisplay(raw);
+        if (raw && clean && raw !== clean) {
+            descEl.textContent = `Konu: ${clean}`;
+        } else {
+            descEl.textContent = 'Her sahnenin metnini, süresini, arama terimlerini ve mood\'unu özelleştirin.';
+        }
+    }
 
     function persistCurrentPlan() {
         try {
             if (currentPlan && Array.isArray(currentPlan.scenes) && currentPlan.scenes.length) {
                 localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify({
+                    planVersion: PLAN_SCHEMA_VERSION,
                     plan: currentPlan,
                     topic: inputTopic?.value || '',
                     niche: selectNiche?.value || '',
@@ -30,9 +74,27 @@ document.addEventListener('DOMContentLoaded', () => {
             const raw = localStorage.getItem(PLAN_STORAGE_KEY);
             if (!raw) return false;
             const packed = JSON.parse(raw);
+            if (packed?.scenes?.length && !packed?.plan) {
+                try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
+                showToast('Eski senaryo formati temizlendi — yeniden uretin', 'warn');
+                return false;
+            }
             if (!packed?.plan?.scenes?.length) return false;
             // Expire after 7 days
-            if (packed.savedAt && Date.now() - packed.savedAt > 7 * 864e5) return false;
+            if (packed.savedAt && Date.now() - packed.savedAt > 7 * 864e5) {
+                try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
+                return false;
+            }
+            if (packed.planVersion !== PLAN_SCHEMA_VERSION) {
+                try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
+                showToast('Eski senaryo sürümü temizlendi — yeniden üretin', 'warn');
+                return false;
+            }
+            if (planHasBrokenNarration(packed.plan)) {
+                try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
+                showToast('Bozuk senaryo temizlendi — yeniden üretin', 'warn');
+                return false;
+            }
             currentPlan = packed.plan;
             if (packed.topic && inputTopic && !inputTopic.value.trim()) inputTopic.value = packed.topic;
             if (packed.niche && selectNiche) selectNiche.value = packed.niche;
@@ -53,6 +115,61 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!opts.skipQualityPanel) {
                 updateStudioQualityPanel(plan).catch(() => {});
             }
+        }
+        updateScriptActionButtons();
+    }
+
+    function hasExistingPlan() {
+        return !!(currentPlan?.scenes?.length);
+    }
+
+    function navigateToScenario({ silent = false } = {}) {
+        if (!hasExistingPlan()) {
+            showToast('Once senaryo olusturun', 'warn');
+            return false;
+        }
+        renderTimelineScenes(currentPlan);
+        updateFlowRail('timeline');
+        switchTab('timeline');
+        if (!silent) showToast('Senaryo acildi — duzenleyip render alabilirsiniz');
+        return true;
+    }
+
+    function clearCurrentScenario() {
+        if (!hasExistingPlan()) {
+            inputTopic?.focus();
+            return;
+        }
+        if (!confirm('Mevcut senaryo silinecek. Yeni konu ile devam edilsin mi?')) return;
+
+        currentPlan = null;
+        timelineReviewed = false;
+        qualityPanelGreen = false;
+        try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
+        renderTimelineScenes({ title: '', scenes: [] });
+        updateStudioQualityPanel(null).catch(() => {});
+        updateFlowRail('topic');
+        updateScriptActionButtons();
+        inputTopic?.focus();
+        showToast('Senaryo temizlendi — yeni konu girin');
+    }
+
+    function updateScriptActionButtons() {
+        const btn = document.getElementById('btn-create-script');
+        const btnNewTopic = document.getElementById('btn-new-topic');
+        const btnRegenerate = document.getElementById('btn-regenerate-scenario');
+        if (!btn) return;
+
+        const ready = hasExistingPlan();
+        btnNewTopic?.classList.toggle('hidden', !ready);
+        btnRegenerate?.classList.toggle('hidden', !ready);
+
+        if (ready) {
+            btn.className = 'btn btn-primary btn-lg';
+            btn.innerHTML = '<i class="fa-solid fa-clapperboard"></i><span id="btn-create-script-label">Senaryoya Git</span>';
+        } else {
+            btn.className = 'btn btn-secondary btn-lg';
+            btn.innerHTML = '<i class="fa-solid fa-code-branch"></i><span id="btn-create-script-label">1. Senaryoyu İncele & Düzenle</span>';
         }
     }
 
@@ -1737,21 +1854,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const mediaStatus = document.getElementById('media-compliance-status');
         if (!select && !studioSelect) return;
         try {
-            const res = await fetch('/api/bgm/list');
+            const res = await fetch('/api/bgm/list?include_catalog=true');
             const data = await res.json();
-            const tracks = data.tracks || [];
+            const detailed = data.tracks_detailed || (data.tracks || []).map(f => ({ filename: f, display: f }));
             const fill = (el) => {
                 if (!el) return;
                 const prev = el.value;
                 el.innerHTML = '<option value="">Otomatik / yok</option>';
-                tracks.forEach(t => {
+                detailed.forEach(t => {
+                    const fn = t.filename || t;
                     const opt = document.createElement('option');
-                    opt.value = t;
-                    opt.textContent = t;
+                    opt.value = fn;
+                    const label = t.display || fn;
+                    opt.textContent = t.downloaded === false ? `${label} (indirilecek)` : label;
                     el.appendChild(opt);
                 });
                 if (prev && [...el.options].some(o => o.value === prev)) el.value = prev;
-                else if (tracks.includes('royalty_free_ambient.wav')) el.value = 'royalty_free_ambient.wav';
+                else if (detailed.some(t => (t.filename || t) === 'royalty_free_ambient.wav')) el.value = 'royalty_free_ambient.wav';
             };
             fill(select);
             fill(studioSelect);
@@ -1768,8 +1887,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 duckStudio.addEventListener('input', () => { duckAudio.value = duckStudio.value; });
             }
             if (audioStatus) {
+                const catalogCount = detailed.length || 0;
                 audioStatus.innerHTML = `
-                    <div class="stat-pill"><span>135 Telifsiz BGM:</span><strong class="text-success">${tracks.length ? 'Hazır' : 'Sentezleniyor'}</strong></div>
+                    <div class="stat-pill"><span>135 Telifsiz BGM:</span><strong class="text-success">${catalogCount ? catalogCount + ' parça' : 'Sentezleniyor'}</strong></div>
                     <div class="stat-pill mt-2"><span>141 Nefes Katmanı:</span><strong class="text-success">8 sn aralıklı</strong></div>
                     <div class="stat-pill mt-2"><span>144 Voice Ducking:</span><strong class="text-primary">80 ms iniş / 200 ms dönüş</strong></div>
                     <div class="stat-pill mt-2"><span>145 Oda Ambiyansı:</span><strong class="text-primary">Hafif, -34 dB</strong></div>
@@ -1794,13 +1914,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // ══════════════════════════════════════════════════════════════
     // 9. SENARYO ÜRETİMİ & EDİTÖR
     // ══════════════════════════════════════════════════════════════
-    btnCreateScript.addEventListener('click', async () => {
+    document.getElementById('btn-new-topic')?.addEventListener('click', clearCurrentScenario);
+
+    async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
+        if (!forceRegenerate && hasExistingPlan()) {
+            navigateToScenario();
+            return;
+        }
+
         const topic = inputTopic.value.trim();
-        if (!topic) return alert('Lütfen bir video konusu girin!');
+        if (!topic) {
+            alert('Lütfen bir video konusu girin!');
+            return;
+        }
+        const apiTopic = sanitizeTopicTitleForDisplay(topic) || topic;
+
+        if (forceRegenerate) {
+            currentPlan = null;
+            timelineReviewed = false;
+            qualityPanelGreen = false;
+            try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
+            updateScriptActionButtons();
+        }
 
         await resolveAndApplyNicheFromTopic({ toast: false });
 
+        const btnRegenerate = document.getElementById('btn-regenerate-scenario');
         btnCreateScript.disabled = true;
+        if (btnRegenerate) btnRegenerate.disabled = true;
         btnCreateScript.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI Senaryosu Yazılıyor...';
 
         try {
@@ -1808,7 +1949,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    keyword: topic,
+                    keyword: apiTopic,
                     language: selectLanguage.value,
                     niche: selectNiche.value,
                     reddit_post: selectedRedditPost,
@@ -1837,13 +1978,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (validation?.plan) plan = validation.plan;
                 if (data.plagiarism) applyPlagiarismBadge(data.plagiarism);
                 if (validation?.ok) {
-                    showToast('Senaryo hazir — render acik');
+                    showToast(forceRegenerate ? 'Senaryo yeniden uretildi' : 'Senaryo hazir — timeline\'da inceleyin');
                     updateFlowRail('timeline');
                 } else {
                     showToast('Senaryo uretildi — kalite panelinde sorunlar var', 'warn');
-                    updateFlowRail('topic');
+                    updateFlowRail('timeline');
                 }
-                switchTab('studio');
+                switchTab('timeline');
             } else {
                 alert('Senaryo olusturulamadi.');
             }
@@ -1851,9 +1992,24 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Hata: ' + err.message);
         } finally {
             btnCreateScript.disabled = false;
-            btnCreateScript.textContent = 'Senaryoyu incele';
+            if (btnRegenerate) btnRegenerate.disabled = false;
+            updateScriptActionButtons();
         }
-    });
+    }
+
+    async function regenerateScenario() {
+        const topic = inputTopic?.value?.trim();
+        if (!topic) {
+            showToast('Once konu girin', 'warn');
+            inputTopic?.focus();
+            return;
+        }
+        if (hasExistingPlan() && !confirm('Mevcut senaryo silinip yeniden uretilecek. Devam edilsin mi?')) return;
+        await generateScriptFromTopic({ forceRegenerate: true });
+    }
+
+    btnCreateScript.addEventListener('click', () => generateScriptFromTopic());
+    document.getElementById('btn-regenerate-scenario')?.addEventListener('click', regenerateScenario);
 
     // ══════════════════════════════════════════════════════════════
     // 9A. SAHNE & KURGU EDİTÖRÜ — 500 Madde Uyumlu Overhaul
@@ -1979,10 +2135,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!container || !plan) return;
 
-        titleEl.textContent = `Proje: ${plan.title || 'Adsız'}`;
         const scenes = plan.scenes || [];
+        if (!scenes.length) {
+            titleEl.textContent = 'Aktif Proje Senaryosu';
+            updateTimelineTopicDesc(null);
+            totalScenesEl.textContent = '0';
+            if (badgeSceneCount) badgeSceneCount.textContent = '0';
+            totalDurEl.textContent = '0 sn';
+            container.innerHTML = `
+                <div class="empty-state-box">
+                    <i class="fa-solid fa-film"></i>
+                    <p>Henüz bir senaryo oluşturulmadı. Hızlı Üretim sekmesinden senaryo üretebilirsiniz.</p>
+                </div>`;
+            updateScriptActionButtons();
+            return;
+        }
+
+        const displayTitle = sanitizeTopicTitleForDisplay(plan.title || inputTopic?.value || '') || plan.title || 'Adsız';
+        titleEl.textContent = `Proje: ${displayTitle}`;
+        updateTimelineTopicDesc(plan);
         totalScenesEl.textContent = scenes.length;
-        badgeSceneCount.textContent = scenes.length;
+        if (badgeSceneCount) badgeSceneCount.textContent = scenes.length;
 
         const totalSec = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
         totalDurEl.textContent = `${totalSec.toFixed(1)} sn`;
@@ -2064,18 +2237,18 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <span class="word-count-chip ${wcClass}">${wc} klm</span>
                                 <span class="emoji-indicator ${hasEm ? 'has-emoji' : 'no-emoji'}">${hasEm ? '✅ Emoji' : '⚠️ Emoji yok'}</span>
                             </div>
-                            <textarea class="input-styled scene-narr-input" rows="2" style="resize: vertical; min-height: 36px;">${narr}</textarea>
+                            <textarea class="input-styled scene-narr-input" rows="2" style="resize: vertical; min-height: 36px;">${escapeHtml(narr)}</textarea>
                         </div>
                         <div>
                             <div class="scene-field-label">Görsel Açıklama <span class="field-meta">(scene_description)</span></div>
-                            <input type="text" class="input-styled scene-desc-input" value="${sceneDesc}" placeholder="İngilizce görsel açıklama...">
+                            <input type="text" class="input-styled scene-desc-input" value="${escapeHtml(sceneDesc)}" placeholder="İngilizce görsel açıklama...">
                             ${stockVideoHtml}
                         </div>
                     </div>
                     <div class="scene-body-row-3">
                         <div>
                             <div class="scene-field-label">Stok Arama Terimleri <span class="field-meta">(Madde 89)</span></div>
-                            <input type="text" class="input-styled scene-query-input" value="${searchQueries[0] || ''}" placeholder="Ana arama terimi...">
+                            <input type="text" class="input-styled scene-query-input" value="${escapeHtml(searchQueries[0] || '')}" placeholder="Ana arama terimi...">
                             <div class="search-query-tags">${queryTagsHtml}</div>
                         </div>
                         <div>
@@ -2697,6 +2870,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (proofLink && data.proof_url) proofLink.href = data.proof_url;
 
+                const sharePanel = document.getElementById('video-share-decision-panel');
+                if (sharePanel && data.video_id) {
+                    sharePanel.dataset.videoId = String(data.video_id);
+                    sharePanel.dataset.projectSlug = data.project_slug || '';
+                    sharePanel.dataset.filename = data.filename || '';
+                    sharePanel.classList.remove('hidden');
+                    sharePanel.classList.remove('is-resolved');
+                    const hint = document.getElementById('video-share-decision-hint');
+                    if (hint) {
+                        hint.textContent = 'Paylaş → proof + SEO saklanır. Sil → video, kanıt ve geçici dosyalar diskten kaldırılır.';
+                    }
+                }
+
                 // Quality gate strip
                 let qgEl = document.getElementById('studio-qg-strip');
                 if (!qgEl) {
@@ -2711,6 +2897,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 seoBox.classList.remove('hidden');
                 try { seoBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+                refreshFeedDistributionAdvisory(35);
             }
 
             const durMsg = data.director?.duration
@@ -2755,6 +2942,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    async function refreshFeedDistributionAdvisory(swipeRatePct) {
+        const textEl = document.getElementById('feed-distribution-text');
+        const labelEl = document.getElementById('feed-swipe-rate-label');
+        if (labelEl) labelEl.textContent = `${Math.round(swipeRatePct)}%`;
+        if (!textEl) return;
+        try {
+            const res = await fetch(`/api/analytics/feed-distribution?swipe_rate_pct=${encodeURIComponent(swipeRatePct)}`);
+            const data = await res.json();
+            const adv = data.advisory || {};
+            const phase = adv.phase === 'expanded' ? '✅ Geniş dağıtım' : '⚠️ Feed durdu';
+            textEl.textContent = `${phase} — ${adv.message || 'Analytics stub yüklenemedi.'}`;
+        } catch (_) {
+            textEl.textContent = 'Feed ivmesi stub — Studio Analytics ile karşılaştırın (Item 387).';
+        }
+    }
+
+    document.getElementById('feed-swipe-rate-slider')?.addEventListener('input', (e) => {
+        const val = Number(e.target.value || 35);
+        refreshFeedDistributionAdvisory(val);
+    });
+
     document.getElementById('btn-show-appeal-script')?.addEventListener('click', async () => {
         try {
             const res = await fetch('/api/proof/appeal_script?channel_name=ShortsPro');
@@ -2766,6 +2974,62 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('İtiraz metni alınamadı: ' + e.message);
         }
     });
+
+    async function submitShareDecision(decision, opts = {}) {
+        const panel = document.getElementById('video-share-decision-panel');
+        const fromGallery = Boolean(opts.videoId);
+        const videoId = opts.videoId || panel?.dataset?.videoId;
+        if (!videoId) {
+            showToast('Video kimliği bulunamadı — render tamamlandı mı?');
+            return;
+        }
+        if (decision === 'discard') {
+            const ok = confirm(
+                'Bu video paylaşıma uygun değilse tüm dosyalar silinecek:\n\n' +
+                '• MP4 video\n• Proof kanıt dosyası\n• SEO paketi\n• Sahne/asset klasörü\n• Ses geçici dosyaları\n\n' +
+                'Devam edilsin mi?'
+            );
+            if (!ok) return;
+        }
+        const projectSlug = opts.projectSlug ?? panel?.dataset?.projectSlug ?? undefined;
+        try {
+            const res = await fetch(`/api/videos/${videoId}/share-decision`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    decision,
+                    project_slug: projectSlug || undefined,
+                }),
+            });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.detail || d.message || res.statusText);
+            if (panel && !fromGallery) panel.classList.add('is-resolved');
+            const hint = document.getElementById('video-share-decision-hint');
+            if (decision === 'keep') {
+                showToast('Proof saklandı — YouTube Studio\'da manuel yükleyin');
+                if (!fromGallery && hint) {
+                    hint.textContent = '✓ Proof ve SEO paketi saklandı. YouTube\'a manuel yükleyebilirsiniz.';
+                }
+                if (d.youtube_upload_url) window.open(d.youtube_upload_url, '_blank', 'noopener');
+            } else {
+                showToast('Video ve ilişkili dosyalar silindi');
+                if (!fromGallery && hint) hint.textContent = '✓ Dosyalar diskten kaldırıldı.';
+                if (typeof opts.onDiscard === 'function') {
+                    opts.onDiscard();
+                } else {
+                    livePlayer?.classList?.add('hidden');
+                    mockupPlaceholder?.classList?.remove('hidden');
+                    if (livePlayer) livePlayer.removeAttribute('src');
+                    loadGallery();
+                }
+            }
+        } catch (e) {
+            showToast('Paylaşım kararı kaydedilemedi: ' + e.message);
+        }
+    }
+
+    document.getElementById('btn-youtube-share-keep')?.addEventListener('click', () => submitShareDecision('keep'));
+    document.getElementById('btn-youtube-share-discard')?.addEventListener('click', () => submitShareDecision('discard'));
 
     btnToggleLog?.addEventListener('click', () => {
         terminalPanel.classList.toggle('hidden');
@@ -2854,6 +3118,8 @@ document.addEventListener('DOMContentLoaded', () => {
             grid.innerHTML = '';
             grid.style.cssText = "display: flex !important; flex-wrap: wrap !important; gap: 20px !important; align-items: flex-start !important; justify-content: flex-start !important; width: 100% !important;";
             videos.forEach(v => {
+                const hasOutput = v.status === 'completed' && v.filename && v.id;
+                const projectSlug = (v.filename || '').replace(/\.mp4$/i, '');
                 const card = document.createElement('div');
                 card.className = 'shorts-card glass-box';
                 card.style.cssText = "width: 280px !important; max-width: 280px !important; min-width: 260px !important; flex-shrink: 0 !important; box-sizing: border-box !important;";
@@ -2884,6 +3150,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="btn btn-sm btn-manual-guide" data-filename="${v.filename}" title="Manuel Yükleme Rehberi & SEO Bilgileri (Kural 80 & 83)" style="margin-top: 4px; width: 100%; font-size: 11px; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); color: #93C5FD; border-radius: 6px; padding: 6px 8px; cursor: pointer; transition: all 0.2s ease;">
                             <i class="fa-solid fa-clipboard-list"></i> Manuel Yükleme & SEO
                         </button>
+                        ${hasOutput ? `
+                        <div style="display: flex; gap: 8px; margin-top: 4px;">
+                            <button type="button" class="btn btn-sm btn-gallery-share-keep" data-video-id="${v.id}" data-project-slug="${encodeURIComponent(projectSlug)}" style="flex: 1; font-size: 11px; padding: 6px 8px; background: rgba(16, 185, 129, 0.2); border: 1px solid rgba(16, 185, 129, 0.45); color: #34d399; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
+                                <i class="fa-brands fa-youtube"></i> YouTube'da Paylaş
+                            </button>
+                            <button type="button" class="btn btn-sm btn-gallery-share-discard" data-video-id="${v.id}" data-project-slug="${encodeURIComponent(projectSlug)}" style="flex: 1; font-size: 11px; padding: 6px 8px; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.5); color: #f87171; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px;">
+                                <i class="fa-solid fa-trash-can"></i> Paylaşmayacağım (Sil)
+                            </button>
+                        </div>
+                        ` : ''}
                     </div>
                 `;
                 grid.appendChild(card);
@@ -2987,6 +3263,35 @@ document.addEventListener('DOMContentLoaded', () => {
                         b.disabled = false;
                         b.innerHTML = '<i class="fa-brands fa-youtube"></i> Yükle';
                     }
+                });
+            });
+
+            grid.querySelectorAll('.btn-gallery-share-keep').forEach(b => {
+                b.addEventListener('click', () => {
+                    const videoId = b.getAttribute('data-video-id');
+                    const projectSlug = decodeURIComponent(b.getAttribute('data-project-slug') || '');
+                    submitShareDecision('keep', { videoId, projectSlug });
+                });
+            });
+
+            grid.querySelectorAll('.btn-gallery-share-discard').forEach(b => {
+                b.addEventListener('click', () => {
+                    const videoId = b.getAttribute('data-video-id');
+                    const projectSlug = decodeURIComponent(b.getAttribute('data-project-slug') || '');
+                    const card = b.closest('.shorts-card');
+                    submitShareDecision('discard', {
+                        videoId,
+                        projectSlug,
+                        onDiscard: () => {
+                            card?.remove();
+                            const remaining = grid.querySelectorAll('.shorts-card').length;
+                            if (badge) badge.textContent = remaining;
+                            if (statTotalVids) statTotalVids.textContent = `${remaining} Video`;
+                            if (remaining === 0) {
+                                grid.innerHTML = '<div class="empty-state-box"><i class="fa-solid fa-film"></i><p>Henüz üretilmiş bir video yok.</p></div>';
+                            }
+                        },
+                    });
                 });
             });
         } catch (e) {
@@ -4561,8 +4866,19 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const res = await fetch(`/api/proof/appeal_script?channel_name=${encodeURIComponent(chName)}`);
             const data = await res.json();
-            box.textContent = data.script;
-            showToast('📜 5 Dakikalık YouTube İtiraz Scripti oluşturuldu!');
+            const steps = (data.operator_steps || []).join('\n');
+            const manual = (data.checklist || [])
+                .filter(c => c.status === 'operator_manual')
+                .map(c => `[#${c.item} ${c.title}] ${c.action}`)
+                .join('\n\n');
+            box.textContent = [
+                '=== OPERATÖR ADIMLARI (472-475) ===',
+                steps,
+                manual ? '\n=== MANUEL ÇEKİM (#473/#474) ===\n' + manual : '',
+                '\n=== İNGİLİZCE SCRIPT (#472/#475) ===\n',
+                data.script || '',
+            ].join('\n');
+            showToast('📜 İtiraz scripti + operatör checklist hazır!');
         } catch (e) {
             box.textContent = 'Hata: ' + e.message;
         }
@@ -5089,9 +5405,11 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTimelineScenes(currentPlan);
             updateFlowRail('timeline');
             updateStudioQualityPanel(currentPlan, { silent: true }).catch(() => {});
+            updateScriptActionButtons();
             showToast('Onceki senaryo geri yuklendi');
         }
     } catch (e) {}
+    try { updateScriptActionButtons(); } catch (e) {}
     try { updateLoopBridge('stoic', inputTopic ? inputTopic.value : ''); } catch (e) {}
     try { updateAiQuotaDisplay(); } catch (e) {}
     try { if (typeof window.loadHardwareSpecs === 'function') window.loadHardwareSpecs(); } catch (e) {}

@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
 import config
 from api_models import TtsPreviewRequest
-from bgm_manager import list_bgm_tracks
+from bgm_manager import list_bgm_tracks, list_bgm_tracks_detailed
 from subtitle_generator import SUBTITLE_PRESETS
 
 router = APIRouter(tags=["Media"])
@@ -17,9 +17,28 @@ ALLOWED_BGM_EXTS = {'.mp3', '.wav', '.m4a', '.aac', '.ogg'}
 
 
 @router.get("/api/bgm/list")
-def get_bgm_list():
-    tracks = list_bgm_tracks()
-    return {"tracks": tracks}
+def get_bgm_list(include_catalog: bool = True):
+    tracks = list_bgm_tracks_detailed(include_catalog=include_catalog)
+    return {
+        "tracks": [t["filename"] for t in tracks],
+        "tracks_detailed": tracks,
+        "count": len(tracks),
+    }
+
+
+@router.get("/api/bgm/catalog")
+def get_bgm_catalog():
+    try:
+        from youtube_safe_bgm_catalog import catalog_meta, list_catalog_entries
+        meta = catalog_meta()
+        entries = list_catalog_entries(include_studio=True)
+        return {
+            **meta,
+            "entries": entries,
+            "downloaded": sum(1 for e in entries if e.get("downloaded")),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/api/tts/voices")

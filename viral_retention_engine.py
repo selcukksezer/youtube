@@ -8,10 +8,14 @@ Covers:
 - Bionic Reading / High-Speed Word Formatter (Item 215)
 - Controversial Question, Spotted Mistake Bait & Polarizing Dilemma (Items 209, 210)
 - FOMO, Forbidden Knowledge & Social Proof Hooks (Items 218, 219, 220)
-- Interactive Challenge & Countdown Hook (Items 228, 268)
+- Interactive Challenge, Role-Play & Countdown Hook (Items 228, 257, 268)
+- Shocking Statistic & Counter-Intuitive Hooks (Items 259, 263)
 - Sticky Top Hook Banner (Item 232)
+- Acoustic Curiosity, Share, Bookmark & Community CTAs (Items 233, 235, 236, 270)
+- Plot Twist Closing & Trigger Name Hooks (Items 239, 240)
 - Pinned Comment Bait Generator (Items 234, 269)
 - Numbered Rule Hierarchy Formatter (Item 241)
+- Narrow Audience & Emotional Bond Hooks (Items 244, 248)
 - Subconscious Color Psychology Palettes (Item 249)
 - Subtitle Safe Zone & Eye-Tracking Coordinates (Items 206, 265)
 - Cadence Acceleration Curve (Item 266)
@@ -25,6 +29,12 @@ from typing import Dict, List, Any
 
 class ViralRetentionEngine:
     """Calculates and enhances video retention psychology for Shorts."""
+
+    # Item 240: Algorithm-friendly trigger names for first-sentence hooks
+    TRIGGER_NAMES = [
+        "Elon Musk", "Einstein", "Nikola Tesla", "Marcus Aurelius",
+        "Steve Jobs", "Warren Buffett", "Napoleon", "Cleopatra",
+    ]
 
     # 12 Distinct Loop Formulas (Item 204 & 137)
     LOOP_FORMULAS = [
@@ -293,6 +303,59 @@ class ViralRetentionEngine:
         return f"Bu {topic} bilmecesini sadece IQ'su 125 üstü olanlar ilk bakışta çözebiliyor: Cevap için sadece 5 saniyen var!"
 
     @classmethod
+    def generate_role_play_hook(cls, topic: str, lang: str = "tr") -> str:
+        """
+        Item 257: İzleyiciye Rol Biçme — dedektif / karar verici interaktif kanca.
+        """
+        if lang == "en":
+            return (
+                f"You are the detective on this {topic} case — three suspects, one truth. "
+                "Which clue do you trust first?"
+            )
+        return (
+            f"Sen bir dedektifsin ve {topic} dosyasında önünde 3 şüpheli var. "
+            "İlk hangi ipucuna güvenerdin?"
+        )
+
+    @classmethod
+    def generate_shocking_statistic_hook(cls, topic: str, lang: str = "tr") -> str:
+        """
+        Item 259: Şok Edici İstatistik Kancası — nadir yüzde / veri ile merak tetikleme.
+        """
+        if lang == "en":
+            templates = [
+                f"Only 0.1% of the world's population shares this rare trait linked to {topic}.",
+                f"A Harvard study found that 97% of people get {topic} completely wrong on the first try.",
+                f"Less than 1 in 1,000 people know this hidden statistic about {topic}.",
+            ]
+        else:
+            templates = [
+                f"Dünya nüfusunun sadece %0.1'inin sahip olduğu o nadir özellik {topic} ile bağlantılı.",
+                f"Harvard araştırması: İnsanların %97'si {topic} konusunda ilk denemede yanılıyor.",
+                f"1.000 kişiden sadece 1'i {topic} hakkında bu gizli istatistiği biliyor.",
+            ]
+        return random.choice(templates)
+
+    @classmethod
+    def generate_counter_intuitive_hook(cls, topic: str, lang: str = "tr") -> str:
+        """
+        Item 263: İzleyiciye Ters Köşe Yapma — yaygın inancın bilimle çürütülmesi.
+        """
+        if lang == "en":
+            templates = [
+                f"Everyone says {topic} works one way — but a Harvard study showed the exact opposite.",
+                f"The popular belief about {topic} sounds logical, until you see what the data actually says.",
+                f"You were taught {topic} helps you win — research says it quietly does the reverse.",
+            ]
+        else:
+            templates = [
+                f"Herkes {topic} konusunda aynı şeyi söyler, ancak Harvard araştırması tam tersini gösterdi.",
+                f"{topic} hakkında duyduğunuz popüler inanç mantıklı görünür — ta ki veriler ortaya çıkana kadar.",
+                f"Size {topic} size kazandırır denildi; araştırmalar sessizce tam tersini söylüyor.",
+            ]
+        return random.choice(templates)
+
+    @classmethod
     def get_sticky_hook_banner(cls, topic: str, mood: str = "warning", lang: str = "tr") -> str:
         """
         Item 232: Ekranın Üst Kısmına Sabit Kanca Yazısı (Sticky Top Hook Banner).
@@ -305,6 +368,84 @@ class ViralRetentionEngine:
             "money": "💰 %1'LİK DİLİMİN SIRRI" if lang == "tr" else "💰 SECRET OF THE TOP 1%"
         }
         return banners.get(mood, banners["warning"])
+
+    @classmethod
+    def generate_acoustic_curiosity_hook(cls, topic: str, lang: str = "tr") -> str:
+        """
+        Item 233: Merak Uyandıran Ses Sorusu.
+        "Şu sesi duyuyor musunuz? Bu ses..." kalıbıyla akustik merak kancası.
+        """
+        if lang == "en":
+            return (
+                f"Do you hear that sound? That subtle signal about {topic} "
+                "is the first clue nobody talks about..."
+            )
+        return (
+            f"Şu sesi duyuyor musunuz? {topic} hakkında kimsenin bahsetmediği "
+            "o ipucu tam da bu sesten geliyor..."
+        )
+
+    @classmethod
+    def generate_share_cta(cls, topic: str = "", lang: str = "tr") -> str:
+        """Item 235: Paylaşma Güdüsü Tetikleme."""
+        if lang == "en":
+            return "Send this video right now to that one friend who needs to hear this."
+        if topic:
+            return f"Bu videoyu hayatında çok stres olan o arkadaşına hemen gönder — {topic} onun için."
+        return "Bu videoyu hayatında çok fazla stres olan o arkadaşına hemen gönder."
+
+    @classmethod
+    def generate_bookmark_cta(cls, topic: str = "", lang: str = "tr") -> str:
+        """Item 236: Kaydetme (Bookmark) Güdüsü."""
+        if lang == "en":
+            return "Save this video now so you never forget this list."
+        if topic:
+            return f"Bu {topic} listesini unutmamak için videoyu hemen kaydet."
+        return "Bu listeyi unutmamak için videoyu hemen kaydet."
+
+    @classmethod
+    def generate_community_follow_cta(cls, topic: str = "", lang: str = "tr") -> str:
+        """Item 270: Topluluk Hissi — aile / günlük bilgi takip CTA."""
+        if lang == "en":
+            base = "Join our community and learn one new insight every day — follow now."
+            return f"{base} Today's focus: {topic}." if topic else base
+        base = "Ailemize katılmak ve her gün 1 yeni bilgi öğrenmek için takip et."
+        return f"{base} Bugünkü konu: {topic}." if topic else base
+
+    @classmethod
+    def generate_plot_twist_closing(cls, topic: str, lang: str = "tr") -> str:
+        """
+        Item 239: Sürpriz Kapanış (Plot Twist).
+        Beklenen sonun tersine çevrilmiş final cümlesi.
+        """
+        if lang == "en":
+            twists = [
+                f"And the real twist about {topic}? Everything you assumed at the start was backwards.",
+                f"Plot twist: the villain in {topic} wasn't who you thought — it was the obvious answer all along.",
+            ]
+        else:
+            twists = [
+                f"Ve {topic} konusundaki asıl sürpriz? Başta sandığınız her şey tam tersiydi.",
+                f"Ters köşe: {topic} hikayesindeki asıl suçlu sandığınız kişi değildi — ipucu en baştaydı.",
+            ]
+        return random.choice(twists)
+
+    @classmethod
+    def inject_trigger_name_hook(cls, hook: str, topic: str = "", lang: str = "tr") -> str:
+        """
+        Item 240: Tetikleyici İsimler Kullanma.
+        İlk cümlede algoritma-dostu isim yoksa rastgele trigger name ekler.
+        """
+        hook = (hook or "").strip()
+        lower = hook.lower()
+        if any(n.lower() in lower for n in cls.TRIGGER_NAMES):
+            return hook
+        name = random.choice(cls.TRIGGER_NAMES)
+        if lang == "en":
+            prefix = f"{name} once said about {topic}: " if topic else f"{name} once revealed: "
+        else:
+            prefix = f"{name}'ın {topic} hakkında söylediği söz şok edici: " if topic else f"{name}'ın gizli kuralı şok edici: "
+        return prefix + hook if hook else prefix.rstrip(": ")
 
     @classmethod
     def generate_pinned_comment_bait(cls, topic: str, lang: str = "tr") -> Dict[str, str]:
@@ -341,6 +482,54 @@ class ViralRetentionEngine:
                 "full_narration": f"{prefix} {rule.strip()}"
             })
         return formatted
+
+    @classmethod
+    def generate_narrow_audience_hook(cls, topic: str = "", year: int = 2026, lang: str = "tr") -> str:
+        """
+        Item 244: Hedef Kitleyi Daraltma İllüzyonu.
+        """
+        if lang == "en":
+            base = f"Only people who want financial freedom in {year} should keep watching this video."
+            return f"{base} Everyone else, scroll away." if not topic else f"{base} This is about {topic}."
+        base = f"Sadece {year}'da finansal özgürlük isteyenler bu videoda kalsın."
+        return f"{base} Geri kalanlar kaydırabilir." if not topic else f"{base} Konu: {topic}."
+
+    @classmethod
+    def generate_single_sentence_identity_hook(cls, topic: str = "", lang: str = "tr") -> str:
+        """
+        Item 334: Tek Cümlelik Kanca.
+        'Bu videoyu izlemeyi bitirdiğinde artık aynı insan olmayacaksın.'
+        """
+        hooks_tr = [
+            "Bu videoyu izlemeyi bitirdiğinde artık aynı insan olmayacaksın.",
+            f"{topic} hakkında duyacağın tek cümle hayatını sonsuza dek değiştirecek." if topic else
+            "Hayatını değiştirecek tek cümle 3 saniye içinde geliyor.",
+            "Bu 45 saniyeden sonra dünyaya bakış açın bir daha eskisi gibi olmayacak.",
+        ]
+        hooks_en = [
+            "When you finish this video, you won't be the same person anymore.",
+            f"The one sentence about {topic} will permanently shift how you see everything." if topic else
+            "One sentence in the next 3 seconds will change you forever.",
+        ]
+        pool = hooks_en if lang == "en" else hooks_tr
+        return random.choice(pool)
+
+    @classmethod
+    def generate_emotional_bond_hook(cls, lang: str = "tr") -> str:
+        """
+        Item 248: Duygusal Bağ Kanca Cümlesi.
+        """
+        hooks_tr = [
+            "Kendinizi bazen tüm dünyaya karşı yapayalnız hissettiğiniz oldu mu?",
+            "Hiç kimse seni gerçekten anlamıyormuş gibi hissettiğin bir an oldu mu?",
+            "En kalabalık odada bile yalnız kalmış gibi hissettin mi hiç?",
+        ]
+        hooks_en = [
+            "Have you ever felt completely alone against the whole world?",
+            "Was there a moment when nobody seemed to truly understand you?",
+        ]
+        pool = hooks_en if lang == "en" else hooks_tr
+        return random.choice(pool)
 
     @classmethod
     def get_subconscious_color_palette(cls, niche_or_mood: str) -> Dict[str, str]:

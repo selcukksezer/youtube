@@ -1,7 +1,11 @@
 """Topic research normalization helpers, independent from web routes."""
+import json
 import re
+import urllib.parse
 from collections import Counter
 from typing import Any, Dict, List
+
+import requests
 
 from niche_templates import get_niche_family, get_niche_production_profile
 
@@ -103,3 +107,82 @@ def build_content_gap_fingerprint(suggestions: List[Dict[str, Any]], niche_id: s
     _ = niche_id
     samples = [extract_format_fingerprint_from_title(s["topic"]) for s in suggestions[:5]]
     return aggregate_format_fingerprint(samples)
+
+
+def fetch_youtube_autocomplete_suggestions(query: str, lang: str = "tr", limit: int = 5) -> List[str]:
+    """
+    Item 353: YouTube arama çubuğu autocomplete önerileri.
+    Google suggest endpoint (client=youtube) — ağ yoksa boş liste döner.
+    """
+    seed = re.sub(r"\s+", " ", (query or "").strip())
+    if len(seed) < 2:
+        return []
+    try:
+        params = {
+            "client": "youtube",
+            "hl": lang,
+            "gl": "TR" if lang == "tr" else "US",
+            "q": seed,
+        }
+        resp = requests.get(
+            "https://clients1.google.com/complete/search",
+            params=params,
+            timeout=5,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        resp.raise_for_status()
+        text = resp.text.strip()
+        if text.startswith("window.google.ac.h("):
+            payload = text[len("window.google.ac.h("):].rsplit(")", 1)[0]
+            data = json.loads(payload)
+            suggestions = data[1] if isinstance(data, list) and len(data) > 1 else []
+            return [row[0] for row in suggestions[:limit] if row and row[0]]
+    except Exception:
+        pass
+    return []
+
+
+def _autocomplete_overlap_score(left: str, right: str) -> float:
+    left_words = set(re.findall(r"\w+", (left or "").casefold()))
+    right_words = set(re.findall(r"\w+", (right or "").casefold()))
+    if not left_words or not right_words:
+        return 0.0
+    return len(left_words & right_words) / max(len(left_words), len(right_words))
+
+
+def align_title_to_youtube_search(seed: str, title: str = "", lang: str = "tr") -> Dict[str, Any]:
+    """
+    Item 353: Başlığı YouTube autocomplete ile hizalar.
+    En yüksek kelime örtüşmesine sahip öneriyi seçer; mevcut başlık zaten uyumluysa korur.
+    """
+    seed_clean = re.sub(r"\s+", " ", (seed or "").strip())
+    title_clean = re.sub(r"\s+", " ", (title or seed_clean).strip())
+    suggestions = fetch_youtube_autocomplete_suggestions(seed_clean, lang=lang, limit=8)
+
+    if not suggestions:
+        return {
+            "aligned_title": title_clean,
+            "matched_autocomplete": None,
+            "suggestions": [],
+            "match_score": 0.0,
+            "item_353_compliant": False,
+            "note": "Autocomplete alınamadı; YouTube Studio arama çubuğunda manuel doğrulayın.",
+        }
+
+    best = max(suggestions, key=lambda s: _autocomplete_overlap_score(title_clean, s))
+    best_score = _autocomplete_overlap_score(title_clean, best)
+    aligned = title_clean if best_score >= 0.6 else best
+    aligned_score = best_score if best_score >= 0.6 else _autocomplete_overlap_score(aligned, best)
+
+    return {
+        "aligned_title": aligned,
+        "matched_autocomplete": best,
+        "suggestions": suggestions,
+        "match_score": round(aligned_score, 2),
+        "item_353_compliant": aligned_score >= 0.5,
+        "note": (
+            "Başlık autocomplete ile hizalandı."
+            if aligned != title_clean
+            else "Mevcut başlık autocomplete ile uyumlu."
+        ),
+    }

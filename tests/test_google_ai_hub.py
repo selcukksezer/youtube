@@ -27,6 +27,10 @@ class TestGoogleAiHub(unittest.TestCase):
 
     def test_plan_info(self):
         self.assertIn("google_ai_pro", PLAN_INFO)
+        plan = PLAN_INFO["google_ai_pro"]
+        self.assertIn("subscription_vs_api", plan)
+        self.assertIn("Plus", plan["blurb"])
+        self.assertIn("aktarılmaz", plan["blurb"])
         snap = get_plan_and_quota_snapshot()
         self.assertIn("quota", snap)
         self.assertIn("catalog", snap)

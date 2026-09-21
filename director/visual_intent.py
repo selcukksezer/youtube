@@ -83,6 +83,7 @@ NICHE_MOTIFS: Dict[str, Dict[str, Any]] = {
         "motif": "finance_pulse",
         "era": "contemporary",
         "mood": "tense energetic",
+        "mood_palette": ["urgent", "dramatic", "energetic", "tense", "calm"],
         "subjects": [
             "stock chart candlestick screen",
             "bitcoin gold coin close up",
@@ -164,6 +165,56 @@ TOPIC_HYBRID_SIGNALS: List[Tuple[List[str], List[str], str, str]] = [
     (["tarih", "napolyon", "sezar", "churchill"], ["whatsapp", "mesaj", "chat", "imessage"], "history_chat", "19_historical_battles"),
     (["psikoloji", "manipül", "dark psych"], ["parkour", "gameplay", "split screen"], "dark_psychology_parkour", "7_dark_psychology"),
     (["gizem", "komplo", "bermuda", "ufo"], ["google earth", "zoom", "uydu"], "mystery_earth_zoom", "13_mystery_paranormal"),
+    (["would you rather", "kırmızı hap", "mavi hap", "tercih et"], ["quiz", "oylama", "seçim", "duel"], "would_you_rather_duel", "4_would_you_rather"),
+    (["reddit", "itiraf", "aita"], ["asmr", "kinetik kum", "pasta", "soap cutting"], "reddit_asmr", "2_reddit_confessions"),
+    (["evren", "kozmos", "galaksi", "james webb", "karadelik"], ["epik", "hans zimmer", "bas vuruş"], "cosmic_epic_hans_zimmer", "9_five_facts"),
+    (["kripto", "bitcoin", "satoshi", "borsa", "wall street"], ["çizgi roman", "comic", "pop art", "halftone"], "crypto_comic_book", "8_crypto_market"),
+    (["bayrak", "ülke tahmin", "hangi ülke"], ["sayac", "geri sayım", "countdown", "3 ipucu"], "country_guess_countdown", "5_guess_flag_country"),
+    (["manevi", "dua", "ilahi", "spiritual"], ["yağmur", "orman", "doğa", "rain forest"], "spiritual_rain_nature", "10_religious_quotes"),
+    (["whatsapp korku", "ses kaydı", "voice note"], ["korku", "gece yarısı", "hayalet", "horror"], "whatsapp_horror_voice", "20_whatsapp_chat_story"),
+    (["amazon", "temu", "affiliate", "ürün inceleme"], ["hayatınızı kolaylaştır", "3 şey", "life hack"], "lifehack_affiliate_3items", "16_wealth_entrepreneurship"),
+    (["ingilizce deyim", "filmde", "dizi", "peaky blinders"], ["deyim", "idiom", "friends"], "movie_idiom_english", "14_movie_summaries"),
+    (["mitoloji", "zeus", "thor", "tanrı", "iskandinav"], ["ai animasyon", "epik animasyon", "hyper realistic"], "mythology_ai_epic", "27_common_myths_busted"),
+    (["garip yasa", "absürt yasa", "yasak", "sıra dışı yasa"], ["harita", "dünya haritası", "singapur", "world map"], "weird_laws_world_map", "9_five_facts"),
+    (["zenginlik", "old money", "disiplin", "motivasyon", "sessiz zenginlik"], ["yacht", "lüks", "klasik saat", "luxury", "old money"], "old_money_luxury_mindset", "16_wealth_entrepreneurship"),
+    (["komplo", "gizli dosya", "fbi", "declassified"], ["gazete", "küpür", "sansür", "typewriter", "redacted"], "conspiracy_fbi_newspaper", "13_mystery_paranormal"),
+    (["komik kedi", "funny cat", "meme", "viral hayvan"], ["nietzsche", "felsefe", "nihilism", "absürd"], "absurdist_philosophy_meme", "6_stoic_philosophy"),
+    (["hayvan", "kedi", "köpek", "wildlife"], ["dublaj", "komik", "iç ses", "funny voice", "monolog"], "animal_funny_dub", "9_five_facts"),
+    (["rüya tabiri", "rüyada", "dream meaning"], ["surreal", "dali", "gerçeküstü", "eriyen saat", "uçan kapı"], "dream_surreal_psychology", "28_dream_meanings"),
+    (["yapay zeka", "ai araç", "chatgpt", "midjourney"], ["ekran kaydı", "canlı ekran", "site tanıtım", "laptop screen"], "ai_tools_screen", "21_ai_tools_hacks"),
+    (["kitap özeti", "atomik alışkanlıklar", "1 dakika kitap"], ["hap bilgi", "özet", "sayfa çevir", "book summary"], "micro_book_summary", "9_five_facts"),
+    (["suç", "mahkeme", "gerçek suç", "true crime"], ["polis telsiz", "cctv", "güvenlik kamerası", "dedektif"], "true_crime_police_radio", "13_mystery_paranormal"),
+    (["optik illüzyon", "illüzyon", "hipnotik"], ["odak", "5 saniye", "merkeze bak", "focus test"], "optical_illusion_focus", "9_five_facts"),
+    (["fiyat", "enflasyon", "100 dolar", "alışveriş sepeti"], ["1990", "zaman tüneli", "bugün", "yıl karşılaştır"], "price_timeline_tunnel", "8_crypto_market"),
+    (["askeri taktik", "kuşatma", "savaş taktik", "strateji"], ["harita", "kırmızı ok", "mavi ok", "battle map"], "military_tactics_map", "19_historical_battles"),
+    (["başarısızlık", "kovuldu", "reddedildi", "iflas"], ["walt disney", "steve jobs", "ünlü", "celebrity failure"], "celebrity_failure_stories", "16_wealth_entrepreneurship"),
+    (["beden dili", "yalan", "mikro jest"], ["röportaj", "politik", "ünlü", "interview"], "body_language_celebrity", "7_dark_psychology"),
+    (["2050", "gelecek simülasyon", "fütürist"], ["bir gün", "yaşam tasviri", "gelecekte"], "future_2050_simulation", "21_ai_tools_hacks"),
+    (["derin deniz", "okyanus derinliği", "mariana", "abyss"], ["yaratık", "talasofobi", "bioluminescent", "10.000 metre"], "deep_sea_thalassophobia", "13_mystery_paranormal"),
+    (["unutulmuş", "bilinmeyen kahraman", "gizli kahraman"], ["tarih", "şahsiyet", "arşiv", "portre"], "forgotten_historical_figures", "19_historical_battles"),
+    (["zeka", "iq", "bilmece", "optik bilmece"], ["gizlenmiş", "7 saniye", "bul", "hidden object"], "iq_puzzle_optical_riddle", "9_five_facts"),
+    (["e-ticaret", "girişim", "dropship", "startup"], ["minimalist", "tipografi", "siyah beyaz", "bold text"], "entrepreneur_minimal_typography", "16_wealth_entrepreneurship"),
+    (["guinness", "dünya rekoru", "world record"], ["spiker", "heyecan", "rekor kır", "inanilmaz"], "world_records_sports_commentary", "9_five_facts"),
+    (["bunu biliyor muydunuz", "did you know", "hap bilgi"], ["biyoloji", "3 gerçek", "akıl almaz", "fact"], "did_you_know_facts", "9_five_facts"),
+    (["sokak röportaj", "mikro röportaj", "street interview"], ["tek soru", "sokaktaki", "el mikrofonu", "candid"], "micro_street_interview", "9_five_facts"),
+    (["oppenheimer", "dune", "vizyona girdi", "yeni film"], ["felsefe", "tarih", "trend", "analiz"], "seasonal_trend_reaction", "14_movie_summaries"),
+    (["ekolayzır", "ses frekans", "waveform", "podcast bar"], ["altyazı", "yeşil bar", "ritim", "equalizer"], "subtitle_voice_equalizer", "9_five_facts"),
+    (["gece modu", "dark mode", "gece yarısı", "23:00"], ["karanlık tema", "rahatlatıcı", "uyku", "loş"], "night_mode_dark_content", "6_stoic_philosophy"),
+    (["çark", "durdur", "spinning wheel", "rulet"], ["oyun", "doğru yerde", "durdurma", "yarışma"], "interactive_stop_wheel_game", "4_would_you_rather"),
+    (["klostrofobi", "talasofobi", "araknofobi", "fobi"], ["korku", "bilinçaltı", "dar alan", "derin su"], "collective_subconscious_fears", "13_mystery_paranormal"),
+    (["antik mısır", "gizli ilaç", "bitkisel şifa", "papirüs"], ["doğal tedavi", "reçete", "ot", "tıp tarihi"], "ancient_remedies_egypt", "27_common_myths_busted"),
+    (["zaman makinesi", "100 yıl geri", "time machine"], ["dönüşüm", "timeline", "yıl sayacı", "tarih"], "time_machine_100years", "19_historical_battles"),
+    (["morgan housel", "para psikolojisi", "psychology of money"], ["finans", "alıntı", "davranış", "risk"], "money_psychology_quotes", "16_wealth_entrepreneurship"),
+    (["kapı 1", "kapı 2", "door 1", "door 2"], ["seçim", "yoruma yaz", "izleyici karar", "choice"], "viewer_choice_door_game", "4_would_you_rather"),
+    (["gizli mikrofon", "wiretap", "sızdırılmış ses", "gizli toplantı"], ["kayıt", "fısıltı", "statik", "classified"], "hidden_wiretap_meeting", "13_mystery_paranormal"),
+    (["fotoğraf restorasyon", "renklendirme", "eski fotoğraf", "photo restoration"], ["100 yıl", "yıpranmış", "canlandır", "before after"], "photo_restoration_story", "19_historical_battles"),
+    (["sonder", "bilinmeyen kelime", "untranslatable", "tek kelime"], ["anlam", "duygu", "psikoloji", "dil"], "untranslatable_words_sonder", "28_dream_meanings"),
+    (["ülke popüler", "en sevilen yemek", "country popular"], ["harita", "spor", "world map", "kültür"], "country_popular_things_map", "5_guess_flag_country"),
+    (["kirli sır", "skandal", "pazarlama oyunu", "whistleblower"], ["fast food", "teknoloji devi", "şirket", "corporate"], "corporate_dirty_secrets", "16_wealth_entrepreneurship"),
+    (["8d ses", "binaural", "ses illüzyon", "spatial audio"], ["kulaklık", "kafanın arkası", "8d audio", "headphones"], "binaural_8d_audio_illusions", "9_five_facts"),
+    (["alternatif tarih", "what if tarih", "alternate history"], ["ikinci dünya savaşı", "yaşanmasaydı", "farklı sonuç", "timeline"], "alternate_history_ai", "19_historical_battles"),
+    (["90lar nostalji", "2000ler", "çocukluk anısı", "retro tv"], ["game boy", "atari", "vhs", "crt tv"], "childhood_nostalgia_90s_2000s", "14_movie_summaries"),
+    (["sporcu hikayesi", "comeback", "sakatlıktan dönüş"], ["şampiyon", "epik", "stadyum", "motivasyon"], "inspirational_athlete_comeback", "16_wealth_entrepreneurship"),
 ]
 
 
@@ -301,9 +352,12 @@ def _intent_for_subject(
             continue
         clean_existing.append(q)
 
+    palette = bank.get("mood_palette") or []
+    scene_mood = palette[scene_index % len(palette)] if palette else str(bank.get("mood", "cinematic"))
+
     queries = [
         f"{subject} cinematic 4k",
-        f"{subject} {bank.get('mood', 'cinematic')} atmospheric",
+        f"{subject} {scene_mood} atmospheric",
         f"{bank.get('era', '')} {subject}".strip(),
     ]
     for q in clean_existing[:2]:
@@ -315,7 +369,7 @@ def _intent_for_subject(
         action="slow push in" if scene_index % 2 == 0 else "gentle pan",
         setting=str(bank.get("era", "")),
         era=str(bank.get("era", "")),
-        mood=str(bank.get("mood", "cinematic")),
+        mood=scene_mood,
         must_include=list(bank.get("must_include") or []),
         must_exclude=list(bank.get("must_exclude") or []),
         continuity_motif=str(bank.get("motif", "default")),
@@ -370,10 +424,19 @@ def apply_visual_intents(scenes: List[ScenePlan], niche_id: str, title: str = ""
                 intent, scene, bank, i, scenes[i - 1].visual_intent
             )
         scene.visual_intent = intent
-        scene.search_queries = intent.search_queries
+        if scene.search_queries and any((scene.narration or "").strip() for _ in [1]):
+            # Keep AI/fallback queries when narration exists; only fill gaps
+            merged = list(scene.search_queries)
+            for q in intent.search_queries:
+                if q not in merged:
+                    merged.append(q)
+            scene.search_queries = merged[:4]
+        else:
+            scene.search_queries = intent.search_queries
         if not scene.scene_description:
             scene.scene_description = f"{intent.subject} — {intent.mood}"
-        scene.mood = intent.mood
+        palette = bank.get("mood_palette") or []
+        scene.mood = palette[i % len(palette)] if palette else intent.mood
     return scenes
 
 

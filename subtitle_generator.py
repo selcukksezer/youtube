@@ -4,6 +4,7 @@ BOTH files are ALWAYS written to guarantee subtitles work.
 Item 107: Font rotation pool (TheBoldFont, Anton, Outfit, Poppins, Montserrat, Bebas Neue).
 Item 116: Drop shadow açı ve bulanıklık varyasyonu — her videoda farklı.
 """
+import os
 import re
 import config
 import random
@@ -69,6 +70,15 @@ NAMED_COLORS = {
     "gold": "00D7FF",
 }
 
+# Item 230: Önemli sıfatlar neon kırmızı/altın vurgu
+POWER_WORD_HIGHLIGHTS = {
+    "ölümcül": "#FF3333", "deadly": "#FF3333",
+    "milyarder": "#FFD700", "billionaire": "#FFD700",
+    "gizemli": "#FF3333", "mysterious": "#FF3333",
+    "tehlikeli": "#FF3333", "dangerous": "#FF3333",
+    "şok": "#FFD700", "shocking": "#FFD700",
+}
+
 # Item 43: Predefined professional subtitle presets
 SUBTITLE_PRESETS = {
     "capcut_yellow": {
@@ -114,8 +124,42 @@ SUBTITLE_PRESETS = {
         "uppercase": True,
         "glow": True,
         "y_position": 0.75,
-    }
+    },
+    "high_contrast_retention": {
+        "color": "#FFFFFF",
+        "highlight_color": "#FFFF00",
+        "stroke_color": "#000000",
+        "stroke_width": 5,
+        "font_size": 58,
+        "font_name": "Anton",
+        "uppercase": True,
+        "glow": True,
+        "y_position": 0.72,
+    },
 }
+
+# Item 310: A/B subtitle style name → preset key
+AB_SUBTITLE_STYLE_MAP = {
+    "karaoke_bold_neon": "red_fire",
+    "minimal_white_shadow": "clean_white",
+}
+
+
+def resolve_ab_subtitle_preset(variation_attempt: int, topic: str) -> dict:
+    """Item 310: pick A/B subtitle preset from growth_tactics variants."""
+    try:
+        from growth_tactics import generate_ab_test_variants
+    except ImportError:
+        return {}
+    variants = generate_ab_test_variants(topic or "Shorts")
+    if not variants:
+        return {}
+    variant = variants[variation_attempt % len(variants)]
+    style_key = variant["subtitle_style_a"] if variation_attempt % 2 == 0 else variant["subtitle_style_b"]
+    preset_key = AB_SUBTITLE_STYLE_MAP.get(style_key, "red_fire")
+    opts = dict(SUBTITLE_PRESETS.get(preset_key, SUBTITLE_PRESETS["red_fire"]))
+    opts["ab_test_variant"] = variant.get("variant", "")
+    return opts
 
 def hex_to_ass_color(val, alpha="00", default_black=False):
     """Converts hex color or named color to ASS format &HAABBGGRR&."""
@@ -154,16 +198,91 @@ def _is_ssml_junk_token(text: str) -> bool:
     return False
 
 
+def _probe_audio_duration_sec(audio_path: str) -> float:
+    """FFmpeg duration parse for subtitle drift guard (Items 413/184)."""
+    if not audio_path or not os.path.isfile(audio_path):
+        return 0.0
+    try:
+        import subprocess
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        res = subprocess.run(
+            [exe, "-i", audio_path, "-hide_banner"],
+            stderr=subprocess.PIPE, stdout=subprocess.PIPE, timeout=8,
+        )
+        err = (res.stderr or b"").decode("utf-8", errors="replace")
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", err)
+        if m:
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _rescale_timings_to_audio_duration(timings: list, audio_path: str) -> list:
+    """Item 184/413: lock karaoke word spans to narration audio duration."""
+    if not timings or not audio_path:
+        return timings or []
+    audio_dur = _probe_audio_duration_sec(audio_path)
+    if audio_dur <= 0:
+        return timings
+    last = timings[-1]
+    span_end = float(last.get("offset", 0.0)) + float(last.get("duration", 0.0))
+    if span_end <= 0.05 or abs(span_end - audio_dur) < 0.08:
+        return timings
+    scale = audio_dur / span_end
+    scaled = []
+    for item in timings:
+        scaled.append({
+            **item,
+            "offset": round(float(item.get("offset", 0.0)) * scale, 4),
+            "duration": round(float(item.get("duration", 0.0)) * scale, 4),
+        })
+    return scaled
+
+
 def align_words_whisper(timings: list, audio_path: str = None) -> list:
     """
-    P2-23 stub (Item 413): optional Whisper word-level alignment.
-    When WHISPER_ALIGN=false (default), returns timings unchanged.
-    Future: run faster-whisper on audio_path and resync word boundaries.
+    Item 413: Whisper word-level alignment + ffmpeg duration lock.
+    WHISPER_ALIGN=false: duration rescale only (default path, Item 184 sync).
+    WHISPER_ALIGN=true: faster-whisper when installed, else duration rescale.
     """
+    timings = list(timings or [])
+    if audio_path:
+        timings = _rescale_timings_to_audio_duration(timings, audio_path)
     if not getattr(config, "WHISPER_ALIGN", False):
-        return timings or []
-    # Stub — full Whisper integration deferred; passthrough until model wired.
-    return timings or []
+        return timings
+    try:
+        from faster_whisper import WhisperModel  # type: ignore
+        model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        segments, _ = model.transcribe(audio_path, word_timestamps=True)
+        whisper_words = []
+        for seg in segments:
+            for w in seg.words or []:
+                whisper_words.append({
+                    "text": w.word.strip(),
+                    "offset": round(float(w.start), 4),
+                    "duration": round(max(0.05, float(w.end) - float(w.start)), 4),
+                })
+        if whisper_words:
+            return whisper_words
+    except Exception:
+        pass
+    return timings
+
+
+def _clamp_word_display_durations(timings, min_d: float = 0.25, max_d: float = 0.40):
+    """
+    Item 258: Hızlı Kelime Geçişi — kelime ekranda kalma süresi 0.25–0.40s aralığında.
+    """
+    clamped = []
+    for item in timings or []:
+        dur = float(item.get("duration") or 0.0)
+        if dur <= 0:
+            dur = min_d
+        dur = max(min_d, min(max_d, dur))
+        clamped.append({**item, "duration": round(dur, 3)})
+    return clamped
 
 
 def _clean_timings(timings):
@@ -213,10 +332,15 @@ def _format_word(text, uppercase=False):
     return text.upper() if uppercase else text
 
 
-def _active_word_tags(highlight_ass, primary_ass, glow=False):
-    """Item 91: karaoke highlight + micro-pulse; neon glow for CapCut presets."""
+def _active_word_tags(highlight_ass, primary_ass, glow=False, word: str = ""):
+    """Item 91: karaoke highlight + micro-pulse; Item 230 neon power-word colors."""
     glow_tags = r"\blur3\shad2\be1" if glow else ""
-    open_tag = "{" + rf"\c{highlight_ass}\b1\fscx106\fscy106" + glow_tags + "}"
+    word_key = (word or "").strip().lower().strip(".,!?;:")
+    power_hex = POWER_WORD_HIGHLIGHTS.get(word_key)
+    active_color = hex_to_ass_color(power_hex) if power_hex else highlight_ass
+    if power_hex and glow:
+        glow_tags = r"\blur4\shad3\be2"
+    open_tag = "{" + rf"\c{active_color}\b1\fscx106\fscy106" + glow_tags + "}"
     close_tag = "{" + rf"\c{primary_ass}\b0\fscx100\fscy100" + "}"
     return open_tag, close_tag
 
@@ -225,6 +349,7 @@ def create_karaoke_subtitles(timings, path, max_dur=9999.0, style_opts=None):
     opts = style_opts or {}
     timings = _clean_timings(timings or [])
     timings = align_words_whisper(timings, audio_path=opts.get("audio_path"))
+    timings = _clamp_word_display_durations(timings)
     if not timings:
         open(path, "w").close()
         return path
@@ -266,14 +391,13 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: K,{font_name},{scaled_font_size},{primary_ass},{highlight_ass},{stroke_ass},&H80000000,-1,0,0,0,100,100,2,0,1,{scaled_stroke_width},{scaled_shadow_depth},2,2,40,40,{margin_v},1
+Style: K,{font_name},{scaled_font_size},{primary_ass},{highlight_ass},{stroke_ass},&H80000000,-1,0,0,0,100,100,2,0,3,{scaled_stroke_width},{scaled_shadow_depth},2,2,40,40,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     groups = _group(timings, max_words)
-    open_tag, close_tag = _active_word_tags(highlight_ass, primary_ass, glow=glow)
     events = []
     for g in groups:
         if g[0]["offset"] >= max_dur: break
@@ -286,6 +410,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for wj, w in enumerate(g):
                 word = _format_word(w["text"], uppercase)
                 if wj == wi:
+                    open_tag, close_tag = _active_word_tags(
+                        highlight_ass, primary_ass, glow=glow, word=w["text"]
+                    )
                     parts.append(open_tag + word + close_tag)
                 else:
                     parts.append(word)
@@ -298,6 +425,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 def create_srt_file(timings, path, max_dur=9999.0, audio_path: str = None):
     timings = _clean_timings(timings or [])
     timings = align_words_whisper(timings, audio_path=audio_path)
+    timings = _clamp_word_display_durations(timings)
     if not timings:
         open(path, "w").close()
         return path

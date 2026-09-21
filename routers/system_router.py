@@ -324,7 +324,7 @@ def get_warmup_plan(niche: str = "stoic"):
 
 @router.get("/api/hybrid_niches")
 def get_hybrid_niches():
-    """Returns all 7 high-RPM hybrid synergy niches (Items 276-345)."""
+    """Returns hybrid synergy niche library (Items 276-345)."""
     from hybrid_niches import list_all_hybrid_niches
     return {"status": "ok", "hybrid_niches": list_all_hybrid_niches()}
 
@@ -341,11 +341,25 @@ def get_retention_formulas():
 
 
 @router.get("/api/proof/appeal_script")
-def get_appeal_script(channel_name: str = "Shorts AI Studio", title: str = "3 Stoic Rules"):
+def get_appeal_script(
+    channel_name: str = "Shorts AI Studio",
+    title: str = "3 Stoic Rules",
+    channel_url: str = "",
+):
     """Generates professional 5-minute YouTube Appeal Video Script for Reused Content reviews (Items 472-475)."""
     from proof_archiver import proof_archiver
-    script = proof_archiver.generate_appeal_video_script(channel_name=channel_name, video_title=title)
-    return {"status": "ok", "script": script}
+    workflow = proof_archiver.build_appeal_video_operator_workflow(
+        channel_name=channel_name,
+        video_title=title,
+        channel_url=channel_url,
+    )
+    return {
+        "status": "ok",
+        "script": workflow["script"],
+        "workflow": workflow,
+        "checklist": workflow["checklist"],
+        "operator_steps": workflow["operator_steps"],
+    }
 
 
 @router.get("/api/roadmap/audit")
@@ -373,6 +387,193 @@ def get_system_health():
     """Returns real-time system health, VideoToolbox encoder, disk space, and API status (Item 464)."""
     from system_resilience import get_system_health_status
     return get_system_health_status()
+
+
+@router.get("/api/analytics/algorithmic-threshold")
+def get_algorithmic_threshold_advisory(view_count: int = 0, swipe_rate_pct: Optional[float] = None):
+    """Item 379: Algoritmik eşik analizi — YouTube Analytics API yok, advisory stub."""
+    from proof_archiver import ProofArchiver
+    from database import get_video_stats
+    advisory = ProofArchiver.analyze_algorithmic_view_threshold(view_count, swipe_rate_pct)
+    advisory["local_render_stats"] = get_video_stats()
+    return {"status": "ok", "advisory": advisory}
+
+
+@router.get("/api/analytics/feed-distribution")
+def get_feed_distribution_advisory(swipe_rate_pct: float = 35.0, test_audience: int = 500):
+    """Item 387: Feed dağıtım ivmesi — 500 kişi test kitlesi advisory stub."""
+    from proof_archiver import ProofArchiver
+    return {
+        "status": "ok",
+        "advisory": ProofArchiver.analyze_feed_distribution_phase(swipe_rate_pct, test_audience),
+    }
+
+
+@router.get("/api/analytics/traffic-sources")
+def get_traffic_sources_advisory(
+    shorts_feed_pct: float = 85.0,
+    browse_features_pct: float = 8.0,
+    external_pct: float = 5.0,
+):
+    """Items 406-409: Trafik kaynakları + haftalık analitik advisory stub."""
+    from proof_archiver import ProofArchiver
+    from database import get_video_stats
+    advisory = ProofArchiver.analyze_traffic_sources(
+        shorts_feed_pct, browse_features_pct, external_pct
+    )
+    advisory["local_render_stats"] = get_video_stats()
+    return {"status": "ok", "advisory": advisory}
+
+
+@router.get("/api/analytics/channel-momentum")
+def get_channel_momentum_advisory(total_videos: int = 0, avg_views: int = 0):
+    """Item 410: Sabır ve ivme eşiği — 30 video kalibrasyon advisory."""
+    from proof_archiver import ProofArchiver
+    from database import get_video_stats
+    stats = get_video_stats()
+    if total_videos <= 0:
+        total_videos = int(stats.get("total_completed") or 0)
+    advisory = ProofArchiver.get_channel_momentum_threshold(total_videos, avg_views)
+    advisory["local_render_stats"] = stats
+    return {"status": "ok", "advisory": advisory}
+
+
+@router.get("/api/analytics/algorithm-reset")
+def get_algorithm_reset_advisory(days_paused: int = 0):
+    """Item 394/469: Algoritma resetleme dönemi — 4 gün duraklama rehberi."""
+    from proof_archiver import ProofArchiver
+    return {
+        "status": "ok",
+        "advisory": ProofArchiver.get_distribution_pause_guidance(days_paused),
+    }
+
+
+@router.get("/api/seo/operator-pack")
+def get_seo_operator_pack(
+    keyword: str = "Stoacılık",
+    title: str = "",
+    target_country: str = "TR",
+    lang: str = "tr",
+):
+    """B6 Batch 4: SEO operator pack — metadata + Studio paste fields (no auto-upload)."""
+    from viral_seo_agent import export_seo_operator_pack
+    from database import get_video_stats
+
+    stats = get_video_stats()
+    total = int(stats.get("total_completed") or 0)
+    pack = export_seo_operator_pack(
+        keyword=keyword,
+        title=title or keyword,
+        target_country=target_country,
+        lang=lang,
+        total_renders=total,
+    )
+    return {"status": "ok", "operator_pack": pack}
+
+
+@router.get("/api/channel-health/checklist")
+def get_channel_health_checklist(
+    channel_age_days: int = 14,
+    planned_daily_uploads: int = 1,
+    hours_since_upload: float = 72.0,
+    view_count: int = 0,
+    strike_count: int = 0,
+    niche: str = "Stoacılık",
+    topic: str = "Zihin Disiplini",
+    lang: str = "tr",
+):
+    """B8 Batch 4: Actionable kanal sağlığı checklist (466-500 in-scope advisory)."""
+    from proof_archiver import ProofArchiver
+    from database import get_video_stats
+
+    stats = get_video_stats()
+    total = int(stats.get("total_completed") or 0)
+    data = ProofArchiver.build_actionable_channel_health_checklist(
+        channel_age_days=channel_age_days,
+        planned_daily_uploads=planned_daily_uploads,
+        hours_since_upload=hours_since_upload,
+        view_count=view_count,
+        total_videos=total,
+        strike_count=strike_count,
+        niche=niche,
+        topic=topic,
+        lang=lang,
+    )
+    return {"status": "ok", **data}
+
+
+@router.get("/api/channel-health/zero-views")
+def get_zero_views_diagnostic(
+    hours_since_upload: float = 72.0,
+    view_count: int = 0,
+    total_videos: int = 0,
+):
+    """Item 466: 0 izlenme teşhisi."""
+    from proof_archiver import ProofArchiver
+    from database import get_video_stats
+    stats = get_video_stats()
+    if total_videos <= 0:
+        total_videos = int(stats.get("total_completed") or 0)
+    return {
+        "status": "ok",
+        "diagnostic": ProofArchiver.diagnose_zero_views(
+            hours_since_upload, view_count, total_videos
+        ),
+    }
+
+
+@router.get("/api/channel-health/warmup")
+def get_warmup_protocol_check(channel_age_days: int = 7, planned_daily_uploads: int = 1):
+    """Item 467: 14 günlük kanal ısınma protokolü."""
+    from proof_archiver import ProofArchiver
+    return {"status": "ok", "warmup": ProofArchiver.check_warmup_protocol(channel_age_days, planned_daily_uploads)}
+
+
+@router.get("/api/channel-health/engagement-recovery")
+def get_engagement_recovery(hours_since_upload: float = 72.0, view_count: int = 0, total_videos: int = 0):
+    """Item 468: Etkileşim kurtarma — metadata revizyon rehberi."""
+    from proof_archiver import ProofArchiver
+    return {
+        "status": "ok",
+        "advisory": ProofArchiver.get_engagement_recovery_guidance(
+            hours_since_upload, view_count, total_videos
+        ),
+    }
+
+
+@router.get("/api/channel-health/shadowban-recovery")
+def get_shadowban_recovery_plan(days: int = 7):
+    """Item 486: Gölge engelden çıkış egzersizi."""
+    from proof_archiver import ProofArchiver
+    return {"status": "ok", "plan": ProofArchiver.generate_shadowban_recovery_plan(days)}
+
+
+@router.get("/api/channel-health/copyright-strikes")
+def get_copyright_strike_advisory(strike_count: int = 0):
+    """Item 484: Telif ihtarı yönetimi."""
+    from proof_archiver import ProofArchiver
+    return {"status": "ok", "advisory": ProofArchiver.get_copyright_strike_advisory(strike_count)}
+
+
+@router.get("/api/channel-health/comment-blocklist")
+def get_comment_moderation_blocklist(lang: str = "tr"):
+    """Item 495: Studio engellenen kelimeler listesi."""
+    from proof_archiver import ProofArchiver
+    return {"status": "ok", "blocklist": ProofArchiver.get_comment_moderation_blocklist(lang)}
+
+
+@router.get("/api/monetization/funnel")
+def get_monetization_funnel(niche: str = "Stoacılık", topic: str = "Zihin Disiplini", lang: str = "tr"):
+    """Items 477-478: Affiliate / dijital ürün funnel şablonu."""
+    from proof_archiver import ProofArchiver
+    return {"status": "ok", "funnel": ProofArchiver.generate_monetization_funnel(niche, topic, lang)}
+
+
+@router.get("/api/monetization/tier1-rpm")
+def get_tier1_rpm_advisory(target_country: str = "US"):
+    """Item 481: Tier-1 ülke RPM çarpanı."""
+    from proof_archiver import ProofArchiver
+    return {"status": "ok", "advisory": ProofArchiver.get_tier1_rpm_multiplier(target_country)}
 
 
 @router.get("/api/hardware/specs")

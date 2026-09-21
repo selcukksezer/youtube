@@ -158,13 +158,24 @@ def download_track(url: str, dest_path: str) -> Optional[str]:
         return None
 
 
-def fetch_royalty_free_bgm(query: str = "ambient cinematic", prefer: str = "auto") -> Optional[str]:
+def fetch_royalty_free_bgm(query: str = "ambient cinematic", prefer: str = "auto", niche: str = "") -> Optional[str]:
     """
     Download a royalty-free BGM into BGM_DIR and return filename for composer.
-    prefer: auto | pixabay | mixkit | local
+    prefer: auto | catalog | pixabay | mixkit | local
     """
     _ensure_dirs()
     safe = re.sub(r"[^\w\-]+", "_", query)[:40] or "ambient"
+
+    # YouTube-safe catalog (72 Mixkit tracks, lazy download)
+    if prefer in ("auto", "catalog"):
+        try:
+            from youtube_safe_bgm_catalog import fetch_catalog_bgm
+            fn = fetch_catalog_bgm(query=query, niche=niche or query)
+            if fn:
+                print(f"  [VoiceLab/RF] Catalog BGM: {fn}")
+                return fn
+        except Exception as e:
+            print(f"  [VoiceLab/RF] Catalog notice: {e}")
 
     # Local VoiceLab pack first
     if prefer in ("auto", "local"):
@@ -200,8 +211,16 @@ def fetch_royalty_free_bgm(query: str = "ambient cinematic", prefer: str = "auto
                 except Exception:
                     pass
 
-    # Mixkit fallback (no key)
+    # Mixkit fallback (no key) — legacy 8-track list + full catalog search
     if prefer in ("auto", "mixkit"):
+        try:
+            from youtube_safe_bgm_catalog import search_catalog, ensure_catalog_track
+            for t in search_catalog(query=query, limit=5):
+                fn = ensure_catalog_track(track_id=t.get("id", ""))
+                if fn:
+                    return fn
+        except Exception:
+            pass
         for t in search_mixkit(query):
             bgm_name = f"mixkit_{t['id']}.mp3"
             bgm_path = os.path.join(config.BGM_DIR, bgm_name)
@@ -242,11 +261,21 @@ def list_voicelab_library() -> Dict[str, Any]:
         "local_voices_or_beds": local,
         "bgm_tracks": bgm,
         "mixkit_catalog": search_mixkit(""),
+        "youtube_safe_catalog": _catalog_summary(),
         "note": (
-            "VoiceLab.cloud API'si yok; Pixabay Music (PIXABAY_API_KEY) + Mixkit "
-            "+ voicelab/ klasörüne manuel ücretsiz ses bırakabilirsiniz."
+            "72 parçalık YouTube-safe katalog (Mixkit) + Pixabay Music (PIXABAY_API_KEY) "
+            "+ bgm/youtube_studio/ Studio Audio Library import + voicelab/ manuel ses."
         ),
     }
+
+
+def _catalog_summary() -> Dict[str, Any]:
+    try:
+        from youtube_safe_bgm_catalog import catalog_meta, load_catalog
+        meta = catalog_meta()
+        return {"count": meta.get("count", 0), "tracks": len(load_catalog())}
+    except Exception:
+        return {"count": 0, "tracks": 0}
 
 
 def seed_voicelab_pack() -> List[str]:

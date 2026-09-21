@@ -68,3 +68,22 @@ def notify_upload_success(title: str, youtube_video_id: str):
     )
     send_telegram_message(msg)
     send_discord_notification("🚀 YouTube Yüklemesi Başarılı", f"**{title}**\nİzleyin: {yt_url}", 0xFF0033)
+
+
+def notify_render_error(title: str, error_msg: str, log_snippet: str = "") -> None:
+    """Item 426: Telegram/Discord alert when render or pipeline fails."""
+    safe_title = (title or "Shorts render")[:120]
+    safe_err = (error_msg or "Bilinmeyen hata")[:800]
+    log_block = (log_snippet or "")[:600]
+    msg = (
+        f"❌ <b>Render Hatası</b>\n"
+        f"📌 <b>Başlık:</b> {safe_title}\n"
+        f"⚠️ <b>Hata:</b> {safe_err}"
+    )
+    if log_block:
+        msg += f"\n📋 <b>Log:</b>\n<pre>{log_block}</pre>"
+    send_telegram_message(msg)
+    discord_body = f"**{safe_title}**\n{safe_err}"
+    if log_block:
+        discord_body += f"\n```\n{log_block}\n```"
+    send_discord_notification("❌ Render Hatası", discord_body, 0xFF4444)

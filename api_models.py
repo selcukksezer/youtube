@@ -102,6 +102,11 @@ class TopicSuggestRequest(BaseModel):
     topic_hint: Optional[str] = None
 
 
+class ShareDecisionRequest(BaseModel):
+    decision: str = Field(..., description="'keep' = YouTube'da paylaş (proof sakla), 'discard' = sil")
+    project_slug: Optional[str] = None
+
+
 class VideoRenderRequest(BaseModel):
     keyword: str
     plan: Optional[Dict[str, Any]] = None
@@ -150,6 +155,12 @@ class GeneratedSceneSchema(BaseModel):
     def narration_not_blank(cls, value: str) -> str:
         if not str(value).strip():
             raise ValueError("narration must not be blank")
+        try:
+            from scenes.narration_validate import scene_narration_usable
+        except ImportError:
+            return value
+        if not scene_narration_usable(value):
+            raise ValueError("narration too short or placeholder-only")
         return value
 
     @model_validator(mode="after")

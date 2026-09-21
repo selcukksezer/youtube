@@ -15,7 +15,7 @@ from .schema import (
 )
 from .timeline import solve_timeline
 from .validate import validate_director_plan
-from .visual_intent import apply_visual_intents, resolve_niche_from_topic
+from .visual_intent import apply_visual_intents, resolve_topic_intelligence
 from .audio_bus import build_audio_events
 
 
@@ -91,9 +91,45 @@ def compile_director_plan(
     raw_plan = dict(raw_plan or {})
     title = title or raw_plan.get("title") or "Video"
     requested_niche = niche_id or raw_plan.get("niche_id") or "1_news_flash"
-    locked_niche = resolve_niche_from_topic(title, requested_niche)
+    topic_intel = resolve_topic_intelligence(title, requested_niche)
+    locked_niche = topic_intel["resolved_niche"]
+
+    try:
+        from scenes.fallback import _generate_procedural_fallback_scenes
+        from scenes.narration_validate import plan_narration_usable
+
+        if not plan_narration_usable(raw_plan.get("scenes") or []):
+            print("  [Director] Anlatım boş veya placeholder — prosedürel fallback enjekte ediliyor")
+            fb = _generate_procedural_fallback_scenes(
+                title,
+                niche_type=locked_niche,
+                language=language,
+            )
+            raw_plan.update(fb)
+    except Exception as exc:
+        print(f"  [Director] Fallback enjekte edilemedi: {exc}")
+
     if locked_niche != requested_niche:
         print(f"  [Director] Nis kilitlendi: '{requested_niche}' -> '{locked_niche}' (konu uyumu)")
+    hybrid_id = topic_intel.get("hybrid_niche") or raw_plan.get("hybrid_niche")
+    hybrid_meta: Dict[str, Any] = {}
+    if hybrid_id:
+        try:
+            from hybrid_niches import get_hybrid_niche, get_hybrid_render_overlay_spec
+            hybrid_def = get_hybrid_niche(hybrid_id)
+            hybrid_meta = {
+                "hybrid_niche": hybrid_id,
+                "hybrid_split_screen": raw_plan.get("hybrid_split_screen", hybrid_def.get("split_screen_default", False)),
+                "hybrid_bg_style": hybrid_def.get("bg_style", ""),
+                "hybrid_render_overlay": raw_plan.get("hybrid_render_overlay") or get_hybrid_render_overlay_spec(hybrid_id),
+            }
+            print(f"  [Director] Hibrit niş: {hybrid_id} ({topic_intel.get('match_method')})")
+        except ImportError:
+            hybrid_meta = {"hybrid_niche": hybrid_id}
+    if raw_plan.get("retention_metadata"):
+        hybrid_meta["retention_metadata"] = raw_plan["retention_metadata"]
+    if raw_plan.get("hybrid_split_screen") and hybrid_id:
+        hybrid_meta["hybrid_split_screen"] = True
 
     _cleanse_scene_narrations(raw_plan)
 
@@ -128,8 +164,21 @@ def compile_director_plan(
             "requested_niche": requested_niche,
             "locked_niche": locked_niche,
             "source": "compile_director_plan",
+            "topic_intelligence": {
+                "match_method": topic_intel.get("match_method"),
+                "hybrid_niche": hybrid_id,
+            },
+            **hybrid_meta,
         },
     )
+    if hybrid_id and not plan.loop_text:
+        try:
+            from hybrid_niches import get_hybrid_niche
+            loop = get_hybrid_niche(hybrid_id).get("loop_bridge")
+            if loop:
+                plan.loop_text = loop
+        except ImportError:
+            pass
 
     if not plan.scenes and plan.full_narration:
         # Minimal single-scene fallback split by sentences

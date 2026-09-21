@@ -11,7 +11,7 @@ class TestSceneSchemaValidate(unittest.TestCase):
         plan = {
             "scenes": [
                 {
-                    "narration": "Bu tam bir cumledir.",
+                    "narration": "Bu tam bir cumle ve yeterli kelime icerir.",
                     "duration": 3.0,
                     "search_queries": ["marble bust stoic"],
                 }
@@ -44,7 +44,7 @@ class TestSceneSchemaValidate(unittest.TestCase):
 
         bad_json = '{"scenes":[{"narration":"kopuk"}]}'
         good_json = (
-            '{"scenes":[{"narration":"Bu tam bir cumledir.","duration":3,'
+            '{"scenes":[{"narration":"Bu tam bir cumle ve yeterli kelime icerir.","duration":3,'
             '"search_queries":["stoic marble"]}]}'
         )
         good_resp = MagicMock()

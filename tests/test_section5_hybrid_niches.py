@@ -31,6 +31,8 @@ class TestSection5HybridNiches(unittest.TestCase):
         self.assertIn("old_money_luxury_mindset", keys)
         self.assertIn("untranslatable_words_sonder", keys)
         self.assertIn("alternate_history_ai", keys)
+        self.assertIn("weird_laws_world_map", keys)
+        self.assertIn("Item 290", get_hybrid_niche("weird_laws_world_map")["name"])
 
         # Check structure
         for n in niches:

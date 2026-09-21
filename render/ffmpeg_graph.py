@@ -55,6 +55,11 @@ def build_scene_filter_chain(
         f"scale={width}:{height}:force_original_aspect_ratio=increase,"
         f"crop={width}:{height}"
     )
+    try:
+        from effects.filters import get_scene_brightness_alternation_filter
+        base += f",{get_scene_brightness_alternation_filter(scene_index)}"
+    except Exception:
+        pass
     if enable_ken_burns:
         # Subtle zoom 1.00 → 1.04 over scene (Item 73) via zoompan
         frames = max(1, int(duration * float(getattr(config, "FPS", 30))))
@@ -152,7 +157,8 @@ def render_with_ffmpeg_graph(
         progress_callback(76, "[FFmpegGraph] Filter complex derleniyor (Madde 418)...")
 
     # Build inputs
-    cmd: List[str] = [ffmpeg, "-y"]
+    from system_resilience import get_ffmpeg_loglevel
+    cmd: List[str] = [ffmpeg, "-y", "-hide_banner", "-loglevel", get_ffmpeg_loglevel()]
     filter_parts: List[str] = []
     for i, clip in enumerate(valid):
         if cancel_check and cancel_check():
@@ -188,17 +194,12 @@ def render_with_ffmpeg_graph(
 
     filter_complex = ";".join(filter_parts)
 
-    # Codec selection
+    # Codec selection — NVENC (Windows NVIDIA) · VideoToolbox (macOS) · libx264 fallback
+    from system_resilience import get_ffmpeg_vcodec_args
     use_gpu = getattr(config, "USE_GPU_ACCELERATION", True)
-    gpu_codec = getattr(config, "GPU_CODEC", "h264_nvenc")
-    threads = int(getattr(config, "RENDER_THREADS", 8) or 8)
-
-    if use_gpu and gpu_codec == "h264_nvenc":
-        vcodec = ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "20", "-b:v", "0"]
-        mode = "NVENC"
-    else:
-        vcodec = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
-        mode = "libx264"
+    gpu_codec = getattr(config, "GPU_CODEC", "")
+    threads = int(getattr(config, "FFMPEG_THREADS", getattr(config, "RENDER_THREADS", 4)) or 4)
+    vcodec, mode = get_ffmpeg_vcodec_args(use_gpu, gpu_codec)
 
     import random
     if getattr(config, "FPS_DIVERSIFY", True):
@@ -279,6 +280,24 @@ def render_with_ffmpeg_graph(
             pass
 
 
+def _needs_moviepy_composer(kwargs: Dict[str, Any]) -> bool:
+    """
+    FFmpeg graph covers concat + look + ASS only (Item 418 baseline).
+    Section-2 retention overlays (Items 75–246, B5 hybrid) require MoviePy compose_video.
+    """
+    if kwargs.get("split_screen"):
+        return True
+    if kwargs.get("retention_metadata"):
+        return True
+    if kwargs.get("hybrid_niche"):
+        return True
+    if kwargs.get("gameplay_path"):
+        return True
+    if kwargs.get("enable_section2_filters", True):
+        return True
+    return False
+
+
 def compose_via_director(
     clips: List[Dict[str, Any]],
     audio_path: str,
@@ -290,7 +309,17 @@ def compose_via_director(
     Prefer FFmpeg graph; fall back to MoviePy compose_video for capability gaps.
     """
     prefer_ffmpeg = kwargs.pop("prefer_ffmpeg", True)
-    # When RENDER_SAFE_MODE or explicit prefer — try graph first always for speed
+    if _needs_moviepy_composer(kwargs):
+        print(
+            "  [Director] MoviePy compose_video — full Section-2/B5 overlay pipeline "
+            "(FFmpeg graph is look+subs only)",
+            flush=True,
+        )
+        from video_composer import compose_video
+        kwargs.setdefault("audio_premastered", kwargs.get("audio_premastered", True))
+        return compose_video(clips, audio_path, word_timings, output_path, **kwargs)
+
+    # Fast path: basic concat + look when overlays disabled explicitly
     if prefer_ffmpeg and getattr(config, "ENABLE_FFMPEG_GRAPH", True):
         result = render_with_ffmpeg_graph(
             clips, audio_path, output_path,

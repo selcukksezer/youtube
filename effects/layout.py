@@ -114,6 +114,35 @@ def create_split_screen_clip(
     composite.duration = top_clip.duration
     return composite
 
+
+def create_before_after_contrast_clip(
+    left_clip: VideoFileClip,
+    right_clip: VideoFileClip,
+    target_w: int,
+    target_h: int,
+    divider_color: Tuple[int, int, int] = (255, 215, 0),
+    divider_thickness: int = 2,
+    left_label: str = "ÖNCE",
+    right_label: str = "SONRA",
+) -> VideoFileClip:
+    """
+    Item 227: Zıtlık Efekti (Before / After).
+    Sol/sağ %50 dikey bölme — fakir/zengin, öfkeli/dingin zıt kutuplar.
+    """
+    half_w = target_w // 2
+    dur = min(left_clip.duration, right_clip.duration)
+    left_prep = apply_smart_crop(left_clip, half_w, target_h).set_duration(dur).set_position((0, 0))
+    right_prep = apply_smart_crop(right_clip, half_w, target_h).set_duration(dur).set_position((half_w, 0))
+    divider = (
+        ColorClip(size=(divider_thickness, target_h), color=divider_color, duration=dur)
+        .set_position((half_w - divider_thickness // 2, 0))
+    )
+    composite = CompositeVideoClip([left_prep, right_prep, divider], size=(target_w, target_h))
+    composite.duration = dur
+    print(f"    [Item 227] Before/after contrast split: {left_label} | {right_label}")
+    return composite
+
+
 def apply_pip_overlay(
     main_clip: VideoFileClip,
     pip_clip_or_path: Optional[str] = None,
@@ -203,9 +232,10 @@ def apply_corner_radius_ffmpeg(input_path: str, output_path: str, radius: int = 
     r = max(10, r)
 
     # Probe to get dimensions
+    from system_resilience import get_ffmpeg_loglevel
     probe_cmd = [
         imageio_ffmpeg.get_ffmpeg_exe(), "-i", input_path,
-        "-hide_banner", "-loglevel", "error"
+        "-hide_banner", "-loglevel", get_ffmpeg_loglevel(),
     ]
     try:
         result = subprocess.run(probe_cmd, capture_output=True, text=True)

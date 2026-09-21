@@ -2,7 +2,7 @@
 SFX Transition Audio Manager — Synthesizes & mixes scene transition sounds (Whoosh/Pop).
 Boosts viewer retention and engagement on YouTube Shorts.
 """
-import os, math, wave, struct, subprocess
+import os, math, re, wave, struct, subprocess
 import imageio_ffmpeg
 import config
 
@@ -209,6 +209,87 @@ def generate_pure_math_sfx(output_path: str, wave_type: str = "sine",
     return output_path
 
 
+def ensure_reaction_sfx_files():
+    """Item 149: procedural chuckle + sigh SFX for editorial reaction cues."""
+    os.makedirs(SFX_DIR, exist_ok=True)
+    chuckle_path = os.path.join(SFX_DIR, "chuckle.wav")
+    sigh_path = os.path.join(SFX_DIR, "sigh.wav")
+    sample_rate = 44100
+
+    if not os.path.exists(chuckle_path):
+        dur = 0.35
+        frames = bytearray()
+        for i in range(int(sample_rate * dur)):
+            t = i / sample_rate
+            env = math.exp(-t * 6.0) * (0.6 + 0.4 * math.sin(2 * math.pi * 7 * t))
+            val = math.sin(2 * math.pi * (420 + 80 * t) * t) * env * 0.35
+            scaled = int(val * 12000)
+            frames.extend(struct.pack("<h", max(-32767, min(32767, scaled))))
+        with wave.open(chuckle_path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(frames)
+
+    if not os.path.exists(sigh_path):
+        dur = 0.55
+        frames = bytearray()
+        for i in range(int(sample_rate * dur)):
+            t = i / sample_rate
+            env = math.exp(-t * 3.5)
+            val = math.sin(2 * math.pi * 180 * t) * env * 0.4
+            scaled = int(val * 10000)
+            frames.extend(struct.pack("<h", max(-32767, min(32767, scaled))))
+        with wave.open(sigh_path, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(frames)
+
+    return chuckle_path, sigh_path
+
+
+def build_reaction_sfx_events(scene_clips):
+    """Item 149: map (gül/şaşır/iç çek) parenthetical cues to mix timestamps."""
+    from voice.script_humanizer import extract_reaction_cues
+
+    events, elapsed = [], 0.0
+    for scene in scene_clips or []:
+        cues = extract_reaction_cues(str(scene.get("narration", "")))
+        for cue in cues:
+            sound = "chuckle" if cue == "chuckle" else "sigh"
+            events.append({"sound": sound, "at": elapsed + 0.25})
+        elapsed += float(scene.get("duration", 0.0))
+    return events
+
+
+def build_emphasis_kick_events(scene_clips, word_timings=None):
+    """Item 192: sub-kick on emphasis keywords aligned to word timings when available."""
+    from voice.script_humanizer import EMPHASIS_KEYWORDS_TR, EMPHASIS_KEYWORDS_EN
+
+    emphasis = {k.casefold() for k in EMPHASIS_KEYWORDS_TR} | {k.casefold() for k in EMPHASIS_KEYWORDS_EN}
+    events = []
+    if word_timings:
+        for wt in word_timings:
+            token = re.sub(r"[^\w]", "", (wt.get("text") or "")).casefold()
+            if token in emphasis:
+                events.append({"sound": "sub_kick", "at": float(wt.get("offset", 0.0))})
+                if len(events) >= 6:
+                    break
+        return events
+
+    elapsed = 0.0
+    for scene in scene_clips or []:
+        for word in str(scene.get("narration", "")).split():
+            token = re.sub(r"[^\w]", "", word).casefold()
+            if token in emphasis:
+                events.append({"sound": "sub_kick", "at": elapsed})
+                if len(events) >= 6:
+                    return events
+        elapsed += float(scene.get("duration", 0.0))
+    return events
+
+
 def build_scene_sfx_events(scene_clips):
     """Returns non-copyrighted SFX events from scene metadata (Items 154-155)."""
     events, elapsed = [], 0.0
@@ -231,17 +312,36 @@ def build_scene_sfx_events(scene_clips):
     return events
 
 
-def add_sfx_to_narration(narration_audio_path, scene_durations, output_path, sfx_volume=0.20, scene_clips=None):
+def _panned_whoosh_path(whoosh_path: str) -> str:
+    """Item 187: stereo pan L→R on whoosh transitions."""
+    try:
+        from voice.acoustic_assets import apply_stereo_pan_movement
+        panned = whoosh_path.replace(".wav", "_panned.wav")
+        if os.path.exists(panned) and os.path.getmtime(panned) >= os.path.getmtime(whoosh_path):
+            return panned
+        result = apply_stereo_pan_movement(whoosh_path, panned, direction="left_to_right", duration=0.35)
+        if result and os.path.exists(result):
+            return result
+    except Exception:
+        pass
+    return whoosh_path
+
+
+def add_sfx_to_narration(narration_audio_path, scene_durations, output_path, sfx_volume=0.20, scene_clips=None, word_timings=None):
     """
     Overlays scene transition Whoosh sound effects at the start of each scene cut.
     """
     whoosh_path, pop_path, ding_path = ensure_sfx_files()
+    whoosh_path = _panned_whoosh_path(whoosh_path)
+    ensure_reaction_sfx_files()
     impact_path = os.path.join(SFX_DIR, "sub_impact.wav")
     if not os.path.exists(whoosh_path) or not os.path.exists(narration_audio_path):
         return narration_audio_path
 
     if scene_clips:
         events = build_scene_sfx_events(scene_clips)
+        events.extend(build_reaction_sfx_events(scene_clips))
+        events.extend(build_emphasis_kick_events(scene_clips, word_timings=word_timings))
     else:
         elapsed = 0.0
         events = []
@@ -261,7 +361,13 @@ def add_sfx_to_narration(narration_audio_path, scene_durations, output_path, sfx
         "heartbeat": os.path.join(SFX_DIR, "heartbeat.wav"),
         "clock_tick": os.path.join(SFX_DIR, "clock_tick.wav"),
         "typewriter": os.path.join(SFX_DIR, "typewriter.wav"),
+        "chuckle": os.path.join(SFX_DIR, "chuckle.wav"),
+        "sigh": os.path.join(SFX_DIR, "sigh.wav"),
+        "sub_kick": os.path.join(SFX_DIR, "sub_kick.wav"),
     }
+    if events and any(e.get("sound") == "sub_kick" for e in events):
+        from voice.acoustic_assets import ensure_sub_kick_sfx
+        ensure_sub_kick_sfx()
     for idx, event in enumerate(events):
         sound_path = sound_paths[event["sound"]]
         inputs.extend(["-i", sound_path])

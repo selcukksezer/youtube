@@ -63,19 +63,29 @@ GOOGLE_AI_CATALOG: List[Dict[str, Any]] = [
 
 PLAN_INFO = {
     "google_ai_pro": {
-        "title": "Google AI Pro",
+        "title": "Google AI Plus / Pro — abonelik ≠ API",
         "blurb": (
-            "Gemini uygulamasındaki Pro aboneliği chat kotası verir. "
-            "Bu stüdyo ise Gemini Developer API anahtarınızı kullanır — "
-            "Pro/ücretli projede Imagen (Nano Banana) ve Veo modelleri açılır."
+            "Google AI Plus (gemini.google.com) uygulama içi görsel/senaryo kotası verir; bu stüdyo "
+            "o kotayı kullanamaz. Stüdyo yalnızca GEMINI_API_KEY ile generativelanguage.googleapis.com "
+            "Developer API'yi çağırır — tüketici abonelik kotası buraya aktarılmaz, OAuth ile Plus "
+            "faturasına bağlama resmi olarak yok. AI Studio'da Plus plan bağlama da yok (Pro/Ultra "
+            "için var; fayda sadece AI Studio web arayüzünde). Görsel API modelleri ücretsiz katmanda "
+            "yok; kullanırsan pay-as-you-go faturalandırma gerekir. Varsayılan: stok video."
         ),
         "tips": [
-            "aistudio.google.com → Get API key → Billing bağlı projede Pro modelleri görünür",
-            "Senaryo: gemini-3.5-flash veya gemini-3.1-pro-preview",
-            "Görsel: gemini-3.1-flash-image (Nano Banana 2)",
-            "Video: veo-3.1-fast-generate-preview (kota ücretli)",
-            "Grounding / Google Search: senaryo doğruluğu için Pro faydası",
+            "Plus görsel kotası → gemini.google.com uygulaması; stüdyo API ile ayrı faturalandırma",
+            "aistudio.google.com → API key (aynı hesap) → isteğe bağlı billing aç (görsel için gerekli)",
+            "Pro/Ultra: AI Studio Playground'da yüksek kota — dış uygulama (bu stüdyo) hariç",
+            "Senaryo (ücretsiz API): gemini-flash-lite-latest veya gemini-3.5-flash",
+            "Görsel (opsiyonel, ücretli): Ayarlar → Gemini görsel üretimi kutusu + billing",
+            "Stok önerilir: Pexels/Pixabay/Coverr — USE_GEMINI_IMAGE_GEN=false (varsayılan)",
         ],
+        "subscription_vs_api": {
+            "plus_app_quota": "gemini.google.com chat/görsel — stüdyoya aktarılmaz",
+            "ai_studio_ui": "Pro/Ultra → AI Studio web kotası; Plus plan linking yok",
+            "developer_api": "GEMINI_API_KEY → proje billing tier; pay-as-you-go görsel",
+            "oauth": "Resmi OAuth GCP projesi içindir; Plus abonelik faturasına bağlanmaz",
+        },
     }
 }
 
@@ -138,7 +148,7 @@ def list_live_models() -> Dict[str, Any]:
                 "tts": getattr(config, "GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts"),
             },
             "flags": {
-                "use_gemini_images": getattr(config, "USE_GEMINI_IMAGE_GEN", True),
+                "use_gemini_images": getattr(config, "USE_GEMINI_IMAGE_GEN", False),
                 "use_gemini_video": getattr(config, "USE_GEMINI_VIDEO_GEN", False),
                 "prefer_gemini_over_stock": getattr(config, "PREFER_GEMINI_SCENE_IMAGES", False),
             },
@@ -192,7 +202,7 @@ def get_plan_and_quota_snapshot() -> Dict[str, Any]:
         "error": live.get("error"),
         "benefits_checklist": [
             {"id": "script", "label": "Senaryo (Flash / Pro)", "enabled": True},
-            {"id": "image", "label": "Nano Banana görsel üretimi", "enabled": getattr(config, "USE_GEMINI_IMAGE_GEN", True)},
+            {"id": "image", "label": "Nano Banana görsel üretimi", "enabled": getattr(config, "USE_GEMINI_IMAGE_GEN", False)},
             {"id": "video", "label": "Veo video üretimi", "enabled": getattr(config, "USE_GEMINI_VIDEO_GEN", False)},
             {"id": "tts", "label": "Gemini TTS (deneysel)", "enabled": getattr(config, "USE_GEMINI_TTS", False)},
             {"id": "grounding", "label": "Google Search grounding", "enabled": getattr(config, "USE_GEMINI_GROUNDING", False)},
@@ -225,6 +235,12 @@ def generate_text(prompt: str, model: Optional[str] = None, system: str = "") ->
         try:
             from quota_manager import quota_manager
             quota_manager.record_call("Gemini")
+            usage = data.get("usageMetadata") or {}
+            quota_manager.record_token_usage(
+                "Gemini",
+                prompt_tokens=int(usage.get("promptTokenCount") or 0),
+                completion_tokens=int(usage.get("candidatesTokenCount") or 0),
+            )
         except Exception:
             pass
         return True, text.strip()
@@ -236,12 +252,16 @@ def generate_image_bytes(
     prompt: str,
     model: Optional[str] = None,
     aspect_hint: str = "vertical 9:16 portrait",
+    force: bool = False,
 ) -> Tuple[bool, Optional[bytes], str]:
     """
     Nano Banana / Gemini native image via generateContent + responseModalities IMAGE.
     Returns (ok, png_or_jpeg_bytes, message).
     Item 416: circuit-breaker on 429 so render pipeline does not spam quota.
     """
+    if not force and not getattr(config, "USE_GEMINI_IMAGE_GEN", False):
+        return False, None, "USE_GEMINI_IMAGE_GEN kapalı — stok video kullanılıyor"
+
     try:
         from system_resilience import circuit_breaker
         if not circuit_breaker.can_execute("gemini_image"):
@@ -307,8 +327,13 @@ def generate_image_bytes(
         return False, None, str(e)
 
 
-def save_generated_image(prompt: str, output_path: str, model: Optional[str] = None) -> Optional[str]:
-    ok, data, msg = generate_image_bytes(prompt, model=model)
+def save_generated_image(
+    prompt: str,
+    output_path: str,
+    model: Optional[str] = None,
+    force: bool = False,
+) -> Optional[str]:
+    ok, data, msg = generate_image_bytes(prompt, model=model, force=force)
     if not ok or not data:
         print(f"  [GoogleAI] Image fail: {msg}")
         return None

@@ -502,13 +502,16 @@
                         <div class="form-actions mt-4">
                             <button class="btn btn-secondary btn-lg" id="btn-create-script">
                                 <i class="fa-solid fa-code-branch"></i>
-                                <span>1. Senaryoyu İncele & Düzenle</span>
+                                <span id="btn-create-script-label">1. Senaryoyu İncele & Düzenle</span>
                             </button>
                             <button class="btn btn-primary btn-lg" id="btn-quick-render">
                                 <i class="fa-solid fa-bolt"></i>
                                 <span>Doğrudan Full HD Render Al</span>
                             </button>
                         </div>
+                        <button type="button" class="btn btn-outline btn-sm w-100 hidden mt-2" id="btn-new-topic" title="Mevcut senaryoyu silip yeni konu ile başlayın">
+                            <i class="fa-solid fa-rotate-left"></i> Yeni Konu / Vazgeç
+                        </button>
                     </div>
 
                     <!-- Sağ Canlı Önizleme & Hook Kartı -->
@@ -595,6 +598,16 @@
                                         <button class="btn btn-sm btn-secondary" id="btn-copy-seo-comment" title="Yorumu Kopyala"><i class="fa-solid fa-copy"></i></button>
                                     </div>
                                 </div>
+                                <div class="mb-2" id="feed-distribution-advisory" style="padding: 8px; border-radius: 8px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25);">
+                                    <small style="color: var(--text-muted); font-size: 10px; display: block; text-transform: uppercase;">Feed Dağıtım İvmesi (Item 387 — Analytics Stub):</small>
+                                    <div id="feed-distribution-text" style="font-size: 10px; color: #93c5fd; margin-top: 4px; line-height: 1.4;">
+                                        İlk 500 gösterim simülasyonu — kaydırma oranını ayarlayın.
+                                    </div>
+                                    <label style="font-size: 10px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; margin-top: 6px;">
+                                        Kaydırma oranı: <span id="feed-swipe-rate-label">35%</span>
+                                        <input type="range" id="feed-swipe-rate-slider" min="0" max="100" value="35" style="flex: 1;">
+                                    </label>
+                                </div>
                                 <div style="display: flex; gap: 8px; margin-top: 8px;">
                                     <a id="link-download-proof" href="#" target="_blank" class="btn btn-sm btn-secondary" style="flex: 1; text-align: center; text-decoration: none; font-size: 11px; padding: 5px 8px;">
                                         <i class="fa-solid fa-file-shield text-info"></i> Çaba Kanıtı İndir (.json)
@@ -602,6 +615,22 @@
                                     <button class="btn btn-sm btn-secondary" id="btn-show-appeal-script" style="flex: 1; font-size: 11px; padding: 5px 8px;">
                                         <i class="fa-solid fa-scale-balanced text-warning"></i> YouTube İtiraz Metni
                                     </button>
+                                </div>
+                                <div id="video-share-decision-panel" class="hidden" style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08);">
+                                    <small style="color: var(--text-muted); font-size: 10px; display: block; text-transform: uppercase; margin-bottom: 6px;">
+                                        YouTube Paylaşım Kararı (Manuel Yükleme)
+                                    </small>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        <button type="button" class="btn btn-sm btn-primary" id="btn-youtube-share-keep" style="flex: 1; min-width: 140px; font-size: 11px; padding: 6px 10px;">
+                                            <i class="fa-brands fa-youtube"></i> YouTube'da Paylaş
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-secondary" id="btn-youtube-share-discard" style="flex: 1; min-width: 140px; font-size: 11px; padding: 6px 10px; border-color: rgba(239,68,68,0.5); color: #f87171;">
+                                            <i class="fa-solid fa-trash-can"></i> Paylaşmayacağım (Sil)
+                                        </button>
+                                    </div>
+                                    <p id="video-share-decision-hint" style="font-size: 10px; color: var(--text-muted); margin: 6px 0 0;">
+                                        Paylaş → proof + SEO saklanır. Sil → video, kanıt ve geçici dosyalar diskten kaldırılır.
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -678,8 +707,11 @@
                         </button>
                     </div>
 
-                    <div class="timeline-actions" style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
+                    <div class="timeline-actions" style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                         <button class="btn btn-secondary" id="btn-add-scene-manual"><i class="fa-solid fa-plus"></i> Sahne Ekle</button>
+                        <button type="button" class="btn btn-outline hidden" id="btn-regenerate-scenario" title="Senaryoyu sıfırdan yeniden üret (önbelleği temizler)">
+                            <i class="fa-solid fa-arrows-rotate"></i> Senaryoyu Yeniden Üret
+                        </button>
                         <button class="btn btn-primary" id="btn-render-from-timeline"><i class="fa-solid fa-clapperboard"></i> Bu Senaryo İle Render Al <span class="kbd-hint">Ctrl+Enter</span></button>
                     </div>
                 </div>
@@ -1653,7 +1685,11 @@
                         <div class="form-field mt-2">
                             <label>Google Gemini API Key</label>
                             <input type="password" id="input-key-gemini" class="input-styled" placeholder="AIza... veya AQ.Ab8...">
-                            <small style="color:#94a3b8;font-size:11px;">Google AI Pro / AI Studio anahtarı — aistudio.google.com</small>
+                            <small style="color:#94a3b8;font-size:11px;line-height:1.4;display:block;margin-top:4px;">
+                                AI Studio Developer API anahtarı — aistudio.google.com.
+                                <strong style="color:#fbbf24;">Google AI Plus görsel kotası buraya geçmez;</strong>
+                                stüdyo ayrı API faturalandırması kullanır. Görsel opsiyonel (varsayılan kapalı).
+                            </small>
                         </div>
 
                         <!-- Google AI Pro Hub -->
@@ -1679,8 +1715,12 @@
                                 <label>Video Modeli (Veo)</label>
                                 <select id="select-gemini-video-model" class="select-styled"></select>
                             </div>
+                            <p style="font-size:11px;color:#94a3b8;margin:8px 0 4px;line-height:1.45;">
+                                Stok video (Pexels/Pixabay/Coverr/Mixkit) çoğu sahne için yeterli.
+                                <strong>Gemini görsel üretimi opsiyonel</strong> — varsayılan kapalı; açmadan render etmez, 429 log spam yok.
+                            </p>
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;font-size:12px;">
-                                <label><input type="checkbox" id="chk-gai-image" checked> Nano Banana görsel</label>
+                                <label><input type="checkbox" id="chk-gai-image"> Gemini görsel üretimi (Nano Banana)</label>
                                 <label><input type="checkbox" id="chk-gai-video"> Veo video (ücretli)</label>
                                 <label><input type="checkbox" id="chk-gai-grounding"> Google Search grounding</label>
                                 <label><input type="checkbox" id="chk-gai-prefer-img"> Sahne için AI görseli tercih et</label>

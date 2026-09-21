@@ -1,6 +1,6 @@
 """
 Graphic Overlays, Watermarks, Badges, Avatars & UI Cards
-Covers items: 59, 60, 75, 82, 87, 92, 105, 118, 125, 126, 131, 138
+Covers items: 59, 60, 75, 82, 87, 92, 105, 118, 125, 126, 131, 138, 212, 232, 238, 246
 """
 import os, random, math, subprocess
 from typing import Optional, Tuple, Any
@@ -640,7 +640,7 @@ def apply_ui_element_overlay(base_clip, ui_type: str = "ios_notification",
     """
     w, h = base_clip.size
     dur = min(duration, max(0.5, base_clip.duration - start_time))
-    fps = base_clip.fps or 30.0
+    fps = getattr(base_clip, "fps", None) or 30.0
 
     ui_clip = generate_ui_element_overlay(
         w, h, duration=dur, ui_type=ui_type,
@@ -686,6 +686,171 @@ def generate_dynamic_progress_bar(width: int, height: int, duration: float,
     print(f"    [Item 138] Dinamik neon ilerleme çubuğu üretildi: pos={position}, h={bar_height}px, {duration:.1f}s")
     return bar_clip
 
+def apply_share_cta_overlay(
+    base_clip,
+    cta_text: str = "Arkadaşına gönder",
+    start_at: float = 0.0,
+    duration: float = 3.0,
+):
+    """Item 235: Paylaşma güdüsü — alt-sol neon paylaş CTA bandı."""
+    try:
+        w, h = base_clip.size
+        dur = base_clip.duration
+        show_dur = min(duration, max(0.5, dur - start_at))
+        if show_dur <= 0:
+            return base_clip
+        bar_h = 48
+        img = Image.new("RGBA", (int(w * 0.62), bar_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([(0, 0), (img.width - 1, bar_h - 1)], radius=14, fill=(20, 120, 255, 220))
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+        draw.text((14, 14), f"↗ {cta_text[:36]}", fill=(255, 255, 255, 255), font=font)
+        banner = (
+            ImageClip(np.array(img), ismask=False, transparent=True)
+            .set_duration(show_dur)
+            .set_start(start_at)
+            .set_position((16, int(h * 0.72)))
+        )
+        composite = CompositeVideoClip([base_clip, banner], size=(w, h))
+        composite.duration = dur
+        print(f"    [Item 235] Share CTA overlay @ {start_at:.1f}s")
+        return composite
+    except Exception as e:
+        print(f"    [ShareCTA] Notice: {e}")
+        return base_clip
+
+
+def apply_bookmark_cta_overlay(
+    base_clip,
+    cta_text: str = "Videoyu kaydet",
+    start_at: float = 0.0,
+    duration: float = 3.0,
+):
+    """Item 236: Kaydetme güdüsü — alt-sağ bookmark CTA bandı."""
+    try:
+        w, h = base_clip.size
+        dur = base_clip.duration
+        show_dur = min(duration, max(0.5, dur - start_at))
+        if show_dur <= 0:
+            return base_clip
+        bar_h = 48
+        img = Image.new("RGBA", (int(w * 0.58), bar_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle([(0, 0), (img.width - 1, bar_h - 1)], radius=14, fill=(255, 180, 0, 225))
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+        draw.text((14, 14), f"🔖 {cta_text[:34]}", fill=(20, 20, 30, 255), font=font)
+        banner = (
+            ImageClip(np.array(img), ismask=False, transparent=True)
+            .set_duration(show_dur)
+            .set_start(start_at)
+            .set_position((int(w * 0.38), int(h * 0.78)))
+        )
+        composite = CompositeVideoClip([base_clip, banner], size=(w, h))
+        composite.duration = dur
+        print(f"    [Item 236] Bookmark CTA overlay @ {start_at:.1f}s")
+        return composite
+    except Exception as e:
+        print(f"    [BookmarkCTA] Notice: {e}")
+        return base_clip
+
+
+def apply_sticky_hook_banner_overlay(
+    base_clip,
+    banner_text: str = "⚠️ ASLA BUNU YAPMAYIN",
+    bar_height: int = 52,
+):
+    """
+    Item 232: Ekranın Üst Kısmına Sabit Kanca Yazısı.
+    Video boyunca üstte sabit uyarı/kanca bandı.
+    """
+    try:
+        import config as _cfg
+        if getattr(_cfg, "RENDER_SAFE_MODE", True):
+            print("    [Item 232] Sticky hook banner: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+    try:
+        w, h = base_clip.size
+        dur = base_clip.duration
+        img = Image.new("RGBA", (w, bar_height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([(0, 0), (w, bar_height)], fill=(180, 0, 0, 210))
+        draw.rectangle([(0, bar_height - 3), (w, bar_height)], fill=(255, 230, 0, 255))
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+        draw.text((16, 16), banner_text[:48], fill=(255, 255, 255, 255), font=font)
+        banner = (
+            ImageClip(np.array(img), ismask=False, transparent=True)
+            .set_duration(dur)
+            .set_position(("center", 0))
+        )
+        composite = CompositeVideoClip([base_clip, banner], size=(w, h))
+        composite.duration = dur
+        print(f"    [Item 232] Sticky hook banner: {banner_text[:32]}")
+        return composite
+    except Exception as e:
+        print(f"    [StickyHookBanner] Notice: {e}")
+        return base_clip
+
+
+def apply_micro_animated_sticker_overlay(
+    base_clip,
+    sticker: str = "arrow",
+    duration: float = 2.5,
+):
+    """
+    Item 238: Mikro-Animasyonlu Çıkartmalar.
+    Zıplayan ok / işaret parmağı ikonu ilgiyi diri tutar.
+    """
+    try:
+        import config as _cfg
+        if getattr(_cfg, "RENDER_SAFE_MODE", True):
+            print("    [Item 238] Micro animated sticker: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+    try:
+        w, h = base_clip.size
+        dur = min(duration, base_clip.duration)
+        icons = {"arrow": "⬇️", "point": "👆", "circle": "⭕"}
+        icon = icons.get(sticker, "⬇️")
+        sticker_w, sticker_h = 96, 96
+        img = Image.new("RGBA", (sticker_w, sticker_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+        draw.text((20, 20), icon, fill=(255, 255, 255, 255), font=font)
+        arr = np.array(img)
+
+        def bounce_pos(t):
+            bounce = int(12 * abs(math.sin(t * 5.0)))
+            return (int(w * 0.78), int(h * 0.38) + bounce)
+
+        sticker_clip = (
+            ImageClip(arr, ismask=False, transparent=True)
+            .set_duration(dur)
+            .set_position(bounce_pos)
+        )
+        composite = CompositeVideoClip([base_clip, sticker_clip], size=(w, h))
+        composite.duration = base_clip.duration
+        print(f"    [Item 238] Micro animated sticker: {sticker}")
+        return composite
+    except Exception as e:
+        print(f"    [MicroAnimatedSticker] Notice: {e}")
+        return base_clip
+
+
 def apply_dynamic_progress_bar(base_clip, bar_height: int = 4,
                                color: tuple = (0, 255, 204),
                                position: str = "bottom"):
@@ -712,3 +877,650 @@ def apply_dynamic_progress_bar(base_clip, bar_height: int = 4,
     composite = CompositeVideoClip([base_clip, bar], size=(w, h))
     composite.duration = dur
     return composite
+
+def generate_neon_countdown_overlay(
+    width: int,
+    height: int,
+    duration: float = 3.0,
+    position: str = "top_right",
+    fps: float = 30.0,
+    lang: str = "tr",
+) -> VideoClip:
+    """
+    Item 212: Geri Sayım Sayacı (Countdown Timer).
+    Köşede 3..2..1 neon sayaç; quiz/merak formatlarında retention kancası.
+    """
+    countdown_nums = [3, 2, 1]
+    sec_per_num = duration / len(countdown_nums)
+    neon_rgb = (0, 255, 102)
+    glow_rgb = (255, 230, 0)
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        if t >= duration:
+            return np.array(img)
+
+        idx = min(int(t / sec_per_num), len(countdown_nums) - 1)
+        num = countdown_nums[idx]
+        local_t = t - idx * sec_per_num
+        pulse = 0.88 + 0.12 * math.sin(2 * math.pi * local_t * 4.0)
+
+        box = int(min(width, height) * 0.11 * pulse)
+        margin = int(width * 0.05)
+        if position == "top_left":
+            x0, y0 = margin, int(height * 0.07)
+        else:
+            x0, y0 = width - margin - box, int(height * 0.07)
+
+        draw = ImageDraw.Draw(img)
+        draw.rounded_rectangle(
+            [x0, y0, x0 + box, y0 + box],
+            radius=max(8, box // 5),
+            fill=(8, 12, 24, 215),
+            outline=glow_rgb + (255,),
+            width=3,
+        )
+        inner = max(8, box // 6)
+        draw.rounded_rectangle(
+            [x0 + inner, y0 + inner, x0 + box - inner, y0 + box - inner],
+            radius=max(6, box // 7),
+            outline=neon_rgb + (180,),
+            width=2,
+        )
+        draw.text(
+            (x0 + box // 2, y0 + box // 2),
+            str(num),
+            fill=neon_rgb + (255,),
+            anchor="mm",
+        )
+        if idx == 0 and local_t < 0.35:
+            hint = "GÖSTERİLİYOR" if lang == "tr" else "REVEAL"
+            draw.text(
+                (x0 + box // 2, y0 + box + 18),
+                hint,
+                fill=glow_rgb + (220,),
+                anchor="mm",
+            )
+        return np.array(img)
+
+    def make_rgb(t):
+        return make_rgba(t)[:, :, :3].astype(np.uint8)
+
+    def make_mask(t):
+        return make_rgba(t)[:, :, 3].astype(float) / 255.0
+
+    mask = VideoClip(make_mask, ismask=True, duration=duration).set_fps(fps)
+    clip = VideoClip(make_rgb, ismask=False, duration=duration).set_fps(fps).set_mask(mask)
+    print(f"    [Item 212] Neon countdown overlay: {duration:.1f}s, pos={position}")
+    return clip
+
+def apply_neon_countdown_overlay(
+    base_clip,
+    duration: float = 3.0,
+    position: str = "top_right",
+    lang: str = "tr",
+):
+    """
+    Item 212 – Videonun ilk N saniyesine neon geri sayım bindirir.
+    """
+    try:
+        import config as _cfg
+        if getattr(_cfg, 'RENDER_SAFE_MODE', True):
+            print("    [Item 212] Neon countdown: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
+    w, h = base_clip.size
+    dur = min(duration, base_clip.duration)
+    fps = base_clip.fps or 30.0
+    overlay = generate_neon_countdown_overlay(
+        w, h, duration=dur, position=position, fps=fps, lang=lang
+    ).set_start(0)
+    composite = CompositeVideoClip([base_clip, overlay], size=(w, h))
+    composite.duration = base_clip.duration
+    return composite
+
+
+def generate_neon_curiosity_opening_graphic(
+    width: int,
+    height: int,
+    duration: float = 2.5,
+    symbol: str = "?",
+    fps: float = 30.0,
+) -> VideoClip:
+    """
+    Item 246: Merak Tetikleyici Açılış Grafiği — neon soru/ünlem işareti parlaması.
+    """
+    neon_rgb = (255, 0, 255)
+    glow_rgb = (0, 255, 255)
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        if t >= duration:
+            return np.array(img)
+        fade = 1.0 if t < duration * 0.85 else max(0.0, 1.0 - (t - duration * 0.85) / (duration * 0.15))
+        pulse = 0.82 + 0.18 * math.sin(2 * math.pi * t * 3.5)
+        size = int(min(width, height) * 0.18 * pulse * fade)
+        cx, cy = width // 2, int(height * 0.42)
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", size)
+        except Exception:
+            font = ImageFont.load_default()
+        bbox = draw.textbbox((0, 0), symbol, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        x0, y0 = cx - tw // 2, cy - th // 2
+        for offset, alpha in ((4, 90), (2, 140), (0, 255)):
+            draw.text(
+                (x0 + offset, y0 + offset),
+                symbol,
+                font=font,
+                fill=glow_rgb + (int(alpha * fade),),
+            )
+        draw.text((x0, y0), symbol, font=font, fill=neon_rgb + (int(255 * fade),))
+        return np.array(img)
+
+    clip = VideoClip(make_frame=lambda t: make_rgba(t)[:, :, :3], duration=duration)
+    clip = clip.set_fps(fps).set_mask(
+        VideoClip(make_frame=lambda t: make_rgba(t)[:, :, 3] / 255.0, ismask=True, duration=duration).set_fps(fps)
+    )
+    print(f"    [Item 246] Neon curiosity opening graphic: symbol={symbol}, {duration:.1f}s")
+    return clip
+
+
+def apply_neon_curiosity_opening_graphic(
+    base_clip,
+    duration: float = 2.5,
+    symbol: str = "?",
+):
+    """
+    Item 246 – Videonun açılışına neon soru/ünlem grafiği bindirir.
+    """
+    try:
+        import config as _cfg
+        if getattr(_cfg, 'RENDER_SAFE_MODE', True):
+            print("    [Item 246] Neon curiosity graphic: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
+    w, h = base_clip.size
+    dur = min(duration, base_clip.duration)
+    fps = base_clip.fps or 30.0
+    overlay = generate_neon_curiosity_opening_graphic(
+        w, h, duration=dur, symbol=symbol, fps=fps
+    ).set_start(0)
+    composite = CompositeVideoClip([base_clip, overlay], size=(w, h))
+    composite.duration = base_clip.duration
+    return composite
+
+
+def apply_keyword_white_flash_overlay(
+    base_clip,
+    timestamp: float = 0.0,
+    duration: float = 0.18,
+    peak_alpha: float = 0.82,
+):
+    """
+    Item 260: Görsel Aydınlanma Anı (Flash of Light).
+    Kilit kelime anında ekrandan beyaz ışık süzmesi — kısa fade-in/out overlay.
+    """
+    try:
+        import config as _cfg
+        if getattr(_cfg, "RENDER_SAFE_MODE", True):
+            print("    [Item 260] White flash: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
+    w, h = base_clip.size
+    fps = base_clip.fps or 30.0
+    flash_dur = min(duration, max(0.05, base_clip.duration - timestamp))
+    if flash_dur <= 0 or timestamp >= base_clip.duration:
+        return base_clip
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        local = t / flash_dur if flash_dur > 0 else 0.0
+        if local <= 0.5:
+            alpha = peak_alpha * (local / 0.5)
+        else:
+            alpha = peak_alpha * (1.0 - (local - 0.5) / 0.5)
+        alpha = max(0.0, min(1.0, alpha))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, w, h], fill=(255, 255, 255, int(alpha * 255)))
+        return np.array(img)
+
+    def make_rgb(t):
+        return make_rgba(t)[:, :, :3].astype(np.uint8)
+
+    def make_mask(t):
+        return make_rgba(t)[:, :, 3].astype(float) / 255.0
+
+    mask = VideoClip(make_mask, ismask=True, duration=flash_dur).set_fps(fps)
+    overlay = VideoClip(make_rgb, ismask=False, duration=flash_dur).set_fps(fps).set_mask(mask)
+    overlay = overlay.set_start(timestamp)
+    composite = CompositeVideoClip([base_clip, overlay], size=(w, h))
+    composite.duration = base_clip.duration
+    print(f"    [Item 260] Keyword white flash @ {timestamp:.2f}s ({flash_dur:.2f}s)")
+    return composite
+
+
+def apply_infinite_spiral_overlay(
+    base_clip,
+    duration: float = 4.0,
+    opacity: float = 0.35,
+    rotation_speed: float = 0.8,
+):
+    """
+    Item 224: Sonsuz Sarmal Animasyonu — merkezde dönen hipnotik spiral overlay.
+    """
+    try:
+        import config as _cfg
+        if getattr(_cfg, "RENDER_SAFE_MODE", True):
+            print("    [Item 224] Infinite spiral: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
+    w, h = base_clip.size
+    fps = getattr(base_clip, "fps", None) or 30.0
+    dur = min(duration, base_clip.duration)
+    cx, cy = w // 2, h // 2
+    max_r = int(min(w, h) * 0.45)
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        angle_offset = t * rotation_speed * 360.0
+        for arm in range(3):
+            base_angle = angle_offset + arm * 120.0
+            for step in range(40):
+                r = max_r * (step / 40.0)
+                theta = math.radians(base_angle + step * 18.0)
+                x = cx + r * math.cos(theta)
+                y = cy + r * math.sin(theta)
+                alpha = int(255 * opacity * (1.0 - step / 40.0))
+                draw.ellipse([x - 3, y - 3, x + 3, y + 3], fill=(180, 220, 255, alpha))
+        return np.array(img)
+
+    def make_rgb(t):
+        return make_rgba(t)[:, :, :3].astype(np.uint8)
+
+    def make_mask(t):
+        return make_rgba(t)[:, :, 3].astype(float) / 255.0
+
+    mask = VideoClip(make_mask, ismask=True, duration=dur).set_fps(fps)
+    overlay = VideoClip(make_rgb, ismask=False, duration=dur).set_fps(fps).set_mask(mask).set_start(0)
+    composite = CompositeVideoClip([base_clip, overlay], size=(w, h))
+    composite.duration = base_clip.duration
+    print(f"    [Item 224] Infinite spiral overlay ({dur:.1f}s, opacity={opacity})")
+    return composite
+
+
+def apply_time_tunnel_overlay(
+    base_clip,
+    duration: float = 3.5,
+    streak_count: int = 24,
+    opacity: float = 0.42,
+):
+    """
+    Item 261: Zaman Tüneli Hissi — radial streak / zoom warp overlay.
+    """
+    try:
+        import config as _cfg
+        if getattr(_cfg, "RENDER_SAFE_MODE", True):
+            print("    [Item 261] Time tunnel: RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+
+    w, h = base_clip.size
+    fps = getattr(base_clip, "fps", None) or 30.0
+    dur = min(duration, base_clip.duration)
+    cx, cy = w // 2, h // 2
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        pulse = 0.5 + 0.5 * math.sin(t * 4.0)
+        for i in range(streak_count):
+            angle = (360.0 / streak_count) * i + t * 120.0
+            rad = math.radians(angle)
+            inner = int(min(w, h) * 0.08)
+            outer = int(min(w, h) * (0.35 + 0.25 * pulse))
+            x0 = cx + inner * math.cos(rad)
+            y0 = cy + inner * math.sin(rad)
+            x1 = cx + outer * math.cos(rad)
+            y1 = cy + outer * math.sin(rad)
+            alpha = int(255 * opacity * (0.4 + 0.6 * pulse))
+            draw.line([x0, y0, x1, y1], fill=(120, 200, 255, alpha), width=3)
+        draw.ellipse(
+            [cx - inner, cy - inner, cx + inner, cy + inner],
+            fill=(255, 255, 255, int(80 * opacity)),
+        )
+        return np.array(img)
+
+    def make_rgb(t):
+        return make_rgba(t)[:, :, :3].astype(np.uint8)
+
+    def make_mask(t):
+        return make_rgba(t)[:, :, 3].astype(float) / 255.0
+
+    mask = VideoClip(make_mask, ismask=True, duration=dur).set_fps(fps)
+    overlay = VideoClip(make_rgb, ismask=False, duration=dur).set_fps(fps).set_mask(mask).set_start(0)
+    composite = CompositeVideoClip([base_clip, overlay], size=(w, h))
+    composite.duration = base_clip.duration
+    print(f"    [Item 261] Time tunnel overlay ({dur:.1f}s)")
+    return composite
+
+
+def _overlay_safe_mode_bypass(base_clip, item_label: str):
+    try:
+        if getattr(config, "RENDER_SAFE_MODE", True):
+            print(f"    [{item_label}] RENDER_SAFE_MODE aktif, bypass edildi.")
+            return base_clip
+    except Exception:
+        pass
+    return None
+
+
+def _make_procedural_rgba_clip(base_clip, duration: float, frame_fn):
+    w, h = base_clip.size
+    fps = getattr(base_clip, "fps", None) or 30.0
+    dur = min(duration, base_clip.duration)
+
+    def make_rgb(t):
+        return frame_fn(t)[:, :, :3].astype(np.uint8)
+
+    def make_mask(t):
+        return frame_fn(t)[:, :, 3].astype(float) / 255.0
+
+    mask = VideoClip(make_mask, ismask=True, duration=dur).set_fps(fps)
+    overlay = VideoClip(make_rgb, ismask=False, duration=dur).set_fps(fps).set_mask(mask).set_start(0)
+    composite = CompositeVideoClip([base_clip, overlay], size=(w, h))
+    composite.duration = base_clip.duration
+    return composite
+
+
+def apply_hybrid_frame_overlay(
+    base_clip,
+    label: str = "",
+    bg_style: str = "",
+    accent_rgb: Tuple[int, int, int] = (0, 255, 200),
+    opacity: float = 0.85,
+):
+    """
+    B5 generic hybrid frame — niche label bar + accent border (Items 289–345 fallback).
+    """
+    bypass = _overlay_safe_mode_bypass(base_clip, "B5 hybrid_frame")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    fps = getattr(base_clip, "fps", None) or 30.0
+    dur = base_clip.duration
+    display = (label or bg_style or "HYBRID")[:42]
+    accent = accent_rgb
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        pulse = 0.65 + 0.35 * math.sin(t * 3.0)
+        border = int(3 + pulse * 2)
+        draw.rectangle([8, 8, w - 8, h - 8], outline=(*accent, int(220 * opacity)), width=border)
+        bar_h = int(h * 0.07)
+        draw.rectangle([0, h - bar_h, w, h], fill=(10, 12, 20, int(200 * opacity)))
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", max(18, w // 28))
+        except Exception:
+            font = ImageFont.load_default()
+        draw.text((24, h - bar_h + 8), display.upper(), fill=(*accent, 255), font=font)
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print(f"    [B5] Hybrid frame overlay ({display[:24]})")
+    return out
+
+
+def apply_neon_frame_overlay(base_clip, opacity: float = 0.9):
+    """Item 276: cyberpunk neon corner brackets."""
+    bypass = _overlay_safe_mode_bypass(base_clip, "Item 276 neon_frame")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    dur = base_clip.duration
+    colors = [(0, 255, 220), (255, 0, 180)]
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        seg = int(min(w, h) * 0.12)
+        for idx, col in enumerate(colors):
+            off = int(12 + 4 * math.sin(t * 4 + idx))
+            x0, y0 = off, off
+            x1, y1 = w - off, h - off
+            draw.line([x0, y0, x0 + seg, y0], fill=(*col, int(230 * opacity)), width=4)
+            draw.line([x0, y0, x0, y0 + seg], fill=(*col, int(230 * opacity)), width=4)
+            draw.line([x1, y0, x1 - seg, y0], fill=(*col, int(230 * opacity)), width=4)
+            draw.line([x1, y0, x1, y0 + seg], fill=(*col, int(230 * opacity)), width=4)
+            draw.line([x0, y1, x0 + seg, y1], fill=(*col, int(230 * opacity)), width=4)
+            draw.line([x0, y1, x0, y1 - seg], fill=(*col, int(230 * opacity)), width=4)
+            draw.line([x1, y1, x1 - seg, y1], fill=(*col, int(230 * opacity)), width=4)
+            draw.line([x1, y1, x1, y1 - seg], fill=(*col, int(230 * opacity)), width=4)
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print("    [Item 276] Neon frame overlay applied.")
+    return out
+
+
+def apply_epic_vignette_overlay(base_clip, opacity: float = 0.55):
+    """Item 282: cinematic gold-edge vignette."""
+    bypass = _overlay_safe_mode_bypass(base_clip, "Item 282 epic_vignette")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    dur = base_clip.duration
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, w, h], fill=(0, 0, 0, int(90 * opacity)))
+        inset = int(min(w, h) * 0.06)
+        draw.rectangle(
+            [inset, inset, w - inset, h - inset],
+            outline=(255, 210, 120, int(180 * opacity)),
+            width=3,
+        )
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print("    [Item 282] Epic vignette overlay applied.")
+    return out
+
+
+def apply_soft_vignette_overlay(base_clip, opacity: float = 0.35):
+    """Item 285: warm soft vignette for spiritual/rain niches."""
+    bypass = _overlay_safe_mode_bypass(base_clip, "Item 285 soft_vignette")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    dur = base_clip.duration
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, w, h], fill=(255, 245, 230, int(40 * opacity)))
+        draw.rectangle([0, h - int(h * 0.18), w, h], fill=(20, 30, 50, int(120 * opacity)))
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print("    [Item 285] Soft vignette overlay applied.")
+    return out
+
+
+def apply_countdown_wheel_overlay(base_clip, duration: float = 4.0, opacity: float = 0.75):
+    """Item 327: spinning stop-wheel game overlay."""
+    bypass = _overlay_safe_mode_bypass(base_clip, "Item 327 countdown_wheel")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    dur = min(duration, base_clip.duration)
+    cx, cy = w // 2, int(h * 0.62)
+    radius = int(min(w, h) * 0.22)
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        angle = t * 220.0
+        for i in range(8):
+            a = math.radians(angle + i * 45)
+            x = cx + radius * math.cos(a)
+            y = cy + radius * math.sin(a)
+            col = (255, 60, 60) if i % 2 == 0 else (60, 120, 255)
+            draw.polygon(
+                [cx, cy, x, y, cx + radius * 0.3 * math.cos(a + 0.4), cy + radius * 0.3 * math.sin(a + 0.4)],
+                fill=(*col, int(200 * opacity)),
+            )
+        draw.ellipse([cx - 12, cy - 12, cx + 12, cy + 12], fill=(255, 255, 255, int(240 * opacity)))
+        draw.text((cx - 28, cy - 10), "DUR!", fill=(20, 20, 30, 255))
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print(f"    [Item 327] Countdown wheel overlay ({dur:.1f}s)")
+    return out
+
+
+def apply_eq_bar_overlay(base_clip, duration: float = None, bar_count: int = 16, opacity: float = 0.8):
+    """Item 325: subtitle-area EQ visualizer bars."""
+    bypass = _overlay_safe_mode_bypass(base_clip, "Item 325 eq_bar")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    dur = min(duration or base_clip.duration, base_clip.duration)
+    base_y = int(h * 0.82)
+    bar_w = max(4, w // (bar_count * 2))
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        for i in range(bar_count):
+            x = int(w * 0.1) + i * (bar_w + 4)
+            level = abs(math.sin(t * 6.0 + i * 0.7)) * 0.85 + 0.1
+            bh = int(h * 0.08 * level)
+            col = (0, 255, 180) if i % 3 else (120, 200, 255)
+            draw.rectangle([x, base_y - bh, x + bar_w, base_y], fill=(*col, int(220 * opacity)))
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print(f"    [Item 325] EQ bar overlay ({dur:.1f}s)")
+    return out
+
+
+def apply_split_choice_overlay(base_clip, header: str = "SEÇ", body: str = "Kırmızı vs Mavi", duration: float = 3.5):
+    """Items 280/284: red vs blue split choice panel."""
+    bypass = _overlay_safe_mode_bypass(base_clip, "split_choice")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    dur = min(duration, base_clip.duration)
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        mid = w // 2
+        draw.rectangle([0, int(h * 0.55), mid, int(h * 0.78)], fill=(220, 40, 40, 180))
+        draw.rectangle([mid, int(h * 0.55), w, int(h * 0.78)], fill=(40, 80, 220, 180))
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", max(20, w // 24))
+        except Exception:
+            font = ImageFont.load_default()
+        draw.text((w // 4 - 20, int(h * 0.58)), "A", fill=(255, 255, 255, 255), font=font)
+        draw.text((mid + w // 4 - 20, int(h * 0.58)), "B", fill=(255, 255, 255, 255), font=font)
+        draw.text((24, int(h * 0.50)), header[:24], fill=(255, 255, 255, 230), font=font)
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print("    [B5] Split choice overlay applied.")
+    return out
+
+
+def apply_subtitle_bar_overlay(base_clip, header: str = "Dizi", body: str = "Kelime...", duration: float = 4.0):
+    """Item 288: TV subtitle bar overlay."""
+    bypass = _overlay_safe_mode_bypass(base_clip, "subtitle_bar")
+    if bypass is not None:
+        return bypass
+
+    w, h = base_clip.size
+    dur = min(duration, base_clip.duration)
+
+    def make_rgba(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        bar_y = int(h * 0.72)
+        draw.rectangle([40, bar_y, w - 40, bar_y + int(h * 0.08)], fill=(0, 0, 0, 190))
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", max(18, w // 30))
+        except Exception:
+            font = ImageFont.load_default()
+        draw.text((56, bar_y + 8), f"{header}: {body}"[:48], fill=(255, 255, 100, 255), font=font)
+        return np.array(img)
+
+    out = _make_procedural_rgba_clip(base_clip, dur, make_rgba)
+    print("    [Item 288] Subtitle bar overlay applied.")
+    return out
+
+
+def apply_hybrid_render_overlay(base_clip, overlay_spec: dict):
+    """Dispatch B5 hybrid overlay spec → concrete MoviePy overlay."""
+    if not overlay_spec:
+        return base_clip
+    kind = overlay_spec.get("overlay")
+    ui_type = overlay_spec.get("ui_type")
+    if ui_type == "split_choice":
+        return apply_split_choice_overlay(
+            base_clip,
+            header=overlay_spec.get("header", "SEÇ"),
+            body=overlay_spec.get("body", ""),
+        )
+    if ui_type == "subtitle_bar":
+        return apply_subtitle_bar_overlay(
+            base_clip,
+            header=overlay_spec.get("header", "Dizi"),
+            body=overlay_spec.get("body", ""),
+        )
+    if kind == "neon_frame":
+        return apply_neon_frame_overlay(base_clip)
+    if kind == "epic_vignette":
+        return apply_epic_vignette_overlay(base_clip)
+    if kind == "soft_vignette":
+        return apply_soft_vignette_overlay(base_clip)
+    if kind == "spiral":
+        return apply_infinite_spiral_overlay(base_clip)
+    if kind == "time_tunnel":
+        return apply_time_tunnel_overlay(base_clip)
+    if kind == "countdown_wheel":
+        return apply_countdown_wheel_overlay(base_clip)
+    if kind == "eq_bar":
+        return apply_eq_bar_overlay(base_clip)
+    if kind == "hybrid_frame":
+        label = str(
+            overlay_spec.get("label")
+            or overlay_spec.get("item")
+            or overlay_spec.get("hybrid_id")
+            or ""
+        )
+        return apply_hybrid_frame_overlay(
+            base_clip,
+            label=label,
+            bg_style=overlay_spec.get("bg_style", ""),
+        )
+    return base_clip

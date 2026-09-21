@@ -2,7 +2,7 @@
 YouTube Shorts Ultimate — Configuration
 5 Video Sources | Multi-AI | TR+EN | Karaoke Subtitles
 """
-import os, sys, re
+import os, sys, re, platform
 from typing import Dict, Optional
 
 # Ensure UTF-8 console output on Windows
@@ -21,7 +21,16 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = getattr(PIL.Image, 'Resampling', PIL.Image).LANCZOS
 
 # Load environment variables from .env file
-load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+try:
+    load_dotenv(_ENV_PATH)
+except UnicodeDecodeError:
+    print(
+        "ERROR: .env is not valid UTF-8 text (wrong vault passphrase or corrupted file).\n"
+        "  Fix: mv .env .env.corrupt.bak && python scripts/env_vault.py unseal --force",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 # ══════════════════════════════════════════════════════════════
 #  LANGUAGE — "tr" or "en"
@@ -37,7 +46,8 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 GEMINI_VIDEO_MODEL = os.getenv("GEMINI_VIDEO_MODEL", "veo-3.1-fast-generate-preview")
 GEMINI_TTS_MODEL = os.getenv("GEMINI_TTS_MODEL", "gemini-2.5-flash-preview-tts")
-USE_GEMINI_IMAGE_GEN = os.getenv("USE_GEMINI_IMAGE_GEN", "true").lower() in ("true", "1", "yes")
+# Default OFF — Pexels/Pixabay/Coverr/Mixkit/Videvo cover scenes; enable only if you want Nano Banana
+USE_GEMINI_IMAGE_GEN = os.getenv("USE_GEMINI_IMAGE_GEN", "false").lower() in ("true", "1", "yes")
 USE_GEMINI_VIDEO_GEN = os.getenv("USE_GEMINI_VIDEO_GEN", "false").lower() in ("true", "1", "yes")
 # P3-31: explicit paid-quota confirm — prevents silent Veo burn on free tier / 429
 GEMINI_VEO_PAID_QUOTA = os.getenv("GEMINI_VEO_PAID_QUOTA", "false").lower() in ("true", "1", "yes")
@@ -84,6 +94,8 @@ MAX_DURATION = 120
 SCENE_CLIP_MIN = 5
 SCENE_CLIP_MAX = 10
 FPS = 30
+# Item 323: 60 FPS export for visual quality differentiation (default 30)
+EXPORT_FPS_MODE = os.getenv("EXPORT_FPS_MODE", "30")  # "30" or "60"
 MIN_RESOLUTION = 1080
 RESULTS_PER_PAGE = 15
 
@@ -104,29 +116,67 @@ def get_target_resolution():
 #  True: Ağır per-frame Python efektleri devre dışı, FFmpeg tabanlı filtreler kullanılır
 #  False: Tüm efektler aktif (güçlü PC gerektirir)
 # ══════════════════════════════════════════════════════════════
-RENDER_SAFE_MODE = os.getenv("RENDER_SAFE_MODE", "true").lower() in ("true", "1", "yes")
+RENDER_SAFE_MODE = os.getenv("RENDER_SAFE_MODE", "false").lower() in ("true", "1", "yes")
 
-# RENDER_SAFE_MODE=True iken FFmpeg thread sayısı (Ryzen 7 3700X için 8 thread idealdir, PC'yi boğmaz)
-RENDER_THREADS = int(os.getenv("RENDER_THREADS", "8"))
+# Item 423: FFmpeg encode thread cap (PC donmasını önler; donanım profili override edebilir)
+FFMPEG_THREADS = int(os.getenv("FFMPEG_THREADS", "4"))
+# MoviePy / compose path thread budget (FFMPEG_THREADS ile hizalı varsayılan)
+RENDER_THREADS = int(os.getenv("RENDER_THREADS", str(FFMPEG_THREADS)))
 
-# NVIDIA RTX / NVENC Donanım Hızlandırma (Item 73)
+# NVIDIA RTX / NVENC (Windows) · VideoToolbox (macOS) · libx264 fallback (Item 73, 411)
 USE_GPU_ACCELERATION = os.getenv("USE_GPU_ACCELERATION", "true").lower() in ("true", "1", "yes")
-GPU_CODEC = os.getenv("GPU_CODEC", "h264_nvenc")
+
+def _default_gpu_codec() -> str:
+    if platform.system() == "Darwin":
+        return "h264_videotoolbox"
+    if platform.system() == "Windows":
+        return "h264_nvenc"
+    return "libx264"
+
+GPU_CODEC = os.getenv("GPU_CODEC", "") or _default_gpu_codec()
 
 # Item 74: FPS Mikro Çeşitlendirmesi (29.97, 30.00, 30.02, 30.05 fps anti-fingerprint)
 FPS_DIVERSIFY = os.getenv("FPS_DIVERSIFY", "true").lower() in ("true", "1", "yes")
 
+# Item 324: Talking portrait avatar (D-ID / SadTalker / LivePortrait — paid API, disabled by default)
+AVATAR_ANIMATION_PROVIDER = os.getenv("AVATAR_ANIMATION_PROVIDER", "")  # did | sadtalker | liveportrait
+AVATAR_ANIMATION_API_KEY = os.getenv("AVATAR_ANIMATION_API_KEY", "")
+
 # ══════════════════════════════════════════════════════════════
 #  VOICE — Edge TTS neural catalog (see tts_voices.py)
 # ══════════════════════════════════════════════════════════════
-from tts_voices import resolve_voice, get_voice_catalog, EDGE_TTS_VOICE_CATALOG
+from tts_voices import (
+    resolve_voice,
+    get_voice_catalog,
+    EDGE_TTS_VOICE_CATALOG,
+    is_elevenlabs_voice,
+    is_valid_voice,
+)
 
 VOICES = {
     "tr": {"male": "tr-TR-AhmetNeural", "female": "tr-TR-EmelNeural"},
     "en": {"male": "en-US-GuyNeural",   "female": "en-US-JennyNeural"},
 }
 TTS_GENDER = os.getenv("TTS_GENDER", "male")
-TTS_VOICE = os.getenv("TTS_VOICE", "") or resolve_voice(LANGUAGE, gender=TTS_GENDER)
+
+def _sanitize_startup_voice(raw_voice: str, lang: str, gender: str) -> str:
+    """Prefer locale-native Edge voice at startup (avoids stale fr-FR on Turkish content)."""
+    lang = (lang or "tr").lower()
+    if raw_voice and is_elevenlabs_voice(raw_voice):
+        return raw_voice
+    if raw_voice and is_valid_voice(raw_voice, lang):
+        native_prefix = {"tr": "tr-TR-", "en": "en-"}.get(lang, "tr-TR-")
+        if raw_voice.startswith(native_prefix) or raw_voice.startswith("elevenlabs:"):
+            return raw_voice
+        print(
+            f"  [Config] TTS_VOICE={raw_voice} yerel dil ({lang}) ile uyumsuz; "
+            f"yerel varsayilan kullaniliyor.",
+            file=sys.stderr,
+        )
+    return resolve_voice(lang, gender=gender, prefer_native=True)
+
+_env_tts_voice = os.getenv("TTS_VOICE", "")
+TTS_VOICE = _sanitize_startup_voice(_env_tts_voice, LANGUAGE, TTS_GENDER) if _env_tts_voice else resolve_voice(LANGUAGE, gender=TTS_GENDER, prefer_native=True)
 TTS_RATE = os.getenv("TTS_RATE", "+18%")
 TTS_PITCH = "+0Hz"
 
@@ -162,6 +212,12 @@ def channel_paths(channel_id: Optional[str] = None) -> Dict[str, str]:
     for d in (assets, output):
         os.makedirs(d, exist_ok=True)
     return {"slug": slug, "assets_dir": assets, "output_dir": output}
+
+
+def get_channel_output_dir(channel_id: Optional[str] = None) -> str:
+    """Item 435 alias — per-channel isolated output directory."""
+    return channel_paths(channel_id)["output_dir"]
+
 
 # ══════════════════════════════════════════════════════════════
 #  SUBTITLE & AUDIO STYLING DEFAULTS

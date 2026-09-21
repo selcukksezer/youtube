@@ -31,11 +31,90 @@ def get_hardware_accelerated_encoder() -> Tuple[str, List[str]]:
     """
     Item 411: Apple Silicon Donanım Hızlandırması (VideoToolbox).
     macOS üzerinde VideoToolbox (h264_videotoolbox) aktif edilerek CPU yükü %80 düşürülür,
-    render hızı 5 kat artırılır. Desteklenmeyen ortamlarda libx264 kullanılır.
+    render hızı 5 kat artırılır. Windows NVIDIA NVENC hardware_detector ile tespit edilir.
+    Desteklenmeyen ortamlarda libx264 kullanılır.
     """
+    try:
+        from hardware_detector import get_system_hardware_specs
+
+        gpu = get_system_hardware_specs().get("gpu", {})
+        if gpu.get("has_videotoolbox"):
+            return ("h264_videotoolbox", ["-b:v", "14M", "-allow_sw", "1"])
+        if gpu.get("has_nvenc"):
+            return ("h264_nvenc", ["-preset", "p4", "-b:v", "0", "-cq", "20"])
+    except Exception:
+        pass
     if platform.system() == "Darwin":
         return ("h264_videotoolbox", ["-b:v", "14M", "-allow_sw", "1"])
     return ("libx264", ["-preset", "fast", "-b:v", "12M"])
+
+
+def default_gpu_codec_for_platform() -> str:
+    """Platform-aware default video encoder (NVENC on Windows NVIDIA, VideoToolbox on macOS)."""
+    if platform.system() == "Darwin":
+        return "h264_videotoolbox"
+    if platform.system() == "Windows":
+        return "h264_nvenc"
+    return "libx264"
+
+
+def get_export_codec_settings(
+    use_gpu: Optional[bool] = None,
+    gpu_codec: Optional[str] = None,
+) -> Tuple[str, Optional[str], List[str], str]:
+    """
+    MoviePy/FFmpeg export codec selection with hardware fallback labels.
+    Returns (codec, preset_or_none, ffmpeg_params, mode_label).
+    """
+    use_gpu = getattr(config, "USE_GPU_ACCELERATION", True) if use_gpu is None else use_gpu
+    gpu_codec = (gpu_codec or getattr(config, "GPU_CODEC", "") or default_gpu_codec_for_platform()).strip()
+
+    if not use_gpu or gpu_codec == "libx264":
+        return (
+            "libx264",
+            "ultrafast",
+            ["-tune", "fastdecode", "-pix_fmt", "yuv420p"],
+            f"CPU libx264 (threads={getattr(config, 'RENDER_THREADS', 8)})",
+        )
+    if gpu_codec == "h264_nvenc":
+        return (
+            "h264_nvenc",
+            "p2",
+            ["-cq", "20", "-b:v", "0", "-pix_fmt", "yuv420p"],
+            "NVIDIA NVENC",
+        )
+    if gpu_codec == "h264_videotoolbox":
+        return (
+            "h264_videotoolbox",
+            None,
+            ["-b:v", "14M", "-allow_sw", "1", "-pix_fmt", "yuv420p"],
+            "Apple VideoToolbox",
+        )
+    return (
+        "libx264",
+        "ultrafast",
+        ["-tune", "fastdecode", "-pix_fmt", "yuv420p"],
+        "CPU libx264",
+    )
+
+
+def get_ffmpeg_loglevel() -> str:
+    """Item 437: warning in debug mode, error in production."""
+    import os
+    debug = os.getenv("FFMPEG_DEBUG", "false").lower() in ("true", "1", "yes")
+    return "warning" if debug else "error"
+
+
+def get_ffmpeg_vcodec_args(use_gpu: Optional[bool] = None, gpu_codec: Optional[str] = None) -> Tuple[List[str], str]:
+    """FFmpeg -c:v argument list and mode label."""
+    codec, preset, extra, label = get_export_codec_settings(use_gpu, gpu_codec)
+    if codec == "h264_nvenc":
+        args = ["-c:v", "h264_nvenc", "-preset", preset or "p4", *extra[:3]]
+    elif codec == "h264_videotoolbox":
+        args = ["-c:v", "h264_videotoolbox", *extra]
+    else:
+        args = ["-c:v", "libx264", "-preset", preset or "veryfast", "-crf", "20"]
+    return args, label
 
 
 # ─── ITEM 416: Circuit Breaker Deseni ────────────────────────────────────────
@@ -263,6 +342,50 @@ def sanitize_filename_and_title(raw_title: str) -> str:
     clean = re.sub(r'[/\\:*?"<>|]', '', clean)
     clean = re.sub(r'\s+', '_', clean.strip())
     return clean[:75] if clean else f"shorts_{int(time.time())}"
+
+
+# ─── ITEM 448: Otomatik Video Silme (30 gün arşiv temizliği) ─────────────────
+
+def purge_old_videos(
+    output_dir: str = None,
+    max_age_days: int = 30,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """
+    Item 448: Delete rendered MP4/MOV files older than max_age_days from output tree.
+    Skips hidden dirs and preserves .gitkeep markers.
+    """
+    target = output_dir or getattr(config, "OUTPUT_DIR", os.path.join(config.BASE_DIR, "output"))
+    if not os.path.isdir(target):
+        return {"purged": [], "bytes_freed": 0, "skipped": True}
+
+    cutoff = time.time() - (max_age_days * 86400)
+    purged, bytes_freed = [], 0
+    for root, _dirs, files in os.walk(target):
+        for name in files:
+            if not name.lower().endswith((".mp4", ".mov", ".mkv", ".webm")):
+                continue
+            path = os.path.join(root, name)
+            try:
+                if os.path.getmtime(path) >= cutoff:
+                    continue
+                size = os.path.getsize(path)
+                if dry_run:
+                    purged.append(path)
+                    bytes_freed += size
+                else:
+                    os.remove(path)
+                    purged.append(path)
+                    bytes_freed += size
+            except OSError:
+                continue
+    return {
+        "purged": purged,
+        "purged_count": len(purged),
+        "bytes_freed": bytes_freed,
+        "max_age_days": max_age_days,
+        "dry_run": dry_run,
+    }
 
 
 # ─── ITEM 464: Sistem Sağlığı İzleme Modülü ──────────────────────────────────

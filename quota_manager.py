@@ -87,6 +87,7 @@ DEFAULT_LIMITS = {
 class QuotaTracker:
     def __init__(self):
         self.usage_counts: Dict[str, int] = {}
+        self.token_totals: Dict[str, Dict[str, int]] = {}
         self.error_counts: Dict[str, int] = {}
         self.call_timestamps: Dict[str, List[float]] = {}
         self.last_reset = time.time()
@@ -110,8 +111,10 @@ class QuotaTracker:
                     saved_date = data.get("date", "")
                     if saved_date == today:
                         self.usage_counts = data.get("daily_counts", {})
+                        self.token_totals = data.get("token_totals", {})
                     else:
                         self.usage_counts = {}
+                        self.token_totals = {}
                     return
             except Exception as e:
                 print(f"  [QuotaManager] Error loading persistent usage: {e}")
@@ -124,6 +127,7 @@ class QuotaTracker:
             data = {
                 "date": today,
                 "daily_counts": self.usage_counts,
+                "token_totals": self.token_totals,
                 "last_updated": datetime.now().isoformat()
             }
             with open(USAGE_FILE, "w", encoding="utf-8") as f:
@@ -151,6 +155,22 @@ class QuotaTracker:
 
         # 24 saatten eski damgaları temizle
         self.call_timestamps[prov] = [t for t in self.call_timestamps[prov] if now - t < 86400]
+        self._save_persistent_usage()
+
+    def record_token_usage(
+        self,
+        provider: str,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+    ) -> None:
+        """Item 434: log Gemini prompt/completion token counts to local JSON."""
+        prov = str(provider or "Gemini").capitalize()
+        if prov.lower() == "gemini":
+            prov = "Gemini"
+        bucket = self.token_totals.setdefault(prov, {"prompt": 0, "completion": 0, "total": 0})
+        bucket["prompt"] = bucket.get("prompt", 0) + int(prompt_tokens or 0)
+        bucket["completion"] = bucket.get("completion", 0) + int(completion_tokens or 0)
+        bucket["total"] = bucket.get("total", 0) + int(prompt_tokens or 0) + int(completion_tokens or 0)
         self._save_persistent_usage()
 
     def record_error(self, provider: str, error_msg: str):

@@ -2,21 +2,108 @@
 Background Music (BGM) Manager for Shorts Video Creator.
 """
 import os, subprocess
+from collections import OrderedDict
+from typing import Optional
 import imageio_ffmpeg
 import config
 
-def list_bgm_tracks():
-    """Returns a list of available audio files in BGM_DIR."""
+# Item 432: LRU RAM cache for hot BGM/SFX paths (avoid repeated disk stat during batch render)
+_BGM_RAM_CACHE: OrderedDict = OrderedDict()
+_BGM_CACHE_MAX = int(os.getenv("BGM_RAM_CACHE_MAX", "12"))
+
+
+def cache_bgm_file(path: Optional[str]) -> Optional[str]:
+    """Item 432: Touch LRU cache entry for a resolved BGM path."""
+    if not path or not os.path.isfile(path):
+        return path
+    key = os.path.abspath(path)
+    _BGM_RAM_CACHE[key] = os.path.getmtime(key)
+    _BGM_RAM_CACHE.move_to_end(key)
+    while len(_BGM_RAM_CACHE) > _BGM_CACHE_MAX:
+        _BGM_RAM_CACHE.popitem(last=False)
+    return path
+
+
+def get_cached_bgm_path(track_name: str = "") -> str:
+    """Item 432: Resolve BGM path through LRU cache (default safe track when empty)."""
+    path = get_bgm_path(track_name) if track_name else None
+    if not path:
+        path = get_safe_default_bgm_path()
+    return cache_bgm_file(path) or path
+
+
+def clear_bgm_ram_cache() -> None:
+    """Clear Item 432 LRU cache (tests / settings reload)."""
+    _BGM_RAM_CACHE.clear()
+
+def list_bgm_tracks(include_catalog: bool = False):
+    """Returns audio filenames in BGM_DIR (+ optional catalog entries not yet downloaded)."""
     if not os.path.exists(config.BGM_DIR):
         os.makedirs(config.BGM_DIR, exist_ok=True)
-    
+
     exts = ('.mp3', '.wav', '.m4a', '.aac', '.ogg')
     tracks = [f for f in os.listdir(config.BGM_DIR) if f.lower().endswith(exts)]
+
+    studio_dir = os.path.join(config.BGM_DIR, "youtube_studio")
+    if os.path.isdir(studio_dir):
+        for f in os.listdir(studio_dir):
+            if f.lower().endswith(exts):
+                tracks.append(f"youtube_studio/{f}")
+
+    if include_catalog:
+        try:
+            from youtube_safe_bgm_catalog import load_catalog
+            for t in load_catalog():
+                fn = t.get("filename")
+                if fn and fn not in tracks:
+                    tracks.append(fn)
+        except Exception:
+            pass
+
     if not tracks:
-        # Item 135: Telifli Müziklerden Kaçınma & Otomatik Güvenli Arka Plan Sentezi
         ensure_royalty_free_ambient_bgm()
         tracks = [f for f in os.listdir(config.BGM_DIR) if f.lower().endswith(exts)]
-    return sorted(tracks)
+    return sorted(set(tracks))
+
+
+def list_bgm_tracks_detailed(include_catalog: bool = True) -> list:
+    """Returns track dicts with display labels for API/UI."""
+    try:
+        from youtube_safe_bgm_catalog import get_display_label, list_catalog_entries, load_catalog
+    except Exception:
+        return [{"filename": f, "display": f, "downloaded": True} for f in list_bgm_tracks()]
+
+    seen = set()
+    out = []
+    for entry in list_catalog_entries(include_studio=True):
+        fn = entry.get("filename", "")
+        if not fn or fn in seen:
+            continue
+        seen.add(fn)
+        path = os.path.join(config.BGM_DIR, fn)
+        studio_path = os.path.join(config.BGM_DIR, "youtube_studio", os.path.basename(fn))
+        downloaded = os.path.isfile(path) or os.path.isfile(studio_path)
+        if include_catalog or downloaded:
+            out.append({
+                "filename": fn,
+                "display": entry.get("display") or get_display_label(fn),
+                "title": entry.get("title"),
+                "mood": entry.get("mood"),
+                "genre": entry.get("genre"),
+                "bpm": entry.get("bpm"),
+                "downloaded": downloaded,
+                "source": entry.get("source"),
+            })
+
+    for f in list_bgm_tracks():
+        if f not in seen and not f.startswith("youtube_studio/"):
+            out.append({
+                "filename": f,
+                "display": get_display_label(f),
+                "downloaded": True,
+                "source": "local",
+            })
+    return out
 
 def ensure_royalty_free_ambient_bgm() -> str:
     """
@@ -60,9 +147,16 @@ def get_bgm_path(track_name):
     """Returns full path of a BGM track if it exists."""
     if not track_name:
         return None
-    full_path = os.path.join(config.BGM_DIR, track_name)
+    safe = track_name.replace("\\", "/")
+    if safe.startswith("youtube_studio/"):
+        full_path = os.path.join(config.BGM_DIR, safe)
+    else:
+        full_path = os.path.join(config.BGM_DIR, os.path.basename(safe))
     if os.path.exists(full_path):
-        return full_path
+        return cache_bgm_file(full_path)
+    studio = os.path.join(config.BGM_DIR, "youtube_studio", os.path.basename(safe))
+    if os.path.exists(studio):
+        return cache_bgm_file(studio)
     return None
 
 def get_safe_default_bgm_path():
@@ -200,6 +294,16 @@ def match_bgm_track_to_niche(niche_id: str, available_tracks: list = None) -> st
     """
     Madde 169: Belirtilen nişe uygun BPM ve atmosferdeki parçayı seçer veya döndürür.
     """
+    try:
+        from youtube_safe_bgm_catalog import pick_catalog_bgm_for_niche
+        fn = pick_catalog_bgm_for_niche(niche_id)
+        if fn:
+            path = get_bgm_path(fn)
+            if path:
+                return path
+    except Exception:
+        pass
+
     min_bpm, max_bpm = get_niche_target_bpm(niche_id)
     target_mid = (min_bpm + max_bpm) / 2.0
 
@@ -207,21 +311,29 @@ def match_bgm_track_to_niche(niche_id: str, available_tracks: list = None) -> st
     if not tracks:
         return ensure_royalty_free_ambient_bgm()
 
-    # İsim analiziyle en yakın BPM'deki parçayı bul
+    try:
+        from youtube_safe_bgm_catalog import load_catalog
+        catalog_by_fn = {t["filename"]: t for t in load_catalog()}
+    except Exception:
+        catalog_by_fn = {}
+
     best_track = None
     best_diff = 999.0
 
     for track in tracks:
-        fname = track.lower()
-        est_bpm = 100.0
-        if any(k in fname for k in ("motivation", "fitness", "energetic", "drill", "phonk")):
-            est_bpm = 125.0
-        elif any(k in fname for k in ("philosophy", "stoic", "mystery", "calm", "lofi", "ambient")):
-            est_bpm = 78.0
-        elif any(k in fname for k in ("quiz", "game", "ticking")):
-            est_bpm = 120.0
-        elif any(k in fname for k in ("history", "epic", "dramatic")):
-            est_bpm = 85.0
+        base = os.path.basename(track.replace("\\", "/"))
+        meta = catalog_by_fn.get(base, {})
+        est_bpm = float(meta.get("bpm") or 100.0)
+        if not meta:
+            fname = base.lower()
+            if any(k in fname for k in ("motivation", "fitness", "energetic", "drill", "phonk")):
+                est_bpm = 125.0
+            elif any(k in fname for k in ("philosophy", "stoic", "mystery", "calm", "lofi", "ambient")):
+                est_bpm = 78.0
+            elif any(k in fname for k in ("quiz", "game", "ticking")):
+                est_bpm = 120.0
+            elif any(k in fname for k in ("history", "epic", "dramatic")):
+                est_bpm = 85.0
 
         diff = abs(est_bpm - target_mid)
         if diff < best_diff:
@@ -301,7 +413,13 @@ def parse_bgm_bpm(bgm_path: str = "", default_bpm: float = 120.0) -> float:
     """
     if not bgm_path:
         return default_bpm
-    fname = os.path.basename(bgm_path).lower()
+    fname = os.path.basename(bgm_path)
+    try:
+        from youtube_safe_bgm_catalog import get_track_bpm
+        return get_track_bpm(fname, default_bpm)
+    except Exception:
+        pass
+    fname = fname.lower()
     if any(k in fname for k in ("lofi", "calm", "philosophy", "stoic", "mystery")):
         return 78.0
     if any(k in fname for k in ("dramatic", "history", "epic")):

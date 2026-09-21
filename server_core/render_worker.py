@@ -27,9 +27,9 @@ from video_fetcher import (
 from reddit_card_renderer import generate_reddit_post_card_clip
 from tts_engine import generate_narration_with_timing
 from niche_templates import get_niche_production_profile
-from subtitle_generator import SUBTITLE_PRESETS
+from subtitle_generator import SUBTITLE_PRESETS, resolve_ab_subtitle_preset
 from batch_processor import batch_manager
-from notifications import notify_video_ready
+from notifications import notify_video_ready, notify_render_error
 from . import state
 
 
@@ -56,6 +56,32 @@ def _veo_circuit_open() -> bool:
         return not circuit_breaker.can_execute("gemini_veo")
     except Exception:
         return False
+
+
+def _ensure_ui_plan_narration_usable(plan, keyword: str, locked_niche: str, target_lang: str):
+    """Batch C — UI-supplied plan must pass narration gate or get procedural inject."""
+    if not plan or not plan.get("scenes"):
+        return plan
+    try:
+        from scenes.narration_validate import plan_narration_usable
+        from scenes.fallback import _generate_procedural_fallback_scenes
+
+        if plan_narration_usable(plan.get("scenes") or []):
+            return plan
+        _log(
+            "[Director] UI plan narration unusable — prosedürel fallback enjekte ediliyor",
+            11,
+        )
+        fb = _generate_procedural_fallback_scenes(
+            keyword,
+            niche_type=locked_niche,
+            language=target_lang,
+        )
+        plan = dict(plan)
+        plan.update(fb)
+    except Exception as exc:
+        _log(f"[Director] UI plan narration gate atlandı: {exc}", 11)
+    return plan
 
 
 def _veo_render_allowed() -> bool:
@@ -139,7 +165,7 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
     elif (
         not gemini_circuit_open
         and getattr(config, "PREFER_GEMINI_SCENE_IMAGES", False)
-        and getattr(config, "USE_GEMINI_IMAGE_GEN", True)
+        and getattr(config, "USE_GEMINI_IMAGE_GEN", False)
         and config.GEMINI_API_KEY
     ):
         p = generate_ai_image_clip(
@@ -151,7 +177,7 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         not gemini_circuit_open
         and (i % 3 == 2)
         and (
-            getattr(config, "USE_GEMINI_IMAGE_GEN", True) and config.GEMINI_API_KEY
+            getattr(config, "USE_GEMINI_IMAGE_GEN", False) and config.GEMINI_API_KEY
             or getattr(config, "FAL_API_KEY", "")
             or getattr(config, "STABILITY_API_KEY", "")
         )
@@ -191,10 +217,12 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         "badge_label": scene.get("badge_label"),
         "enable_pip": scene.get("enable_pip", False),
         "pip_path": scene.get("pip_path"),
-        "handheld_shake": scene.get("handheld_shake", False),
+        "handheld_shake": scene.get("handheld_shake", True),
+        "affiliate_product": scene.get("affiliate_product", False),
+        "beat_type": scene.get("beat_type", "conflict"),
+        "mood": scene.get("mood", ""),
         "wipe_transition": scene.get("wipe_transition", False),
         "wipe_direction": scene.get("wipe_direction", "horizontal"),
-        "beat_type": scene.get("beat_type", "conflict"),
         "visual_intent": intent,
         "t0": scene.get("t0", 0),
         "t1": scene.get("t1", 0),
@@ -234,6 +262,35 @@ def process_video_task(req: VideoRenderRequest):
     try:
         state.current_render_state["cancel_requested"] = False
         state.current_render_state["cancel_notified"] = False
+
+        # Item 448: auto-delete rendered outputs older than 30 days (best-effort)
+        try:
+            from system_resilience import purge_old_videos
+            purge_result = purge_old_videos(max_age_days=30)
+            if purge_result.get("purged_count"):
+                _log(
+                    f"[Ops] auto_delete: {purge_result['purged_count']} eski video silindi "
+                    f"({purge_result['bytes_freed'] // 1024} KB)",
+                    2,
+                )
+        except Exception:
+            pass
+
+        # Item 450: thermal throttle — reduce threads when CPU hot
+        try:
+            from hardware_detector import get_cpu_thermal_state
+            thermal = get_cpu_thermal_state()
+            if thermal.get("thermal_throttle_recommended"):
+                config.RENDER_THREADS = max(2, min(getattr(config, "RENDER_THREADS", 4), 4))
+                config.FFMPEG_THREADS = config.RENDER_THREADS
+                _log(
+                    f"[Ops] CPU thermal throttle: {thermal.get('temperature_c')}°C — "
+                    f"threads={config.RENDER_THREADS}",
+                    2,
+                )
+        except Exception:
+            pass
+
         target_lang = (req.language or config.LANGUAGE or "tr").lower()
         config.LANGUAGE = target_lang
 
@@ -284,26 +341,8 @@ def process_video_task(req: VideoRenderRequest):
         reset_used_videos()
         reset_session_source_counts()
 
-        # ─── 1) Script / scenes ───────────────────────────────────────────
-        check_cancelled()
-        if not plan:
-            lang_label = "İngilizce" if target_lang == "en" else "Türkçe"
-            _log(
-                f"[Director] AI senaryosu oluşturuluyor ({lang_label} - {config.AI_PROVIDER}, "
-                f"niş={locked_niche}): '{keyword}'",
-                12,
-            )
-            plan = generate_scenes(keyword, niche_type=locked_niche)
-
-        if req.reddit_post and locked_niche == "2_reddit_confessions":
-            from scene_generator import generate_reddit_rewrite_script
-            source_text = f"{req.reddit_post.get('title', '')}\n{req.reddit_post.get('body', '')}"
-            plan = generate_reddit_rewrite_script(source_text, lang=target_lang)
-            plan["reddit_post"] = req.reddit_post
-
-        # ─── 2) Compile DirectorPlan (timeline + visual + audio bus) ───────
-        check_cancelled()
-        _log("[Director] DirectorPlan derleniyor (timeline + visual intent + audio bus)...", 18)
+        # ─── 1–2) Script + DirectorPlan (Item 120: max 3 originality retries) ─
+        from plagiarism_checker import check_script_originality
         from director import (
             compile_director_plan,
             fit_tts_to_timeline,
@@ -321,40 +360,116 @@ def process_video_task(req: VideoRenderRequest):
             format_missing_clips_error,
         )
 
+        MAX_ORIGINALITY_RETRIES = 3
         use_director = getattr(config, "ENABLE_DIRECTOR_PLAN", True)
         director = None
-        if use_director:
-            director = compile_director_plan(
+        is_original = False
+        similarity = 0.0
+        matched_title = None
+        final_variation_attempt = 0
+        lang_label = "İngilizce" if target_lang == "en" else "Türkçe"
+
+        for orig_attempt in range(MAX_ORIGINALITY_RETRIES):
+            final_variation_attempt = orig_attempt
+            check_cancelled()
+            if orig_attempt > 0 or not plan:
+                if orig_attempt == 0:
+                    _log(
+                        f"[Director] AI senaryosu oluşturuluyor ({lang_label} - {config.AI_PROVIDER}, "
+                        f"niş={locked_niche}): '{keyword}'",
+                        12,
+                    )
+                else:
+                    _log(
+                        f"[Item 120] Benzerlik yüksek (%{similarity * 100:.1f}) — "
+                        f"senaryo yeniden üretiliyor ({orig_attempt + 1}/{MAX_ORIGINALITY_RETRIES})...",
+                        14 + orig_attempt,
+                    )
+                plan = generate_scenes(
+                    keyword,
+                    niche_type=locked_niche,
+                    language=target_lang,
+                    variation_attempt=orig_attempt,
+                )
+                try:
+                    from hybrid_niches import enrich_plan_with_hybrid
+                    plan = enrich_plan_with_hybrid(plan, keyword, locked_niche)
+                except Exception:
+                    pass
+
+            if req.reddit_post and locked_niche == "2_reddit_confessions" and orig_attempt == 0:
+                from scene_generator import generate_reddit_rewrite_script
+                source_text = f"{req.reddit_post.get('title', '')}\n{req.reddit_post.get('body', '')}"
+                plan = generate_reddit_rewrite_script(source_text, lang=target_lang)
+                plan["reddit_post"] = req.reddit_post
+
+            if orig_attempt == 0 and plan:
+                plan = _ensure_ui_plan_narration_usable(
+                    plan, keyword, locked_niche, target_lang
+                )
+
+            # Items 202-210, 239, 244, 248, 257 — always inject before Director compile
+            # (covers UI-supplied plans that skipped generate_scenes)
+            from scenes.retention_hooks import ensure_retention_hooks_on_plan
+
+            plan = ensure_retention_hooks_on_plan(
                 plan,
-                title=keyword,
-                niche_id=locked_niche,
-                language=target_lang,
-                reddit_post=getattr(req, "reddit_post", None),
+                keyword,
+                lang=target_lang,
+                niche_type=locked_niche,
+                variation_attempt=orig_attempt,
             )
-            plan = director.to_legacy_plan()
-            _log(
-                f"[Timeline] {len(director.scenes)} sahne | {director.total_duration():.1f}s | "
-                f"niş={director.niche_id} | SFX={len(director.audio_events)}",
-                22,
+            try:
+                from scenes.enrichment import enrich_plan_scenes
+                plan = enrich_plan_scenes(plan, lang=target_lang)
+            except Exception:
+                pass
+            meta = plan.get("retention_metadata") or {}
+            if meta.get("hook_strategy"):
+                _log(
+                    f"[RetentionHooks] {meta.get('hook_strategy')} | "
+                    f"opening: {(meta.get('opening_hook') or '')[:60]}…",
+                    16,
+                )
+
+            check_cancelled()
+            _log("[Director] DirectorPlan derleniyor (timeline + visual intent + audio bus)...", 18)
+            director = None
+            if use_director:
+                director = compile_director_plan(
+                    plan,
+                    title=keyword,
+                    niche_id=locked_niche,
+                    language=target_lang,
+                    reddit_post=getattr(req, "reddit_post", None),
+                )
+                plan = director.to_legacy_plan()
+                _log(
+                    f"[Timeline] {len(director.scenes)} sahne | {director.total_duration():.1f}s | "
+                    f"niş={director.niche_id} | SFX={len(director.audio_events)}",
+                    22,
+                )
+                if director.validation and not director.validation.get("ok"):
+                    for err in director.validation.get("errors") or []:
+                        _log(f"[Director][Uyarı] {err}")
+            else:
+                plan["niche_profile"] = get_niche_production_profile(locked_niche)
+
+            with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f:
+                json.dump(plan, f, ensure_ascii=False, indent=2)
+            if director:
+                with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
+                    json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
+
+            is_original, similarity, matched_title = check_script_originality(
+                plan.get("full_narration", ""),
+                keyword=keyword,
+                title=plan.get("title", keyword),
             )
-            if director.validation and not director.validation.get("ok"):
-                for err in director.validation.get("errors") or []:
-                    _log(f"[Director][Uyarı] {err}")
-        else:
-            plan["niche_profile"] = get_niche_production_profile(locked_niche)
+            if is_original:
+                break
+            plan = None
 
-        with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f:
-            json.dump(plan, f, ensure_ascii=False, indent=2)
-        if director:
-            with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
-                json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
-
-        from plagiarism_checker import check_script_originality
-        is_original, similarity, matched_title = check_script_originality(
-            plan.get("full_narration", ""),
-            keyword=keyword,
-            title=plan.get("title", keyword),
-        )
         if not is_original:
             message = (
                 f"Senaryo benzerlik eşiğini aştı (%{similarity * 100:.1f}); "
@@ -422,6 +537,14 @@ def process_video_task(req: VideoRenderRequest):
         clips = []
         gameplay_path = None
         recent_texts = []
+        retention_meta = (plan or {}).get("retention_metadata") or {}
+        needs_split_screen = (
+            getattr(req, "split_screen", False)
+            or bool(plan.get("hybrid_split_screen"))
+            or bool(retention_meta.get("dopamin_split_screen"))
+        )
+        if needs_split_screen:
+            req.split_screen = True
         if req.split_screen:
             from gameplay_pool import fetch_gameplay_clip, resolve_gameplay_category
             gp_cat = getattr(req, "gameplay_category", None) or "auto"
@@ -684,14 +807,28 @@ def process_video_task(req: VideoRenderRequest):
             try:
                 from royalty_free_audio import fetch_royalty_free_bgm
                 mood_q = "ambient cinematic"
+                niche_hint = ""
                 if director:
                     tone = (director.niche_profile or {}).get("tone") or director.niche_id or ""
+                    niche_hint = director.niche_id or tone or ""
                     mood_q = f"{tone} ambient cinematic"
-                bgm_track = fetch_royalty_free_bgm(mood_q, prefer="auto") or ""
+                bgm_track = fetch_royalty_free_bgm(mood_q, prefer="auto", niche=niche_hint) or ""
                 if bgm_track:
                     _log(f"[VoiceLab/RF] Telifsiz BGM secildi: {bgm_track}", 71)
             except Exception as e:
                 print(f"  [VoiceLab/RF] Notice: {e}")
+
+        # Item 190: BGM telif heuristic — riskli parça yerine güvenli fallback
+        if bgm_track:
+            try:
+                from copyright_risk import scan_audio_copyright_risk
+                from bgm_manager import get_safe_default_bgm_path
+                audio_scan = scan_audio_copyright_risk([bgm_track])
+                if not audio_scan.get("safe"):
+                    _log(f"[Copyright] BGM risk: {bgm_track} → royalty_free_ambient", 71)
+                    bgm_track = os.path.basename(get_safe_default_bgm_path())
+            except Exception:
+                pass
 
         # ─── 5) Audio master (one-pass) ────────────────────────────────────
         check_cancelled()
@@ -713,7 +850,8 @@ def process_video_task(req: VideoRenderRequest):
         # ─── 6) SEO ───────────────────────────────────────────────────────
         from viral_seo_agent import generate_viral_seo_metadata
         _log("[Director] Viral SEO meta üretiliyor...", 74)
-        seo_meta = generate_viral_seo_metadata(keyword)
+        retention_meta = (plan or {}).get("retention_metadata") if isinstance(plan, dict) else None
+        seo_meta = generate_viral_seo_metadata(keyword, retention_metadata=retention_meta)
         seo_file = os.path.join(output_root, f"{safe}_seo.json")
         try:
             with open(seo_file, "w", encoding="utf-8") as sf:
@@ -742,6 +880,12 @@ def process_video_task(req: VideoRenderRequest):
         sub_opts = {}
         if req.subtitle_preset and req.subtitle_preset in SUBTITLE_PRESETS:
             sub_opts.update(SUBTITLE_PRESETS[req.subtitle_preset])
+        elif not req.subtitle_color and not req.subtitle_highlight_color:
+            ab_opts = resolve_ab_subtitle_preset(final_variation_attempt, keyword)
+            if ab_opts:
+                sub_opts.update({k: v for k, v in ab_opts.items() if k != "ab_test_variant"})
+            else:
+                sub_opts.update(SUBTITLE_PRESETS.get("high_contrast_retention", SUBTITLE_PRESETS["red_fire"]))
         if req.subtitle_color:
             sub_opts["color"] = req.subtitle_color
         if req.subtitle_highlight_color:
@@ -762,6 +906,8 @@ def process_video_task(req: VideoRenderRequest):
         output_file = os.path.join(output_root, f"{safe}.mp4")
 
         # When director masters audio, skip duplicate SFX/BGM inside compose_video
+        if plan.get("hybrid_split_screen"):
+            req.split_screen = True
         compose_kwargs = dict(
             title=keyword,
             bgm_track="" if director else (bgm_track or req.bgm_track),
@@ -769,12 +915,15 @@ def process_video_task(req: VideoRenderRequest):
             subtitle_opts=sub_opts,
             progress_callback=on_compose_progress,
             cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
-            split_screen=getattr(req, "split_screen", False),
+            split_screen=getattr(req, "split_screen", False) or bool(plan.get("hybrid_split_screen")),
             anti_duplicate=getattr(req, "anti_duplicate", True),
             watermark_path=getattr(req, "watermark_path", None),
             enable_ken_burns=getattr(req, "enable_ken_burns", True),
             gameplay_path=gameplay_path,
             niche_id=(director.niche_id if director else getattr(req, "niche", "")),
+            retention_metadata=(plan or {}).get("retention_metadata") if isinstance(plan, dict) else None,
+            hybrid_niche=(plan or {}).get("hybrid_niche", "") if isinstance(plan, dict) else "",
+            hybrid_render_overlay=(plan or {}).get("hybrid_render_overlay") if isinstance(plan, dict) else None,
         )
 
         from render.ffmpeg_graph import compose_via_director
@@ -858,6 +1007,8 @@ def process_video_task(req: VideoRenderRequest):
             print(done_msg)
             state.broadcast_event("progress", {"percent": 100, "step": "Video başarıyla tamamlandı!"})
             state.broadcast_event("complete", {
+                "video_id": db_id,
+                "project_slug": safe,
                 "keyword": keyword,
                 "filename": os.path.basename(result),
                 "url": f"/output/channels/{ch_paths['slug']}/{os.path.basename(result)}"
@@ -893,6 +1044,7 @@ def process_video_task(req: VideoRenderRequest):
                     error_message="Video birleştirme MoviePy/FFmpeg hatası nedeniyle tamamlanamadı.",
                 )
             state.broadcast_event("error", "Video birleştirme tamamlanamadı.")
+            notify_render_error(keyword, "Video birleştirme MoviePy/FFmpeg hatası nedeniyle tamamlanamadı.")
 
     except (InterruptedError, asyncio.CancelledError):
         discard_job_stock_ids()
@@ -908,7 +1060,9 @@ def process_video_task(req: VideoRenderRequest):
             database.update_video_status(db_id, "failed", error_message=str(e))
         state.broadcast_event("error", f"İşlem hatası: {str(e)}")
         import traceback
+        tb = traceback.format_exc()
         traceback.print_exc()
+        notify_render_error(keyword, str(e), log_snippet=tb[-600:])
     finally:
         try:
             _sweep_render_temp_files(render_job_prefix)

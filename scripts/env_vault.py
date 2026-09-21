@@ -30,6 +30,28 @@ def _derive_key(passphrase: str, salt: bytes) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", passphrase.encode("utf-8"), salt, PBKDF2_ITER, dklen=32)
 
 
+def _looks_like_env(plaintext: bytes) -> bool:
+    """Reject wrong-passphrase garbage before writing .env."""
+    if b"\x00" in plaintext:
+        return False
+    try:
+        text = plaintext.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    env_lines = [
+        ln
+        for ln in text.splitlines()
+        if ln.strip() and not ln.strip().startswith("#") and "=" in ln
+    ]
+    if not env_lines:
+        return False
+    for ln in env_lines:
+        key = ln.split("=", 1)[0].strip()
+        if not key or not all(c.isalnum() or c == "_" for c in key):
+            return False
+    return True
+
+
 def _xor_stream(data: bytes, key: bytes) -> bytes:
     """Simple stream cipher — key stretched via SHA-256 chain."""
     out = bytearray(len(data))
@@ -88,11 +110,14 @@ def unseal(passphrase: str, force: bool = False) -> None:
     key = _derive_key(passphrase, salt)
     plaintext = _xor_stream(ciphertext, key)
 
-    if b"=" not in plaintext and b"\n" not in plaintext[:200]:
-        print("ERROR: wrong passphrase or corrupted vault.", file=sys.stderr)
+    if not _looks_like_env(plaintext):
+        print(
+            "ERROR: wrong passphrase or corrupted vault (decrypted data is not valid UTF-8 .env).",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    ENV_FILE.write_bytes(plaintext)
+    ENV_FILE.write_text(plaintext.decode("utf-8"), encoding="utf-8", newline="\n")
     print(f"Unsealed {VAULT_FILE.name} -> {ENV_FILE.name}")
 
 

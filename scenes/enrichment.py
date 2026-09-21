@@ -5,7 +5,22 @@ Hallucination Detection, and Cinematic Query Enrichment.
 
 import re
 import math
+import random
 from typing import List, Dict, Any
+
+CLOSING_GAZE_QUERY_HINTS = [
+    "direct gaze camera portrait",
+    "looking at camera closeup",
+    "eye contact dramatic portrait",
+    "stoic direct gaze subscribe",
+]
+
+_SHOCK_VISUAL_QUERIES = [
+    "explosion shock dramatic slow motion",
+    "horror reveal dramatic lightning strike",
+    "extreme close up shocked eye fear",
+    "disaster aftermath dramatic cinematic",
+]
 
 
 def enrich_cinematic_search_queries(queries: List[str], mood: str = "epic") -> List[str]:
@@ -148,6 +163,120 @@ def enforce_visual_cadence_14(scenes: List[Dict[str, Any]], min_cadence: int = 1
     return expanded
 
 
+_FACE_KEYWORDS = ("portrait", "face closeup", "human face", "looking at camera", "yüz", "portre")
+
+
+def _looks_like_face_query(queries: List[str]) -> bool:
+    joined = " ".join(str(q).lower() for q in (queries or []))
+    return any(k in joined for k in _FACE_KEYWORDS)
+
+
+def avoid_consecutive_face_visuals(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Item 247: Tekdüzelikten Kaçınma — arka arkaya iki yüz/portre stok sahnesi engellenir.
+    """
+    alt_queries = [
+        "cinematic abstract texture macro",
+        "dramatic landscape aerial drone",
+        "slow motion object detail atmospheric",
+        "neon city lights night mood",
+    ]
+    for i in range(1, len(scenes)):
+        prev_q = scenes[i - 1].get("search_queries") or []
+        curr_q = scenes[i].get("search_queries") or []
+        if _looks_like_face_query(prev_q) and _looks_like_face_query(curr_q):
+            alt = alt_queries[i % len(alt_queries)]
+            scenes[i]["search_queries"] = [alt] + list(curr_q)[:2]
+            scenes[i]["visual_diversity_adjusted"] = True
+    return scenes
+
+
+def enrich_numbered_rule_narration(scenes: List[Dict[str, Any]], lang: str = "tr") -> List[Dict[str, Any]]:
+    """
+    Item 241: Numaralandırılmış madde formatını narration'a uygular.
+    """
+    from viral_retention_engine import ViralRetentionEngine
+
+    rule_scenes = []
+    for idx, sc in enumerate(scenes):
+        narr = (sc.get("narration") or "").strip()
+        if re.search(r"\bkural\s*\d+\b", narr, re.I) or sc.get("is_rule_item"):
+            rule_scenes.append((idx, narr))
+
+    if len(rule_scenes) >= 2:
+        rules = []
+        for _, narr in rule_scenes:
+            cleaned = re.sub(r"^\s*Kural\s*\d+\s*:\s*", "", narr, flags=re.I).strip()
+            rules.append(cleaned or narr)
+        formatted = ViralRetentionEngine.format_numbered_rule_hierarchy(rules, lang=lang)
+        for (idx, _), item in zip(rule_scenes, formatted):
+            scenes[idx]["narration"] = item["full_narration"]
+            scenes[idx]["rule_number"] = item["rule_number"]
+    elif scenes:
+        combined = " ".join((s.get("narration") or "").strip() for s in scenes if (s.get("narration") or "").strip())
+        if re.search(r"\bkural\s*[123]\b", combined, re.I):
+            parts = [p.strip() for p in re.split(r'(?<=[.!?])\s+', combined) if p.strip()]
+            if len(parts) >= 2:
+                formatted = ViralRetentionEngine.format_numbered_rule_hierarchy(parts[:3], lang=lang)
+                for i, item in enumerate(formatted):
+                    if i < len(scenes):
+                        scenes[i]["narration"] = item["full_narration"]
+                        scenes[i]["rule_number"] = item["rule_number"]
+    return scenes
+
+
+def enrich_continuous_motion_hints(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Item 271: Görsel Boşluk Bırakmama — uzun sahnelerde statik kare riskini azaltmak için motion ipuçları.
+    """
+    for sc in scenes:
+        if not sc.get("is_visual_cutaway"):
+            sc["handheld_shake"] = True
+    return scenes
+
+
+def enrich_audio_visual_contrast_scenes(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Item 273: Ses ve Görselin Ters Uyumu — sakin anlatım + şok edici görsel (climax fazı).
+    """
+    if len(scenes) < 4:
+        return scenes
+    climax_idx = max(1, (len(scenes) * 2) // 3)
+    for i, sc in enumerate(scenes):
+        if i != climax_idx and sc.get("beat_type") != "climax":
+            continue
+        sc["audio_visual_contrast"] = True
+        sc["impact_shake"] = True
+        queries = list(sc.get("search_queries") or [])
+        shock = random.choice(_SHOCK_VISUAL_QUERIES)
+        if shock.split()[0] not in " ".join(queries).lower():
+            queries.insert(0, shock)
+        sc["search_queries"] = queries[:4]
+        narr = (sc.get("narration") or "").strip()
+        if narr and not narr.endswith("..."):
+            sc["narration"] = narr.rstrip(".!?") + "..."
+        sc["tts_calm_pace"] = True
+    return scenes
+
+
+def enrich_closing_gaze_queries(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Item 226: Kapanışta Ekrana Bakış.
+    Son sahne stok aramasına doğrudan kameraya bakan portre ipuçları ekler.
+    """
+    if not scenes:
+        return scenes
+    last = scenes[-1]
+    queries = list(last.get("search_queries") or [])
+    hint = random.choice(CLOSING_GAZE_QUERY_HINTS)
+    if not any(h in " ".join(queries).lower() for h in ["direct gaze", "looking at camera", "eye contact"]):
+        queries.insert(0, hint)
+    last["search_queries"] = queries[:4]
+    last["closing_gaze"] = True
+    scenes[-1] = last
+    return scenes
+
+
 def verify_and_correct_hallucinations(scenes: List[Dict[str, Any]], topic: str = "") -> Dict[str, Any]:
     """
     Item 90: Detects impossible future dates and blatant chronological contradictions.
@@ -211,6 +340,44 @@ def verify_or_enrich_transformative_value(scenes: List[Dict[str, Any]], topic: s
         "breakdown": breakdown,
         "scenes": scenes
     }
+
+
+def apply_alternate_topic_angle(plan: Dict[str, Any], topic: str, lang: str = "tr") -> Dict[str, Any]:
+    """
+    Item 117: Aynı konuyu farklı açıdan işleme — tez-antitez karşı argüman senaryosu.
+    """
+    from scenes.scripts import generate_counter_argument_script
+
+    alt = generate_counter_argument_script(topic, lang=lang)
+    merged = dict(plan or {})
+    merged.update(alt)
+    merged["alternate_angle"] = True
+    merged["item_117"] = "counter_argument_dialectic"
+    return merged
+
+
+def enrich_plan_scenes(plan: Dict[str, Any], lang: str = "tr") -> Dict[str, Any]:
+    """
+    Apply all scene-level enrichment passes for render path (UI-supplied plans included).
+    Wires Items 226, 241, 247, 271, 273, 96 (fair use) and retention visual hints.
+    """
+    scenes = plan.get("scenes") or []
+    if not scenes:
+        return plan
+    try:
+        from copyright_risk import scenes_need_fair_use_enforcement
+        if scenes_need_fair_use_enforcement(scenes):
+            scenes = enforce_fair_use_2_5s_rule(scenes, is_copyrighted_source=True)
+            plan["fair_use_2_5s_enforced"] = True
+    except Exception:
+        pass
+    scenes = enrich_closing_gaze_queries(scenes)
+    scenes = enrich_numbered_rule_narration(scenes, lang=lang)
+    scenes = avoid_consecutive_face_visuals(scenes)
+    scenes = enrich_continuous_motion_hints(scenes)
+    scenes = enrich_audio_visual_contrast_scenes(scenes)
+    plan["scenes"] = scenes
+    return plan
 
 
 def enforce_fair_use_2_5s_rule(

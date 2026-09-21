@@ -330,22 +330,49 @@ def apply_asmr_whisper_dsp(input_wav: str, output_wav: str) -> str:
         return output_wav
     return input_wav
 
-def inject_natural_breaths(narration_wav: str, output_wav: str, interval_seconds: float = 8.0) -> str:
+def inject_natural_breaths(narration_wav: str, output_wav: str, interval_seconds: float = 5.0) -> str:
     """
-    Inserts subtle breath sound into natural pauses (Item 141).
+    Inserts subtle breath sounds every ~2-3 sentences (Item 141).
+    Default interval 5s (~2-3 cümle @ Shorts tempo).
     """
     breath_wav = ensure_breath_sound()
     if not os.path.exists(narration_wav) or not os.path.exists(breath_wav):
         return narration_wav
 
     try:
+        import wave
+        with wave.open(narration_wav, "rb") as wf:
+            duration = wf.getnframes() / float(wf.getframerate())
+    except Exception:
+        duration = 0.0
+
+    positions = []
+    t = max(2.5, interval_seconds)
+    while t < max(0.0, duration - 0.4):
+        positions.append(round(t, 3))
+        t += interval_seconds
+
+    if not positions:
+        positions = [max(2.5, interval_seconds)]
+
+    try:
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        delay_ms = max(1000, int(interval_seconds * 1000))
+        filter_parts = []
+        for idx, pos in enumerate(positions):
+            delay_ms = int(pos * 1000)
+            filter_parts.append(
+                f"[1:a]adelay={delay_ms}|{delay_ms},volume=0.22[b{idx}]"
+            )
+        mix_inputs = "[0:a]" + "".join(f"[b{i}]" for i in range(len(positions)))
+        filter_complex = (
+            f"{';'.join(filter_parts)};"
+            f"{mix_inputs}amix=inputs={len(positions) + 1}:duration=first:normalize=0[out]"
+        )
         cmd = [
             ffmpeg_exe, "-y",
             "-i", narration_wav,
             "-i", breath_wav,
-            "-filter_complex", f"[1:a]adelay={delay_ms}|{delay_ms},volume=0.25[b1];[0:a][b1]amix=inputs=2:duration=first:normalize=0[out]",
+            "-filter_complex", filter_complex,
             "-map", "[out]",
             "-c:a", "pcm_s16le",
             output_wav
@@ -357,6 +384,56 @@ def inject_natural_breaths(narration_wav: str, output_wav: str, interval_seconds
         print(f"    [VoiceHumanizer] Notice: {e}")
 
     return narration_wav
+
+
+def apply_telephone_filter_on_quote_scenes(
+    input_audio: str,
+    output_audio: str,
+    scene_clips: list,
+) -> str:
+    """
+    Madde 163: Telefon/alıntı sahnelerinde 300-3000Hz bandpass; diğer sahneler dokunulmaz.
+    """
+    if not os.path.exists(input_audio) or not scene_clips:
+        return input_audio
+
+    quote_terms = (
+        "telefon", "phone", "alıntı", "quote", "dedi ki", "said", "mesaj", "sms",
+        "whatsapp", "aramada", "dinleme", "kayıt",
+    )
+    ranges = []
+    elapsed = 0.0
+    for scene in scene_clips:
+        blob = " ".join(
+            str(scene.get(key, "")) for key in ("narration", "scene_description")
+        ).lower()
+        if any(term in blob for term in quote_terms):
+            start = elapsed
+            end = elapsed + float(scene.get("duration", 7.0))
+            ranges.append((start, end))
+        elapsed += float(scene.get("duration", 7.0))
+
+    if not ranges:
+        return input_audio
+
+    try:
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        cond = "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in ranges)
+        af = (
+            f"highpass=f=300:enable='{cond}',"
+            f"lowpass=f=3000:enable='{cond}'"
+        )
+        cmd = [
+            ffmpeg_exe, "-y", "-i", input_audio,
+            "-af", af,
+            "-c:a", "pcm_s16le", output_audio,
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if res.returncode == 0 and os.path.exists(output_audio):
+            return output_audio
+    except Exception as e:
+        print(f"    [Item 163] Quote-scene telephone filter notice: {e}")
+    return input_audio
 
 def inject_sonic_brand_watermark(narration_wav: str, output_wav: str) -> str:
     """
@@ -1319,6 +1396,22 @@ def apply_news_rapid_cadence(input_wav: str, output_wav: str,
     except Exception as e:
         print(f"    [Item 196] Hızlı haber dili hatası: {e}")
     return input_wav
+
+
+# ─── ITEM 254: Soruya Cevap Vermeden Önceki Boşluk (0.5s Tension Gap) ─────────
+
+def inject_pre_answer_tension_gap(
+    audio_wav: str,
+    output_wav: str,
+    gap_seconds: float = 0.5,
+    insert_at_sec: Optional[float] = None,
+) -> str:
+    """
+    Madde 254: Soruya cevap verilmeden önce 0.5 saniyelik nefes kesici gerilim.
+    """
+    return inject_quiz_thinking_gap(
+        audio_wav, output_wav, gap_seconds=gap_seconds, insert_at_sec=insert_at_sec
+    )
 
 
 # ─── ITEM 197: Soru-Cevap Arası Sessizlik (Quiz Thinking Gap) ─────────────────
