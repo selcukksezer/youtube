@@ -415,10 +415,13 @@ def parse_bgm_bpm(bgm_path: str = "", default_bpm: float = 120.0) -> float:
         return default_bpm
     fname = os.path.basename(bgm_path)
     try:
-        from youtube_safe_bgm_catalog import get_track_bpm
-        return get_track_bpm(fname, default_bpm)
+        from youtube_safe_bgm_catalog import track_by_filename
+        meta = track_by_filename(fname)
+        if meta and meta.get("bpm"):
+            return float(meta["bpm"])
     except Exception:
         pass
+    # Not a catalog track (studio import / synthesized) -> filename heuristics
     fname = fname.lower()
     if any(k in fname for k in ("lofi", "calm", "philosophy", "stoic", "mystery")):
         return 78.0

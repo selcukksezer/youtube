@@ -13,7 +13,9 @@ class TestSection3Items153to160(unittest.TestCase):
         self.assertIn({"sound": "sub_impact", "at": 0.0}, events)
         self.assertIn({"sound": "heartbeat", "at": 0.0}, events)
         self.assertIn({"sound": "typewriter", "at": 0.0}, events)
-        self.assertIn({"sound": "whoosh", "at": 2.75}, events)
+        # Item 155: scene-cut whoosh is now applied by sync_riser_whoosh_transitions()
+        # in video_composer (avoids double whoosh), so build_scene_sfx_events must NOT emit it.
+        self.assertFalse(any(e["sound"] == "whoosh" for e in events))
 
 
 if __name__ == "__main__":

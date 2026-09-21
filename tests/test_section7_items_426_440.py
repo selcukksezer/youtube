@@ -71,7 +71,7 @@ class TestSection7Items426440(unittest.TestCase):
         good = {
             "scenes": [
                 {
-                    "narration": "Bu tam bir cumle ve yeterli kelime icerir.",
+                    "narration": "Bu tam bir cumle, on kelimelik siniri asar ve yeterli icerik tasir.",  # >= MIN_WORDS_PER_SCENE (10)
                     "duration": 3.0,
                     "search_queries": ["marble bust stoic"],
                 }

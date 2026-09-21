@@ -76,10 +76,13 @@ class TestSection5Items321335(unittest.TestCase):
         self.assertEqual(len(sim["phases"]), 3)
 
     def test_item_334_single_sentence_identity_hook(self):
-        hook = ViralRetentionEngine.generate_single_sentence_identity_hook(lang="tr")
-        self.assertIn("insan", hook.lower())
-        hook_en = ViralRetentionEngine.generate_single_sentence_identity_hook(lang="en")
-        self.assertIn("same person", hook_en.lower())
+        # Randomized pool: every variant must be a single transformative sentence.
+        for _ in range(10):
+            hook = ViralRetentionEngine.generate_single_sentence_identity_hook(lang="tr")
+            self.assertTrue(any(k in hook.lower() for k in ("insan", "hayatını", "bakış açın")), hook)
+            self.assertEqual(hook.count("."), 1)
+            hook_en = ViralRetentionEngine.generate_single_sentence_identity_hook(lang="en")
+            self.assertTrue(any(k in hook_en.lower() for k in ("same person", "change you", "shift how")), hook_en)
 
     def test_item_335_viewer_choice_cta(self):
         cta = generate_viewer_choice_cta("Zenginlik", "Özgürlük", lang="tr")

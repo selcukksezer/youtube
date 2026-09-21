@@ -41,8 +41,11 @@ class TestSection4Items256270(unittest.TestCase):
         self.assertEqual(flashed.size, (720, 1280))
 
     def test_item_263_counter_intuitive_hook(self):
-        hook = ViralRetentionEngine.generate_counter_intuitive_hook("Para ve Mutluluk", lang="tr")
-        self.assertIn("Harvard", hook)
+        # Randomized pool: every variant must reference the topic and a "reversal" cue.
+        for _ in range(10):
+            hook = ViralRetentionEngine.generate_counter_intuitive_hook("Para ve Mutluluk", lang="tr")
+            self.assertIn("Para ve Mutluluk", hook)
+            self.assertTrue(any(k in hook for k in ("Harvard", "tersini", "veriler")), hook)
 
     def test_item_265_safe_zone(self):
         sz = ViralRetentionEngine.get_subtitles_safe_zone()

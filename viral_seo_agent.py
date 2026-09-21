@@ -84,9 +84,14 @@ SADECE JSON FORMATINDA YANIT VER:
 
 
 def finalize_seo_title(title: str, lang: str = "tr") -> str:
-    """Items 346-348: curiosity → single-word caps → 45-60 char limit."""
-    title = inject_curiosity_words(title, lang=lang)
+    """Items 346-348: single-word caps → curiosity prefix → 45-60 char limit.
+
+    Caps run on the ORIGINAL title first so the injected curiosity word
+    ("Şok Eden") cannot steal the single uppercase slot from the real hook
+    word ("asla" → "ASLA") and end up as "ŞOK Eden".
+    """
     title = format_capital_hook_word(title)
+    title = inject_curiosity_words(title, lang=lang)
     return enforce_title_length_limit(title)
 
 

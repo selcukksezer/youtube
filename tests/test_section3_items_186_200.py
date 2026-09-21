@@ -79,7 +79,10 @@ class TestSection3Items186to200(unittest.TestCase):
         cleaned = VoiceHumanizer.clean_narration_for_speech(raw_text)
         self.assertNotIn("merhaba arkadaşlar", cleaned.lower())
         self.assertNotIn("kanalıma hoş geldiniz", cleaned.lower())
-        self.assertIn("Marcus Aurelius", cleaned)
+        # Item 161 phoneme dictionary rewrites the name for TTS ("Marküs Avreliyus");
+        # the sanitizer must keep the sentence body either way.
+        self.assertTrue("Marcus Aurelius" in cleaned or "Marküs Avreliyus" in cleaned)
+        self.assertIn("kurallarını anlatıyorum", cleaned)
 
     def test_item_187_stereo_pan_movement(self):
         """Madde 187: Soldan sağa stereo pan hareketi."""

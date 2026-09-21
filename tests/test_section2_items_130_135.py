@@ -31,6 +31,8 @@ class TestSection2Items130to135(unittest.TestCase):
 
     def test_item_130_multi_provider_stock_mixing(self):
         """Item 130: Tests that video fetcher supports multi-provider mixed sourcing."""
+        from video_fetcher import reset_session_source_counts
+        reset_session_source_counts()  # module-level session state may be dirty from other tests
         src0 = _pick_next_source(0)
         src1 = _pick_next_source(1)
         src2 = _pick_next_source(2)

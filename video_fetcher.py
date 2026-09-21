@@ -818,13 +818,12 @@ def _pick_next_source(scene_index: int) -> str:
     if _ai_image_providers_available() and ai_ratio < 0.25 and scene_index % 4 == 3:
         return "ai"
 
-    # Pexels ve Pixabay arasında dönüşümlü
-    if counts["pexels"] <= counts["pixabay"]:
-        return "pexels"
-    elif counts["pixabay"] <= counts["coverr"]:
-        return "pixabay"
-    else:
-        return "coverr"
+    # En az kullanılan stok sağlayıcı; eşitlikte scene_index'e göre dönüşümlü
+    # (sayaçlar henüz güncellenmemişse bile ardışık sahneler farklı kaynak alır).
+    rotation = ["pexels", "pixabay", "coverr"]
+    min_count = min(counts.get(s, 0) for s in rotation)
+    least_used = [s for s in rotation if counts.get(s, 0) == min_count]
+    return least_used[scene_index % len(least_used)]
 
 
 def fetch_multi_source_clips(scenes: list, project_dir: str,

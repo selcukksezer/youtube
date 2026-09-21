@@ -297,7 +297,7 @@ def build_scene_sfx_events(scene_clips):
     shock_terms = ("şok", "inanılmaz", "korkunç", "dehşet", "gizli", "imkansız", "şok edici")
     tension_terms = ("korku", "gerilim", "tehdit", "tehlike", "paranormal", "horror")
     quiz_terms = ("tahmin", "kaç saniye", "süren var", "doğru cevap", "quiz")
-    type_terms = ("daktilo", "typewriter", "belge", "rapor", "ekrana yaz")
+    type_terms = ("daktilo", "typewriter", "belge", "rapor", "ekrana yaz", "listeyi yaz", "listele", "madde madde", "liste:")
     for index, scene in enumerate(scene_clips or []):
         searchable = " ".join(str(scene.get(key, "")) for key in ("narration", "scene_description", "title")).lower()
         if any(term in searchable for term in shock_terms):

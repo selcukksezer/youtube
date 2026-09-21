@@ -56,8 +56,11 @@ class TestSection4Items241255(unittest.TestCase):
         self.assertTrue(out[1].get("visual_diversity_adjusted"))
 
     def test_item_248_emotional_bond_hook(self):
-        hook = ViralRetentionEngine.generate_emotional_bond_hook(lang="tr")
-        self.assertIn("yapayalnız", hook.lower())
+        # Pool is randomized for variety; every variant must carry the loneliness/bond theme.
+        for _ in range(10):
+            hook = ViralRetentionEngine.generate_emotional_bond_hook(lang="tr")
+            self.assertTrue(any(k in hook.lower() for k in ("yapayalnız", "yalnız", "anlamıyor")), hook)
+            self.assertTrue(hook.strip().endswith("?"))
 
     def test_item_249_subconscious_palette(self):
         palette = ViralRetentionEngine.get_subconscious_color_palette("tehlike gizem")

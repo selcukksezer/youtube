@@ -11,7 +11,7 @@ class TestSceneSchemaValidate(unittest.TestCase):
         plan = {
             "scenes": [
                 {
-                    "narration": "Bu tam bir cumle ve yeterli kelime icerir.",
+                    "narration": "Bu tam bir cumle, on kelimelik siniri asar ve yeterli icerik tasir.",  # >= MIN_WORDS_PER_SCENE (10)
                     "duration": 3.0,
                     "search_queries": ["marble bust stoic"],
                 }
@@ -27,7 +27,7 @@ class TestSceneSchemaValidate(unittest.TestCase):
         self.assertFalse(_schema_valid(bad))
 
     def test_malformed_scene_missing_visual_ref_rejected(self):
-        bad = {"scenes": [{"narration": "Tam cumle ama gorsel yok."}]}
+        bad = {"scenes": [{"narration": "Bu tam bir cumle, on kelimeyi gecer ama gorsel referansi tamamen yok."}]}
         errs = validate_generated_plan_errors(bad)
         self.assertTrue(any("scene_description" in e or "visual" in e.lower() for e in errs))
         self.assertFalse(_schema_valid(bad))
@@ -44,7 +44,7 @@ class TestSceneSchemaValidate(unittest.TestCase):
 
         bad_json = '{"scenes":[{"narration":"kopuk"}]}'
         good_json = (
-            '{"scenes":[{"narration":"Bu tam bir cumle ve yeterli kelime icerir.","duration":3,'
+            '{"scenes":[{"narration":"Bu tam bir cumle, on kelimelik siniri asar ve yeterli icerik tasir.","duration":3,'
             '"search_queries":["stoic marble"]}]}'
         )
         good_resp = MagicMock()

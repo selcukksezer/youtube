@@ -108,7 +108,9 @@ class TestTimelineNoMidWordSplit(unittest.TestCase):
         self.assertEqual(right, "")
 
     def test_two_sentences_split_at_boundary(self):
-        text = "Ilk cumle burada bitiyor. Ikinci cumle burada basliyor ve devam ediyor."
+        # Both halves must reach min(MIN_WORDS_PER_SCENE, MIN_WORDS_PER_SENTENCE) words
+        # or the splitter refuses (returns "", "") to avoid creating stub scenes.
+        text = "Ilk cumle burada tam olarak bitiyor. Ikinci cumle burada basliyor ve devam ediyor."
         left, right = _split_narration_near_mid(text)
         self.assertTrue(left.endswith("."))
         self.assertTrue(right.startswith("Ikinci"))

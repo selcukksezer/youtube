@@ -94,7 +94,8 @@ class TestSection7Items411425(unittest.TestCase):
     def test_item_421_sse_events_endpoint(self):
         from routers import video_router
 
-        routes = [getattr(r, "path", "") for r in video_router.router.routes]
+        # routers/__init__.py re-exports the APIRouter instance itself as `video_router`
+        routes = [getattr(r, "path", "") for r in video_router.routes]
         self.assertIn("/api/events", routes)
 
     def test_item_422_dockerfile_exists(self):

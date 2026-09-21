@@ -130,7 +130,7 @@ SUBTITLE_PRESETS = {
         "highlight_color": "#FFFF00",
         "stroke_color": "#000000",
         "stroke_width": 5,
-        "font_size": 58,
+        "font_size": 56,  # Item 229/252: presets stay in 48-56pt band; contrast comes from stroke 5
         "font_name": "Anton",
         "uppercase": True,
         "glow": True,
