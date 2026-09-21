@@ -576,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!timedScenes.length) return { hard: [], soft: [] };
         const totalSec = timedScenes.reduce((acc, s) => acc + sceneDurationSec(s), 0);
         if (totalSec < 38 || totalSec > 60) {
-            soft.push(`Sure bandi: ${totalSec.toFixed(1)}sn (izin 38-60, hedef 48)`);
+            soft.push(`Sure bandi: ${totalSec.toFixed(1)}sn (izin 38-60, tavan 60)`);
         }
         if (scenes.length < 8 || scenes.length > 16) {
             soft.push(`Cadence: ${scenes.length} sahne (izin 8-16)`);
@@ -2124,15 +2124,28 @@ document.addEventListener('DOMContentLoaded', () => {
             chipDup.classList.add('status-warn');
         }
 
-        // Story Arc Bar — Madde 274
+        // Story Arc Bar — Madde 274 (percent of actual duration)
         if (totalSec > 0) {
-            const introEnd = Math.min(3, totalSec);
-            const conflictEnd = Math.min(20, totalSec);
-            const climaxEnd = Math.min(35, totalSec);
-            document.getElementById('arc-intro').style.width = `${(introEnd / totalSec) * 100}%`;
-            document.getElementById('arc-conflict').style.width = `${((conflictEnd - introEnd) / totalSec) * 100}%`;
-            document.getElementById('arc-climax').style.width = `${((climaxEnd - conflictEnd) / totalSec) * 100}%`;
-            document.getElementById('arc-loop').style.width = `${((totalSec - climaxEnd) / totalSec) * 100}%`;
+            const introEnd = totalSec * 0.07;
+            const conflictEnd = totalSec * 0.45;
+            const climaxEnd = totalSec * 0.75;
+            const introEl = document.getElementById('arc-intro');
+            const conflictEl = document.getElementById('arc-conflict');
+            const climaxEl = document.getElementById('arc-climax');
+            const loopEl = document.getElementById('arc-loop');
+            if (introEl) introEl.style.width = `${(introEnd / totalSec) * 100}%`;
+            if (conflictEl) conflictEl.style.width = `${((conflictEnd - introEnd) / totalSec) * 100}%`;
+            if (climaxEl) climaxEl.style.width = `${((climaxEnd - conflictEnd) / totalSec) * 100}%`;
+            if (loopEl) loopEl.style.width = `${((totalSec - climaxEnd) / totalSec) * 100}%`;
+            const r = (n) => Math.round(n);
+            const li = document.getElementById('arc-label-intro');
+            const lc = document.getElementById('arc-label-conflict');
+            const lx = document.getElementById('arc-label-climax');
+            const ll = document.getElementById('arc-label-loop');
+            if (li) li.textContent = `🎬 Giriş (0-${r(introEnd)}sn)`;
+            if (lc) lc.textContent = `⚔️ Çatışma (${r(introEnd)}-${r(conflictEnd)}sn)`;
+            if (lx) lx.textContent = `🔥 Doruk (${r(conflictEnd)}-${r(climaxEnd)}sn)`;
+            if (ll) ll.textContent = `🔄 Döngü (${r(climaxEnd)}-${r(totalSec)}sn)`;
         }
     }
 
@@ -2546,8 +2559,8 @@ document.addEventListener('DOMContentLoaded', () => {
         collectTimelineEdits();
         const scenes = currentPlan.scenes;
         const totalSec = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
-        const targetTotal = 48;
-        if (totalSec >= 38 && totalSec <= 60) return showToast('Sure izin bandinda (38-60sn, hedef 48)');
+        const targetTotal = totalSec < 38 ? 38 : 60;
+        if (totalSec >= 38 && totalSec <= 60) return showToast('Sure izin bandinda (38-60sn, tavan 60)');
 
         const ratio = targetTotal / totalSec;
         const maxPerScene = 7.5;
@@ -3150,9 +3163,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             <a href="/output/${v.filename}" download class="btn btn-secondary btn-sm" style="flex: 1; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px;">
                                 <i class="fa-solid fa-download"></i> İndir
                             </a>
-                            <button class="btn btn-primary btn-sm btn-upload-yt" data-filename="${v.filename}" data-title="${encodeURIComponent(v.keyword || 'Shorts')}" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px;">
-                                <i class="fa-brands fa-youtube"></i> Yükle
-                            </button>
+                            <a href="https://www.youtube.com/upload" target="_blank" rel="noopener" class="btn btn-primary btn-sm" title="Otomatik yükleme kapsam dışı — YouTube Studio'da manuel yükleyin" style="flex: 1; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 10px;">
+                                <i class="fa-brands fa-youtube"></i> Studio'da Yükle
+                            </a>
                         </div>
                         <button class="btn btn-sm btn-open-plan" data-slug="${encodeURIComponent((v.filename || '').replace(/\\.mp4$/i, ''))}" data-keyword="${encodeURIComponent(v.keyword || v.title || '')}" style="margin-top: 4px; width: 100%; font-size: 11px; background: rgba(232, 160, 58, 0.12); border: 1px solid rgba(232, 160, 58, 0.35); color: #e8a03a; border-radius: 6px; padding: 6px 8px; cursor: pointer;">
                             <i class="fa-solid fa-clapperboard"></i> Senaryoyu ac / yeniden kur
@@ -3245,33 +3258,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         alert("✅ Manuel Yükleme Bilgileri Panoya Kopyalandı!\n\n" + guideText);
                     } catch (err) {
                         alert("Kopyalama hatası: " + err.message);
-                    }
-                });
-            });
-
-            grid.querySelectorAll('.btn-upload-yt').forEach(b => {
-                b.addEventListener('click', async (e) => {
-                    const fn = e.currentTarget.getAttribute('data-filename');
-                    const title = decodeURIComponent(e.currentTarget.getAttribute('data-title'));
-                    b.disabled = true;
-                    b.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Yükleniyor...';
-                    try {
-                        const res = await fetch('/api/youtube/publish', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ filename: fn, title: title })
-                        });
-                        const resData = await res.json();
-                        if (resData.status === 'ok') {
-                            showToast('🚀 Video YouTube kanalına yüklendi!');
-                        } else {
-                            alert('YouTube yükleme uyarısı: ' + (resData.error || 'Başarısız'));
-                        }
-                    } catch (err) {
-                        alert(err.message);
-                    } finally {
-                        b.disabled = false;
-                        b.innerHTML = '<i class="fa-brands fa-youtube"></i> Yükle';
                     }
                 });
             });
@@ -3875,7 +3861,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const res = await fetch('/api/settings', {
+            const res = await fetch('/api/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ gemini_key: keyVal })
