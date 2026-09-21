@@ -284,7 +284,11 @@ def _needs_moviepy_composer(kwargs: Dict[str, Any]) -> bool:
     """
     FFmpeg graph covers concat + look + ASS only (Item 418 baseline).
     Section-2 retention overlays (Items 75–246, B5 hybrid) require MoviePy compose_video.
+    RENDER_SAFE_MODE skips those overlays → stay on the fast FFmpeg path.
     """
+    if getattr(config, "RENDER_SAFE_MODE", False):
+        # Safe/test path: always prefer FFmpeg graph (skip Section-2 overlays).
+        return False
     if kwargs.get("split_screen"):
         return True
     if kwargs.get("retention_metadata"):
