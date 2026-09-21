@@ -198,15 +198,32 @@ def synthesize_scene_description(scene: Any) -> str:
 
 
 def sanitize_plan_scene_descriptions(plan: Dict[str, Any]) -> Dict[str, Any]:
-    """Router-boundary: API JSON must never carry placeholder scene_description."""
+    """Router-boundary: API JSON must never carry placeholder scene_description.
+    Also strip cinematic/4k query soup (2026 research / Item 89 revised).
+    """
     scenes = plan.get("scenes") if isinstance(plan, dict) else None
     if not scenes:
         return plan
+    try:
+        from scenes.enrichment import enrich_cinematic_search_queries
+    except Exception:
+        enrich_cinematic_search_queries = None  # type: ignore
+    niche_id = str(plan.get("niche_id") or "")
     for sc in scenes:
         if not isinstance(sc, dict):
             continue
         if not scene_description_usable(sc.get("scene_description") or ""):
             sc["scene_description"] = synthesize_scene_description(sc)
+        qs = sc.get("search_queries")
+        if isinstance(qs, list) and enrich_cinematic_search_queries:
+            cleaned = enrich_cinematic_search_queries(qs)
+            # Religious: never allow Stoic/Roman bleed
+            if "relig" in niche_id.lower():
+                cleaned = [
+                    q for q in cleaned
+                    if not re.search(r"\b(marcus|aurelius|roman|rome|stoic)\b", q, re.I)
+                ] or cleaned
+            sc["search_queries"] = cleaned
     return plan
 
 

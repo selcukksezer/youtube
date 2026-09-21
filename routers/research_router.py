@@ -183,6 +183,35 @@ def api_generate_script(req: ScriptGenerateRequest):
 
         plan = sanitize_plan_scene_descriptions(plan or {})
 
+        compliance = None
+        viewer_score = None
+        try:
+            from compliance import evaluate_plan_compliance
+            from compliance.viewer_score import compute_viewer_score
+            compliance = evaluate_plan_compliance(plan)
+            plan.setdefault("meta", {})
+            viewer_score = compute_viewer_score(plan, compliance=compliance)
+            plan["meta"]["viewer_score"] = viewer_score
+            plan["meta"]["compliance"] = {
+                "ok": compliance.get("ok"),
+                "hard_fail": compliance.get("hard_fail"),
+                "inauthentic": compliance.get("inauthentic"),
+                "niche_gate": compliance.get("niche_gate"),
+                "ai_disclosure": compliance.get("ai_disclosure"),
+            }
+            # Attach disclosure paragraph for SEO/description pipelines
+            disc = (compliance.get("ai_disclosure") or {}).get("description_paragraph")
+            if disc:
+                plan["meta"]["ai_disclosure_text"] = disc
+            if compliance.get("hard_fail"):
+                print(
+                    f"  [Compliance] HARD FAIL risk="
+                    f"{(compliance.get('inauthentic') or {}).get('risk')} "
+                    f"verdict={(compliance.get('inauthentic') or {}).get('verdict')}"
+                )
+        except Exception as comp_err:
+            print(f"  [Compliance] note: {comp_err}")
+
         return {
             "status": "ok",
             "plan": plan,
@@ -192,6 +221,8 @@ def api_generate_script(req: ScriptGenerateRequest):
             "fair_use_notice": fair_use_notice,
             "channel_paths": ch_paths,
             "topic_intelligence": topic_intel,
+            "viewer_score": viewer_score,
+            "compliance": compliance,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

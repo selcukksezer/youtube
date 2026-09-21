@@ -304,7 +304,7 @@ def enrich_seo_with_retention_metadata(seo_data: dict, retention_metadata: dict 
     Items 209-210: spotted mistake bait + polarizing dilemma → SEO/yorum paketi.
     """
     if not retention_metadata:
-        return seo_data
+        return finalize_seo_compliance(seo_data or {}, lang=lang)
 
     seo_data = dict(seo_data or {})
     mistake = (retention_metadata.get("spotted_mistake_bait") or "").strip()
@@ -333,6 +333,29 @@ def enrich_seo_with_retention_metadata(seo_data: dict, retention_metadata: dict 
         if retention_metadata.get(key):
             seo_data[key] = retention_metadata[key]
 
+    return finalize_seo_compliance(seo_data, lang=lang)
+
+
+def finalize_seo_compliance(seo_data: dict, lang: str = "tr") -> dict:
+    """Strip tag stuffing, cap hashtags at 3, append AI disclosure paragraph (research §A4/A8)."""
+    seo_data = dict(seo_data or {})
+    try:
+        from compliance import ai_disclosure_block, sanitize_seo_description
+        desc = sanitize_seo_description(seo_data.get("seo_description") or "", max_hashtags=3)
+        disc = ai_disclosure_block(
+            uses_tts=True, uses_ai_script=True, uses_photoreal_ai=False, lang=lang,
+        )
+        para = disc.get("description_paragraph") or ""
+        if para and para not in desc:
+            desc = f"{desc.rstrip()}\n\n{para}"
+        seo_data["seo_description"] = desc
+        seo_data["ai_disclosure"] = disc
+        seo_data["studio_ai_survey"] = disc.get("studio_ai_survey")
+    except Exception:
+        pass
+    tags = seo_data.get("tags") or []
+    if isinstance(tags, list) and len(tags) > 15:
+        seo_data["tags"] = tags[:15]
     return seo_data
 
 
@@ -391,7 +414,9 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_m
                 quota_tracker.record_call(provider_name or "Gemini")
             except Exception:
                 pass
-            return enrich_seo_with_retention_metadata(data, retention_metadata)
+            return finalize_seo_compliance(
+                enrich_seo_with_retention_metadata(data, retention_metadata)
+            )
     except Exception as e:
         if _is_quota_error(e):
             print("    [SEO] Gemini kotası dolu — procedural fallback kullanılıyor.")

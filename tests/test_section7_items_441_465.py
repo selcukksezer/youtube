@@ -108,7 +108,9 @@ class TestSection7Items441465(unittest.TestCase):
 
     def test_item_455_prompt_enrichment(self):
         enriched = enrich_cinematic_search_queries(["ocean sunset"], mood="epic")
-        self.assertTrue(any("cinematic" in q.lower() or "aerial" in q.lower() for q in enriched))
+        joined = " ".join(enriched).lower()
+        self.assertNotIn("cinematic", joined)
+        self.assertTrue(any("light" in q.lower() or "sunset" in q.lower() for q in enriched))
 
     def test_item_456_webm_support(self):
         with open(
