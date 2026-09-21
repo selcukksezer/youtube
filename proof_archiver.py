@@ -125,6 +125,43 @@ class ProofArchiver:
         return {"deleted": deleted, "errors": errors, "base": base}
 
     @staticmethod
+    def archive_then_purge_workspace(
+        video_filename: str,
+        title: str = "",
+        niche: str = "",
+        script_text: str = "",
+        keep_final_mp4: bool = True,
+        channel_slug: str = "default",
+    ):
+        """
+        R10 #80: Archive proof dossier, then optionally purge temp assets.
+        Never auto-deletes after upload (upload OOS) — operator chooses keep_final_mp4.
+        """
+        proof = ProofArchiver.archive_video_proof(
+            video_filename, title or video_filename, niche, script_text or ""
+        )
+        purged = []
+        if not keep_final_mp4:
+            result = ProofArchiver.discard_video_bundle(video_filename, channel_slug=channel_slug)
+            purged = list(result.get("deleted") or [])
+        else:
+            try:
+                ch = config.channel_paths(channel_slug if channel_slug != "default" else None)
+                base = os.path.splitext(os.path.basename(video_filename or ""))[0]
+                proj = os.path.join(ch["assets_dir"], base)
+                if os.path.isdir(proj):
+                    shutil.rmtree(proj, ignore_errors=True)
+                    purged.append(proj)
+            except Exception:
+                pass
+        return {
+            "rule": "r10_80_archive_purge",
+            "proof": proof,
+            "keep_final_mp4": keep_final_mp4,
+            "purged_paths": purged,
+        }
+
+    @staticmethod
     def mark_share_kept(filename: str) -> str:
         """Annotate proof dossier that user will share manually on YouTube."""
         base = os.path.splitext(os.path.basename(filename or ""))[0]

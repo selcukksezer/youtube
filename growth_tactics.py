@@ -285,6 +285,71 @@ def generate_live_stream_loop_command(video_path: str, stream_key: str, rtmp_url
         f'-f flv "{rtmp_url}/{stream_key}"'
     )
 
+
+def generate_live_quiz_room_pack(
+    topic: str,
+    question_count: int = 5,
+    lang: str = "tr",
+) -> Dict[str, Any]:
+    """
+    R10 #97: Canlı trivia / quiz oda paketi — sorular, süreler, Super Chat CTA metinleri,
+    FFmpeg loop komutu iskeleti. YouTube Live API / Super Chat tahsilatı kapsam dışı;
+    operatör Studio'da canlı açıp bu paketi takip eder.
+    """
+    n = max(3, min(12, int(question_count)))
+    questions = []
+    for i in range(n):
+        if lang == "en":
+            questions.append({
+                "index": i + 1,
+                "prompt": f"Q{i+1}: About {topic} — which answer is correct?",
+                "options": ["A) Myth", "B) Fact", "C) Half-true", "D) Unknown"],
+                "reveal_after_sec": 8,
+                "correct": "B",
+                "overlay_text": f"{topic} — QUIZ {i+1}/{n}",
+            })
+        else:
+            questions.append({
+                "index": i + 1,
+                "prompt": f"Soru {i+1}: {topic} hakkında hangisi doğru?",
+                "options": ["A) Mit", "B) Gerçek", "C) Yarı doğru", "D) Bilinmiyor"],
+                "reveal_after_sec": 8,
+                "correct": "B",
+                "overlay_text": f"{topic} — QUIZ {i+1}/{n}",
+            })
+    return {
+        "rule": "r10_97_live_quiz",
+        "topic": topic,
+        "format": "live_trivia_room",
+        "questions": questions,
+        "timing": {
+            "intro_sec": 10,
+            "per_question_sec": 15,
+            "outro_sec": 20,
+            "estimated_total_min": round((10 + n * 15 + 20) / 60.0, 1),
+        },
+        "superchat_cta": (
+            "Super Chat the answer letter (A/B/C/D) — top donors get shout-out!"
+            if lang == "en"
+            else "Cevabı Super Chat ile gönder (A/B/C/D) — en yüksek bağışa sesli teşekkür!"
+        ),
+        "membership_cta": (
+            "Join for exclusive quiz packs"
+            if lang == "en"
+            else "Üye ol — özel quiz paketleri her hafta"
+        ),
+        "ffmpeg_loop_hint": generate_live_stream_loop_command(
+            video_path="QUIZ_COMPILATION.mp4", stream_key="YOUR_STREAM_KEY"
+        ),
+        "studio_steps": [
+            "YouTube Studio → Go Live → Webcam or stream software",
+            "Overlay quiz prompts from this pack on stream",
+            "Enable Super Chat / memberships if eligible",
+            "Pin chat question; read top Super Chats aloud",
+        ],
+        "upload_note": "Live API automation out of scope — operator-run Studio live.",
+    }
+
 def build_tier1_adaptation_brief(topic: str, target_country: str = "US", lang: str = "en") -> Dict[str, Any]:
     """
     Item 321: Tier-1 ülke adaptasyonu — EN metadata + EST yayın penceresi operatör brifi.

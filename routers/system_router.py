@@ -399,6 +399,13 @@ def get_algorithmic_threshold_advisory(view_count: int = 0, swipe_rate_pct: Opti
     return {"status": "ok", "advisory": advisory}
 
 
+@router.get("/api/analytics/ops-dashboard")
+def get_ops_dashboard():
+    """R10 #100: Local ops dashboard snapshot (renders + managed channels)."""
+    from database import get_ops_dashboard_snapshot
+    return {"status": "ok", "dashboard": get_ops_dashboard_snapshot()}
+
+
 @router.get("/api/analytics/feed-distribution")
 def get_feed_distribution_advisory(swipe_rate_pct: float = 35.0, test_audience: int = 500):
     """Item 387: Feed dağıtım ivmesi — 500 kişi test kitlesi advisory stub."""

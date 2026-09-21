@@ -163,6 +163,89 @@ def get_safe_default_bgm_path():
     """Item 135: Returns the bundled/generated royalty-free fallback track."""
     return ensure_royalty_free_ambient_bgm()
 
+
+# R10 #87 — Trend-style hybrid profiles (royalty-free stand-ins for YT "trend sounds")
+# We cannot scrape YouTube's private Trend Sounds list; map viral energy bands → safe BGM.
+TREND_HYBRID_PROFILES = (
+    {
+        "id": "viral_pulse",
+        "label": "Viral Pulse (trend-energy)",
+        "energy": "high",
+        "moods": ("energetic", "epic", "dramatic"),
+        "niche_hints": ("crypto", "football", "fitness", "gaming", "news", "affiliate"),
+        "keywords": ("viral", "trending", "fyp", "kesfet"),
+    },
+    {
+        "id": "lofi_feed",
+        "label": "Lo-Fi Feed Scroll",
+        "energy": "mid",
+        "moods": ("lofi", "ambient", "calm"),
+        "niche_hints": ("stoic", "religious", "poetry", "language", "parenting", "dream"),
+        "keywords": ("calm", "study", "lofi"),
+    },
+    {
+        "id": "dark_tension",
+        "label": "Dark Tension Hook",
+        "energy": "mid_high",
+        "moods": ("mysterious", "dramatic"),
+        "niche_hints": ("mystery", "psychology", "history", "sigma", "legal"),
+        "keywords": ("dark", "tension", "thriller"),
+    },
+)
+
+
+def list_trend_hybrid_profiles() -> list:
+    """R10 #87: Curated trend-energy BGM profiles (copyright-safe)."""
+    return [dict(p) for p in TREND_HYBRID_PROFILES]
+
+
+def select_trend_hybrid_bgm(
+    niche_id: str = "",
+    topic: str = "",
+    preferred_mood: str = "",
+) -> dict:
+    """
+    R10 #87: Pick a royalty-free BGM path that matches current 'trend energy'
+    for the niche — hybrid of trend mood tags + local safe catalog.
+    """
+    nid = (niche_id or "").lower()
+    topic_l = (topic or "").lower()
+    mood = (preferred_mood or "").lower()
+    chosen = TREND_HYBRID_PROFILES[1]  # default lofi
+    for profile in TREND_HYBRID_PROFILES:
+        hints = profile["niche_hints"]
+        if any(h in nid for h in hints) or any(h in topic_l for h in hints):
+            chosen = profile
+            break
+        if mood and mood in profile["moods"]:
+            chosen = profile
+            break
+
+    tracks = list_bgm_tracks(include_catalog=True)
+    mood_terms = list(chosen["moods"])
+    match = None
+    for t in tracks:
+        low = t.lower()
+        if any(m in low for m in mood_terms):
+            match = t
+            break
+    path = get_bgm_path(match) if match else None
+    if not path:
+        path = get_safe_default_bgm_path()
+        match = os.path.basename(path) if path else ""
+    return {
+        "rule": "r10_87_trend_hybrid",
+        "profile_id": chosen["id"],
+        "label": chosen["label"],
+        "energy": chosen["energy"],
+        "track": match,
+        "path": path,
+        "note": (
+            "YouTube Trend Sounds listesi API ile kapalı; telifsiz katalogda "
+            "trend-enerji profili seçildi. Operatör Studio'da trend sesi manuel ekleyebilir."
+        ),
+    }
+
 def mix_narration_and_bgm(narration_path, bgm_path, output_path, volume=0.12, tape_stop_times=None, allow_fade_out: bool = False):
     """
     Mixes narration audio with background music using ffmpeg.

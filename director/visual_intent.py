@@ -643,7 +643,7 @@ def semantic_relevance_score(
     narration: str,
     intent: Optional[VisualIntent] = None,
 ) -> float:
-    """Token overlap score 0..40 for stock candidate ranking."""
+    """Token overlap score 0..40 for stock candidate ranking (+ optional embedding boost)."""
     if intent and text_contains_excluded(candidate_text, intent.must_exclude):
         return -100.0
     cand = _tokenize(candidate_text)
@@ -651,6 +651,51 @@ def semantic_relevance_score(
     if intent:
         narr |= _tokenize(intent.subject) | _tokenize(intent.mood) | set(intent.must_include)
     if not cand or not narr:
+        base = 0.0
+    else:
+        overlap = len(cand & narr)
+        base = min(40.0, overlap * 8.0)
+
+    # R10 #39: optional Gemini embedding cosine boost when enabled
+    try:
+        import config as _cfg
+        if getattr(_cfg, "USE_GEMINI_EMBEDDINGS", False) and getattr(_cfg, "GEMINI_API_KEY", ""):
+            boost = _embedding_similarity_boost(candidate_text, narration)
+            base = min(40.0, base + boost)
+    except Exception:
+        pass
+    return base
+
+
+_EMBED_CACHE: Dict[str, List[float]] = {}
+
+
+def _embedding_similarity_boost(a: str, b: str) -> float:
+    """Return 0..12 boost from cosine similarity of Gemini embeddings."""
+    va = _embed_text(a)
+    vb = _embed_text(b)
+    if not va or not vb:
         return 0.0
-    overlap = len(cand & narr)
-    return min(40.0, overlap * 8.0)
+    import math
+    dot = sum(x * y for x, y in zip(va, vb))
+    na = math.sqrt(sum(x * x for x in va)) or 1.0
+    nb = math.sqrt(sum(x * x for x in vb)) or 1.0
+    cos = max(0.0, min(1.0, dot / (na * nb)))
+    return cos * 12.0
+
+
+def _embed_text(text: str) -> List[float]:
+    key = (text or "").strip().lower()[:240]
+    if not key:
+        return []
+    if key in _EMBED_CACHE:
+        return _EMBED_CACHE[key]
+    try:
+        from google_ai_hub import embed_text
+        ok, vec = embed_text(key)
+        if ok and isinstance(vec, list) and vec:
+            _EMBED_CACHE[key] = vec
+            return vec
+    except Exception:
+        pass
+    return []

@@ -385,6 +385,55 @@ def get_video_stats() -> Dict[str, Any]:
             "total_minutes": round(total_sec / 60.0, 1)
         }
 
+
+def get_ops_dashboard_snapshot() -> Dict[str, Any]:
+    """
+    R10 #100: Local ops dashboard — renders, channels, advisory RPM (not live YT Analytics).
+    """
+    stats = get_video_stats()
+    channels = []
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    "SELECT handle, channel_name, niche, status, health_score FROM managed_channels ORDER BY id DESC LIMIT 50"
+                )
+                for row in cursor.fetchall():
+                    channels.append({
+                        "handle": row[0],
+                        "channel_name": row[1],
+                        "niche": row[2],
+                        "status": row[3],
+                        "health_score": row[4],
+                        "views": None,
+                        "subscribers": None,
+                        "estimated_revenue_usd": None,
+                        "metrics_note": "Live YT Analytics API not wired — fill manually or connect OAuth later.",
+                    })
+            except Exception:
+                pass
+            try:
+                cursor.execute(
+                    "SELECT status, COUNT(*) FROM videos GROUP BY status"
+                )
+                by_status = {r[0]: r[1] for r in cursor.fetchall()}
+            except Exception:
+                by_status = {}
+    except Exception:
+        by_status = {}
+    return {
+        "rule": "r10_100_ops_dashboard",
+        "local_renders": stats,
+        "videos_by_status": by_status,
+        "managed_channels": channels,
+        "channel_count": len(channels),
+        "monetization_advisory": {
+            "rpm_note": "Use niche rpm_tier from niche_templates as planning hint only.",
+            "live_revenue": False,
+        },
+    }
+
 def save_managed_channel(
     channel_url: str,
     handle: str,

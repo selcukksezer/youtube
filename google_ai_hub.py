@@ -248,6 +248,38 @@ def generate_text(prompt: str, model: Optional[str] = None, system: str = "") ->
         return False, str(e)
 
 
+def embed_text(text: str, model: Optional[str] = None) -> Tuple[bool, Any]:
+    """
+    R10 #39: Gemini text embeddings for semantic stock matching.
+    Returns (ok, vector_list) or (False, error_string).
+    """
+    key = _api_key()
+    if not key:
+        return False, "GEMINI_API_KEY yok"
+    plain = (text or "").strip()
+    if not plain:
+        return False, "empty text"
+    model = model or "text-embedding-004"
+    url = f"{GEMINI_BASE}/models/{model}:embedContent?key={key}"
+    body = {
+        "model": f"models/{model}",
+        "content": {"parts": [{"text": plain[:2048]}]},
+    }
+    try:
+        r = requests.post(url, json=body, timeout=45)
+        if r.status_code != 200:
+            return False, f"HTTP {r.status_code}: {r.text[:300]}"
+        data = r.json()
+        values = ((data.get("embedding") or {}).get("values")) or []
+        if not values:
+            values = (((data.get("embeddings") or [{}])[0]).get("values")) or []
+        if not values:
+            return False, "empty embedding"
+        return True, list(values)
+    except Exception as e:
+        return False, str(e)
+
+
 def generate_image_bytes(
     prompt: str,
     model: Optional[str] = None,

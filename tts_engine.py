@@ -1,5 +1,6 @@
 """TTS — Edge TTS (0 TL default) with optional Gemini TTS + sentence-level rhythm."""
 import asyncio, os, re, shutil, subprocess, tempfile, wave
+from typing import Tuple
 import imageio_ffmpeg
 import edge_tts, config
 
@@ -9,9 +10,48 @@ def active_tts_provider() -> str:
     from tts_voices import is_elevenlabs_voice, voice_label_for_id  # noqa: PLC0415
     if is_elevenlabs_voice(config.TTS_VOICE) and getattr(config, "ELEVENLABS_API_KEY", ""):
         return f"ElevenLabs ({voice_label_for_id(config.TTS_VOICE)})"
+    if getattr(config, "USE_PIPER_TTS", False) and _piper_binary():
+        return f"Piper local ({getattr(config, 'PIPER_MODEL', 'default')})"
     if getattr(config, "USE_GEMINI_TTS", False) and getattr(config, "GEMINI_API_KEY", ""):
         return f"Gemini TTS ({getattr(config, 'GEMINI_TTS_MODEL', 'gemini-2.5-flash-preview-tts')})"
     return f"Edge TTS ({config.TTS_VOICE})"
+
+
+def _piper_binary() -> str:
+    """R10 #45: Resolve Piper CLI if installed locally."""
+    return shutil.which("piper") or ""
+
+
+def piper_tts_available() -> bool:
+    return bool(_piper_binary() and getattr(config, "USE_PIPER_TTS", False))
+
+
+def generate_piper_wav(text: str, output_path: str, model_path: str = "") -> Tuple[bool, str]:
+    """
+    R10 #45: Offline Piper TTS when `piper` binary + onnx model present.
+    Falls back with clear message if missing (Edge remains default).
+    """
+    import shutil as _sh
+    exe = _piper_binary()
+    if not exe:
+        return False, "piper binary not found (brew/pip install piper-tts)"
+    model = model_path or getattr(config, "PIPER_MODEL_PATH", "") or ""
+    if not model or not os.path.exists(model):
+        return False, "PIPER_MODEL_PATH missing — set path to .onnx voice model"
+    plain = (text or "").strip()
+    if not plain:
+        return False, "empty text"
+    try:
+        cmd = [exe, "--model", model, "--output_file", output_path]
+        proc = subprocess.run(
+            cmd, input=plain.encode("utf-8"),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
+        )
+        if proc.returncode == 0 and os.path.exists(output_path):
+            return True, f"Piper OK → {output_path}"
+        return False, (proc.stderr or b"").decode("utf-8", errors="ignore")[:300]
+    except Exception as e:
+        return False, str(e)
 
 
 def _estimate_word_timings(text: str, duration_sec: float):

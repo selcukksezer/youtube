@@ -359,6 +359,32 @@ def finalize_seo_compliance(seo_data: dict, lang: str = "tr") -> dict:
     return seo_data
 
 
+def attach_shopping_product_tags(seo: dict, keyword: str = "", products: list = None) -> dict:
+    """
+    R10 #95: YouTube Shopping / product-tag metadata pack for operator paste into Studio.
+    Shopping API auto-tag is out of scope — structured tags for manual attach.
+    """
+    data = dict(seo or {})
+    kw = (keyword or data.get("seo_title") or "ürün").strip()
+    product_list = list(products or [])
+    if not product_list:
+        product_list = [f"{kw} — öne çıkan ürün", f"{kw} alternatif set"]
+    tags = []
+    for i, name in enumerate(product_list[:5]):
+        tags.append({
+            "index": i + 1,
+            "product_name": name,
+            "suggested_shelf": "YouTube Shopping / merch shelf",
+            "cta": data.get("affiliate_text") or "Link profilde / açıklamada",
+        })
+    data["shopping_product_tags"] = tags
+    data["shopping_studio_note"] = (
+        "Studio → Video details → Products — etiketleri manuel ekle "
+        "(Shopping API otomatik yükleme kapsam dışı)."
+    )
+    return data
+
+
 def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_metadata: dict = None) -> dict:
     fallback_title = finalize_seo_title(f"{keyword}: Bu Gerçeği ASLA Unutmayın #Shorts")
     fallback = {
@@ -372,7 +398,8 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_m
 
     client_info = _seo_llm_client()
     if not client_info[0]:
-        return enrich_seo_with_retention_metadata(fallback, retention_metadata)
+        enriched = enrich_seo_with_retention_metadata(fallback, retention_metadata)
+        return attach_shopping_product_tags(enriched, keyword)
 
     client, provider_name, model_name = client_info
     print(f"\n  [Viral SEO Agent] '{keyword}' için SEO ve Kanca verileri üretiliyor...")
@@ -415,7 +442,10 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_m
             except Exception:
                 pass
             return finalize_seo_compliance(
-                enrich_seo_with_retention_metadata(data, retention_metadata)
+                attach_shopping_product_tags(
+                    enrich_seo_with_retention_metadata(data, retention_metadata),
+                    keyword,
+                )
             )
     except Exception as e:
         if _is_quota_error(e):
@@ -429,7 +459,10 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_m
             except Exception:
                 pass
 
-    return enrich_seo_with_retention_metadata(fallback, retention_metadata)
+    return attach_shopping_product_tags(
+        enrich_seo_with_retention_metadata(fallback, retention_metadata),
+        keyword,
+    )
 
 
 def generate_related_video_bridge(
