@@ -861,15 +861,14 @@ def process_video_task(req: VideoRenderRequest):
             print(f"  [SEO] Notice: {se}")
 
         if getattr(req, "resolution", None) in ("1080p", "720p", "540p"):
-            # Prefer 1080p for final publish; 540p/720p only when explicitly requested as test
+            # 1080p is the production default; 540p/720p only with explicit test flag
             res_mode = req.resolution
             if res_mode != "1080p" and not getattr(req, "force_test_resolution", False):
-                # Keep user's choice but warn — publishable Marcus needs 1080p
                 _log(
-                    f"[FFmpegGraph] Uyarı: {res_mode} test çözünürlüğü seçili. "
-                    f"Yayın için 1080p önerilir.",
+                    f"[FFmpegGraph] {res_mode} test modu atlandı — yayın için 1080p kullanılıyor.",
                     75,
                 )
+                res_mode = "1080p"
             config.RENDER_RESOLUTION_MODE = res_mode
             res_dims = config.RESOLUTIONS.get(res_mode, (1080, 1920))
             _log(f"[FFmpegGraph] Çözünürlük: {res_mode} ({res_dims[0]}x{res_dims[1]})")

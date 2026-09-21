@@ -28,6 +28,12 @@ class TestBatch2OverlayAudioWiring(unittest.TestCase):
         out = apply_opening_pattern_interrupt(clip, interrupt_type="zoom_punch", duration=1.5)
         self.assertEqual(out.duration, 2.0)
 
+    def test_item_201_glitch_flash_noise_frames(self):
+        clip = ColorClip(size=(720, 1280), color=(40, 40, 80), duration=2.0)
+        out = apply_opening_pattern_interrupt(clip, interrupt_type="glitch_flash", duration=1.5)
+        frame = out.get_frame(0.12)
+        self.assertEqual(frame.shape, (1280, 720, 3))
+
     def test_item_115_color_splash_moviepy(self):
         clip = ColorClip(size=(320, 568), color=(0, 180, 60), duration=1.0)
         out = apply_color_splash_moviepy(clip, keep_hue_center=120.0, tolerance=35.0)

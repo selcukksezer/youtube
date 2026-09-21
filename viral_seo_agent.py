@@ -39,6 +39,40 @@ SADECE JSON FORMATINDA YANIT VER:
 {"hook_text": "...", "seo_title": "...", "seo_description": "...", "tags": ["a", "b"], "pinned_comment": "...", "affiliate_text": "..."}
 """
 
+_SEO_LITE_MODEL = "gemini-flash-lite-latest"
+
+
+def _resolve_seo_model() -> str:
+    """SEO metadata uses lightweight Gemini — avoid Pro-tier quota burn."""
+    configured = (getattr(config, "GEMINI_MODEL", "") or "").strip()
+    if configured and "pro" not in configured.lower():
+        return configured
+    return _SEO_LITE_MODEL
+
+
+def _is_quota_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(k in msg for k in ("429", "quota", "rate limit", "resource_exhausted", "resource exhausted"))
+
+
+def _seo_llm_client():
+    """Prefer Gemini key + GEMINI_MODEL; fall back to auto-detected AI provider."""
+    gemini_key = (getattr(config, "GEMINI_API_KEY", "") or "").strip()
+    if gemini_key:
+        return (
+            OpenAI(
+                api_key=gemini_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            ),
+            "Gemini",
+            _resolve_seo_model(),
+        )
+    if config.AI_API_KEY and config.AI_BASE_URL:
+        model = config.AI_MODEL if config.AI_MODEL and config.AI_MODEL != "procedural" else _SEO_LITE_MODEL
+        return OpenAI(api_key=config.AI_API_KEY, base_url=config.AI_BASE_URL), config.AI_PROVIDER or "AI", model
+    return None, "", ""
+
+
 TITLE_VARIANTS_PROMPT = """Sen bir YouTube başlık uzmanısın. Verilen ana başlığın:
 - Aynı anlamı farklı kelimelerle ifade eden
 - Her biri farklı merak/duygu/kanca stratejisi kullanan
@@ -308,15 +342,16 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_m
         "affiliate_text": "🔗 Bahsedilen ürün ve kaynak linkleri profilimde!"
     }
 
-    if not config.AI_PROVIDER or not config.AI_API_KEY:
+    client_info = _seo_llm_client()
+    if not client_info[0]:
         return enrich_seo_with_retention_metadata(fallback, retention_metadata)
 
+    client, provider_name, model_name = client_info
     print(f"\n  [Viral SEO Agent] '{keyword}' için SEO ve Kanca verileri üretiliyor...")
 
     try:
-        client = OpenAI(api_key=config.AI_API_KEY, base_url=config.AI_BASE_URL)
         params = dict(
-            model=config.AI_MODEL,
+            model=model_name,
             messages=[
                 {"role": "system", "content": SEO_PROMPT},
                 {"role": "user", "content": f"Anahtar kelime: {keyword}"}
@@ -324,10 +359,10 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_m
             temperature=0.7,
             max_tokens=1000,
         )
-        if "Gemini" in config.AI_PROVIDER or "OpenAI" in config.AI_PROVIDER:
+        if provider_name in ("Gemini", "OpenAI"):
             params["response_format"] = {"type": "json_object"}
 
-        resp = _call(client, params)
+        resp = _call(client, params, provider_name=provider_name, model_name=model_name)
         raw = resp.choices[0].message.content.strip()
         data = _clean_json(raw)
 
@@ -348,17 +383,21 @@ def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_m
             print(f"    [OK] Viral SEO verileri başarıyla üretildi.")
             try:
                 from quota_manager import quota_tracker
-                quota_tracker.record_call(config.AI_PROVIDER or "Gemini")
+                quota_tracker.record_call(provider_name or "Gemini")
             except Exception:
                 pass
             return enrich_seo_with_retention_metadata(data, retention_metadata)
     except Exception as e:
-        print(f"    [UYARI] Viral SEO Agent hatası: {e}. Fallback kullanılıyor.")
-        try:
-            from quota_manager import quota_tracker
-            quota_tracker.record_error(config.AI_PROVIDER or "Gemini", str(e))
-        except Exception:
-            pass
+        if _is_quota_error(e):
+            print("    [SEO] Gemini kotası dolu — procedural fallback kullanılıyor.")
+        else:
+            print(f"    [UYARI] Viral SEO Agent hatası: {e}. Fallback kullanılıyor.")
+        if not _is_quota_error(e):
+            try:
+                from quota_manager import quota_tracker
+                quota_tracker.record_error(provider_name or "Gemini", str(e))
+            except Exception:
+                pass
 
     return enrich_seo_with_retention_metadata(fallback, retention_metadata)
 
@@ -481,14 +520,15 @@ def generate_title_variants(main_title: str, keyword: str = "") -> list:
         finalize_seo_title(f"{kw}: Uzmanların SAKLADIĞI Bilgi #Shorts"),
     ]
 
-    if not config.AI_PROVIDER or not config.AI_API_KEY:
+    client_info = _seo_llm_client()
+    if not client_info[0]:
         return fallback_variants
 
+    client, provider_name, model_name = client_info
     print(f"  [Item 109] '{main_title}' için 5 özgün başlık varyasyonu üretiliyor...")
     try:
-        client = OpenAI(api_key=config.AI_API_KEY, base_url=config.AI_BASE_URL)
         params = dict(
-            model=config.AI_MODEL,
+            model=model_name,
             messages=[
                 {"role": "system", "content": TITLE_VARIANTS_PROMPT},
                 {"role": "user", "content": f"Ana başlık: {main_title}\nAnahtar kelime: {kw}"}
@@ -496,10 +536,10 @@ def generate_title_variants(main_title: str, keyword: str = "") -> list:
             temperature=0.85,
             max_tokens=500,
         )
-        if "Gemini" in config.AI_PROVIDER or "OpenAI" in config.AI_PROVIDER:
+        if provider_name in ("Gemini", "OpenAI"):
             params["response_format"] = {"type": "json_object"}
 
-        resp = _call(client, params)
+        resp = _call(client, params, provider_name=provider_name, model_name=model_name)
         raw = resp.choices[0].message.content.strip()
         data = _clean_json(raw)
 
@@ -509,7 +549,10 @@ def generate_title_variants(main_title: str, keyword: str = "") -> list:
                 return variants[:5]
 
     except Exception as e:
-        print(f"    [Item 109] UYARI: {e}. Fallback kullanılıyor.")
+        if _is_quota_error(e):
+            print("    [Item 109] Gemini kotası dolu — procedural fallback kullanılıyor.")
+        else:
+            print(f"    [Item 109] UYARI: {e}. Fallback kullanılıyor.")
 
     return fallback_variants
 

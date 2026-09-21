@@ -451,7 +451,7 @@ def apply_opening_pattern_interrupt(
     try:
         w, h = clip.size
         shock_dur = min(max(0.5, duration), clip.duration)
-        rng = random.Random(int(w * 13 + h * 7))
+        rng_np = np.random.default_rng(int(w * 13 + h * 7))
 
         def make_frame(t):
             frame = clip.get_frame(t)
@@ -480,7 +480,7 @@ def apply_opening_pattern_interrupt(
                 alpha = 1.0 - (t / 0.08)
                 return _blend_frames(flash, frame, 1.0 - alpha)
             if t < 0.18:
-                noise = rng.randint(0, 256, size=frame.shape).astype(np.uint8)
+                noise = rng_np.integers(0, 256, size=frame.shape, dtype=np.uint8)
                 alpha = max(0.0, 1.0 - ((t - 0.08) / 0.10))
                 return _blend_frames(noise, frame, alpha)
             return frame
