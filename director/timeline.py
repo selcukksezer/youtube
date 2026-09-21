@@ -351,8 +351,8 @@ def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
             pad = _visual_pad_scene(longest, len(scenes))
             scenes.insert(scenes.index(longest) + 1, pad)
 
-    # Turkish TTS ≈ 2.0 wps; max_audio_speed headroom avoids shredding good scripts (Madde 494).
-    max_words = max(80, int(target * 2.0 * qt.max_audio_speed))
+    # Turkish TTS ≈ 2.0–2.5 wps; budget scales to Shorts max (38–60s, Madde 494).
+    max_words = max(120, int(qt.max_duration * 2.5 * qt.max_audio_speed))
     total_w = _scene_word_count(scenes)
     if total_w <= max_words and _scenes_narration_ok(scenes):
         pass  # validated plan — preserve user-authored narrations

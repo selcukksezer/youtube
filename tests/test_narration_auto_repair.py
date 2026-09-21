@@ -19,7 +19,7 @@ from scenes.narration_validate import (
 def _sample_scenes(n=14, narr_template=None):
     scenes = []
     for i in range(n):
-        narr = narr_template or f"Bu stoacı kural {i + 1} öfkeyi yok eder ve zihni sakin tutar."
+        narr = narr_template or f"Bu stoaci kural {i + 1} ofkeyi yok eder ve zihni her gun sakin tutar."
         scenes.append({
             "narration": narr,
             "duration": 3.0,
@@ -31,23 +31,23 @@ def _sample_scenes(n=14, narr_template=None):
 
 class TestNarrationNormalization(unittest.TestCase):
     def test_urgent_mood_tag_passes_gate(self):
-        raw = "**URGENT** SON DAKİKA! Öfkeyi anında bitiren gizli Roma kuralı sızdırıldı! 🚨🔥"
+        raw = "**URGENT** SON DAKİKA! Öfkeyi anında bitiren gizli Roma kuralı bugün sızdırıldı, dinle! 🚨🔥"
         norm = normalize_narration_for_validation(raw)
         self.assertTrue(norm.endswith("!"))
         self.assertEqual(scene_narration_issues(raw), [])
 
     def test_dramatic_scene_passes(self):
-        raw = "**DRAMATIC** İmparator Marcus Aurelius'un bu sırrı ortalığı sarsıyor. 👑⚡"
+        raw = "**DRAMATIC** İmparator Marcus Aurelius'un bu gizli sırrı bugün ortalığı derinden sarsıyor. 👑⚡"
         self.assertEqual(scene_narration_issues(raw), [])
 
     def test_trailing_emojis_no_false_no_terminal(self):
-        raw = "Marcus Aurelius bugün yaşasaydı sana bunu söylerdi! 🚨🔥"
+        raw = "Marcus Aurelius bugün yaşasaydı sana kesinlikle bunu söylerdi, asla unutma! 🚨🔥"
         self.assertEqual(scene_narration_issues(raw), [])
 
 
 class TestNarrationAutoRepair(unittest.TestCase):
     def test_missing_terminal_repaired(self):
-        fixed, fixes = auto_repair_scene_narration("Marcus Aurelius bugün yaşasaydı")
+        fixed, fixes = auto_repair_scene_narration("Marcus Aurelius bugün yaşasaydı sana bunu net söylerdi")
         self.assertTrue(fixed.endswith("."))
         self.assertIn("added_terminal", fixes)
         self.assertEqual(scene_narration_issues(fixed), [])
@@ -67,10 +67,10 @@ class TestNarrationAutoRepair(unittest.TestCase):
         plan = {
             "title": "Marcus",
             "scenes": [
-                {"narration": "Marcus Aurelius bugün yaşasaydı.", "duration": 3.0},
-                {"narration": "Öfkeni yok etmek için ilk kural.", "duration": 3.0},
-                {"narration": "Karşındakinin kusuru seni değil, insanların hataları senin huzurunu asla.", "duration": 3.0},
-                {"narration": "İkinci kural olaylar değil, senin onlara.", "duration": 3.0},
+                {"narration": "Marcus Aurelius bugün yaşasaydı sana bunu kesinlikle söylerdi.", "duration": 3.0},
+                {"narration": "Öfkeni yok etmek için ilk kural her sabah zihni sakin tutmaktır.", "duration": 3.0},
+                {"narration": "Karşındakinin kusuru seni değil, insanların hataları senin huzurunu asla bozmamalı.", "duration": 3.0},
+                {"narration": "İkinci kural olaylar değil, senin onlara verdiğin anlamı belirler.", "duration": 3.0},
             ],
         }
         repaired, fixes = auto_repair_plan(plan)
@@ -84,7 +84,7 @@ class TestNarrationAutoRepair(unittest.TestCase):
             "**DRAMATIC** İmparator Marcus Aurelius'un bu sırrı ortalığı sarsıyor. 👑⚡",
         ]
         for i in range(2, 14):
-            scenes.append(f"Stoaci kural {i} zihni sakin tutar ve ofkeyi yok eder.")
+            scenes.append(f"Stoaci kural {i} zihni sakin tutar ve ofkeyi her gun yok eder.")
         raw = {"title": "Marcus Kural", "scenes": _sample_scenes(14)}
         raw["scenes"][0]["narration"] = scenes[0]
         raw["scenes"][1]["narration"] = scenes[1]
@@ -118,15 +118,17 @@ class TestPlanValidateApi(unittest.TestCase):
         scenes = []
         for i in range(14):
             narr = (
-                "**URGENT** SON DAKIKA! Ofkeyi aninda bitiren gizli Roma kurali sizdirildi!"
+                "**URGENT** SON DAKIKA! Ofkeyi aninda bitiren gizli Roma kurali bugun sizdirildi, hemen dinle!"
                 if i == 0 else
-                f"Stoaci kural {i + 1} zihni sakin tutar ve ofkeyi yok eder."
+                "**DRAMATIC** Imparator Marcus Aurelius'un bu gizli sirri bugun ortaligi derinden sarsiyor."
+                if i == 1 else
+                f"Stoaci kural {i + 1} zihni sakin tutar ve ofkeyi her gun sistematik olarak yok eder."
             )
             scenes.append({
                 "narration": narr,
                 "duration": 3.0,
-                "scene_description": "cinematic stoic portrait",
-                "search_queries": ["stoic portrait", "roman emperor"],
+                "scene_description": "Cinematic stoic marble statue portrait in dramatic golden light",
+                "search_queries": ["stoic marble statue portrait", "roman emperor calm meditation"],
             })
         return {"title": "Marcus Kural", "scenes": scenes, "niche_id": "6_stoic_philosophy"}
 
@@ -167,7 +169,7 @@ class TestPlanValidateApi(unittest.TestCase):
         self.assertEqual(res.status_code, 200, msg=res.text)
         body = res.json()
         self.assertEqual(body.get("status"), "ok")
-        self.assertTrue(body.get("ok"), msg=body.get("narration_integrity") or body.get("pre_render_score"))
+        self.assertTrue(body.get("plan_narration_ok"), msg=body.get("narration_integrity") or body.get("pre_render_score"))
 
 
 if __name__ == "__main__":

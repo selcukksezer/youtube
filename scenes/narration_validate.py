@@ -9,9 +9,10 @@ import copy
 import re
 from typing import Any, Dict, List, Tuple
 
-MIN_WORDS_PER_SCENE = 12
-MIN_WORDS_DRAMA_SCENE = 15
-MIN_WORDS_PER_SENTENCE = 6
+MIN_WORDS_PER_SCENE = 10
+MIN_WORDS_DRAMA_SCENE = 12
+MIN_WORDS_PER_SENTENCE = 5
+MIN_WORDS_AI_TARGET = 10
 
 SHORTS_MIN_DURATION = 38.0
 SHORTS_MAX_DURATION = 60.0
@@ -169,6 +170,29 @@ def plan_narration_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.
     return good >= max(1, int(len(scenes) * min_ratio))
 
 
+def plan_needs_procedural_inject(scenes: List[Dict[str, Any]]) -> bool:
+    """Director/render inject — empty, placeholder visuals, or uniform AI stub narrations."""
+    if not scenes:
+        return True
+    if not plan_narration_usable(scenes):
+        return True
+    bad_desc = 0
+    word_counts: List[int] = []
+    for s in scenes:
+        desc = (s.get("scene_description") or "").strip()
+        if not desc and s.get("search_queries"):
+            desc = str((s.get("search_queries") or [""])[0])
+        if not scene_description_usable(desc):
+            bad_desc += 1
+        word_counts.append(len(normalize_narration_for_validation(s.get("narration") or "").split()))
+    if bad_desc >= max(1, len(scenes) // 2):
+        return True
+    avg = sum(word_counts) / max(1, len(word_counts))
+    if max(word_counts) < MIN_WORDS_PER_SCENE and avg < MIN_WORDS_AI_TARGET:
+        return True
+    return False
+
+
 def plan_quality_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0) -> bool:
     """Narration + visual description quality gate — rejects AI stub plans."""
     if not scenes:
@@ -176,7 +200,10 @@ def plan_quality_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0)
     if len(scenes) < MIN_SCENE_COUNT or len(scenes) > MAX_SCENE_COUNT:
         return False
     good = 0
+    word_counts: List[int] = []
     for s in scenes:
+        norm = normalize_narration_for_validation(s.get("narration") or "")
+        word_counts.append(len(norm.split()))
         narr_ok = scene_narration_usable(s.get("narration") or "")
         desc = (s.get("scene_description") or "").strip()
         if not desc and s.get("search_queries"):
@@ -184,7 +211,13 @@ def plan_quality_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0)
         desc_ok = scene_description_usable(desc)
         if narr_ok and desc_ok:
             good += 1
-    return good >= max(1, int(len(scenes) * min_ratio))
+    if good < max(1, int(len(scenes) * min_ratio)):
+        return False
+    # Reject AI-style stub plans: any scene under 8 words or average below target
+    if any(w < 8 for w in word_counts):
+        return False
+    avg = sum(word_counts) / max(1, len(word_counts))
+    return avg >= MIN_WORDS_AI_TARGET
 
 
 def scene_narration_issues(text: str, *, normalized: bool = False) -> List[str]:

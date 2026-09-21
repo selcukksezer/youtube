@@ -82,6 +82,37 @@ _CRYPTO_TOPIC_HINTS = (
 )
 
 
+def _pad_narration_to_min_words(text: str, min_words: int = 10, *, is_tr: bool = True) -> str:
+    """Ensure procedural fallback narrations meet TTS minimum word count."""
+    try:
+        from scenes.narration_validate import normalize_narration_for_validation, scene_narration_usable
+        raw = (text or "").strip()
+        if scene_narration_usable(raw):
+            return raw
+        norm = normalize_narration_for_validation(raw).rstrip(".!? ")
+        pad = "Bunu hafta boyunca aklında tut." if is_tr else "Keep this in mind throughout the week."
+        combined = f"{norm} {pad}".strip() if norm else pad
+        if combined[-1] not in ".!?":
+            combined += "."
+        if len(normalize_narration_for_validation(combined).split()) < min_words:
+            extra = "Detayları kaçırmamak için takipte kal." if is_tr else "Stay tuned so you do not miss the details."
+            combined = f"{combined.rstrip('.!? ')} {extra}."
+        return combined
+    except Exception:
+        return text or ""
+
+
+def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
+    scenes = plan.get("scenes") or []
+    for sc in scenes:
+        sc["narration"] = _pad_narration_to_min_words(sc.get("narration") or "", is_tr=is_tr)
+    plan["scenes"] = scenes
+    plan["full_narration"] = " ".join(
+        (s.get("narration") or "").strip() for s in scenes if (s.get("narration") or "").strip()
+    )
+    return plan
+
+
 def _topic_is_crypto_market(title: str, body: str = "", niche_type: str = None) -> bool:
     if niche_type == "8_crypto_market":
         return True
@@ -654,7 +685,7 @@ def _generate_astrology_horoscope_scenes(clean_title: str, is_tr: bool, variatio
         narrations_variants = [
             [
                 f"Bu hafta gökyüzü {topic} için kritik bir dönemeçte — üç burç özellikle parlayacak! ✨🔮",
-                "Merkür retrosu bitiyor; iletişim ve karar verme enerjisi yeniden açılıyor. 🌙",
+                "Merkür retrosu bitiyor; iletişim ve karar verme enerjisi yeniden açılıyor, fırsatlar geliyor. 🌙",
                 "Şanslı burç listesinde üçüncü sırada Yengeç: duygusal sezgileri bu hafta altın değerinde. 🦀",
                 "İkinci sırada Aslan: kariyer kapıları ve tanınma fırsatları kapıda bekliyor. ♌",
                 "Birinci sırada Koç: para ve girişim enerjisi tavan yapıyor — fırsatları kaçırma! ♈💰",
@@ -670,7 +701,7 @@ def _generate_astrology_horoscope_scenes(clean_title: str, is_tr: bool, variatio
             ],
             [
                 f"Astrolojik radar açık! {topic} — Ay'ın burç değiştirmesi herkesi etkileyecek. 🌕🔮",
-                "Venüs açıları aşk ve para konularında beklenmedik sürprizler getiriyor. 💫",
+                "Venüs açıları aşk ve para konularında beklenmedik sürprizler getiriyor, dikkatli ol. 💫",
                 "Üçüncü şanslı burç Yay: seyahat ve genişleme enerjisi bu hafta güçlü. ♐",
                 "İkinci şanslı burç Terazi: denge ve ortaklık fırsatları ön planda. ⚖️",
                 "Haftanın yıldızı Balık: sezgi ve yaratıcılık para kapılarını açıyor! ♓✨",
@@ -678,7 +709,7 @@ def _generate_astrology_horoscope_scenes(clean_title: str, is_tr: bool, variatio
                 "Boğa maddi konularda istikrar arıyor; yatırım kararlarını ertelemek akıllıca. 💎",
                 "İkizler hızlı zihinle çoklu projeler arasında gidip geliyor; odaklan! ♊",
                 "Yengeç aile ve ev konularında duygusal yoğunluk yaşıyor. 🏠",
-                "Aslan sahne ışığı arıyor — liderlik fırsatını değerlendir. 👑",
+                "Aslan sahne ışığı arıyor — liderlik fırsatını değerlendir, cesur adım at. 👑",
                 "Başak sağlık ve rutin düzenlemeleri için ideal bir hafta. 🌿",
                 "Oğlak uzun vadeli planları gözden geçirmeli; sabır meyve verecek. 📈",
                 f"{topic} özeti: Ay döngüsü kararları hızlandırıyor — dinle ve harekete geç. 🌙",
@@ -764,36 +795,36 @@ def _generate_crypto_market_scenes(clean_title: str, is_tr: bool, variation_seed
         bank_line = "Bank Nifty tarafında da volatilite tavan yaptı!" if has_banknifty else "Forex masalarında dolar endeksi tüm hesabı değiştiriyor!"
         narrations_variants = [
             [
-                f"CANLI YAYIN! {topic} — piyasalar şu an nefesini tutmuş durumda! 📈🔴",
-                "İlk bakışta Bitcoin tarafında satış baskısı artıyor, hacim de yükseliyor. ⚡",
-                gold_line + " 💰",
-                "Kritik destek seviyesinin kırılması durumunda domino etkisi başlayabilir. 🎯",
-                "Balinaların cüzdan hareketleri son saatlerde ciddi şekilde arttı. 🐋",
-                bank_line + " 🌏",
-                "Makro veri takvimi bugün yatırımcıları iki yöne de zorlayabilir. 📊",
-                "Kaldıraçlı pozisyonlar likidasyon bölgesine çok daha yakın görünüyor. ⚠️",
-                "Teknik analistlere göre direnç testi başarısız olursa satış hızlanır. 📉",
-                "Risk yönetimi olmayan trader bu volatilitede hesabını koruyamaz. 🛡️",
-                "Kısa vadeli scalp fırsatı var ama stop-loss şart — affetmez! ⏱️",
-                "Uzun vadeli yatırımcı için panik satış genelde en pahalı hatadır. 🧠",
-                f"Özet: {topic} seansında ana tema volatilite ve seviye oyunu. 🔥",
-                "Sen bu grafikte long mu short mu kalırdın? Yorumlarda yaz, takipte kal! 💬",
+                f"CANLI YAYIN! {topic} konusunda piyasalar şu an nefesini tutmuş durumda, her mum kritik! 📈🔴",
+                "İlk bakışta Bitcoin tarafında satış baskısı belirgin şekilde artıyor ve hacim de yükseliyor. ⚡",
+                gold_line + " Bu ayrışma kısa vadede fırsat ve riski aynı anda büyütüyor. 💰",
+                "Kritik destek seviyesinin kırılması durumunda domino etkisi hızla başlayabilir, dikkatli olun. 🎯",
+                "Balinaların cüzdan hareketleri son saatlerde ciddi şekilde arttı ve piyasa bunu fiyatlıyor. 🐋",
+                bank_line + " Makro tarafta volatilite artınca kaldıraçlı işlemler daha da riskli hale geliyor. 🌏",
+                "Makro veri takvimi bugün yatırımcıları iki yöne de zorlayabilir, pozisyon boyutunu küçültün. 📊",
+                "Kaldıraçlı pozisyonlar likidasyon bölgesine çok daha yakın görünüyor, stop seviyelerini kontrol edin. ⚠️",
+                "Teknik analistlere göre direnç testi başarısız olursa satış momentumu kısa sürede hızlanabilir. 📉",
+                "Risk yönetimi olmayan trader bu volatilitede hesabını korumakta ciddi zorluk yaşar, plan şart. 🛡️",
+                "Kısa vadeli scalp fırsatı var ama stop-loss koymadan işlem açmak bu piyasada affetmez. ⏱️",
+                "Uzun vadeli yatırımcı için panik satış genelde en pahalı hatadır, seviye oyununu sabırla oynayın. 🧠",
+                f"Özet: {topic} seansında ana tema volatilite, seviye oyunu ve disiplinli risk yönetimi. 🔥",
+                "Sen bu grafikte long mu short mu kalırdın? Yorumlarda stratejini yaz, bir sonraki canlıda görüşürüz! 💬",
             ],
             [
-                f"Flaş piyasa! {topic} canlı takipte — bir sonraki mum her şeyi değiştirebilir! 🚨",
-                "Açılış mumu güçlü geldi ama üst fitil satıcı baskısını ele veriyor. 🕯️",
-                "Ethereum tarafı Bitcoin'e göre daha agresif hareket ediyor. ⚡",
-                gold_line + " 🪙",
-                "Haber akışı pozitif olsa bile fiyat tepki vermiyorsa dikkat! 📰",
-                "Asya seansından gelen hacim Avrupa açılışına taşınıyor. 🌏",
-                bank_line + " 📈",
-                "Funding oranları aşırıya kaçtığında düzeltme ihtimali artar. ⚖️",
-                "Whale Alert tarafında borsaya büyük transfer geldi — izle! 🐋",
-                "Stop avı sonrası ters hareket gelirse FOMO tuzağına düşme. 🎯",
-                "Günlük plan: seviye, hacim ve haber — duygusal tepki yok. 📋",
-                "Kripto piyasası 7/24 açık; uyku yok ama disiplin var. 🌙",
-                f"Bugünkü {topic} özeti: trend mi yoksa tuzak mı, karar anı yakın. 🔥",
-                "Long mu short mu? Cevabını yoruma bırak, bir sonraki canlı yayında görüşürüz! 💬",
+                f"Flaş piyasa! {topic} canlı takipte — bir sonraki mum her şeyi değiştirebilir, hazır olun! 🚨",
+                "Açılış mumu güçlü geldi ama üst fitil satıcı baskısını ele veriyor, trend henüz net değil. 🕯️",
+                "Ethereum tarafı Bitcoin'e göre daha agresif hareket ediyor ve altcoin risk iştahını test ediyor. ⚡",
+                gold_line + " Portföy dengesini bozan ani hareketlerde pozisyon küçültmek akıllıca olur. 🪙",
+                "Haber akışı pozitif olsa bile fiyat tepki vermiyorsa piyasa zayıf kaldığını gösterir, dikkat! 📰",
+                "Asya seansından gelen hacim Avrupa açılışına taşınıyor ve likidite profili değişiyor. 🌏",
+                bank_line + " Dolar endeksi ve kripto korelasyonu bugün karar verici faktör olabilir. 📈",
+                "Funding oranları aşırıya kaçtığında düzeltme ihtimali artar, aşırı kaldıraçtan kaçının. ⚖️",
+                "Whale Alert tarafında borsaya büyük transfer geldi — fiyat aksiyonunu yakından izleyin! 🐋",
+                "Stop avı sonrası ters hareket gelirse FOMO tuzağına düşme, planına sadık kal ve bekle. 🎯",
+                "Günlük plan: seviye, hacim ve haber — duygusal tepki yok, disiplinli işlem yap. 📋",
+                "Kripto piyasası yedi gün yirmi dört saat açık; uyku yok ama risk yönetimi disiplini şart. 🌙",
+                f"Bugünkü {topic} özeti: trend mi yoksa tuzak mı sorusunun cevabı karar anına çok yakın. 🔥",
+                "Long mu short mu? Cevabını yoruma bırak, bir sonraki canlı yayında birlikte okuyalım! 💬",
             ],
         ]
         narrations = narrations_variants[variant]
@@ -876,31 +907,37 @@ def _generate_procedural_fallback_scenes(
 
     # 1. Reddit Confessions, WhatsApp chats & Split-screen stories
     if niche_type in ("2_reddit_confessions", "20_whatsapp_chats", "3_split_gameplay") or any(k in combined for k in ["itiraf", "reddit", "whatsapp", "mülakat", "iş görüşmesi", "patron", "aldat", "gizli"]):
-        return _generate_reddit_confession_scenes(clean_title, combined, is_tr)
+        return _finalize_fallback_plan(_generate_reddit_confession_scenes(clean_title, combined, is_tr), is_tr=is_tr)
 
     # 2. Breaking News & Flash News
     if niche_type in ("1_news_flash", "57_rss_breaking") or any(k in title.lower() for k in ["son dakika", "flaş", "haber", "açıklama", "deprem", "karar"]):
-        return _generate_news_flash_scenes(clean_title, is_tr)
+        return _finalize_fallback_plan(_generate_news_flash_scenes(clean_title, is_tr), is_tr=is_tr)
 
     # 3. Stoic Philosophy — niche_type from UI takes precedence over generic "felsefe" keyword
     if niche_type in ("6_stoic_philosophy", "36_stoic_cyberpunk") or any(
         k in title.lower() for k in ["stoa", "marcus aurelius", "seneca", "felsefe"]
     ):
-        return _generate_stoic_scenes(clean_title, is_tr, variation_seed=variation_seed)
+        return _finalize_fallback_plan(_generate_stoic_scenes(clean_title, is_tr, variation_seed=variation_seed), is_tr=is_tr)
 
     # 4. Dark Psychology & Body Language
     if niche_type in ("7_dark_psychology", "38_dark_psych_parkour") or any(k in title.lower() for k in ["karanlık psikoloji", "manipülasyon", "beden dili"]):
-        return _generate_dark_psychology_scenes(clean_title, is_tr)
+        return _finalize_fallback_plan(_generate_dark_psychology_scenes(clean_title, is_tr), is_tr=is_tr)
 
     # 5. Astrology & daily horoscope
     if niche_type == "18_astrology_horoscope" or any(
         k in combined for k in ["burç", "burcu", "astroloji", "horoskop", "zodyak", "zodiac", "horoscope"]
     ):
-        return _generate_astrology_horoscope_scenes(clean_title, is_tr, variation_seed=variation_seed)
+        return _finalize_fallback_plan(
+            _generate_astrology_horoscope_scenes(clean_title, is_tr, variation_seed=variation_seed),
+            is_tr=is_tr,
+        )
 
     # 6. Crypto / live trading / forex market
     if _topic_is_crypto_market(title, raw_body, niche_type=niche_type):
-        return _generate_crypto_market_scenes(clean_title, is_tr, variation_seed=variation_seed)
+        return _finalize_fallback_plan(
+            _generate_crypto_market_scenes(clean_title, is_tr, variation_seed=variation_seed),
+            is_tr=is_tr,
+        )
 
     # Standard general fallback (14 scenes, dynamic English keywords)
     primary_kw = matched_en[0] if matched_en else "cinematic nature discovery"
@@ -970,9 +1007,9 @@ def _generate_procedural_fallback_scenes(
             "mood": "epic" if i in (0, 5, 8, 12) else "mysterious" if i in (1, 3, 7, 9) else "energetic"
         })
 
-    return {
+    return _finalize_fallback_plan({
         "title": clean_title,
         "visual_theme": "cinematic documentary dark and bright highlights",
         "full_narration": " ".join(topics),
         "scenes": scenes
-    }
+    }, is_tr=is_tr)

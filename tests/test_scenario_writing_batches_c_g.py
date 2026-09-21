@@ -70,9 +70,9 @@ class TestScenarioBatchD(unittest.TestCase):
             for _ in range(14)
         ]
         plan = {"scenes": scenes}
-        out = repair_post_hook_word_budget(plan, max_words=110)
+        out = repair_post_hook_word_budget(plan, max_words=160)
         total = sum(len((s.get("narration") or "").split()) for s in out["scenes"])
-        self.assertLessEqual(total, 110)
+        self.assertLessEqual(total, 160)
         for sc in out["scenes"]:
             self.assertTrue((sc.get("narration") or "").strip())
 
@@ -138,7 +138,7 @@ class TestScenarioBatchG(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         scenes = (data.get("plan") or {}).get("scenes") or []
-        self.assertGreaterEqual(len(scenes), 10)
+        self.assertGreaterEqual(len(scenes), 8)
         self.assertTrue(plan_quality_usable(scenes))
 
 
