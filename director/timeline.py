@@ -323,7 +323,7 @@ def _apply_word_budget(scenes: List[ScenePlan], max_words: int, min_scenes: int)
 
 def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
     """
-    Enforce 38-48s budget, ≥14 cuts, cadence acceleration, rebuild narration.
+    Enforce 38-60s budget, flexible cadence (≥8 cuts), cadence acceleration, rebuild narration.
     """
     qt = plan.quality_thresholds or QualityThresholds()
     target = qt.target_duration
@@ -423,7 +423,7 @@ def fit_tts_to_timeline(
     qt = plan.quality_thresholds
     target = plan.total_duration() or qt.target_duration
     # Hard ceiling keeps videos inside Shorts band even when TTS overruns
-    budget_ceiling = min(max(qt.max_duration, target), 48.0)
+    budget_ceiling = min(max(qt.max_duration, target), 60.0)
     out = output_path or audio_path
     emergency_max_speed = 1.35
 

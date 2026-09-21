@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi.testclient import TestClient
 
-from scenes.narration_validate import plan_narration_usable, repair_post_hook_word_budget
+from scenes.narration_validate import plan_narration_usable, plan_quality_usable, repair_post_hook_word_budget
 from scenes.plan_linter import lint_plan_diversity
 from server import app
 
@@ -20,7 +20,7 @@ LIVE_TOPIC = (
 
 
 def _half_empty_ai_plan():
-    good = "Bu sahne en az alti kelime iceren tam bir cumledir."
+    good = "Bu sahne en az on iki kelime iceren tam ve anlamli bir Turkce cumledir."
     return {
         "title": LIVE_TOPIC,
         "scenes": [
@@ -39,7 +39,8 @@ def _repetitive_ai_plan():
         "title": "Test",
         "scenes": [
             {
-                "narration": "Bu tekrarlayan plan test cumlesi yeterli kelime sayisina sahip.",
+                "narration": "Bu tekrarlayan plan test cumlesi yeterli kelime sayisina sahip oldugunu gosterir.",
+                "scene_description": "Cinematic stock footage of dramatic city skyline at sunset",
                 "search_queries": ["same stock clip"],
                 "mood": "epic",
                 "duration": 3.0,
@@ -56,7 +57,7 @@ class TestScenarioBatchC(unittest.TestCase):
         bad = _half_empty_ai_plan()
         self.assertFalse(plan_narration_usable(bad["scenes"]))
         fixed = _ensure_ui_plan_narration_usable(bad, LIVE_TOPIC, "8_crypto_market", "tr")
-        self.assertTrue(plan_narration_usable(fixed.get("scenes") or []))
+        self.assertTrue(plan_quality_usable(fixed.get("scenes") or []))
 
 
 class TestScenarioBatchD(unittest.TestCase):
@@ -138,7 +139,7 @@ class TestScenarioBatchG(unittest.TestCase):
         data = resp.json()
         scenes = (data.get("plan") or {}).get("scenes") or []
         self.assertGreaterEqual(len(scenes), 10)
-        self.assertTrue(plan_narration_usable(scenes))
+        self.assertTrue(plan_quality_usable(scenes))
 
 
 if __name__ == "__main__":

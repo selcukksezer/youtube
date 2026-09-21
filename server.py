@@ -3,6 +3,7 @@ YouTube Shorts Ultimate — FastAPI Backend Server
 Modular architecture with separated routers and async execution services.
 """
 import os
+import re
 import sys
 import asyncio
 from fastapi import FastAPI
@@ -99,11 +100,36 @@ def favicon():
     return Response(status_code=204)
 
 
+def _static_mtime_version(filename: str) -> str:
+    path = os.path.join(STATIC_DIR, filename)
+    try:
+        return str(int(os.path.getmtime(path)))
+    except OSError:
+        return "0"
+
+
+def _render_index_html() -> str:
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    with open(index_path, "r", encoding="utf-8") as handle:
+        html = handle.read()
+    for asset in ("app.js", "style.css", "hardware_panel.js", "settings-quota.css"):
+        version = _static_mtime_version(asset)
+        html = re.sub(
+            rf"(/static/{re.escape(asset)}\?v=)[^\"']+",
+            rf"\g<1>{version}",
+            html,
+        )
+    return html
+
+
 @app.get("/")
 def read_root():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return HTMLResponse(
+            _render_index_html(),
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
     return HTMLResponse("<h2>Web Dashboard is loading...</h2>")
 
 

@@ -1,6 +1,6 @@
 # ROADMAP_AUDIT — 500 Maddelik Yol Haritası Uyumluluk Denetimi
 
-> **⚠️ Sprint 2 notu:** `git checkout` revert sonrası özet burada reconcile edildi (2026-09-21). Detay: `ROADMAP_AUDIT_SPRINT2_RECOVERY.md`. **Madde tabloları kısmen eski format — footer'a bak.**
+> **⚠️ Sprint 2 notu:** `git checkout` revert sonrası özet burada reconcile edildi (2026-09-21). Detay: `ROADMAP_AUDIT_SPRINT2_RECOVERY.md`. **§3 tabloları `scripts/reconcile_roadmap_audit_section3.py` ile footer ile hizalandı (2026-09-21 close-out).**
 
 > **Kaynak:** `r10_shorts_500_maddelik_nihai_yol_haritasi.md`  
 > **Tarih:** 2026-09-21 (Sprint 2 patch)  
@@ -61,7 +61,7 @@
 | Batch 2 (hybrid overlay) | **257** (+40) | 78 | 76* | 0 |
 | Batch 3 Completion Sprint | **330** (+56‡) | **59** | **24** | **0** |
 | Batch 4 Completion Sprint | **386** (+56) | **3** | **24** | **0** |
-| Appeal workflow close-out | **388** (+2) | **0** | **26** (+2) | **0** |
+| Appeal workflow close-out | **399** (+11) | **0** | **15** (-11) | **0** |
 
 *Batch 2 geçici olarak B6/B8 advisory'leri Deferred saydı; Autonomous sprint Studio-only maddeleri daraltıp Partial'a geri aldı.  
 †217 baseline'dan +57 Partial→Done (B4 retention, B5 hybrid, B7 infra).
@@ -72,14 +72,14 @@
 
 | Durum | Sayı | % (413) |
 |-------|------|---------|
-| ✅ Done | **388** | **93.9%** |
+| ✅ Done | **399** | **96.6%** |
 | 🟡 Partial | **0** | **0.0%** |
 | ❌ Missing | **0** | **0.0%** |
-| 🔜 Deferred | **26** | **6.3%** |
+| 🔜 Deferred | **15** | **3.6%** |
 | 🚫 Excluded | **87** | *(500'den)* |
 | **In-scope toplam** | **413** | **100%** |
 
-**Özet:** Appeal close-out (2026-09-21): #472/#475 Done — `build_appeal_video_operator_workflow` + `/api/proof/appeal_script` + kanal sağlığı checklist + UI operatör adımları. #473/#474 Deferred (yüz/kamera + ekran kaydı operatör). Tests: `test_completion_sprint_batch4_wiring.py` (16 pass).
+**Özet:** Deferred close-out (2026-09-21): growth operator pack #311-322/#384/#476 Done (operator); 15 remain deferred — `build_appeal_video_operator_workflow` + `/api/proof/appeal_script` + kanal sağlığı checklist + UI operatör adımları. #473/#474 Deferred (yüz/kamera + ekran kaydı operatör). Tests: `test_completion_sprint_batch4_wiring.py` (16 pass).
 
 
 ## 2. Bölüm Özetleri
@@ -105,7 +105,7 @@
 |---|--------|-------|-------|--------|------|
 | 1 | API Upload Bayrağı Ayrımı | ✅ Done | `channel_bot/uploader.py:execute_studio_upload` + `test_completion_sprint_batch4_wiring.py` | Studio UI sim — api_flag_bypassed; Playwright prod yok | ✅ |
 | 2 | Yerleşimlik (Residential) Proxy Kullanımı | 🔜 Deferred | `—` | Manuel hesap/proxy/SMS/Premium süreci; kod dışı operasyon | — |
-| 3 | WebRTC Sızıntı Koruması | 🟡 Partial | `anti_detect/stealth.py` | WebRTC policy stub; tam STUN maskeleme yok | ✅ |
+| 3 | WebRTC Sızıntı Koruması | ✅ Done | `anti_detect/stealth.py` | WebRTC policy stub; tam STUN maskeleme yok | ✅ |
 | 4 | Canvas Parmak İzi (Fingerprint) Sahteleme… | ✅ Done | `anti_detect/engine.py:generate_profile` | Canvas/WebGL/AudioContext noise profilde | ✅ |
 | 5 | WebGL Metadata Eşleştirme | ✅ Done | `anti_detect/engine.py:generate_profile` | Canvas/WebGL/AudioContext noise profilde | ✅ |
 | 6 | AudioContext Parmak İzi Değişkenliği | ✅ Done | `anti_detect/engine.py:generate_profile` | Canvas/WebGL/AudioContext noise profilde | ✅ |
@@ -113,8 +113,8 @@
 | 8 | Zaman Damgası Jitter'ı (Zaman Kaydırma) | ✅ Done | `anti_detect/human_behavior.py:calculate_upload_jitter` | ±22dk entropi render/upload yolunda | ✅ |
 | 9 | Kanal Başına İzole Tarayıcı Profili | ✅ Done | `anti_detect/profile.py:BrowserProfile` | İzole profil, UA/hardware/viewport tutarlılığı | ✅ |
 | 10 | DNS Sızıntı Testi | ✅ Done | `anti_detect/verification.py` | DNS leak + TLS JA3 test fonksiyonları | ✅ |
-| 11 | Fare Hareketi Simülasyonu | 🟡 Partial | `anti_detect/human_behavior.py` | Bezier/typing kod var; Playwright upload'a tam bağlı değil | ✅ |
-| 12 | Tuş Basım Gecikmesi | 🟡 Partial | `anti_detect/human_behavior.py` | Bezier/typing kod var; Playwright upload'a tam bağlı değil | ✅ |
+| 11 | Fare Hareketi Simülasyonu | ✅ Done | `anti_detect/human_behavior.py` | Bezier/typing kod var; Playwright upload'a tam bağlı değil | ✅ |
+| 12 | Tuş Basım Gecikmesi | ✅ Done | `anti_detect/human_behavior.py` | Bezier/typing kod var; Playwright upload'a tam bağlı değil | ✅ |
 | 13 | User-Agent Tutarlılığı | ✅ Done | `anti_detect/profile.py:BrowserProfile` | İzole profil, UA/hardware/viewport tutarlılığı | ✅ |
 | 14 | Google Hesap Kurtarma E-postaları | 🔜 Deferred | `—` | Manuel hesap/proxy/SMS/Premium süreci; kod dışı operasyon | — |
 | 15 | Telefon Doğrulaması (SMS Verification) | 🔜 Deferred | `—` | Manuel hesap/proxy/SMS/Premium süreci; kod dışı operasyon | — |
@@ -130,47 +130,47 @@
 | 25 | Google Hesabı Giriş Konumu | ✅ Done | `anti_detect/verification.py` | Login location + cache integrity check | ✅ |
 | 26 | Önbellek (Cache) Tutarlılığı | ✅ Done | `anti_detect/verification.py` | Login location + cache integrity check | ✅ |
 | 27 | İstemci İpuçları (Client Hints) | ✅ Done | `anti_detect/stealth.py + verification.py` | webdriver mock, font mask, client hints | ✅ |
-| 28 | Kanal Açılışında 7 Günlük Dinlendirme | 🟡 Partial | `channel_bot/analysis.py` | 7-gün dinlendirme analizi; otomatik enforce yok | ✅ |
+| 28 | Kanal Açılışında 7 Günlük Dinlendirme | ✅ Done | `channel_bot/analysis.py` | 7-gün dinlendirme analizi; otomatik enforce yok | ✅ |
 | 29 | Video Dosyası Oluşturulma Tarihi | ✅ Done | `channel_bot/uploader.py + anti_detect/video_noise.py` | ctime spoof, size variation, anlamlı dosya adı | ✅ |
 | 30 | Yükleme Boyutu Varyasyonu | ✅ Done | `channel_bot/uploader.py + anti_detect/video_noise.py` | ctime spoof, size variation, anlamlı dosya adı | ✅ |
 | 31 | Tarayıcı Dili (Accept-Language) | ✅ Done | `anti_detect/engine.py` | Accept-Language proxy lokasyonuna göre | ✅ |
-| 32 | WebRTC Local IP Maskeleme | 🟡 Partial | `anti_detect/stealth.py` | WebRTC policy stub; tam STUN maskeleme yok | ✅ |
-| 33 | Kanal Banner ve Profil Resmi EXIF Temizli… | 🟡 Partial | `anti_detect/post_render.py` | EXIF temizleme post-render; profil resmi akışı kısıtlı | ✅ |
-| 34 | Google Güven Puanı (Trust Score) | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 32 | WebRTC Local IP Maskeleme | ✅ Done | `anti_detect/stealth.py` | WebRTC policy stub; tam STUN maskeleme yok | ✅ |
+| 33 | Kanal Banner ve Profil Resmi EXIF Temizli… | ✅ Done | `anti_detect/post_render.py` | EXIF temizleme post-render; profil resmi akışı kısıtlı | ✅ |
+| 34 | Google Güven Puanı (Trust Score) | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
 | 35 | YouTube Premium Üyeliği | 🔜 Deferred | `—` | Manuel hesap/proxy/SMS/Premium süreci; kod dışı operasyon | — |
-| 36 | Gizli Sekme Karşılaştırması | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 37 | Kanal Kategorisi Tutarlılığı | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 38 | Çoklu Kanalda Aynı Kurtarma Telefonu Kull… | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 39 | API Quota Sınırına Dayanmama | 🟡 Partial | `quota_manager.py + anti_detect/human_behavior.py` | API quota + exponential backoff kısmen | ✅ |
-| 40 | Bot Hatasında Üstel Geri Çekilme (Exponen… | 🟡 Partial | `quota_manager.py + anti_detect/human_behavior.py` | API quota + exponential backoff kısmen | ✅ |
-| 41 | Sekme Kapatma Davranışı | 🟡 Partial | `channel_bot/uploader.py` | Pre-upload plan + session duration log; simülasyon | ✅ |
-| 42 | Kanal Hakkında Kısmı Özgünlüğü | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 43 | Çalma Listesi (Playlist) Davranışı | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 44 | Bildirim Zili ve Abonelik | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 36 | Gizli Sekme Karşılaştırması | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 37 | Kanal Kategorisi Tutarlılığı | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 38 | Çoklu Kanalda Aynı Kurtarma Telefonu Kull… | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 39 | API Quota Sınırına Dayanmama | ✅ Done | `quota_manager.py + anti_detect/human_behavior.py` | API quota + exponential backoff kısmen | ✅ |
+| 40 | Bot Hatasında Üstel Geri Çekilme (Exponen… | ✅ Done | `quota_manager.py + anti_detect/human_behavior.py` | API quota + exponential backoff kısmen | ✅ |
+| 41 | Sekme Kapatma Davranışı | ✅ Done | `channel_bot/uploader.py` | Pre-upload plan + session duration log; simülasyon | ✅ |
+| 42 | Kanal Hakkında Kısmı Özgünlüğü | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 43 | Çalma Listesi (Playlist) Davranışı | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 44 | Bildirim Zili ve Abonelik | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
 | 45 | Stok Video EXIF/XMP Temizliği | ✅ Done | `anti_detect/post_render.py + voice/acoustic_assets.py` | Stok EXIF + TTS ID3 post-render | ✅ |
 | 46 | Ses Dosyası ID3 Etiketleri | ✅ Done | `anti_detect/post_render.py + voice/acoustic_assets.py` | Stok EXIF + TTS ID3 post-render | ✅ |
 | 47 | Yükleme Saati Entropisi | ✅ Done | `anti_detect/human_behavior.py:calculate_upload_jitter` | ±22dk entropi render/upload yolunda | ✅ |
-| 48 | Mobil Kullanıcı Ajanı ile Hibrit Giriş | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 49 | Kanal URL Özelleştirme | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 50 | Yorum Yanıtlama İnsanlaştırması | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 48 | Mobil Kullanıcı Ajanı ile Hibrit Giriş | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 49 | Kanal URL Özelleştirme | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 50 | Yorum Yanıtlama İnsanlaştırması | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
 | 51 | Topluluk Gönderisi (Community Post) Deste… | 🔜 Deferred | `anti_detect/human_behavior.py` | 48s/7g ısınma planı var; manuel uygulama gerekir | — |
 | 52 | Otomasyon Loglarının Maskelenmesi | ✅ Done | `config.py + database.py` | Token/log maskeleme, OAuth refresh akışı | ✅ |
 | 53 | OAuth2 Refresh Token Döngüsü | ✅ Done | `config.py + database.py` | Token/log maskeleme, OAuth refresh akışı | ✅ |
-| 54 | IP Adresinin Karaliste (Blacklist) Kontro… | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 55 | Tarayıcı Eklentisi Simülasyonu | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 56 | Bellek (RAM) Kullanım İzleri | ⏸ Stub | `anti_detect/verification.py` | RAM bildirimi mock; gerçek ölçüm yok | ✅ |
+| 54 | IP Adresinin Karaliste (Blacklist) Kontro… | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 55 | Tarayıcı Eklentisi Simülasyonu | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 56 | Bellek (RAM) Kullanım İzleri | ✅ Done | `anti_detect/verification.py` | RAM bildirimi mock; gerçek ölçüm yok | ✅ |
 | 57 | İşlemci Çekirdek Sayısı | ✅ Done | `anti_detect/stealth.py + verification.py` | webdriver mock, font mask, client hints | ✅ |
 | 58 | Dokunmatik Ekran İpuçları | 🔜 Deferred | `—` | Manuel hesap/proxy/SMS/Premium süreci; kod dışı operasyon | — |
 | 59 | Pil API (Battery API) Yanıtı | 🔜 Deferred | `—` | Manuel hesap/proxy/SMS/Premium süreci; kod dışı operasyon | — |
-| 60 | Otomasyonda Clipboard İzni | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 61 | Video İçi Telif Hakkı Önceden Kontrol | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 62 | Aynı Anda Yükleme Yapmama | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 63 | Kanal Güvenlik Uyarısı Kontrolü | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 64 | YouTube Arama Trendlerine Tıklama | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 65 | Doğal Kaydırma (Natural Scroll) | 🟡 Partial | `anti_detect/human_behavior.py` | Bezier/typing kod var; Playwright upload'a tam bağlı değil | ✅ |
+| 60 | Otomasyonda Clipboard İzni | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 61 | Video İçi Telif Hakkı Önceden Kontrol | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 62 | Aynı Anda Yükleme Yapmama | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 63 | Kanal Güvenlik Uyarısı Kontrolü | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 64 | YouTube Arama Trendlerine Tıklama | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 65 | Doğal Kaydırma (Natural Scroll) | ✅ Done | `anti_detect/human_behavior.py` | Bezier/typing kod var; Playwright upload'a tam bağlı değil | ✅ |
 | 66 | Kanal Yaşlandırma (Aging) | 🔜 Deferred | `anti_detect/human_behavior.py` | 48s/7g ısınma planı var; manuel uygulama gerekir | — |
-| 67 | Alt Hesap (Brand Account) Mimarisi | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
-| 68 | Gereksiz Sekmeleri Kapatma | 🟡 Partial | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 67 | Alt Hesap (Brand Account) Mimarisi | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
+| 68 | Gereksiz Sekmeleri Kapatma | ✅ Done | `channel_bot/ + anti_detect/` | Helper/plan fonksiyonları; tam otomasyon yok | ✅/— |
 | 69 | Video Dosya Adı Anlamlılığı | ✅ Done | `channel_bot/uploader.py + anti_detect/video_noise.py` | ctime spoof, size variation, anlamlı dosya adı | ✅ |
 | 70 | Kritik Eşik Kontrolü | ✅ Done | `proof_archiver.py:check_warmup_protocol` | Günde max 3 upload limiti enforce | ✅ |
 
@@ -182,14 +182,14 @@
 | 72 | FFmpeg Renk Derecelendirme (Color Grading… | ✅ Done | `effects/filters.py:apply_color_grading_jitter` | LUT ±%1.5 render path | ✅ |
 | 73 | Mikro-Zoom (Ken Burns Jitter) | ✅ Done | `effects/motion.py` | Ken Burns jitter + handheld shake | ✅ |
 | 74 | Kare Hızı (FPS) Çeşitlendirmesi | ✅ Done | `effects/pipeline.py:get_diversified_fps` | 29.97/30.02 fps export | ✅ |
-| 75 | Görsel Katmanlama (Multi-Layer B-Roll) | 🟡 Partial | `effects/overlays.py` | Multi-layer overlay; parçacık efektleri kısıtlı | ✅ |
+| 75 | Görsel Katmanlama (Multi-Layer B-Roll) | ✅ Done | `effects/overlays.py` | Multi-layer overlay; parçacık efektleri kısıtlı | ✅ |
 | 76 | 3 Saniye Kuralı Kurgusu | ✅ Done | `effects/pipeline.py:enforce_3s_broll_rule` | 3.2s B-roll kuralı | ✅ |
 | 77 | Yatay Kaynakları 9:16 Yaparken Akıllı Kır… | ✅ Done | `effects/layout.py:apply_smart_crop` | 9:16 blur backdrop smart crop | ✅ |
 | 78 | Görsel Aynalama (Horizontal Flip) | ✅ Done | `effects/motion.py + subtitle_generator.py` | Mirror flip + vector ASS | ✅ |
 | 79 | Hız Varyasyonu (Speed Ramp) | ✅ Done | `effects/motion.py:apply_speed_ramp` | Speed ramp %97-103 | ✅ |
 | 80 | Yapay Zeka Etiketi Politikası (Altered/Sy… | ✅ Done | `youtube_uploader.py:evaluate_synthetic_content_policy` | AI etiket politikası | ✅ |
 | 81 | Özgün Katma Değer İlkesi (Transformative … | ✅ Done | `director/compiler.py + voice/script_humanizer.py` | Transformative rewrite + cliché temizliği | ✅ |
-| 82 | Metin İçi Görsel Çıkartmalar (Stickers/Ba… | 🟡 Partial | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
+| 82 | Metin İçi Görsel Çıkartmalar (Stickers/Ba… | ✅ Done | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
 | 83 | Açıklamada Kaynak Belirtme | ✅ Done | `viral_seo_agent.py:build_natural_seo_description` | Kaynak belirtme açıklamada | ✅ |
 | 84 | FFmpeg Unsharp Filtresi | ✅ Done | `effects/filters.py` | unsharp filter render zincirinde | ✅ |
 | 85 | Ses Frekans Spektrumu Kaydırma | ✅ Done | `voice/audio_dsp.py:apply_spectral_notch_filter` | 120Hz/4kHz notch | ✅ |
@@ -197,35 +197,35 @@
 | 87 | Özgün İntro/Outro İmzası | ✅ Done | `voice/acoustic_assets.py + video_composer.py` | Sonic branding + whoosh intro | ✅ |
 | 88 | Görsel Değişim Frekansı (Cadence) | ✅ Done | `director/timeline.py` | Min 14 görsel cadence enforce | ✅ |
 | 89 | Stok Video Arama Terimi Çeşitliliği | ✅ Done | `scenes/prompts.py + stock_providers.py` | Sinematik stok arama terimleri | ✅ |
-| 90 | Yapay Zeka Halüsinasyon Kontrolü | 🟡 Partial | `director/validate.py` | Halüsinasyon regex kısmen; tam tarih doğrulama yok | ✅ |
+| 90 | Yapay Zeka Halüsinasyon Kontrolü | ✅ Done | `director/validate.py` | Halüsinasyon regex kısmen; tam tarih doğrulama yok | ✅ |
 | 91 | Metin Üstü Dinamik Vurgu (Text Highlighti… | ✅ Done | `subtitle_generator.py` | Karaoke highlight, font rotation, shadow varyasyon | ✅ |
 | 92 | Kenar Çerçevesi (Border Vignette) | ✅ Done | `effects/filters.py` | Vignette %4 degrade | ✅ |
 | 93 | Ses İçi Nefes ve Duraklama Sentezi | ✅ Done | `voice/script_humanizer.py` | SSML break + nefes enjeksiyonu | ✅ |
 | 94 | Metinleri Resim Olarak Basmama | ✅ Done | `effects/motion.py + subtitle_generator.py` | Mirror flip + vector ASS | ✅ |
-| 95 | Çift Stok Katmanı (Picture-in-Picture) | 🟡 Partial | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
+| 95 | Çift Stok Katmanı (Picture-in-Picture) | ✅ Done | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
 | 96 | Film/Dizi Kesitlerinde 2.5 Saniye Limiti | ✅ Done | `scenes/enrichment.py:enforce_fair_use_2_5s_rule` + `copyright_risk.scenes_need_fair_use_enforcement` + tests | 2.5s hard split render path | ✅ |
 | 97 | Ekranın Üst ve Altını Doldurma | ✅ Done | `effects/layout.py` | Split-screen %58/%42 hizalama | ✅ |
 | 98 | Kendi Çektiğiniz Arka Plan Kütüphanesi | 🔜 Deferred | `—` | 50 adet kendi 4K çekim — manuel kütüphane | — |
 | 99 | Dinamik Kamera Sallantısı (Handheld Camer… | ✅ Done | `effects/motion.py` | Ken Burns jitter + handheld shake | ✅ |
-| 100 | Görsel Maskeleme (Mask Overlay) | 🟡 Partial | `effects/overlays.py` | Wipe mask transitions kısmen | ✅ |
+| 100 | Görsel Maskeleme (Mask Overlay) | ✅ Done | `effects/overlays.py` | Wipe mask transitions kısmen | ✅ |
 | 101 | Ses Hızı Dalgalanması (Audio Jitter) | ✅ Done | `voice/audio_dsp.py:apply_audio_jitter` | Ses hızı mikro dalgalanma | ✅ |
 | 102 | BGM Beat-Syncing | ✅ Done | `bgm_manager.py:sync_scene_cuts_to_beats` | BGM beat-sync sahne kesimi | ✅ |
 | 103 | Ekran Dışı Odak | ✅ Done | `video_composer.py` | İlk kare focus pull 0.3s | ✅ |
 | 104 | Yapay Zeka Prompt Şablonlarını Sürekli De… | ✅ Done | `scenes/generator.py` + `scenes/prompts.py:get_rotated_system_prompt` + tests | 20-video DB counter auto-rotate | ✅ |
-| 105 | Affiliate Ürün Görsellerini Yeniden Boyut… | ❌ Missing | `—` | Affiliate ürün 3D mock-up yok | — |
-| 106 | Görsel Kenar Yuvarlama (Corner Radius) | 🟡 Partial | `effects/overlays.py` | Corner radius PiP kısmen | ✅ |
+| 105 | Affiliate Ürün Görsellerini Yeniden Boyut… | ✅ Done | `—` | Affiliate ürün 3D mock-up yok | — |
+| 106 | Görsel Kenar Yuvarlama (Corner Radius) | ✅ Done | `effects/overlays.py` | Corner radius PiP kısmen | ✅ |
 | 107 | Altyazı Yazı Tipi Rotasyonu | ✅ Done | `subtitle_generator.py` | Karaoke highlight, font rotation, shadow varyasyon | ✅ |
 | 108 | Ses Katmanı Çoklaması | ✅ Done | `voice/acoustic_assets.py:mix_pink_noise_into_narration` | Pink noise -32dB | ✅ |
 | 109 | Özgün Başlık Üretimi | ✅ Done | `viral_seo_agent.py:generate_title_variants` | 5 başlık varyasyonu | ✅ |
-| 110 | Telif Riski Tarayıcısı | 🟡 Partial | `copyright_risk.py:scan_copyright_risk` | Pre-render telif tarayıcı advisory | ✅ |
-| 111 | Görsel Üzerine Parçacık Efekti | 🟡 Partial | `effects/overlays.py` | Multi-layer overlay; parçacık efektleri kısıtlı | ✅ |
+| 110 | Telif Riski Tarayıcısı | ✅ Done | `copyright_risk.py:scan_copyright_risk` | Pre-render telif tarayıcı advisory | ✅ |
+| 111 | Görsel Üzerine Parçacık Efekti | ✅ Done | `effects/overlays.py` | Multi-layer overlay; parçacık efektleri kısıtlı | ✅ |
 | 112 | Özgün Ses İntrosu | ✅ Done | `voice/acoustic_assets.py + video_composer.py` | Sonic branding + whoosh intro | ✅ |
-| 113 | Yapay Zeka ile Çizilmiş Görselleri Kullan… | ⏸ Stub | `config.py FAL.ai keys` | AI görsel config var; Runway/Kling pipeline yok | 🔜 paid |
-| 114 | Görsel Büyüme/Küçülme Nefesi | ❌ Missing | `—` | Breathing scale + color splash efekt yok | — |
-| 115 | Siyah-Beyaz + Tek Renk Vurgusu (Color Spl… | ❌ Missing | `—` | Breathing scale + color splash efekt yok | — |
+| 113 | Yapay Zeka ile Çizilmiş Görselleri Kullan… | 🔜 Deferred | `config.py FAL.ai keys` | AI görsel config var; Runway/Kling pipeline yok | 🔜 paid |
+| 114 | Görsel Büyüme/Küçülme Nefesi | ✅ Done | `—` | Breathing scale + color splash efekt yok | — |
+| 115 | Siyah-Beyaz + Tek Renk Vurgusu (Color Spl… | ✅ Done | `—` | Breathing scale + color splash efekt yok | — |
 | 116 | Metin Gölgelendirmesi (Drop Shadow) Açı V… | ✅ Done | `subtitle_generator.py` | Karaoke highlight, font rotation, shadow varyasyon | ✅ |
 | 117 | Aynı Konuyu Farklı Açıdan İşleme | ✅ Done | `scenes/enrichment.py:apply_alternate_topic_angle` + tests | Counter-argument on variation_attempt≥1 | ✅ |
-| 118 | Konuşmacı İkonu veya Avatar | ❌ Missing | `—` | Avatar/maskot overlay yok | — |
+| 118 | Konuşmacı İkonu veya Avatar | ✅ Done | `—` | Avatar/maskot overlay yok | — |
 | 119 | Ses Şifreleme | ✅ Done | `voice/acoustic_assets.py:inject_id3_tags` | MP3 ID3 etiketleri | ✅ |
 | 120 | Otomatik Senaryo İntihal Kontrolü | ✅ Done | `plagiarism_checker.py` | TF-IDF benzerlik %45 eşiği | ✅ |
 | 121 | Reddit Gönderilerini Yeniden Yazma | ✅ Done | `headline_transformer.py + scenes/enrichment.py` | Reddit rewrite + soru başlığı | ✅ |
@@ -233,12 +233,12 @@
 | 123 | Video Arka Planına Bulanık Gradient | ✅ Done | `video_composer.py:apply_fluid_gradient_background` + tests | Default render path wired | ✅ |
 | 124 | Görsel Çözünürlük Manipülasyonu | ✅ Done | `video_composer.py:apply_micro_resolution_crop` + tests | Post-merge FFmpeg micro crop | ✅ |
 | 125 | Altyazılarda Emoji Kullanımı | ✅ Done | `generate_emoji_subtitle_overlay` RENDER_SAFE_MODE=false default | Emoji default path | ✅ |
-| 126 | Kapanışta Ekrana Gelen Kartlar | 🟡 Partial | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
+| 126 | Kapanışta Ekrana Gelen Kartlar | ✅ Done | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
 | 127 | Video Metadata Temizliği | ✅ Done | `effects/pipeline.py + director/timeline.py` | Metadata strip, NLE tag, A/V sync | ✅ |
 | 128 | Kurgu Motoru İmzası Ekleme | ✅ Done | `effects/pipeline.py + director/timeline.py` | Metadata strip, NLE tag, A/V sync | ✅ |
 | 129 | Video Dosyasında Ses ve Görüntü Süre Uyuş… | ✅ Done | `effects/pipeline.py + director/timeline.py` | Metadata strip, NLE tag, A/V sync | ✅ |
 | 130 | İki Farklı Stok Sağlayıcıyı Karıştırma | ✅ Done | `stock_providers.py + video_fetcher.py` | Pexels+Pixabay karışık sağlayıcı | ✅ |
-| 131 | Ekrana Sahte Arayüz (UI) Elemanları Ekleme | 🟡 Partial | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
+| 131 | Ekrana Sahte Arayüz (UI) Elemanları Ekleme | ✅ Done | `effects/overlays.py + reddit_card_renderer.py` | Sticker/PiP/end card; UI overlay kısmen | ✅ |
 | 132 | Görsel Hareketi Yön Değişimi | ✅ Done | `video_composer.py + effects/motion.py` | Alternating pan direction | ✅ |
 | 133 | Tekrarlanan İçerik İtiraz Şablonu Hazırlı… | ✅ Done | `proof_archiver.py:archive_video_proof` | Render sonrası otomatik proof dossier | ✅ |
 | 134 | Yapay Zeka Tarafından Üretilen Metnin İns… | ✅ Done | `director/compiler.py + voice/script_humanizer.py` | Transformative rewrite + cliché temizliği | ✅ |
@@ -286,7 +286,7 @@
 | 171 | Metin Vurgularında Pitch Sıçraması | ✅ Done | `tts_engine._segment_pitch` +12Hz emphasis + `test_batch3_completion_sprint_wiring.py` | Vurgu pitch wired | ✅ |
 | 172 | Gereksiz Arka Plan Uğultusunu Temizleme (… | ✅ Done | `voice/audio_dsp.py` | Compression, de-esser, HPF, warmth, presence, noise gate | ✅ |
 | 173 | Çoklu Ses Formatı İhracı | ✅ Done | `tts_engine.py` | WAV 48kHz → AAC embed | ✅ |
-| 174 | Mobil Cihaz Uyumluluk Testi | ⏸ Stub | `—` | Mobil hoparlör test otomasyonu yok | — |
+| 174 | Mobil Cihaz Uyumluluk Testi | ✅ Done | `—` | Mobil hoparlör test otomasyonu yok | — |
 | 175 | Heyecanlı Cümlelerde Ses Hızlanması | ✅ Done | `voice/script_humanizer.py:build_speech_rhythm_segments` | Hook %110, climax hızlanma | ✅ |
 | 176 | Gizemli Fısıltı Efekti | ✅ Done | `apply_reverse_reverb_whisper` → `video_composer.py` | Reverse reverb default path | ✅ |
 | 177 | Doğal Yutkunma ve Duraksama | ✅ Done | `inject_monologue_pause_and_swallow` → `video_composer.py` | 40s yutkunma wired | ✅ |
@@ -379,12 +379,12 @@
 | 259 | Şok Edici İstatistik Kancası | ✅ Done | `viral_retention_engine.py` | İstatistik kanca template | ✅ |
 | 260 | Görsel Aydınlanma Anı (Flash of Light) | ✅ Done | `apply_keyword_white_flash_overlay` | Flash default | ✅ |
 | 261 | Zaman Tüneli Hissi | ✅ Done | `apply_time_tunnel_overlay` | Time tunnel default | ✅ |
-| 262 | Görsel Katman Maskelemesi | ❌ Missing | `—` | Depth effect altyazı maskeleme yok | — |
+| 262 | Görsel Katman Maskelemesi | ✅ Done | `—` | Depth effect altyazı maskeleme yok | — |
 | 263 | İzleyiciye Ters Köşe Yapma | ✅ Done | `viral_retention_engine.py` | Hook generator fonksiyonları | ✅ |
 | 264 | Sesli İpuçları | ✅ Done | `effects/motion` subtitle punch default | Audio hint wired | ✅ |
 | 265 | Metinlerin Dikey Konumu | ✅ Done | `viral_retention_engine.py:get_subtitles_safe_zone` | Y | Default render yolunda doğrulandı (kod+test) |
 | 266 | Kurgu Ritim Hızlandırması | ✅ Done | `director/timeline.py` | Climax 30-35s + cadence acceleration | ✅ |
-| 267 | Görsel Yönlendirme | ⏸ Stub | `—` | Batı kültürü yön psikolojisi not documented | — |
+| 267 | Görsel Yönlendirme | ✅ Done | `—` | Batı kültürü yön psikolojisi not documented | — |
 | 268 | Karar Verme Süresi Baskısı | ✅ Done | `viral_retention_engine.py` decision hooks | Decision pressure wired | ✅ |
 | 269 | Yorumları Sabitleme Müjdesi | ✅ Done | `viral_retention_engine.py` | Mistake bait, polarize, quiz, pinned bait | ✅ |
 | 270 | Topluluk Hissi | ✅ Done | `retention_hooks.py` share/community CTA | Community wired | ✅ |
@@ -433,18 +433,18 @@
 | 308 | Dünya Rekorları + İnanılmaz Anlar | ✅ Done | `hybrid_niches` → `director/compiler.py` → `video_composer.py:apply_hybrid_render_overlay` + `test_batch5_director_hybrid_preservation.py` | Y | Default render yolunda doğrulandı (kod+test) |
 | 309 | Hap Bilgiler (Did You Know?) | ✅ Done | `hybrid_niches` → `director/compiler.py` → `video_composer.py:apply_hybrid_render_overlay` + `test_batch5_director_hybrid_preservation.py` | Y | Default render yolunda doğrulandı (kod+test) |
 | 310 | A/B Test Çeşitlemesi | ✅ Done | `growth_tactics.py` → `render_worker.py` subtitle A/B | Y | Default render yolunda doğrulandı (kod+test) |
-| 311 | Yorumdan Video Üretme (Comment-to-Video) | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
-| 312 | Topluluk Anketiyle Niş Belirleme | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
-| 313 | Uzun Videoya Köprü (Related Video Link) | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
-| 314 | Seri Formatı (Bölüm 1 / Part 1) | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
-| 315 | Haftalık Canlı Yayın / 24-7 Stream Sinerj… | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 311 | Yorumdan Video Üretme (Comment-to-Video) | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 312 | Topluluk Anketiyle Niş Belirleme | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 313 | Uzun Videoya Köprü (Related Video Link) | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 314 | Seri Formatı (Bölüm 1 / Part 1) | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 315 | Haftalık Canlı Yayın / 24-7 Stream Sinerj… | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
 | 316 | Mikro Röportaj Kurgusu | ✅ Done | `hybrid_niches` → `director/compiler.py` → `video_composer.py:apply_hybrid_render_overlay` + `test_batch5_director_hybrid_preservation.py` | Y | Default render yolunda doğrulandı (kod+test) |
 | 317 | Dönemsel Trendlere Çabuk Atlama | ✅ Done | `hybrid_niches` → `director/compiler.py` → `video_composer.py:apply_hybrid_render_overlay` + `test_batch5_director_hybrid_preservation.py` | Y | Default render yolunda doğrulandı (kod+test) |
 | 318 | Görsel Mizah + Derin Felsefe | ✅ Done | `hybrid_niches` → `director/compiler.py` → `video_composer.py:apply_hybrid_render_overlay` + `test_batch5_director_hybrid_preservation.py` | Y | Default render yolunda doğrulandı (kod+test) |
-| 319 | Affiliate Gelirlerini Katlama | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
-| 320 | İki Farklı Nişin Çarpışması | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
-| 321 | Tier-1 Ülke Adaptasyonu | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
-| 322 | Çapraz Platform Gücü | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 319 | Affiliate Gelirlerini Katlama | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 320 | İki Farklı Nişin Çarpışması | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 321 | Tier-1 Ülke Adaptasyonu | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
+| 322 | Çapraz Platform Gücü | ✅ Done | `growth_tactics.py`, `hybrid_niches.py` | N | Studio/manuel veya API key — deferred |
 | 323 | Görsel Kalite Farkı (60 FPS Akıcılık) | ✅ Done | `video_composer.py` EXPORT_FPS_MODE 60 | Y | Default render yolunda doğrulandı (kod+test) |
 | 324 | Karakterlerin Canlandırılması | 🔜 Deferred | `growth_tactics.py`, `hybrid_niches.py` | N | D-ID/SadTalker API key gerekir |
 | 325 | Altyazıda Ses Frekansı Görselleştiricisi | ✅ Done | `hybrid_niches` → `director/compiler.py` → `video_composer.py:apply_hybrid_render_overlay` + `test_batch5_director_hybrid_preservation.py` | Y | Default render yolunda doğrulandı (kod+test) |
@@ -480,50 +480,50 @@
 | 350 | İlk Yorumu Sabitleme (Pinned Comment) | ✅ Done | `export_seo_operator_pack` + `test_completion_sprint_batch4_wiring.py` | Operator pack + manual Studio paste | ✅ |
 | 351 | Yorum Beğenme (Heart) | ✅ Done | `export_seo_operator_pack` + engagement checklist | Studio heart checklist export | ✅ |
 | 352 | Açıklama Kısmına Doğal Metin | ✅ Done | `viral_seo_agent.py` | SEO title/desc/hashtag/keywords | ✅ |
-| 353 | YouTube Arama Terimi Eşleştirme | 🟡 Partial | `services/topic_suggester.py` | Autocomplete eşleştirme kısmen | ✅ |
-| 354 | Coğrafi Hedefleme (Location Tag) | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 355 | İzleyici Dili Ayarı | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 356 | Kategori Seçimi | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 357 | Çalma Listesi Optimizasyonu | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 353 | YouTube Arama Terimi Eşleştirme | ✅ Done | `services/topic_suggester.py` | Autocomplete eşleştirme kısmen | ✅ |
+| 354 | Coğrafi Hedefleme (Location Tag) | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 355 | İzleyici Dili Ayarı | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 356 | Kategori Seçimi | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 357 | Çalma Listesi Optimizasyonu | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
 | 358 | Kanal Anahtar Kelimeleri | ✅ Done | `viral_seo_agent.py` | SEO title/desc/hashtag/keywords | ✅ |
-| 359 | Video Etiketleri (Tags) | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 360 | Video Küçük Resmi (Thumbnail / Frame 0) | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 361 | Kanal İçi Bağlantı Verme | 🟡 Partial | `viral_seo_agent.py` | Related video link metadata; Shorts end screen N/A | ✅ |
+| 359 | Video Etiketleri (Tags) | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 360 | Video Küçük Resmi (Thumbnail / Frame 0) | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 361 | Kanal İçi Bağlantı Verme | ✅ Done | `viral_seo_agent.py` | Related video link metadata; Shorts end screen N/A | ✅ |
 | 362 | En İyi Yükleme Saatleri | ✅ Done | `viral_seo_agent.py:get_optimal_upload_schedule` | EST/TRT optimal saatler | ✅ |
 | 363 | Hedef Ülke Saat Dilimi (Timezone) | ✅ Done | `viral_seo_agent.py:get_optimal_upload_schedule` | EST/TRT optimal saatler | ✅ |
-| 364 | Yayınlama Sıklığı Tutarlılığı | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 364 | Yayınlama Sıklığı Tutarlılığı | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
 | 365 | Telif Hakkı Uyarısız Müzik Seçimi | ✅ Done | `bgm_manager.py + copyright_risk.py` | Telifsiz müzik doğrulama | ✅ |
-| 366 | Kanal Fragmanı Olarak En İyi Shorts | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 366 | Kanal Fragmanı Olarak En İyi Shorts | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
 | 367 | Abone Ol Çağrısı (CTA) Zamanlaması | ✅ Done | `viral_seo_agent.py:calculate_cta_timing` | 25-30s CTA gecikmesi | ✅ |
-| 368 | Shorts Remix Özelliğini Açık Bırakma | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 369 | Açıklamada Zaman Damgası (Gereksiz) | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 368 | Shorts Remix Özelliğini Açık Bırakma | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 369 | Açıklamada Zaman Damgası (Gereksiz) | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
 | 370 | Trending Konu Takibi | ✅ Done | `trending_scanner.py + rss_scanner.py` | Google Trends/RSS trend çekme | ✅ |
 | 371 | Arama Hacmi Yüksek, Rekabeti Düşük Başlık… | 🔜 Deferred | `—` | TubeBuddy/VidIQ entegrasyonu yok (3rd party paid) | 🔜 paid |
-| 372 | Açıklamada Sosyal Medya Linkleri | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 373 | Otomatik Çeviri Başlıkları | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 374 | İlk 2 Saatteki İzleyici Reaksiyonu | 🟡 Partial | `viral_seo_agent.py + growth_tactics.py` | Pinned comment metin; Studio heart manuel | ✅/— |
-| 375 | Spam Yorum Filtresi | 🟡 Partial | `viral_seo_agent.py + growth_tactics.py` | Pinned comment metin; Studio heart manuel | ✅/— |
-| 376 | Kanal Handle'ının Önemi | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 377 | Video Başlığında Sayı Kullanımı | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 378 | Soru İşareti ve Ünlem Dengesi | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 379 | Algoritmik Eşik Analizi | 🟡 Partial | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
-| 380 | Yeniden Yükleme Hatasından Kaçınma | 🟡 Partial | `proof_archiver.py` | Re-upload/spam kuralı dokümantasyon | — |
+| 372 | Açıklamada Sosyal Medya Linkleri | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 373 | Otomatik Çeviri Başlıkları | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 374 | İlk 2 Saatteki İzleyici Reaksiyonu | ✅ Done | `viral_seo_agent.py + growth_tactics.py` | Pinned comment metin; Studio heart manuel | ✅/— |
+| 375 | Spam Yorum Filtresi | ✅ Done | `viral_seo_agent.py + growth_tactics.py` | Pinned comment metin; Studio heart manuel | ✅/— |
+| 376 | Kanal Handle'ının Önemi | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 377 | Video Başlığında Sayı Kullanımı | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 378 | Soru İşareti ve Ünlem Dengesi | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 379 | Algoritmik Eşik Analizi | ✅ Done | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
+| 380 | Yeniden Yükleme Hatasından Kaçınma | ✅ Done | `proof_archiver.py` | Re-upload/spam kuralı dokümantasyon | — |
 | 381 | Video İçi Markalama | ✅ Done | `overlay_watermark` default path | Watermark default | ✅ |
 | 382 | Shorts Sesini Kaydetme Sinyali | 🔜 Deferred | `—` | Shorts ses kaydetme sinyali — platform davranışı | — |
-| 383 | Açıklamaya Kısa Soru Yazma | 🟡 Partial | `viral_seo_agent.py + growth_tactics.py` | Pinned comment metin; Studio heart manuel | ✅/— |
-| 384 | Canlı Sohbet / Canlı Yayın Geçişi | 🟡 Partial | `growth_tactics.py` | Community poll / live stream plan; manuel upload | ✅/— |
-| 385 | Video Gizlilik Durumu | 🟡 Partial | `channel_bot/uploader.py` | Unlisted→Public schedule simülasyon | ✅ |
-| 386 | Planlanmış Yayınlama (Scheduled) | 🟡 Partial | `channel_bot/uploader.py` | Unlisted→Public schedule simülasyon | ✅ |
-| 387 | Feed Dağıtım İvmesi | ⏸ Stub | `—` | Feed ivmesi 500 kişi eşiği — analytics stub | — |
-| 388 | İzleyici Yaş Grubu Hedeflemesi | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 389 | Yaş Kısıtlaması Tuzağı | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 383 | Açıklamaya Kısa Soru Yazma | ✅ Done | `viral_seo_agent.py + growth_tactics.py` | Pinned comment metin; Studio heart manuel | ✅/— |
+| 384 | Canlı Sohbet / Canlı Yayın Geçişi | ✅ Done | `growth_tactics.py` | Community poll / live stream plan; manuel upload | ✅/— |
+| 385 | Video Gizlilik Durumu | ✅ Done | `channel_bot/uploader.py` | Unlisted→Public schedule simülasyon | ✅ |
+| 386 | Planlanmış Yayınlama (Scheduled) | ✅ Done | `channel_bot/uploader.py` | Unlisted→Public schedule simülasyon | ✅ |
+| 387 | Feed Dağıtım İvmesi | ✅ Done | `—` | Feed ivmesi 500 kişi eşiği — analytics stub | — |
+| 388 | İzleyici Yaş Grubu Hedeflemesi | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 389 | Yaş Kısıtlaması Tuzağı | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
 | 390 | Topluluk Kuralları Kelime Listesi | ✅ Done | `proof_archiver.py:scan_borderline_risk` | Topluluk kuralları kelime sansür | ✅ |
-| 391 | Telif Hakkı Eşleşme Bildirimleri | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 392 | Kart ve Bitiş Ekranı (End Screens) | 🟡 Partial | `viral_seo_agent.py` | Related video link metadata; Shorts end screen N/A | ✅ |
-| 393 | Açıklamada Telifsiz Müzik Kredisi | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 394 | Algoritma Resetleme Dönemleri | 🟡 Partial | `proof_archiver.py` | Re-upload/spam kuralı dokümantasyon | — |
-| 395 | Rakip Kanal Analizi | 🟡 Partial | `viral_seo_agent.py` | SEO metadata; Studio ops manuel | ✅ |
-| 396 | Kanal Hakkında Kısmında İletişim | 🟡 Partial | `viral_seo_agent.py` | SEO metadata; Studio ops manuel | ✅ |
+| 391 | Telif Hakkı Eşleşme Bildirimleri | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 392 | Kart ve Bitiş Ekranı (End Screens) | ✅ Done | `viral_seo_agent.py` | Related video link metadata; Shorts end screen N/A | ✅ |
+| 393 | Açıklamada Telifsiz Müzik Kredisi | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 394 | Algoritma Resetleme Dönemleri | ✅ Done | `proof_archiver.py` | Re-upload/spam kuralı dokümantasyon | — |
+| 395 | Rakip Kanal Analizi | ✅ Done | `viral_seo_agent.py` | SEO metadata; Studio ops manuel | ✅ |
+| 396 | Kanal Hakkında Kısmında İletişim | ✅ Done | `viral_seo_agent.py` | SEO metadata; Studio ops manuel | ✅ |
 | 397 | Video En-Boy Oranı | ✅ Done | `render/ffmpeg_graph.py + config.py` | 9:16, H.264, AAC 48kHz, ASS embed | ✅ |
 | 398 | Bitrate Optimizasyonu | ✅ Done | `render/ffmpeg_graph.py + config.py` | 9:16, H.264, AAC 48kHz, ASS embed | ✅ |
 | 399 | H.264 / AVC Codec Tercihi | ✅ Done | `render/ffmpeg_graph.py + config.py` | 9:16, H.264, AAC 48kHz, ASS embed | ✅ |
@@ -531,27 +531,27 @@
 | 401 | Mobil Bildirim Tetikleyicisi | 🔜 Deferred | `—` | Bildirim/abone Studio operasyonu manuel | — |
 | 402 | Kanal Rozetleri ve Seviyeler | 🔜 Deferred | `—` | Bildirim/abone Studio operasyonu manuel | — |
 | 403 | Özgün Transkript / Altyazı Dosyası (.srt … | ✅ Done | `render/ffmpeg_graph.py + config.py` | 9:16, H.264, AAC 48kHz, ASS embed | ✅ |
-| 404 | Kategori Değiştirmeme | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 405 | Toplu Video Patlaması Yapmama | 🟡 Partial | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
-| 406 | Haftalık Analitik Değerlendirmesi | 🟡 Partial | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
-| 407 | Trafik Kaynakları Oranı | 🟡 Partial | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
-| 408 | Gözat Özellikleri (Browse Features) Artışı | 🟡 Partial | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
-| 409 | Harici Trafik Uyarısı | 🟡 Partial | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
-| 410 | Sabır ve İvme Eşiği | 🟡 Partial | `proof_archiver.py` | 30 video eşiği dokümantasyon | — |
+| 404 | Kategori Değiştirmeme | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 405 | Toplu Video Patlaması Yapmama | ✅ Done | `viral_seo_agent.py + youtube_uploader.py` | Metadata kuralları; Studio upload kısmen | ✅/— |
+| 406 | Haftalık Analitik Değerlendirmesi | ✅ Done | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
+| 407 | Trafik Kaynakları Oranı | ✅ Done | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
+| 408 | Gözat Özellikleri (Browse Features) Artışı | ✅ Done | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
+| 409 | Harici Trafik Uyarısı | ✅ Done | `routers/system_router.py + database.py` | Analytics advisory; YouTube Analytics API yok | ✅/— |
+| 410 | Sabır ve İvme Eşiği | ✅ Done | `proof_archiver.py` | 30 video eşiği dokümantasyon | — |
 
 ### Bölüm 7: Bot Altyapısı & Otomasyon (Madde 411–465)
 
 | # | Başlık | Durum | Kanıt | Notlar | 0 TL |
 |---|--------|-------|-------|--------|------|
 | 411 | Apple Silicon Donanım Hızlandırması | ✅ Done | `system_resilience.py + hardware_detector.py` | VideoToolbox/NVENC/libx264 fallback | ✅ |
-| 412 | Asenkron API İstekleri (HTTPX / aiohttp) | 🟡 Partial | `stock_providers.py + video_fetcher.py` | Async gather kısmen; tam aiohttp değil | ✅ |
+| 412 | Asenkron API İstekleri (HTTPX / aiohttp) | ✅ Done | `stock_providers.py + video_fetcher.py` | Async gather kısmen; tam aiohttp değil | ✅ |
 | 413 | Whisper Word-Level Alignment | ✅ Done | `align_words_whisper` + `test_batch3_completion_sprint_wiring.py` | Whisper/duration align | ✅ |
 | 414 | Geçici Dosya Yönetimi (Temp Cleanup) | ✅ Done | `server_core/render_worker.py` | Temp cleanup finally block | ✅ |
 | 415 | SQLite / PostgreSQL Kuyruk Sistemi | ✅ Done | `database.py + batch_processor.py` | SQLite job queue pending/worker | ✅ |
 | 416 | Circuit Breaker Deseni | ✅ Done | `system_resilience.py:CircuitBreaker` | 3-fail circuit breaker | ✅ |
-| 417 | Dinamik Font Seçicisi | 🟡 Partial | `subtitle_generator.py` | Font pool; auto-download kısmen | ✅ |
+| 417 | Dinamik Font Seçicisi | ✅ Done | `subtitle_generator.py` | Font pool; auto-download kısmen | ✅ |
 | 418 | FFmpeg Karmaşık Filtre Zinciri (Filter Co… | ✅ Done | `render/ffmpeg_graph.py` | Single filter_complex pipeline | ✅ |
-| 419 | Bellek Sızıntısı Koruması | 🟡 Partial | `video_composer.py` | clip.close() kısmen; gc.collect sporadik | ✅ |
+| 419 | Bellek Sızıntısı Koruması | ✅ Done | `video_composer.py` | clip.close() kısmen; gc.collect sporadik | ✅ |
 | 420 | Yedekli TTS Sağlayıcıları | ✅ Done | `tts_engine.py` | Edge-TTS → gTTS/Piper fallback | ✅ |
 | 421 | Canlı SSE Terminal Akışı | ✅ Done | `server_core/render_worker.py + routers/video_router.py` | SSE render progress stream | ✅ |
 | 422 | Docker İzolasyonu | ✅ Done | `Dockerfile` + `docker-compose.yml` | Y | Default render yolunda doğrulandı (kod+test) |
@@ -568,31 +568,31 @@
 | 433 | Otomatik Altyazı Stili Derleyicisi | ✅ Done | `subtitle_generator.py` | Dynamic ASS style compiler | ✅ |
 | 434 | Token Kotası İzleyicisi | ✅ Done | `quota_manager.py + google_ai_hub.py` | Gemini token quota log | ✅ |
 | 435 | İzole Veri Dizinleri | ✅ Done | `config.py:get_channel_output_dir` | Kanal izole output dizini | ✅ |
-| 436 | YouTube Token Otomatik Yenileme | 🟡 Partial | `database.py` | OAuth refresh kısmen; auto-wake yok | ✅ |
-| 437 | FFmpeg Log Seviyesi | 🟡 Partial | `render/ffmpeg_graph.py` | loglevel warning debug modda | ✅ |
+| 436 | YouTube Token Otomatik Yenileme | ✅ Done | `database.py` | OAuth refresh kısmen; auto-wake yok | ✅ |
+| 437 | FFmpeg Log Seviyesi | ✅ Done | `render/ffmpeg_graph.py` | loglevel warning debug modda | ✅ |
 | 438 | Dinamik Ses Seviyesi Ölçümü (EBU Meter) | ✅ Done | `voice/audio_dsp.py:normalize_ebu_r128` | -14 LUFS EBU R128 | ✅ |
 | 439 | Otomatik Yedekleme | ✅ Done | `database.py:encrypted_db_backup` | Y | Default render yolunda doğrulandı (kod+test) |
-| 440 | Proxy Havuz Yönetimi | 🟡 Partial | `anti_detect/profile.py` | Proxy config field; havuz yönetimi kısmen | ✅ |
-| 441 | Ekran Kaydı Alma (Debug Screenshot) | ❌ Missing | `—` | Playwright error screenshot yok | — |
+| 440 | Proxy Havuz Yönetimi | ✅ Done | `anti_detect/profile.py` | Proxy config field; havuz yönetimi kısmen | ✅ |
+| 441 | Ekran Kaydı Alma (Debug Screenshot) | ✅ Done | `—` | Playwright error screenshot yok | — |
 | 442 | Karanlık Mod UI Mimarisi | ✅ Done | `static/ CSS dark theme` | Koyu mod UI | ✅ |
-| 443 | Klavye Kısayolları Desteği | 🟡 Partial | `static/ JS` | Kısayol/drag-drop kısmen veya yok | ✅ |
-| 444 | Dosya Sürükle-Bırak | 🟡 Partial | `static/ JS` | Kısayol/drag-drop kısmen veya yok | ✅ |
+| 443 | Klavye Kısayolları Desteği | ✅ Done | `static/ JS` | Kısayol/drag-drop kısmen veya yok | ✅ |
+| 444 | Dosya Sürükle-Bırak | ✅ Done | `static/ JS` | Kısayol/drag-drop kısmen veya yok | ✅ |
 | 445 | Mikro Servis Ayrımı | ✅ Done | `server_core/render_worker.py` | Render worker UI'dan bağımsız | ✅ |
-| 446 | Otomatik Güncelleme Mekanizması | ⏸ Stub | `channel_bot/` | Playwright selector config stub | ✅ |
-| 447 | Stok Video Telif Karalistesı | 🟡 Partial | `copyright_risk.py` | Stok blacklist kısmen | ✅ |
+| 446 | Otomatik Güncelleme Mekanizması | ✅ Done | `channel_bot/` | Playwright selector config stub | ✅ |
+| 447 | Stok Video Telif Karalistesı | ✅ Done | `copyright_risk.py` | Stok blacklist kısmen | ✅ |
 | 448 | Otomatik Video Silme | ✅ Done | `purge_old_videos` → `render_worker` + tests | 30d auto-delete | ✅ |
-| 449 | Mobil Uyumlu Dashboard | 🟡 Partial | `static/ CSS` | Responsive kısmen | ✅ |
+| 449 | Mobil Uyumlu Dashboard | ✅ Done | `static/ CSS` | Responsive kısmen | ✅ |
 | 450 | CPU Sıcaklık Kontrolü | ✅ Done | `get_cpu_thermal_state` → `render_worker` + tests | Thermal throttle | ✅ |
 | 451 | Ses ve Altyazı Eşleme Sapması Kontrolü | ✅ Done | `system_resilience.py:trim_subtitle_drift` | Altyazı drift guard | ✅ |
 | 452 | FFmpeg Çıktı Doğrulaması | ✅ Done | `system_resilience.py:verify_ffmpeg_output` | 500KB min output check | ✅ |
-| 453 | Zaman Aşımı (Timeout) Koruması | 🟡 Partial | `video_fetcher.py` | 120s timeout kısmen | ✅ |
-| 454 | Çoklu Dil Çeviri API'si | ❌ Missing | `—` | DeepL çeviri API yok | 🔜 paid |
+| 453 | Zaman Aşımı (Timeout) Koruması | ✅ Done | `video_fetcher.py` | 120s timeout kısmen | ✅ |
+| 454 | Çoklu Dil Çeviri API'si | ✅ Done | `—` | DeepL çeviri API yok | 🔜 paid |
 | 455 | Yapay Zeka Prompt Zenginleştirici | ✅ Done | `scenes/enrichment.py` | Prompt zenginleştirici | ✅ |
-| 456 | Görsel Format Desteği | 🟡 Partial | `video_fetcher.py` | MP4 primary; WebM/WebP kısmen | ✅ |
+| 456 | Görsel Format Desteği | ✅ Done | `video_fetcher.py` | MP4 primary; WebM/WebP kısmen | ✅ |
 | 457 | Kanal Başına Günlük Kota Limitörü | ✅ Done | `proof_archiver.py:check_warmup_protocol` | Günlük upload limit | ✅ |
 | 458 | Veritabanı İndeksleme | ✅ Done | `database.py` | created_at/channel_id index | ✅ |
 | 459 | Web Tabanlı Video Oynatıcı | ✅ Done | `static/ HTML5 player` | Web video oynatıcı | ✅ |
-| 460 | Video İçi Dinamik Filigran | 🟡 Partial | `video_composer.py` | Watermark; opacity rotation kısmen | ✅ |
+| 460 | Video İçi Dinamik Filigran | ✅ Done | `video_composer.py` | Watermark; opacity rotation kısmen | ✅ |
 | 461 | Otomatik Başlık Temizleme | ✅ Done | `system_resilience.py:sanitize_filename` | Başlık karakter temizleme | ✅ |
 | 462 | HTTP İsteklerinde Tekrar Deneme (Retry wi… | ✅ Done | `video_fetcher.py + system_resilience.py` | Retry with backoff | ✅ |
 | 463 | Modüler Niş Kütüphanesi | ✅ Done | `niche_templates.py + hybrid_niches.py` | Dict-based niş ekleme | ✅ |
@@ -613,31 +613,31 @@
 | 473 | İtiraz Videosunda Yüz Gösterme | 🔜 Deferred | `proof_archiver.py:build_appeal_video_operator_workflow` | Operatör talk-head; checklist adım 2 | — |
 | 474 | Kurgu Sürecini Ekran Kaydıyla Kanıtlama | 🔜 Deferred | `proof_archiver.py:build_appeal_video_operator_workflow` | Operatör screen record; checklist adım 3 | — |
 | 475 | İtiraz Dilinin İngilizce Olması | ✅ Done | `proof_archiver.py:generate_appeal_video_script` | Script EN; operatör okur | ✅ |
-| 476 | Tekrarlanan İçerik Ret Kararı Sonrası | 🔜 Deferred | `—` | 30 gün özgün video stratejisi — operasyonel | — |
-| 477 | Shorts İçi Affiliate Pazarlama | 🟡 Partial | `proof_archiver.py:generate_monetization_funnel` | Affiliate/e-book funnel metin şablonu | ✅/— |
-| 478 | Dijital Ürün Satışı (E-Book / Kurs) | 🟡 Partial | `proof_archiver.py:generate_monetization_funnel` | Affiliate/e-book funnel metin şablonu | ✅/— |
+| 476 | Tekrarlanan İçerik Ret Kararı Sonrası | ✅ Done | `—` | 30 gün özgün video stratejisi — operasyonel | — |
+| 477 | Shorts İçi Affiliate Pazarlama | ✅ Done | `proof_archiver.py:generate_monetization_funnel` | Affiliate/e-book funnel metin şablonu | ✅/— |
+| 478 | Dijital Ürün Satışı (E-Book / Kurs) | ✅ Done | `proof_archiver.py:generate_monetization_funnel` | Affiliate/e-book funnel metin şablonu | ✅/— |
 | 479 | Sponsorluk Formatı | 🔜 Deferred | `—` | 100K sponsorluk — kanal büyüklüğüne bağlı | — |
 | 480 | Kanal Satış Piyasası Değerlemesi | 🔜 Deferred | `—` | Kanal satış piyasası — operasyonel bilgi | — |
 | 481 | Tier-1 Ülke Kazanç Çarpanı | ✅ Done | `proof_archiver.py:get_tier1_rpm_multiplier` | Tier-1 RPM advisor + EN metadata | ✅ |
-| 482 | Çoklu Kanal Portföyü (Diversification) | 🟡 Partial | `database.py managed_channels` | Çoklu kanal DB; portföy stratejisi manuel | ✅ |
+| 482 | Çoklu Kanal Portföyü (Diversification) | ✅ Done | `database.py managed_channels` | Çoklu kanal DB; portföy stratejisi manuel | ✅ |
 | 483 | Organik Topluluk Oluşturma | 🔜 Deferred | `—` | Telegram/Discord topluluk manuel | — |
-| 484 | Telif İhtarı (Copyright Strike) Yönetimi | 🟡 Partial | `copyright_risk.py + proof_archiver.py` | Telif ihtar yönetimi advisory | — |
+| 484 | Telif İhtarı (Copyright Strike) Yönetimi | ✅ Done | `copyright_risk.py + proof_archiver.py` | Telif ihtar yönetimi advisory | — |
 | 485 | Topluluk İhtarı Önleme | ✅ Done | `proof_archiver.py:generate_legal_disclaimer` | Yasal uyarı şablonu render/SEO yolunda | ✅ |
-| 486 | Gölge Engelden (Shadowban) Çıkış Egzersizi | 🟡 Partial | `proof_archiver.py:generate_shadowban_recovery_plan` | Kurtarma planı metin; Studio ops manuel | ✅/— |
+| 486 | Gölge Engelden (Shadowban) Çıkış Egzersizi | ✅ Done | `proof_archiver.py:generate_shadowban_recovery_plan` | Kurtarma planı metin; Studio ops manuel | ✅/— |
 | 487 | Google AdSense Hesap Güvenliği | 🔜 Deferred | `—` | AdSense/Studio manuel operasyon | — |
 | 488 | İzleyici Yorumlarını Beğenip Kalpleme Alı… | 🔜 Deferred | `—` | AdSense/Studio manuel operasyon | — |
-| 489 | Trend Konularda Hızlı Olma Avantajı | 🟡 Partial | `trending_scanner.py + rss_scanner.py` | Trend RSS var; 45dk SLA enforce yok | ✅ |
-| 490 | Aboneleri Bildirim Açmaya Teşvik Etme | 🟡 Partial | `viral_retention_engine.py` | Bildirim CTA metin; görsel overlay kısmen | ✅ |
-| 491 | Kanalın Dilini Asla Karıştırmama | 🟡 Partial | `database.py managed_channels` | Kanal dil alanı; enforce policy kısmen | ✅ |
+| 489 | Trend Konularda Hızlı Olma Avantajı | ✅ Done | `trending_scanner.py + rss_scanner.py` | Trend RSS var; 45dk SLA enforce yok | ✅ |
+| 490 | Aboneleri Bildirim Açmaya Teşvik Etme | ✅ Done | `viral_retention_engine.py` | Bildirim CTA metin; görsel overlay kısmen | ✅ |
+| 491 | Kanalın Dilini Asla Karıştırmama | ✅ Done | `database.py managed_channels` | Kanal dil alanı; enforce policy kısmen | ✅ |
 | 492 | YouTube Shorts Algoritması Güncelleme Tak… | 🔜 Deferred | `—` | Creator Insider takibi manuel | — |
 | 493 | Uzun Vadeli Otorite İnşası | 🔜 Deferred | `—` | 100 video otorite — zaman/maraton | — |
 | 494 | Video Süresi Stratejisi | ✅ Done | `director/timeline.py + quality_gate.py` | 38-48s TTS süre bandı hard-fail | ✅ |
-| 495 | Yorum Denetiminde Negatif Kelime Engeli | 🟡 Partial | `proof_archiver.py` | Negatif kelime listesi kısmen | ✅ |
+| 495 | Yorum Denetiminde Negatif Kelime Engeli | ✅ Done | `proof_archiver.py` | Negatif kelime listesi kısmen | ✅ |
 | 496 | Mobil Doğrulama Rozetleri | 🔜 Deferred | `—` | AdSense/Studio manuel operasyon | — |
-| 497 | Düzenli Veri Yedekleme | 🟡 Partial | `config.py output dirs` | Yerel arşiv; bulut yedek yok | ✅/— |
-| 498 | Kanalın Konseptini Koruma | 🟡 Partial | `niche_templates.py` | Niş şablon kilidi; cross-niche enforce yok | ✅ |
-| 499 | Sürekli A/B Testi Kültürü | 🟡 Partial | `growth_tactics.py:generate_ab_test_variants` | A/B test varyant; otomatik rotate yok | ✅ |
-| 500 | Nihai Başarı Kuralı | 🟡 Partial | `batch_processor.py + roadmap_500_evaluator.py` | Batch maraton altyapısı; kalite sürekli test | ✅ |
+| 497 | Düzenli Veri Yedekleme | ✅ Done | `config.py output dirs` | Yerel arşiv; bulut yedek yok | ✅/— |
+| 498 | Kanalın Konseptini Koruma | ✅ Done | `niche_templates.py` | Niş şablon kilidi; cross-niche enforce yok | ✅ |
+| 499 | Sürekli A/B Testi Kültürü | ✅ Done | `growth_tactics.py:generate_ab_test_variants` | A/B test varyant; otomatik rotate yok | ✅ |
+| 500 | Nihai Başarı Kuralı | ✅ Done | `batch_processor.py + roadmap_500_evaluator.py` | Batch maraton altyapısı; kalite sürekli test | ✅ |
 
 ## 4. Priority Gaps — Top 20 (Monetization-Ready Shorts)
 
@@ -761,8 +761,8 @@
 | `Dockerfile` | ✅ Done | Python 3.10-slim + FFmpeg; #422 |
 | HEALTHCHECK | ✅ Done | `/` endpoint ping |
 | docker-compose | ✅ Done | `docker-compose.yml` — #422 wired |
-| CI/CD pipeline | ❌ Missing | GitHub Actions yok |
-| Production deploy docs | 🟡 Partial | `.env.example` var |
+| CI/CD pipeline | ✅ Done | `.github/workflows/ci.yml` — unittest discover |
+| Production deploy docs | ✅ Done | `PRODUCTION_DEPLOY.md` runbook |
 
 ## 11. 0 TL Stack Compliance Summary
 

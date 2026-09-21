@@ -448,6 +448,41 @@ def get_algorithm_reset_advisory(days_paused: int = 0):
     }
 
 
+@router.get("/api/growth/operator-pack")
+def get_growth_operator_pack(
+    topic: str = "Stoacılık",
+    title: str = "",
+    user_comment: str = "",
+    related_video_url: str = "",
+    lang: str = "tr",
+):
+    """B5 growth deferred close-out: 311-322 + 384 operator pack (no auto-upload)."""
+    from growth_tactics import export_growth_operator_pack
+
+    pack = export_growth_operator_pack(
+        topic=topic,
+        title=title or topic,
+        user_comment=user_comment,
+        related_video_url=related_video_url,
+        lang=lang,
+    )
+    return {"status": "ok", "operator_pack": pack}
+
+
+@router.get("/api/channel-health/repeated-content-recovery")
+def get_repeated_content_recovery(channel_name: str = "YourChannel", lang: str = "tr"):
+    """Item 476: Reused content rejection — 30-day operator recovery plan."""
+    from proof_archiver import ProofArchiver
+
+    return {
+        "status": "ok",
+        "recovery": ProofArchiver.get_repeated_content_rejection_recovery_plan(
+            channel_name=channel_name,
+            lang=lang,
+        ),
+    }
+
+
 @router.get("/api/seo/operator-pack")
 def get_seo_operator_pack(
     keyword: str = "Stoacılık",

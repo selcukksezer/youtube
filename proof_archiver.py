@@ -452,6 +452,60 @@ Thank you for your time and dedication to supporting original creators."
         }
 
     @staticmethod
+    def get_repeated_content_rejection_recovery_plan(
+        channel_name: str = "YourChannel",
+        days: int = 30,
+        lang: str = "tr",
+    ) -> Dict[str, Any]:
+        """
+        Item 476: Tekrarlanan İçerik (Reused Content) ret kararı sonrası 30 günlük operatör planı.
+        Tam otomasyon yok — operatör disiplini + render pipeline rehberi.
+        """
+        if lang == "en":
+            return {
+                "item": 476,
+                "protocol": "30-Day Original Content Recovery",
+                "channel_name": channel_name,
+                "duration_days": days,
+                "rules": [
+                    "Pause bulk uploads for 4 days; review last 10 videos for repetitive patterns.",
+                    "Produce 100% transformative narration — no stock-only compilations.",
+                    "Add visible human editorial layer: unique hooks, alternate angles, custom B-roll mix.",
+                    "Archive proof dossier per video (timeline screenshot + script diff).",
+                    "Re-apply for monetization only after 30 consecutive original uploads.",
+                ],
+                "weekly_targets": {
+                    "week_1": "Audit + 2 fully original Shorts (new niche angle each).",
+                    "week_2": "3 Shorts with dual stock providers + custom voice humanization.",
+                    "week_3": "3 Shorts with hybrid overlay + appeal-ready proof archive.",
+                    "week_4": "2 Shorts + file YPP re-review request with proof links.",
+                },
+                "tools": ["proof_archiver.py", "plagiarism_checker.py", "director/validate.py"],
+                "manual_only": True,
+            }
+        return {
+            "item": 476,
+            "protocol": "30 Günlük Özgün İçerik Kurtarma",
+            "channel_name": channel_name,
+            "duration_days": days,
+            "rules": [
+                "4 gün toplu yükleme yapmayın; son 10 videoyu tekrar eden kalıplar için inceleyin.",
+                "100% dönüştürücü anlatım — sadece stok derlemesi yok.",
+                "Görünür editoryal katman: özgün kanca, alternatif açı, karışık B-roll.",
+                "Her video için proof arşivi (timeline ekran görüntüsü + senaryo diff).",
+                "30 ardışık özgün yüklemeden sonra monetizasyon için yeniden başvurun.",
+            ],
+            "weekly_targets": {
+                "hafta_1": "Denetim + 2 tam özgün Shorts (her biri farklı niş açısı).",
+                "hafta_2": "3 Shorts — çift stok sağlayıcı + voice humanization.",
+                "hafta_3": "3 Shorts — hybrid overlay + itiraz dossier hazır.",
+                "hafta_4": "2 Shorts + YPP yeniden inceleme talebi (proof linkleri ile).",
+            },
+            "tools": ["proof_archiver.py", "plagiarism_checker.py", "director/validate.py"],
+            "manual_only": True,
+        }
+
+    @staticmethod
     def get_tier1_rpm_multiplier(target_country: str = "US") -> Dict[str, Any]:
         """
         Item 481: Tier-1 Ülke Kazanç Çarpanı (RPM Multiplier).

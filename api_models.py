@@ -163,6 +163,19 @@ class GeneratedSceneSchema(BaseModel):
             raise ValueError("narration too short or placeholder-only")
         return value
 
+    @field_validator("scene_description")
+    @classmethod
+    def scene_description_not_placeholder(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        try:
+            from scenes.narration_validate import scene_description_usable
+        except ImportError:
+            return value
+        if str(value).strip() and not scene_description_usable(value):
+            raise ValueError("scene_description is placeholder or too short")
+        return value
+
     @model_validator(mode="after")
     def has_visual_reference(self) -> "GeneratedSceneSchema":
         has_desc = bool(str(self.scene_description or "").strip())
@@ -170,6 +183,13 @@ class GeneratedSceneSchema(BaseModel):
         has_sqs = bool(self.search_queries and any(str(q).strip() for q in self.search_queries))
         if not (has_desc or has_sq or has_sqs):
             raise ValueError("scene needs scene_description, search_query, or search_queries")
+        if has_desc:
+            try:
+                from scenes.narration_validate import scene_description_usable
+                if not scene_description_usable(self.scene_description or ""):
+                    raise ValueError("scene_description is placeholder or too short")
+            except ImportError:
+                pass
         return self
 
 

@@ -37,6 +37,28 @@ def lint_plan_diversity(plan: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append(f"low_query_diversity:{len(set(primary_queries))}")
         weak = True
 
+    try:
+        from scenes.narration_validate import MIN_WORDS_PER_SCENE, scene_description_usable
+        short_narr = sum(
+            1 for s in scenes
+            if len(((s.get("narration") or "").strip()).split()) < MIN_WORDS_PER_SCENE
+        )
+        bad_desc = sum(
+            1 for s in scenes
+            if not scene_description_usable(
+                (s.get("scene_description") or "").strip()
+                or str((s.get("search_queries") or [""])[0])
+            )
+        )
+        if short_narr >= max(1, len(scenes) // 4):
+            warnings.append(f"stub_narration:{short_narr}")
+            weak = True
+        if bad_desc >= max(1, len(scenes) // 4):
+            warnings.append(f"placeholder_descriptions:{bad_desc}")
+            weak = True
+    except ImportError:
+        pass
+
     return {
         "warnings": warnings,
         "weak": weak,

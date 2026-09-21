@@ -63,10 +63,10 @@ def _ensure_ui_plan_narration_usable(plan, keyword: str, locked_niche: str, targ
     if not plan or not plan.get("scenes"):
         return plan
     try:
-        from scenes.narration_validate import plan_narration_usable
+        from scenes.narration_validate import plan_quality_usable
         from scenes.fallback import _generate_procedural_fallback_scenes
 
-        if plan_narration_usable(plan.get("scenes") or []):
+        if plan_quality_usable(plan.get("scenes") or []):
             return plan
         _log(
             "[Director] UI plan narration unusable — prosedürel fallback enjekte ediliyor",

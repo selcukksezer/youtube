@@ -40,6 +40,15 @@ pip install -r requirements.txt
 python run.py
 ```
 
+macOS (Homebrew / Apple Python — `python` komutu yok):
+
+```bash
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+./run_ui.sh
+# veya: venv/bin/python run.py
+```
+
 ## Rules
 
 | File | Git | Notes |

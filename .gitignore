@@ -48,6 +48,7 @@ bgm/*.mp3
 *.db-wal
 *.sqlite3
 plagiarism_db.json
+data/quota_usage.json
 
 # Audio artifacts & test binaries
 *.mp3

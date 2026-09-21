@@ -12,13 +12,42 @@ from scenes.fallback import (
     _generate_procedural_fallback_scenes,
     _topic_is_crypto_market,
 )
-from scenes.narration_validate import plan_narration_usable, scene_narration_usable
+from scenes.narration_validate import (
+    MIN_WORDS_PER_SCENE,
+    plan_narration_usable,
+    plan_quality_usable,
+    scene_description_usable,
+    scene_narration_usable,
+)
 
 
 LIVE_TOPIC = (
     "🔴LIVE TRADING: Gold & Bitcoin | 21st Sept 2026| "
     "#crypto #forex #btc #livetrading # #banknifty"
 )
+
+BITCOIN_TOPIC = "Bitcoin şu an nerede Bu seviyeyi geçerse her şey değişir"
+
+GOOD_NARRATION = (
+    "Bu sahne en az on iki kelime iceren tam ve anlamli bir Turkce cumledir."
+)
+
+
+def _stub_ai_plan(topic: str = BITCOIN_TOPIC, n: int = 14):
+    """Simulates weak AI output: 6-8 word stubs + placeholder descriptions."""
+    stub = "Bitcoin su an kritik seviyede duruyor bekleyin."
+    return {
+        "title": topic,
+        "scenes": [
+            {
+                "narration": stub,
+                "scene_description": "SCENE_DESCRIPTION",
+                "search_queries": ["bitcoin chart screen"],
+                "duration": 3.0,
+            }
+            for _ in range(n)
+        ],
+    }
 
 
 class TestCryptoScenarioGeneration(unittest.TestCase):
@@ -32,6 +61,30 @@ class TestCryptoScenarioGeneration(unittest.TestCase):
     def test_topic_detected_as_crypto_market(self):
         self.assertTrue(_topic_is_crypto_market(LIVE_TOPIC, niche_type="8_crypto_market"))
         self.assertTrue(_topic_is_crypto_market(LIVE_TOPIC))
+        self.assertTrue(_topic_is_crypto_market(BITCOIN_TOPIC))
+
+    def test_bitcoin_stub_plan_rejected_by_quality_gate(self):
+        plan = _stub_ai_plan()
+        self.assertFalse(plan_quality_usable(plan["scenes"]))
+        self.assertFalse(scene_narration_usable(plan["scenes"][0]["narration"]))
+        self.assertFalse(scene_description_usable(plan["scenes"][0]["scene_description"]))
+        errs = validate_generated_plan_errors(plan)
+        self.assertTrue(errs)
+
+    def test_bitcoin_procedural_fallback_rich(self):
+        plan = _generate_procedural_fallback_scenes(
+            BITCOIN_TOPIC,
+            niche_type="8_crypto_market",
+            language="tr",
+        )
+        self.assertTrue(plan_quality_usable(plan["scenes"]))
+        for sc in plan["scenes"]:
+            self.assertGreaterEqual(
+                len((sc.get("narration") or "").split()),
+                MIN_WORDS_PER_SCENE,
+                sc.get("narration"),
+            )
+            self.assertTrue(scene_description_usable(sc.get("scene_description") or ""))
 
     def test_procedural_fallback_has_rich_scenes(self):
         plan = _generate_procedural_fallback_scenes(
@@ -40,7 +93,8 @@ class TestCryptoScenarioGeneration(unittest.TestCase):
             language="tr",
         )
         scenes = plan["scenes"]
-        self.assertEqual(len(scenes), 14)
+        self.assertGreaterEqual(len(scenes), 8)
+        self.assertTrue(plan_quality_usable(scenes))
         self.assertTrue(plan_narration_usable(scenes))
         for sc in scenes:
             self.assertTrue(scene_narration_usable(sc["narration"]), sc.get("narration"))
@@ -52,17 +106,16 @@ class TestCryptoScenarioGeneration(unittest.TestCase):
         self.assertGreater(len(set(primary_queries)), 4, "search terms should diversify")
 
     def test_half_placeholder_plan_not_usable(self):
-        good = "Bu sahne en az alti kelime iceren tam bir cumledir."
         scenes = [
-            {"narration": good if i < 7 else ".", "search_queries": ["bitcoin chart"]}
+            {"narration": GOOD_NARRATION if i < 7 else ".", "search_queries": ["bitcoin chart"]}
             for i in range(14)
         ]
         self.assertFalse(plan_narration_usable(scenes))
+        self.assertFalse(plan_quality_usable(scenes))
 
     def test_plan_narration_usable_default_requires_all_scenes(self):
         """Default min_ratio=1.0 — one bad scene rejects entire plan."""
-        good = "Bu sahne en az alti kelime iceren tam bir cumledir."
-        scenes = [{"narration": good, "search_queries": ["bitcoin chart"]} for _ in range(13)]
+        scenes = [{"narration": GOOD_NARRATION, "search_queries": ["bitcoin chart"]} for _ in range(13)]
         scenes.append({"narration": ".", "search_queries": ["bitcoin chart"]})
         self.assertFalse(plan_narration_usable(scenes))
         self.assertTrue(all(scene_narration_usable(s["narration"]) for s in scenes[:-1]))
@@ -89,8 +142,8 @@ class TestCryptoScenarioGeneration(unittest.TestCase):
             language="tr",
         )
         scenes = plan["scenes"]
-        self.assertEqual(len(scenes), 14)
-        self.assertTrue(plan_narration_usable(scenes))
+        self.assertGreaterEqual(len(scenes), 8)
+        self.assertTrue(plan_quality_usable(scenes))
         moods = {s.get("mood") for s in scenes}
         self.assertGreater(len(moods), 1)
         primary_queries = [s["search_queries"][0] for s in scenes]
@@ -117,7 +170,7 @@ class TestCryptoScenarioGeneration(unittest.TestCase):
             language="tr",
         )
         legacy = director.to_legacy_plan()
-        self.assertTrue(plan_narration_usable(legacy["scenes"]))
+        self.assertTrue(plan_quality_usable(legacy["scenes"]))
         self.assertTrue(all((s.get("scene_description") or "").strip() for s in legacy["scenes"]))
         empty = sum(1 for s in legacy["scenes"] if not (s.get("narration") or "").strip())
         self.assertEqual(empty, 0)

@@ -72,7 +72,7 @@ class TestSection8Items466500(unittest.TestCase):
         with open(schema_path, encoding="utf-8") as fh:
             src = fh.read()
         self.assertIn("min_duration: float = 38.0", src)
-        self.assertIn("max_duration: float = 48.0", src)
+        self.assertIn("max_duration: float = 60.0", src)
         self.assertEqual(config.MIN_DURATION, 60)
         self.assertEqual(config.MAX_DURATION, 120)
 

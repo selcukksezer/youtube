@@ -176,19 +176,29 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             print(f"  [Composer] Voice humanizer notice: {vhe}")
             mastered_audio = audio_path
 
-    # Measure exact narration audio duration
+    # Measure exact narration audio duration (wave → ffprobe; no scipy hard dep)
     import wave
     audio_dur = 0.0
     try:
         with wave.open(mastered_audio, "rb") as w:
             audio_dur = w.getnframes() / float(w.getframerate())
     except Exception:
-        try:
-            from scipy.io import wavfile
-            rate, data = wavfile.read(mastered_audio)
-            audio_dur = len(data) / float(rate)
-        except Exception as e:
-            print(f"    Audio duration read error: {e}")
+        ffprobe = shutil.which("ffprobe")
+        if ffprobe:
+            try:
+                probe_out = subprocess.check_output(
+                    [
+                        ffprobe, "-v", "error", "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1", mastered_audio,
+                    ],
+                    text=True,
+                    timeout=15,
+                ).strip()
+                audio_dur = float(probe_out)
+            except Exception as e:
+                print(f"    Audio duration read error: {e}")
+        else:
+            print("    Audio duration read error: ffprobe not found")
 
     # When premastered, Director already fitted timeline — skip composer re-fit
     total_scene_dur = sum(sc.get("duration", 7) for sc in scene_clips)

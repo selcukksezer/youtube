@@ -9,9 +9,19 @@ import copy
 import re
 from typing import Any, Dict, List, Tuple
 
-MIN_WORDS_PER_SCENE = 5
-MIN_WORDS_DRAMA_SCENE = 8
-MIN_WORDS_PER_SENTENCE = 4
+MIN_WORDS_PER_SCENE = 12
+MIN_WORDS_DRAMA_SCENE = 15
+MIN_WORDS_PER_SENTENCE = 6
+
+SHORTS_MIN_DURATION = 38.0
+SHORTS_MAX_DURATION = 60.0
+MIN_SCENE_COUNT = 8
+MAX_SCENE_COUNT = 16
+
+_PLACEHOLDER_DESC_RE = re.compile(
+    r"^(?:\(?\s*scene[_\s-]?description\s*\)?|\.\.\.|tbd|n/a|placeholder|desc(?:ription)?)\s*$",
+    re.IGNORECASE,
+)
 
 _DANGLING_END_WORDS = frozenset({
     "ve", "ama", "çünkü", "için", "ise", "ile", "bir", "bu", "o", "senin", "kendi",
@@ -136,11 +146,44 @@ def scene_narration_usable(text: str) -> bool:
     return True
 
 
+def scene_description_usable(text: str) -> bool:
+    """Reject empty, template, or placeholder visual descriptions."""
+    raw = (text or "").strip()
+    if not raw or len(raw) < 12:
+        return False
+    if _PLACEHOLDER_DESC_RE.match(raw):
+        return False
+    lower = raw.lower()
+    if "scene_description" in lower and len(raw) < 40:
+        return False
+    if lower in {"description", "visual", "n/a", "tbd", "..."}:
+        return False
+    return True
+
+
 def plan_narration_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0) -> bool:
     """All scenes must pass scene_narration_usable (guards AI placeholder / half-empty plans)."""
     if not scenes:
         return False
     good = sum(1 for s in scenes if scene_narration_usable(s.get("narration") or ""))
+    return good >= max(1, int(len(scenes) * min_ratio))
+
+
+def plan_quality_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0) -> bool:
+    """Narration + visual description quality gate — rejects AI stub plans."""
+    if not scenes:
+        return False
+    if len(scenes) < MIN_SCENE_COUNT or len(scenes) > MAX_SCENE_COUNT:
+        return False
+    good = 0
+    for s in scenes:
+        narr_ok = scene_narration_usable(s.get("narration") or "")
+        desc = (s.get("scene_description") or "").strip()
+        if not desc and s.get("search_queries"):
+            desc = str((s.get("search_queries") or [""])[0])
+        desc_ok = scene_description_usable(desc)
+        if narr_ok and desc_ok:
+            good += 1
     return good >= max(1, int(len(scenes) * min_ratio))
 
 

@@ -8,10 +8,10 @@ echo ""
 echo "Web arayüzü başlatılıyor: http://127.0.0.1:8000"
 echo ""
 
-# Aktif bir sanal ortam varsa onu kullan, yoksa python3
-if [ -f "venv/bin/activate" ]; then
-    source venv/bin/activate
+# venv varsa doğrudan kullan; yoksa sistem python3
+if [ -x "venv/bin/python" ]; then
+    exec venv/bin/python run.py "$@"
 fi
 
-python3 run.py "$@"
+exec python3 run.py "$@"
 

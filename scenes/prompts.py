@@ -7,11 +7,11 @@ from typing import Optional
 PROMPT_TR = """Sen profesyonel bir YouTube Shorts senaristi ve seslendirme yazarısın.
 Verilen başlık için:
 
-1. Türkçe anlatım metni yaz (95-120 KELİME, 38-48 SANİYE Shorts süresi — Madde 494. Aşırı uzun yazma!).
+1. Türkçe anlatım metni yaz (120-160 KELİME, 38-60 SANİYE Shorts süresi — Madde 494).
 
-2. 14 sahne oluştur. TOPLAM 38-48 SANİYE. Sen duration belirle (2.0-4.5 sn, doğal tempo).
+2. 8-16 sahne oluştur (konuya göre sen karar ver). TOPLAM 38-60 SANİYE. Sen duration belirle (2.5-5 sn, doğal tempo).
    Her sahne:
-   - "narration": 1-2 TAM Türkçe cümle (drama nişlerinde 8-12 kelime). ASLA yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). **1-2 EMOJİ ekle.**
+   - "narration": 1-2 TAM Türkçe cümle (sahne başına en az 12 kelime, ideal 15-25). ASLA yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). **1-2 EMOJİ ekle.**
    - "scene_description": Bu sahnede İZLEYİCİNİN GÖRMESİ GEREKEN görsel, İngilizce, 1 cümle
    - "search_queries": 3 İngilizce stok video arama terimi [spesifik, orta, genel]
    - "duration": AI belirler (2.0-4.5)
@@ -31,11 +31,11 @@ SADECE JSON:
 PROMPT_EN = """You are a professional YouTube Shorts scriptwriter.
 For the given title:
 
-1. Write English narration (95-120 WORDS, 38-48 SECOND Shorts length — Item 494. Do NOT make it overlong).
+1. Write English narration (120-160 WORDS, 38-60 SECOND Shorts length — Item 494).
 
-2. Create 14 scenes (~2.5-3.5s each). TOTAL 38-48 SECONDS.
+2. Create 8-16 scenes (~3-5s each). TOTAL 38-60 SECONDS.
    Each scene:
-   - "narration": English narration fragment (6-9 words per scene). **Also include 1-2 highly relevant EMOJIS naturally in or at the end of the narration fragment to boost engagement.**
+   - "narration": 1-2 complete English sentences (at least 12 words per scene, ideally 15-25). **Also include 1-2 highly relevant EMOJIS naturally in or at the end of the narration to boost engagement.**
    - "scene_description": What the VIEWER SHOULD SEE, 1 sentence in English (e.g., "Aerial view of a massive ocean wave crashing against rocky cliffs at sunset")
    - "search_queries": 3 English stock video search terms [specific, medium, general] — ON-TOPIC only
    - "duration": 2.5-3.5
@@ -57,14 +57,14 @@ PROMPT_VARIANTS_TR = [
 Hedef: İzleyiciyi ilk 3 saniyede yakalayan ve sonuna kadar tutan sürükleyici bir video senaryosu hazırlamak.
 Kurallar:
 - Dil: Türkçe, akıcı, merak uyandırıcı, doğal tonlama ve uygun emojiler.
-- Sahne Sayısı: 14 sahne, her biri ~3 saniye (toplam 38-48 sn, Madde 494).
-- Her sahnede narration (6-9 kelime), scene_description (İngilizce), 3 farklı search_queries ve mood bulunmalı.
+- Sahne Sayısı: 8-16 sahne, her biri ~3-5 saniye (toplam 38-60 sn, Madde 494).
+- Her sahnede narration (en az 12 kelime, tam cümle), scene_description (İngilizce, gerçek görsel), 3 farklı search_queries ve mood bulunmalı.
 SADECE JSON formatında çıktı ver:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"dramatic"}]}""",
     """Sen YouTube Shorts için sinematik belgesel ve hikaye anlatıcısısın.
 Hedef: Verilen başlığı derinlikli, bilimsel veya tarihi kanıtlarla zenginleştirerek açıklayan 38-48 saniyelik video senaryosu oluşturmak.
 Kurallar:
-- 14 sahne, güçlü kancalar ve organik emojiler, ~95-120 kelime.
+- 8-16 sahne, güçlü kancalar ve organik emojiler, ~120-160 kelime.
 - Her sahnede İngilizce görsel sahne tarifi ve sinematik arama terimleri.
 SADECE JSON döndür:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"mysterious"}]}"""

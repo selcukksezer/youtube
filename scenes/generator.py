@@ -23,7 +23,11 @@ from .retention_hooks import ensure_retention_hooks_on_plan
 from .narration_validate import (
     scene_narration_issues,
     validate_and_fix_scenes,
-    plan_narration_usable,
+    plan_quality_usable,
+    scene_description_usable,
+    SHORTS_MIN_DURATION,
+    SHORTS_MAX_DURATION,
+    MIN_SCENE_COUNT,
     repair_post_hook_word_budget,
 )
 from .plan_linter import lint_plan_diversity
@@ -113,9 +117,10 @@ def _build_competitor_fingerprint_block(fp: dict, lang: str = "tr") -> str:
     """P2-04: inject trend/content-gap competitor format into system prompt."""
     if not fp:
         return ""
-    scene_count = int(fp.get("scene_count") or 14)
+    scene_count = int(fp.get("scene_count") or 12)
+    scene_count = max(MIN_SCENE_COUNT, min(16, scene_count))
     hook_style = fp.get("hook_style") or "Gizem / Merak Kancası"
-    avg_dur = float(fp.get("avg_scene_duration") or round(42.0 / max(1, scene_count), 1))
+    avg_dur = float(fp.get("avg_scene_duration") or round(48.0 / max(1, scene_count), 1))
     if lang == "en":
         return (
             f"\n\nCOMPETITOR FORMAT FINGERPRINT (mirror this viral structure — mandatory):\n"
@@ -189,16 +194,19 @@ def generate_scenes(
         user_msg = (
             f"Create a high-retention English YouTube Shorts video script for this topic: '{clean_title}'.\n"
             f"Original title context (hashtags stripped): '{title}'.\n"
-            f"CRITICAL REQUIREMENT: The 'narration' field in ALL 14 scenes MUST be written 100% in fluent, natural ENGLISH. "
-            f"Each narration MUST be at least 6 complete words — never mood labels, dots, or emoji-only placeholders. "
+            f"CRITICAL REQUIREMENT: The 'narration' field in EVERY scene MUST be written 100% in fluent, natural ENGLISH. "
+            f"Each narration MUST be at least 12 complete words (1-2 full sentences) — never mood labels, dots, or emoji-only placeholders. "
+            f"Each scene_description MUST be a concrete English visual sentence, never a placeholder. "
             f"Do NOT output Turkish narration. Translate and adapt the topic into an immersive English script."
         )
     else:
         user_msg = (
             f"Bu başlık için Türkçe YouTube Shorts senaryosu oluştur: '{clean_title}'.\n"
             f"Orijinal başlık (hashtag/emojisiz): '{title}'.\n"
-            f"KRİTİK: Her sahnenin 'narration' alanı en az 6 kelimelik TAM Türkçe cümle olmalı; "
-            f"sadece mood etiketi, nokta veya emoji placeholder YASAK."
+            f"KRİTİK: Her sahnenin 'narration' alanı en az 12 kelimelik TAM Türkçe cümle(ler) olmalı; "
+            f"sadece mood etiketi, nokta veya emoji placeholder YASAK. "
+            f"scene_description gerçek İngilizce görsel cümle olmalı — placeholder YASAK. "
+            f"8-16 sahne, toplam 38-60 saniye."
         )
 
     # Build fallback provider chain
@@ -271,9 +279,9 @@ def generate_scenes(
             print(f"  [UYARI] {provider_name} servisi hata verdi: {e}. Sıradaki AI modeline/sağlayıcısına geçiliyor...")
             last_error = e
 
-    if data and data.get("scenes") and not plan_narration_usable(data.get("scenes", [])):
+    if data and data.get("scenes") and not plan_quality_usable(data.get("scenes", [])):
         print(
-            "  [SceneGenerator] AI narration kalitesi düşük (boş/placeholder) — "
+            "  [SceneGenerator] AI plan kalitesi düşük (kısa anlatım/placeholder görsel) — "
             "prosedürel fallback devreye alınıyor."
         )
         data = None
@@ -338,23 +346,27 @@ def generate_scenes(
             q = s.pop("search_query")
             w = q.split()
             s["search_queries"] = [q, " ".join(w[:2]) if len(w) > 2 else q, w[0] if w else "nature"]
-        if "scene_description" not in s:
-            s["scene_description"] = s.get("search_queries", ["nature"])[0]
+        if not scene_description_usable(s.get("scene_description") or ""):
+            fallback_desc = (s.get("search_queries") or ["cinematic b-roll"])[0]
+            if scene_description_usable(fallback_desc):
+                s["scene_description"] = fallback_desc
+            elif not (s.get("scene_description") or "").strip():
+                s["scene_description"] = f"Cinematic b-roll illustrating {fallback_desc}"
 
         # Enrich search queries with cinematic adjectives (Item 89)
         if "search_queries" in s:
             s["search_queries"] = enrich_cinematic_search_queries(s["search_queries"], mood=s.get("mood", "epic"))
 
-    # Preserve AI-assigned pacing; scale total to 38-48s band (Madde 494)
-    target_total = 42.0
+    # Preserve AI-assigned pacing; scale total to 38-60s Shorts band (Madde 494)
     scenes_list = data["scenes"]
-    current_total = sum(float(s.get("duration") or 3.0) for s in scenes_list)
+    current_total = sum(float(s.get("duration") or 3.5) for s in scenes_list)
     if current_total <= 0:
-        current_total = len(scenes_list) * 3.0
-    if current_total < 38.0 or current_total > 48.0:
+        current_total = len(scenes_list) * 3.5
+    target_total = max(SHORTS_MIN_DURATION, min(SHORTS_MAX_DURATION, current_total))
+    if current_total < SHORTS_MIN_DURATION or current_total > SHORTS_MAX_DURATION:
         scale = target_total / current_total
         for s in scenes_list:
-            s["duration"] = round(max(1.8, min(6.0, float(s.get("duration") or 3.0) * scale)), 1)
+            s["duration"] = round(max(2.0, min(7.5, float(s.get("duration") or 3.5) * scale)), 1)
 
     try:
         from copyright_risk import scenes_need_fair_use_enforcement
@@ -374,8 +386,9 @@ def generate_scenes(
         except Exception:
             pass
 
-    # Apply 14 visual cuts cadence if eligible (Madde 88)
-    data["scenes"] = enforce_visual_cadence_14(data["scenes"], min_cadence=14)
+    # Pad thin plans toward minimum cadence only when very short (Madde 88, flexible 8-16)
+    if len(data["scenes"]) < MIN_SCENE_COUNT:
+        data["scenes"] = enforce_visual_cadence_14(data["scenes"], min_cadence=MIN_SCENE_COUNT)
 
     # Item 226: Son sahne kapanış bakış stok ipuçları
     data["scenes"] = enrich_closing_gaze_queries(data["scenes"])
@@ -397,8 +410,8 @@ def generate_scenes(
         data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
     )
 
-    # Batch D — soft word budget before Director hard condense
-    data = repair_post_hook_word_budget(data, max_words=110)
+    # Batch D — soft word budget before Director hard condense (~60s Shorts headroom)
+    data = repair_post_hook_word_budget(data, max_words=160)
 
     # Batch E — mood/query diversity linter (regenerate weak AI plans)
     diversity = lint_plan_diversity(data)
@@ -418,14 +431,31 @@ def generate_scenes(
         data = ensure_retention_hooks_on_plan(
             data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
         )
-        data = repair_post_hook_word_budget(data, max_words=110)
+        data = repair_post_hook_word_budget(data, max_words=160)
 
-    # Final soft normalization — preserve relative AI pacing within 38-48s
-    total = sum(float(s.get("duration") or 3.0) for s in data["scenes"])
-    if total < 38.0 or total > 48.0:
+    # Final quality gate — regenerate if hooks/budget left stub narrations
+    if not plan_quality_usable(data.get("scenes") or []) and not data.get("procedural_fallback"):
+        print("  [SceneGenerator] Post-hook plan hâlâ zayıf — prosedürel fallback.")
+        data = _generate_procedural_fallback_scenes(
+            title,
+            niche_type=niche_type,
+            language=lang,
+            variation_seed=variation_attempt,
+        )
+        data["procedural_fallback"] = True
+        data = ensure_retention_hooks_on_plan(
+            data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
+        )
+        data = repair_post_hook_word_budget(data, max_words=160)
+
+    # Final soft normalization — preserve relative pacing within 38-60s
+    total = sum(float(s.get("duration") or 3.5) for s in data["scenes"])
+    target_total = max(SHORTS_MIN_DURATION, min(SHORTS_MAX_DURATION, total))
+    if total < SHORTS_MIN_DURATION or total > SHORTS_MAX_DURATION:
         scale = target_total / max(total, 1.0)
         for s in data["scenes"]:
-            s["duration"] = round(max(1.8, min(6.0, float(s.get("duration") or 3.0) * scale)), 1)
+            s["duration"] = round(max(2.0, min(7.5, float(s.get("duration") or 3.5) * scale)), 1)
+        total = sum(s["duration"] for s in data["scenes"])
 
     total = sum(s["duration"] for s in data["scenes"])
     data["full_narration"] = " ".join(

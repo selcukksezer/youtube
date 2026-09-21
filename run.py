@@ -34,28 +34,62 @@ def open_browser(url: str, delay: float = 1.2):
         pass
 
 
-def free_port_if_occupied(port: int = 8000):
-    """If port is held by an existing process, terminate it cleanly to prevent Errno 10048."""
+def _port_in_use(port: int) -> bool:
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        if s.connect_ex(('127.0.0.1', port)) != 0:
-            return  # Port is free
-    
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def free_port_if_occupied(port: int = 8000):
+    """If port is held by an existing process, terminate it cleanly to prevent bind errors."""
+    if not _port_in_use(port):
+        return
+
     print(f"[*] Port {port} meşgul, eski arka plan süreci temizleniyor...")
     try:
+        import subprocess
+
         if platform.system() == "Windows":
-            import subprocess
-            out = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True).decode(errors="ignore")
+            out = subprocess.check_output(
+                f"netstat -ano | findstr :{port}", shell=True
+            ).decode(errors="ignore")
             for line in out.splitlines():
                 parts = line.strip().split()
                 if len(parts) >= 5 and "LISTENING" in parts[3].upper():
                     pid = parts[-1]
                     if pid and pid != str(os.getpid()):
-                        subprocess.run(f"taskkill /F /PID {pid}", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        subprocess.run(
+                            f"taskkill /F /PID {pid}",
+                            shell=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
         else:
-            import subprocess
-            subprocess.run(f"lsof -ti:{port} | xargs kill -9", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1.0)
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            my_pid = str(os.getpid())
+            pids = [
+                pid.strip()
+                for pid in result.stdout.split()
+                if pid.strip() and pid.strip() != my_pid
+            ]
+            if pids:
+                subprocess.run(
+                    ["kill", "-9", *pids],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+
+        for _ in range(15):
+            time.sleep(0.2)
+            if not _port_in_use(port):
+                return
+        print(f"[!] Uyarı: Port {port} hâlâ meşgul — başka süreç olabilir.")
     except Exception as e:
         print(f"[*] Port kontrol bildirimi: {e}")
 

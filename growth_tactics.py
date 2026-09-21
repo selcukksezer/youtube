@@ -285,6 +285,119 @@ def generate_live_stream_loop_command(video_path: str, stream_key: str, rtmp_url
         f'-f flv "{rtmp_url}/{stream_key}"'
     )
 
+def build_tier1_adaptation_brief(topic: str, target_country: str = "US", lang: str = "en") -> Dict[str, Any]:
+    """
+    Item 321: Tier-1 ülke adaptasyonu — EN metadata + EST yayın penceresi operatör brifi.
+    """
+    from proof_archiver import ProofArchiver
+
+    rpm = ProofArchiver.get_tier1_rpm_multiplier(target_country)
+    if lang == "en":
+        return {
+            "item": "321",
+            "topic": topic,
+            "target_country": target_country,
+            "language": "en",
+            "title_template": f"Why {topic} Changes Everything (Most People Miss This) #Shorts",
+            "hook_template": f"Nobody talks about this side of {topic} — and it might explain everything.",
+            "upload_window": "19:00-21:00 America/New_York (EST/EDT)",
+            "rpm_advisory": rpm,
+            "studio_actions": [
+                "Set channel default language to English.",
+                "Use EN titles, descriptions, and pinned comments.",
+                "Schedule publish in US peak window via Studio → Visibility → Schedule.",
+            ],
+        }
+    return {
+        "item": "321",
+        "topic": topic,
+        "target_country": target_country,
+        "language": "en",
+        "title_template": f"Why {topic} Changes Everything #Shorts",
+        "hook_template": f"{topic} hakkında kimse konuşmuyor — işte gerçek sebep.",
+        "upload_window": "19:00-21:00 America/New_York (EST/EDT)",
+        "rpm_advisory": rpm,
+        "studio_actions": [
+            "Kanal varsayılan dilini İngilizce yapın.",
+            "Başlık, açıklama ve sabit yorum EN üretin; operatör Studio'da yapıştırır.",
+            "Studio → Görünürlük → Zamanla ile ABD pik saatinde yayınlayın.",
+        ],
+    }
+
+
+def export_growth_operator_pack(
+    topic: str,
+    *,
+    user_comment: str = "",
+    username: str = "Takipçi",
+    related_video_url: str = "",
+    long_form_title: str = "",
+    series_title: str = "",
+    episode_num: int = 1,
+    product_name: str = "",
+    affiliate_url: str = "",
+    niche_a_id: str = "stoic_cyberpunk",
+    niche_b_id: str = "mythology_ai_epic",
+    loop_video_path: str = "output/latest_short.mp4",
+    stream_key: str = "(Studio stream key)",
+    title: str = "",
+    description: str = "",
+    tags: List[str] = None,
+    target_country: str = "US",
+    lang: str = "tr",
+) -> Dict[str, Any]:
+    """
+    Items 311-322, 384 — growth taktikleri operatör paketi.
+    Otomatik Studio upload kapsam dışı; JSON checklist ile manuel uygulama.
+    """
+    from hybrid_niches import collide_two_niches, generate_episodic_series_hook
+    from viral_seo_agent import generate_related_video_bridge
+
+    clean_title = title or topic
+    tag_list = tags or [topic.replace(" ", ""), "Shorts", "Viral"]
+    cross_platform = format_cross_platform_metadata(clean_title, description or clean_title, tag_list)
+
+    pack: Dict[str, Any] = {
+        "pack_type": "growth_operator_pack",
+        "items_covered": "311-322,384",
+        "topic": topic,
+        "manual_studio_only": True,
+        "comment_to_video": create_comment_to_video_hook(user_comment or f"{topic} hakkında ne düşünüyorsunuz?", username),
+        "community_poll": generate_community_poll(topic),
+        "poll_winner_brief": plan_shorts_from_poll_winner(topic, generate_community_poll(topic)["options"][0]),
+        "related_video_bridge": generate_related_video_bridge(
+            clean_title,
+            related_video_url or "https://youtube.com/watch?v=PLACEHOLDER",
+            long_form_title or f"Full {topic} Documentary",
+        ),
+        "series_format": generate_episodic_series_hook(
+            series_title or f"{topic} Serisi",
+            episode_num=episode_num,
+            lang=lang,
+        ),
+        "live_stream_loop_ffmpeg": generate_live_stream_loop_command(loop_video_path, stream_key),
+        "weekly_live_plan": generate_weekly_live_stream_plan(lang=lang),
+        "affiliate_pinned_cta": generate_affiliate_pinned_cta(product_name or topic, affiliate_url, lang=lang),
+        "niche_collision": collide_two_niches(niche_a_id, niche_b_id),
+        "tier1_adaptation": build_tier1_adaptation_brief(topic, target_country=target_country, lang=lang),
+        "cross_platform": cross_platform,
+        "ab_test_variants": generate_ab_test_variants(topic),
+        "studio_checklist": [
+            "311: Top yorumu hook olarak kullanın; render sonrası manuel Studio upload.",
+            "312: Community poll atın; kazanan seçeneği 2 saat içinde Shorts brifine çevirin.",
+            "313: Açıklamaya related video link ekleyin (Shorts end screen yok).",
+            "314: Başlıkta Bölüm N / Part N formatını koruyun.",
+            "315: 24/7 stream için FFmpeg komutunu OBS veya sunucuda çalıştırın.",
+            "319: Affiliate pinned comment — şeffaf #ad disclosure ile.",
+            "320: İki niş çarpışması prompt'unu Director planına enjekte edin.",
+            "321: Tier-1 EN metadata + EST upload penceresi.",
+            "322: TikTok/Reels caption paketini cross-post için kopyalayın.",
+            "384: Haftalık canlı yayın slotunu Studio'da planlayın.",
+        ],
+    }
+    return pack
+
+
 def check_copyright_risk(script_text: str, search_queries: List[str]) -> Dict[str, Any]:
     """
     Item 65: Copyright and Policy Pre-check.

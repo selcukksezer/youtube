@@ -123,9 +123,9 @@ class ScenePlan:
 @dataclass
 class QualityThresholds:
     min_duration: float = 38.0
-    max_duration: float = 48.0
-    target_duration: float = 42.0
-    min_scenes: int = 14
+    max_duration: float = 60.0
+    target_duration: float = 48.0
+    min_scenes: int = 8
     max_audio_speed: float = 1.15
     max_av_delta: float = 0.05
     min_alignment_score: float = 0.25

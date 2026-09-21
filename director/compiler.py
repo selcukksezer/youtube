@@ -96,9 +96,9 @@ def compile_director_plan(
 
     try:
         from scenes.fallback import _generate_procedural_fallback_scenes
-        from scenes.narration_validate import plan_narration_usable
+        from scenes.narration_validate import plan_quality_usable
 
-        if not plan_narration_usable(raw_plan.get("scenes") or []):
+        if not plan_quality_usable(raw_plan.get("scenes") or []):
             print("  [Director] Anlatım boş veya placeholder — prosedürel fallback enjekte ediliyor")
             fb = _generate_procedural_fallback_scenes(
                 title,
