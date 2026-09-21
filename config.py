@@ -74,8 +74,25 @@ GROK_API_KEY = os.getenv("GROK_API_KEY", "")
 GROK_MODEL = "grok-4.20-reasoning"
 
 # Item 113: AI Görsel Üretimi — FAL.ai + Stability AI
-FAL_API_KEY = os.getenv("FAL_API_KEY", "")           # https://fal.ai  (flux, stable-diffusion)
-STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "")  # https://stability.ai API
+FAL_API_KEY = os.getenv("FAL_API_KEY", "") or os.getenv("FAL_KEY", "")  # fal.ai Wan/Hunyuan video
+STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "")  # https://stability.ai API (SVD API deprecated)
+
+# Free / freemium AI text-to-video providers (see RESEARCH_FREE_AI_VIDEO_APIS.md)
+HF_TOKEN = os.getenv("HF_TOKEN", "") or os.getenv("HUGGINGFACE_TOKEN", "")
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN", "") or os.getenv("REPLICATE_API_KEY", "")
+DEEPINFRA_TOKEN = os.getenv("DEEPINFRA_TOKEN", "") or os.getenv("DEEPINFRA_API_KEY", "")
+PIAPI_KEY = os.getenv("PIAPI_KEY", "") or os.getenv("PIAPI_API_KEY", "")
+LOCAL_AI_VIDEO_URL = os.getenv("LOCAL_AI_VIDEO_URL", "")  # ComfyUI / self-host Wan proxy
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")  # optional paid Hailuo
+
+# Visual mixer: AI + stock + procedural as equal peers (not fallback-only)
+# Default USE_AI_VIDEO = true when any video key present (resolved at runtime)
+USE_AI_VIDEO = os.getenv("USE_AI_VIDEO", "").lower()  # "", "true", "false"
+VISUAL_MIX_AI = float(os.getenv("VISUAL_MIX_AI", "0.4") or 0.4)
+VISUAL_MIX_STOCK = float(os.getenv("VISUAL_MIX_STOCK", "0.4") or 0.4)
+VISUAL_MIX_PROCEDURAL = float(os.getenv("VISUAL_MIX_PROCEDURAL", "0.2") or 0.2)
+VISUAL_MIX_SEED = os.getenv("VISUAL_MIX_SEED", "")
+
 # ══════════════════════════════════════════════════════════════
 #  VIDEO SOURCES — 5 free sources, all searched per scene
 #  Priority: Pexels → Pixabay → Coverr → Mixkit → Videvo

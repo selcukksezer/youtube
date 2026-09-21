@@ -248,112 +248,111 @@ def slice_random_background_loop(source_video_path: str, project_dir: str,
     return source_video_path
 
 
-def _generate_fallback_clip(scene_index, project_dir, target_duration=7):
+def _generate_fallback_clip(scene_index, project_dir, target_duration=7,
+                            scene_description="", visual_intent=None,
+                            narration="", niche_id=""):
     """
-    Failsafe generator: Creates a 1080x1920 HD animated/colored visual clip
-    when no stock video could be retrieved from external APIs.
-    Guarantees the video pipeline NEVER fails due to missing stock clips.
+    Intentional procedural tier when stock fails: kinetic typography first,
+    then abstract cinematic gradient. Never solid color or "Gorsel Bulunamadi".
     """
+    intent = visual_intent if isinstance(visual_intent, dict) else (
+        visual_intent.to_dict() if hasattr(visual_intent, "to_dict") else None
+    )
     try:
-        from moviepy.editor import ColorClip, TextClip, CompositeVideoClip
-        path = os.path.join(project_dir, f"s{scene_index:03d}_procedural_fallback.mp4")
-        
-        # Color palette cycling based on scene index
-        colors = [(15, 20, 35), (20, 15, 35), (35, 15, 25), (15, 30, 35), (25, 20, 15)]
-        col = colors[scene_index % len(colors)]
-        
-        bg_clip = ColorClip(size=(config.VIDEO_WIDTH, config.VIDEO_HEIGHT), color=col, duration=target_duration)
-
-        try:
-            text_clip = TextClip("Gorsel Bulunamadi", fontsize=70, color='white', bg_color='rgba(0,0,0,100)')
-            text_clip = text_clip.set_position('center').set_duration(target_duration)
-            final_clip = CompositeVideoClip([bg_clip, text_clip])
-        except Exception:
-            # Fallback if ImageMagick is missing or fails
-            final_clip = bg_clip
-
-        final_clip.write_videofile(path, fps=config.FPS, codec="libx264", audio=False, preset="ultrafast", logger=None)
-        final_clip.close()
-        
-        if os.path.exists(path) and os.path.getsize(path) > 1000:
-            print(f"    [OK] [FAILSAFE] Created procedural fallback clip ({target_duration}s)")
-            return path
+        from visuals.motion_graphics import build_kinetic_clip
+        path = os.path.join(project_dir, f"s{scene_index:03d}_kinetic_procedural.mp4")
+        text = (narration or scene_description or "").strip()
+        out = build_kinetic_clip(
+            path, target_duration, text=text, niche_id=niche_id or "", scene_index=scene_index,
+        )
+        if out:
+            print(f"    [OK] [PROCEDURAL] Kinetic typography ({target_duration}s)")
+            return out
     except Exception as e:
-        print(f"    [FAILSAFE] Warning generating fallback clip: {e}")
+        print(f"    [PROCEDURAL] Kinetic note: {e}")
+    try:
+        from render.procedural_visuals import build_procedural_clip, resolve_motif
+        path = os.path.join(project_dir, f"s{scene_index:03d}_procedural_fallback.mp4")
+        motif = resolve_motif(scene_description or narration or "", intent, niche_id=niche_id or "")
+        out = build_procedural_clip(path, target_duration, scene_index=scene_index, motif=motif)
+        if out:
+            print(f"    [OK] [PROCEDURAL] Abstract cinematic ({motif}, {target_duration}s)")
+            return out
+    except Exception as e:
+        print(f"    [PROCEDURAL] Warning generating fallback clip: {e}")
     return None
 
-def search_and_download(queries, scene_index, project_dir, target_duration=7,
-                        scene_description="", preferred_source=None, cancel_check=None,
-                        allow_custom=True, narration="", visual_intent=None,
-                        must_exclude=None, recent_texts=None):
-    global _source_counter
-
-    if isinstance(queries, str):
-        queries = [queries]
-
-    # Merge must_exclude from intent
+def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
+                      scene_description="", preferred_source=None, cancel_check=None,
+                      narration="", visual_intent=None, must_exclude=None,
+                      recent_texts=None, niche_id="", intent_dict=None):
+    """Stock-only path (license-aware visuals + legacy providers). No procedural."""
     exclude = list(must_exclude or [])
-    if isinstance(visual_intent, dict):
-        exclude.extend(visual_intent.get("must_exclude") or [])
-        if not narration:
-            narration = visual_intent.get("subject", "")
-    elif visual_intent is not None:
-        exclude.extend(getattr(visual_intent, "must_exclude", []) or [])
+    intent_dict = intent_dict if isinstance(intent_dict, dict) else {}
 
-    # Drop queries that themselves contain excluded pollution terms
+    if not preferred_source:
+        try:
+            from visuals.fetch import fetch_open_visual
+            from visuals.query_builder import build_shot_queries, validate_query_list
+            shot_q = validate_query_list(queries or [], niche_id=niche_id)
+            if not shot_q:
+                shot_q = build_shot_queries(
+                    narration=narration or "",
+                    scene_description=scene_description or "",
+                    niche_id=niche_id or "",
+                    visual_intent=intent_dict,
+                )
+            path = fetch_open_visual(
+                shot_q,
+                scene_index=scene_index,
+                project_dir=project_dir,
+                target_duration=target_duration,
+                narration=narration or "",
+                scene_description=scene_description or "",
+                niche_id=niche_id or "",
+                visual_intent=intent_dict,
+                allow_procedural=False,
+                caption_text=narration or scene_description or "",
+            )
+            if path:
+                return path
+        except Exception as exc:
+            print(f"    [visuals] layer note: {exc} — falling back to legacy providers")
+
     clean_queries = []
-    for q in queries:
+    for q in queries or []:
         ql = (q or "").lower()
         if exclude and any(ex.lower() in ql for ex in exclude):
             continue
         clean_queries.append(q)
     if not clean_queries:
-        # Fall back to intent subject only
-        if isinstance(visual_intent, dict) and visual_intent.get("search_queries"):
-            clean_queries = list(visual_intent["search_queries"])
-        elif visual_intent is not None and getattr(visual_intent, "search_queries", None):
-            clean_queries = list(visual_intent.search_queries)
+        if intent_dict.get("search_queries"):
+            clean_queries = list(intent_dict["search_queries"])
         else:
-            clean_queries = list(queries)
+            clean_queries = list(queries or [])
 
-    # Add general fallback queries — skip if they hit must_exclude
-    extended_queries = list(clean_queries)
-    for fallback_q in ["cinematic atmosphere", "dramatic light particles", "nature aerial", "architectural detail"]:
-        if fallback_q not in extended_queries:
-            if exclude and any(ex.lower() in fallback_q for ex in exclude):
-                continue
-            extended_queries.append(fallback_q)
+    try:
+        from visuals.query_builder import build_shot_queries
+        extended_queries = list(clean_queries)
+        for fq in build_shot_queries(
+            narration=narration or "",
+            scene_description=scene_description or "",
+            niche_id=niche_id or "",
+            visual_intent=intent_dict,
+            max_queries=4,
+        ):
+            if fq not in extended_queries:
+                if exclude and any(ex.lower() in fq.lower() for ex in exclude):
+                    continue
+                extended_queries.append(fq)
+    except Exception:
+        extended_queries = list(clean_queries)
+        for fallback_q in ["architectural detail soft light", "nature aerial calm", "abstract light particles dark"]:
+            if fallback_q not in extended_queries:
+                if exclude and any(ex.lower() in fallback_q for ex in exclude):
+                    continue
+                extended_queries.append(fallback_q)
 
-    # Item 98: Kendi Çektiğiniz Arka Plan Kütüphanesi (Custom 4K/HD Footage Pool)
-    custom_bg_dir = os.path.join(config.BASE_DIR, "assets", "custom_backgrounds")
-    if allow_custom and os.path.exists(custom_bg_dir):
-        valid_exts = (".mp4", ".mov", ".mkv", ".webm")
-        custom_files = [
-            os.path.join(custom_bg_dir, f) for f in os.listdir(custom_bg_dir)
-            if f.lower().endswith(valid_exts) and os.path.isfile(os.path.join(custom_bg_dir, f))
-        ]
-        if custom_files:
-            # Filter unused custom clips
-            available_custom = [
-                f for f in custom_files
-                if f not in _blocked_stock_ids() and not database.source_asset_was_used(f"custom:{_file_hash(f)}")
-            ]
-            if not available_custom:
-                custom_files = []
-            if custom_files and available_custom:
-                raw_custom = available_custom[scene_index % len(available_custom)]
-            else:
-                raw_custom = None
-            if raw_custom:
-                source_hash = _file_hash(raw_custom)
-                database.record_source_asset(f"custom:{source_hash}", raw_custom, source_hash, "custom")
-                _job_used_ids.add(raw_custom)
-                selected_custom = slice_random_background_loop(raw_custom, project_dir, scene_index, target_duration=target_duration)
-                print(f"    [OK] [KENDİ ÇEKİM HAVUZU - Madde 98 & 139] Özel kütüphane klibi dinamik kesildi: {os.path.basename(selected_custom)}")
-                return selected_custom
-
-    # A requested provider is tried exclusively so the render pipeline can
-    # deliberately mix suppliers; the default retains round-robin behavior.
     if preferred_source:
         source_order = [
             source for source in ALL_SOURCES
@@ -369,9 +368,6 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
     for qi, query in enumerate(extended_queries):
         if cancel_check and cancel_check():
             return None
-        label = "primary" if qi == 0 else "secondary" if qi < len(queries) else "fallback"
-
-        # Search sources for this query
         all_results = []
         for src_name, src_fn in source_order:
             if cancel_check and cancel_check():
@@ -379,11 +375,8 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
             results = src_fn(query)
             if results:
                 all_results.extend(results)
-
         if not all_results:
             continue
-
-        # Score and deduplicate (technical + semantic)
         scored = []
         for v in all_results:
             source_key = f"{v['source']}:{v['id']}"
@@ -397,10 +390,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
             )
             if sc > 0:
                 scored.append((sc, v))
-
         scored.sort(key=lambda x: x[0], reverse=True)
-
-        # Download best
         for sc, v in scored[:7]:
             if cancel_check and cancel_check():
                 return None
@@ -420,12 +410,140 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
                 print(f"    [OK] [{v['source'].upper()}] {v['fw']}x{v['fh']} {v['duration']}s score:{sc:.0f}")
                 return path
             time.sleep(0.1)
+    return None
 
+
+def search_and_download(queries, scene_index, project_dir, target_duration=7,
+                        scene_description="", preferred_source=None, cancel_check=None,
+                        allow_custom=True, narration="", visual_intent=None,
+                        must_exclude=None, recent_texts=None, niche_id=""):
+    global _source_counter
+
+    if isinstance(queries, str):
+        queries = [queries]
+
+    # Merge must_exclude from intent
+    exclude = list(must_exclude or [])
+    if isinstance(visual_intent, dict):
+        exclude.extend(visual_intent.get("must_exclude") or [])
+        if not narration:
+            narration = visual_intent.get("subject", "")
+    elif visual_intent is not None:
+        exclude.extend(getattr(visual_intent, "must_exclude", []) or [])
+
+    intent_dict = visual_intent if isinstance(visual_intent, dict) else (
+        visual_intent.to_dict() if hasattr(visual_intent, "to_dict") else {}
+    )
+
+    # Item 98: custom footage pool first
+    custom_bg_dir = os.path.join(config.BASE_DIR, "assets", "custom_backgrounds")
+    if allow_custom and os.path.exists(custom_bg_dir):
+        valid_exts = (".mp4", ".mov", ".mkv", ".webm")
+        custom_files = [
+            os.path.join(custom_bg_dir, f) for f in os.listdir(custom_bg_dir)
+            if f.lower().endswith(valid_exts) and os.path.isfile(os.path.join(custom_bg_dir, f))
+        ]
+        if custom_files:
+            available_custom = [
+                f for f in custom_files
+                if f not in _blocked_stock_ids() and not database.source_asset_was_used(f"custom:{_file_hash(f)}")
+            ]
+            if available_custom:
+                raw_custom = available_custom[scene_index % len(available_custom)]
+                source_hash = _file_hash(raw_custom)
+                database.record_source_asset(f"custom:{source_hash}", raw_custom, source_hash, "custom")
+                _job_used_ids.add(raw_custom)
+                selected_custom = slice_random_background_loop(raw_custom, project_dir, scene_index, target_duration=target_duration)
+                print(f"    [OK] [KENDİ ÇEKİM HAVUZU - Madde 98 & 139] Özel kütüphane klibi dinamik kesildi: {os.path.basename(selected_custom)}")
+                return selected_custom
+
+    # ── Visual mixer: AI + stock + procedural as equal peers ─────────────
+    try:
+        from visuals.ai_video import (
+            VisualSource,
+            ai_video_enabled,
+            assign_visual_source,
+            generate_ai_clip,
+            peer_failover_order,
+        )
+        ai_on = ai_video_enabled()
+        primary = assign_visual_source(
+            scene_index,
+            niche_id=niche_id or "",
+            seed=getattr(config, "VISUAL_MIX_SEED", None) or None,
+            ai_available=ai_on,
+        )
+        order = peer_failover_order(primary, niche_id=niche_id or "", ai_available=ai_on)
+        print(f"    [MIX] scene={scene_index} primary={primary.value} order={[s.value for s in order]}")
+    except Exception as exc:
+        print(f"    [MIX] unavailable ({exc}) — stock→procedural")
+        order = None
+        VisualSource = None  # type: ignore
+        generate_ai_clip = None  # type: ignore
+
+    if order and VisualSource is not None:
+        for src in order:
+            if cancel_check and cancel_check():
+                return None
+            if src == VisualSource.AI and generate_ai_clip is not None:
+                out = os.path.join(project_dir, f"s{scene_index:03d}_ai_video.mp4")
+                try:
+                    result = generate_ai_clip(
+                        narration=narration or "",
+                        scene_description=scene_description or "",
+                        niche_id=niche_id or "",
+                        duration=min(float(target_duration), 5.0),
+                        aspect="9:16",
+                        seed=scene_index * 9973,
+                        output_path=out,
+                    )
+                    if result and result.path:
+                        try:
+                            from visuals.fetch import _job_manifest
+                            _job_manifest.append(result.to_manifest(scene_index))
+                        except Exception:
+                            pass
+                        return result.path
+                except Exception as exc:
+                    print(f"    [MIX:ai] {exc}")
+                continue
+            if src == VisualSource.STOCK:
+                path = _fetch_stock_clip(
+                    queries, scene_index, project_dir, target_duration,
+                    scene_description=scene_description, preferred_source=preferred_source,
+                    cancel_check=cancel_check, narration=narration, visual_intent=visual_intent,
+                    must_exclude=exclude, recent_texts=recent_texts, niche_id=niche_id,
+                    intent_dict=intent_dict,
+                )
+                if path:
+                    return path
+                continue
+            if src == VisualSource.PROCEDURAL:
+                fallback_path = _generate_fallback_clip(
+                    scene_index, project_dir, target_duration,
+                    scene_description=scene_description, visual_intent=visual_intent,
+                    narration=narration, niche_id=niche_id,
+                )
+                if fallback_path:
+                    return fallback_path
+
+    # Legacy path if mixer import failed
+    path = _fetch_stock_clip(
+        queries, scene_index, project_dir, target_duration,
+        scene_description=scene_description, preferred_source=preferred_source,
+        cancel_check=cancel_check, narration=narration, visual_intent=visual_intent,
+        must_exclude=exclude, recent_texts=recent_texts, niche_id=niche_id,
+        intent_dict=intent_dict,
+    )
+    if path:
+        return path
     if cancel_check and cancel_check():
         return None
-
-    # If all API searches fail, use procedural failsafe clip generator
-    fallback_path = _generate_fallback_clip(scene_index, project_dir, target_duration)
+    fallback_path = _generate_fallback_clip(
+        scene_index, project_dir, target_duration,
+        scene_description=scene_description, visual_intent=visual_intent,
+        narration=narration, niche_id=niche_id,
+    )
     if fallback_path:
         return fallback_path
 
