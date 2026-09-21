@@ -413,23 +413,27 @@ def process_video_task(req: VideoRenderRequest):
             from scenes.retention_hooks import ensure_retention_hooks_on_plan
 
             # Human-craft BEFORE hooks so mute hook / POV / shot holds survive into Director
-            try:
-                from craft import apply_human_craft
-                plan = apply_human_craft(
-                    plan,
-                    title=keyword,
-                    niche_id=locked_niche,
-                    language=target_lang,
-                    variation=orig_attempt,
-                )
-                db = (plan.get("human_craft") or {}).get("discovery_beast") or {}
-                _log(
-                    f"[HumanCraft] POV={(plan.get('human_craft') or {}).get('pov_angle')} "
-                    f"discovery={db.get('score')} pass={db.get('pass')}",
-                    15,
-                )
-            except Exception as hc_err:
-                _log(f"[HumanCraft] skip: {hc_err}")
+            # SAFE_MODE skips craft — it can shred procedural narrations into fragment scenes.
+            if not getattr(config, "RENDER_SAFE_MODE", False):
+                try:
+                    from craft import apply_human_craft
+                    plan = apply_human_craft(
+                        plan,
+                        title=keyword,
+                        niche_id=locked_niche,
+                        language=target_lang,
+                        variation=orig_attempt,
+                    )
+                    db = (plan.get("human_craft") or {}).get("discovery_beast") or {}
+                    _log(
+                        f"[HumanCraft] POV={(plan.get('human_craft') or {}).get('pov_angle')} "
+                        f"discovery={db.get('score')} pass={db.get('pass')}",
+                        15,
+                    )
+                except Exception as hc_err:
+                    _log(f"[HumanCraft] skip: {hc_err}")
+            else:
+                _log("[HumanCraft] RENDER_SAFE_MODE — craft bypass", 15)
 
             plan = ensure_retention_hooks_on_plan(
                 plan,
