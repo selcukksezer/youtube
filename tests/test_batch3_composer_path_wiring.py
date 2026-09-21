@@ -56,7 +56,11 @@ class TestBatch3ComposerPathWiring(unittest.TestCase):
         out = enrich_plan_scenes(plan, lang="tr")
         self.assertTrue(out["scenes"][0].get("handheld_shake"))
         last_q = " ".join(out["scenes"][-1].get("search_queries") or []).lower()
-        self.assertTrue("gaze" in last_q or "camera" in last_q or "looking" in last_q)
+        # CLOSING_GAZE_QUERY_HINTS includes "eye contact …" (no gaze/camera/looking tokens).
+        self.assertTrue(
+            any(tok in last_q for tok in ("gaze", "camera", "looking", "eye contact")),
+            msg=f"closing gaze hint missing from queries: {last_q!r}",
+        )
 
     def test_item_224_spiral_overlay(self):
         clip = ColorClip(size=(720, 1280), color=(10, 10, 30), duration=3.0)

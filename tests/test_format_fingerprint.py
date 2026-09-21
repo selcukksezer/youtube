@@ -25,7 +25,8 @@ class TestFormatFingerprint(unittest.TestCase):
         fp = extract_format_fingerprint_from_title("3 kural ile disiplin", hook_analysis="📊 Sayısal Liste")
         self.assertEqual(fp["scene_count"], 6)
         self.assertIn("Liste", fp["hook_style"])
-        self.assertAlmostEqual(fp["avg_scene_duration"], 7.0)
+        # Shorts cadence target ~4s/scene (not legacy 7s mid-form estimate).
+        self.assertAlmostEqual(fp["avg_scene_duration"], 4.0)
 
     def test_aggregate_fingerprint(self):
         samples = [

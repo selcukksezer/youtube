@@ -1075,7 +1075,8 @@ def apply_keyword_white_flash_overlay(
         pass
 
     w, h = base_clip.size
-    fps = base_clip.fps or 30.0
+    # ColorClip and some ImageClips omit .fps until set_fps(); getattr avoids AttributeError.
+    fps = getattr(base_clip, "fps", None) or 30.0
     flash_dur = min(duration, max(0.05, base_clip.duration - timestamp))
     if flash_dur <= 0 or timestamp >= base_clip.duration:
         return base_clip

@@ -77,7 +77,8 @@ class TestSection4Items271275(unittest.TestCase):
         self.assertEqual(len(arc["phases"]), 4)
         ranges = [p["time_range"] for p in arc["phases"]]
         self.assertIn("0 - 3s", ranges[0])
-        self.assertIn("36 - 45s", ranges[-1])
+        # Percent arc: climax ends at 75% of duration (45 * 0.75 → 34s), not a fixed 36s lock.
+        self.assertIn("34 - 45s", ranges[-1])
 
     def test_item_275_retention_score_and_hook_goal(self):
         arc = ViralRetentionEngine.build_shorts_story_arc_breakdown()

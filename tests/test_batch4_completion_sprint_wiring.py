@@ -81,15 +81,22 @@ class TestBatch4CompletionSprintWiring(unittest.TestCase):
         self.assertIn("healthcheck", content)
 
     def test_item_439_encrypted_db_backup(self):
+        import sqlite3
         import database
 
         self.assertTrue(hasattr(database, "encrypted_db_backup"))
         src = inspect.getsource(database.encrypted_db_backup)
         self.assertIn("encrypted", src.lower())
+        # Online backup API requires a real SQLite file (not a fake byte stub).
         with tempfile.TemporaryDirectory() as tmp:
             test_db = os.path.join(tmp, "shorts.db")
-            with open(test_db, "wb") as fh:
-                fh.write(b"sqlite-test")
+            conn = sqlite3.connect(test_db)
+            try:
+                conn.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+                conn.execute("INSERT INTO t(id) VALUES (1)")
+                conn.commit()
+            finally:
+                conn.close()
             old_path = database.DB_PATH
             database.DB_PATH = test_db
             try:
@@ -97,6 +104,14 @@ class TestBatch4CompletionSprintWiring(unittest.TestCase):
                 self.assertTrue(enc and os.path.isfile(enc))
                 with open(enc, "rb") as fh:
                     self.assertTrue(fh.read(8).startswith(b"YTDBKP1"))
+                # Round-trip decrypt must yield a readable SQLite DB.
+                plain = os.path.join(tmp, "restored.db")
+                database.decrypt_db_backup(enc, plain, passphrase="test-pass")
+                check = sqlite3.connect(plain)
+                try:
+                    self.assertEqual(check.execute("SELECT id FROM t").fetchone()[0], 1)
+                finally:
+                    check.close()
             finally:
                 database.DB_PATH = old_path
 

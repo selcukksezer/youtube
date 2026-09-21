@@ -76,8 +76,15 @@ class TestSection7Items411425(unittest.TestCase):
         from render import ffmpeg_graph
         from video_composer import _merge
 
+        # Graph renderer uses -filter_complex; MoviePy merge path uses a -vf chain
+        # (color/unsharp/grain/vignette) which is the intentional dual-path design.
         self.assertIn("filter_complex", inspect.getsource(ffmpeg_graph.render_with_ffmpeg_graph))
-        self.assertIn("filter_complex", inspect.getsource(_merge))
+        merge_src = inspect.getsource(_merge)
+        self.assertTrue(
+            "filter_complex" in merge_src or "-vf" in merge_src,
+            "merge path must apply ffmpeg filters via filter_complex or -vf",
+        )
+        self.assertIn("get_unsharp_filter", merge_src)
 
     def test_item_419_memory_cleanup_in_composer(self):
         from video_composer import compose_video

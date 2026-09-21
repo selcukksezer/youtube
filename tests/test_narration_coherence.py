@@ -84,8 +84,18 @@ class TestSplitVerbRepair(unittest.TestCase):
     def test_validate_and_fix_also_merges(self):
         scenes = _wedding_dna_broken_scenes()
         fixed, issues = validate_and_fix_scenes(scenes)
-        self.assertEqual(len(fixed), 13)
-        self.assertIn("ilan etti", fixed[10]["narration"].lower())
+        # MIN_WORDS_PER_SCENE merges also collapse short beats (14 → fewer than
+        # the single split-verb merge alone), so assert coherence not a fixed length.
+        self.assertLess(len(fixed), len(scenes))
+        joined = " ".join((s.get("narration") or "") for s in fixed).lower()
+        self.assertIn("ilan etti", joined)
+        self.assertFalse(any(
+            detect_split_verb_pair(
+                (fixed[i].get("narration") or ""),
+                (fixed[i + 1].get("narration") or ""),
+            )
+            for i in range(len(fixed) - 1)
+        ))
 
     def test_wedding_dna_compile_coherent(self):
         plan = {"title": WEDDING_DNA_TITLE, "scenes": _wedding_dna_broken_scenes()}
