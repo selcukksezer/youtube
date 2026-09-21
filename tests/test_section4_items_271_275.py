@@ -68,8 +68,11 @@ class TestSection4Items271275(unittest.TestCase):
         out = enrich_audio_visual_contrast_scenes(scenes, niche_id="13_mystery_paranormal")
         climax = next(s for s in out if s.get("audio_visual_contrast"))
         joined = " ".join(climax.get("search_queries") or []).lower()
-        self.assertTrue(any("shock" in q or "explosion" in q or "horror" in q for q in climax["search_queries"]))
-        self.assertTrue("horror" in joined or "shock" in joined or "explosion" in joined)
+        # Mystery pack allows shock bank; every bank entry carries shock|explosion|horror.
+        self.assertTrue(
+            any(tok in joined for tok in ("shock", "explosion", "horror")),
+            msg=f"expected shock visual query, got {climax.get('search_queries')!r}",
+        )
 
 
     def test_item_274_story_arc_breakdown(self):

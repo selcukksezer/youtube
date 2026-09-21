@@ -19,29 +19,34 @@ _SHOCK_VISUAL_QUERIES = [
     "explosion shock dramatic slow motion",
     "horror reveal dramatic lightning strike",
     "extreme close up shocked eye fear",
-    "disaster aftermath dramatic cinematic",
+    # Keep a shock|horror|explosion token so Item 273 assertions stay deterministic.
+    "disaster aftermath shock cinematic",
 ]
 
 
 def enrich_cinematic_search_queries(queries: List[str], mood: str = "epic") -> List[str]:
     """
-    Item 89: Generic search queries are enriched with cinematic adjectives.
-    Validates that each query contains words like:
-    cinematic, drone, aerial, slow motion, macro, atmospheric, 4k, moody.
+    Item 89 (revised 2026 research): stock APIs want SHOT grammar
+    (subject + action + setting + light), NOT 'cinematic 4k atmospheric' soup.
+    Strip banned tokens; keep concrete visual nouns.
     """
-    cinematic_adjectives = [
-        "cinematic", "drone", "aerial", "slow motion", "macro", "atmospheric", "4k", "moody"
-    ]
+    ban = re.compile(
+        r"\b(cinematic|4k|8k|uhd|atmospheric|epic|viral|trending|aesthetic|"
+        r"beautiful|amazing|stunning|stock footage)\b",
+        re.I,
+    )
+    light_hints = ["soft natural light", "golden hour light", "dim practical light", "cool blue light"]
     enriched = []
-    for idx, q in enumerate(queries):
-        q_str = str(q).strip()
-        q_lower = q_str.lower()
-        if not any(adj in q_lower for adj in cinematic_adjectives):
-            adj = cinematic_adjectives[idx % len(cinematic_adjectives)]
-            enriched.append(f"{q_str} {adj}")
-        else:
-            enriched.append(q_str)
-    return enriched
+    for idx, q in enumerate(queries or []):
+        q_str = ban.sub(" ", str(q).strip())
+        q_str = re.sub(r"\s+", " ", q_str).strip(" ,.-")
+        if not q_str:
+            continue
+        # Ensure a lighting/setting cue without banned tokens
+        if not re.search(r"\b(light|dawn|dusk|night|interior|exterior|close.?up|macro|aerial)\b", q_str, re.I):
+            q_str = f"{q_str} {light_hints[idx % len(light_hints)]}"
+        enriched.append(q_str[:90])
+    return enriched or ["architectural detail soft natural light"]
 
 
 def _split_narration_cleanly(narration: str, cutaway_counter: int):
@@ -69,14 +74,14 @@ def _split_narration_cleanly(narration: str, cutaway_counter: int):
 
 
 def _differentiate_queries(queries: List[str], cutaway_counter: int):
-    adjs = ["macro closeup", "cinematic angle", "reaction detail", "slow motion cutaway"]
+    adjs = ["macro closeup", "side angle detail", "reaction detail", "slow push-in"]
     adj = adjs[cutaway_counter % len(adjs)]
     if not queries:
-        return ["cinematic visual", "dramatic lighting"], [f"cutaway {adj}", "atmospheric slow motion"]
+        return ["architectural detail soft light", "nature aerial calm"], [f"cutaway {adj}", "abstract light particles"]
     q1 = queries[0]
     q2 = queries[1] if len(queries) > 1 else f"{q1} {adj}"
-    q3 = queries[2] if len(queries) > 2 else "cinematic slow motion"
-    return [q1, q2], [f"{q2} {adj}", q3, "cinematic lighting"]
+    q3 = queries[2] if len(queries) > 2 else "abstract light particles dark"
+    return [q1, q2], [f"{q2} {adj}", q3, "soft natural light detail"]
 
 
 def enforce_visual_cadence_14(scenes: List[Dict[str, Any]], min_cadence: int = 14) -> List[Dict[str, Any]]:
