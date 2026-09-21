@@ -285,6 +285,14 @@ DEFAULT_EFFECT_MANIFEST = {
     "item_191_reverb_chamber": True,
     "item_195_epic_trailer_voice": True,
     "item_418_ffmpeg_graph": True,
+    # Visual bait — opt-in per niche family (default off)
+    "item_211_blur_bait": False,
+    "item_212_countdown": False,
+    "item_246_curiosity": False,
+    "item_232_sticky_banner": False,
+    "item_238_sticker": False,
+    "item_260_white_flash": False,
+    "item_201_pattern_interrupt": False,
 }
 
 # P0-07: calm/stoic publish mix — narration-forward, minimal SFX bed

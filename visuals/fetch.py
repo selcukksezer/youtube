@@ -144,7 +144,7 @@ def fetch_open_visual(
 ) -> Optional[str]:
     """
     Primary entry: license-safe multi-source fetch.
-    Returns local mp4 path or procedural kinetic path; never solid-color failsafe.
+    Returns local mp4 path, procedural kinetic path, or a palette color card last.
     """
     os.makedirs(project_dir, exist_ok=True)
     intent = visual_intent if isinstance(visual_intent, dict) else {}
@@ -273,4 +273,26 @@ def fetch_open_visual(
             return out
     except Exception as exc:
         print(f"    [visuals:abstract] {exc}")
+    try:
+        from .motion_graphics import build_solid_color_clip
+        path = os.path.join(project_dir, f"s{scene_index:03d}_solid_fallback.mp4")
+        out = build_solid_color_clip(
+            path, target_duration, niche_id=niche_id, scene_index=scene_index,
+        )
+        if out:
+            _job_manifest.append({
+                "scene_index": scene_index,
+                "path": out,
+                "uid": f"procedural_solid:{scene_index}",
+                "source": "procedural_solid",
+                "id": f"sol_{scene_index}",
+                "title": "procedural color card",
+                "kind": "procedural",
+                "license": {"license": "cc0", "source": "procedural", "safe": True},
+                "family": family_for_niche(niche_id),
+            })
+            print(f"    [OK] [visuals:solid] color card scene={scene_index}")
+            return out
+    except Exception as exc:
+        print(f"    [visuals:solid] {exc}")
     return None

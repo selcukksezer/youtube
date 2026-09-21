@@ -15,7 +15,15 @@ from compliance import (
 from compliance.viewer_score import compute_viewer_score
 from visuals.license import License, parse_cc_license, is_commercial_safe
 from visuals.query_builder import build_shot_queries, validate_query_list
-from visuals.motion_graphics import caption_lines, build_kinetic_clip
+from visuals.motion_graphics import (
+    caption_lines,
+    build_kinetic_clip,
+    build_solid_color_clip,
+    _escape_drawtext,
+    _quote_filter_path,
+    _drawtext_filter,
+    _pick_fontfile,
+)
 
 
 class TestLicenseParse(unittest.TestCase):
@@ -114,10 +122,66 @@ class TestViewerScore(unittest.TestCase):
 
 
 class TestKineticProcedural(unittest.TestCase):
+    _WHATSAPP_HOOK = (
+        "Hiç sordun mu: Bu mesajlaşmayı okuyunca ne düşündüğünü yoruma yaz. Einstein'ın Bu"
+    )
+
     def test_caption_lines(self):
         lines = caption_lines("Sabır imanın yarısıdır ve her zorluk bir kapı açar", max_words=12)
         self.assertTrue(1 <= len(lines) <= 3)
         self.assertTrue(all(len(L) <= 48 for L in lines))
+
+    def test_caption_lines_strips_einstein_stuffing(self):
+        lines = caption_lines(self._WHATSAPP_HOOK, max_words=12)
+        joined = " ".join(lines)
+        self.assertNotIn("Einstein", joined)
+        self.assertIn("mesajlaşmayı", joined)
+
+    def test_escape_drawtext_no_real_newline_or_ascii_apostrophe(self):
+        escaped = _escape_drawtext("A: B\nC'nin")
+        self.assertNotIn("\n", escaped)
+        self.assertIn("\\n", escaped)
+        self.assertIn("\\:", escaped)
+        self.assertNotIn("'", escaped)
+        self.assertIn("\u2019", escaped)
+
+    def test_quote_filter_path_wraps_spaces(self):
+        quoted = _quote_filter_path("/System/Library/Fonts/Supplemental/Arial Bold.ttf")
+        self.assertTrue(quoted.startswith("'") and quoted.endswith("'"))
+        self.assertIn("Arial Bold.ttf", quoted)
+
+    def test_turkish_drawtext_filtergraph_parses(self):
+        import subprocess
+        import imageio_ffmpeg
+
+        with tempfile.TemporaryDirectory() as td:
+            textfile = os.path.join(td, "cap.txt")
+            with open(textfile, "w", encoding="utf-8") as fh:
+                fh.write("\n".join(caption_lines(self._WHATSAPP_HOOK)))
+            font = _pick_fontfile() or "/System/Library/Fonts/Supplemental/Arial.ttf"
+            dt = _drawtext_filter(
+                fontfile=font,
+                textfile=textfile,
+                fontsize=44,
+                fontcolor="0xeee6e8",
+                x="(w-text_w)/2",
+                y="(h-text_h)/2",
+                fade_in=0.6,
+                borderw=2,
+                bordercolor="0xdc3c50@0.35",
+            )
+            graph = f"{dt},format=yuv420p"
+            self.assertNotIn("\n", graph)
+            ff = imageio_ffmpeg.get_ffmpeg_exe()
+            cmd = [
+                ff, "-y", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=0x111111:s=320x180:d=1:r=24",
+                "-filter_complex", graph,
+                "-t", "1", "-f", "null", "-",
+            ]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+            err = (res.stderr or b"").decode("utf-8", "ignore")
+            self.assertEqual(res.returncode, 0, err)
 
     def test_build_kinetic_clip(self):
         with tempfile.TemporaryDirectory() as td:
@@ -128,6 +192,25 @@ class TestKineticProcedural(unittest.TestCase):
             )
             self.assertTrue(path and os.path.isfile(path))
             self.assertGreater(os.path.getsize(path), 12_000)
+
+    def test_build_kinetic_clip_turkish_whatsapp_hook(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "kin_tr.mp4")
+            path = build_kinetic_clip(
+                out, duration=1.5, text=self._WHATSAPP_HOOK,
+                niche_id="20_whatsapp_chat_story", scene_index=0,
+            )
+            self.assertTrue(path and os.path.isfile(path))
+            self.assertGreater(os.path.getsize(path), 12_000)
+
+    def test_solid_color_clip_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "solid.mp4")
+            path = build_solid_color_clip(
+                out, duration=1.0, niche_id="20_whatsapp_chat_story", scene_index=0,
+            )
+            self.assertTrue(path and os.path.isfile(path))
+            self.assertGreater(os.path.getsize(path), 2_000)
 
 
 class TestEvaluatePlan(unittest.TestCase):

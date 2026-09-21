@@ -1078,6 +1078,54 @@ NICHE_FAMILY_MAP: Dict[str, str] = {
 # Item 273 shock/horror queries only for these families
 SHOCK_QUERY_FAMILIES = frozenset({"mystery", "dark"})
 
+# Visual/copy bait — opt-in by family. Calm niches inherit False.
+CLICKBAIT_FAMILIES = frozenset({"quiz", "mystery", "dark"})
+POLARIZE_FAMILIES = frozenset({"quiz", "mystery", "dark", "news", "entertainment"})
+DETECTIVE_BAIT_FAMILIES = frozenset({"quiz", "mystery", "dark"})
+SHOPPING_FAMILIES = frozenset({"product"})
+STICKY_BANNER_FAMILIES = frozenset({"quiz", "mystery", "dark", "news"})
+CALM_FAMILIES = frozenset({"stoic", "religious", "kids"})
+
+VISUAL_BAIT_MANIFEST_KEYS = (
+    "item_211_blur_bait",
+    "item_212_countdown",
+    "item_246_curiosity",
+    "item_232_sticky_banner",
+    "item_238_sticker",
+    "item_260_white_flash",
+    "item_201_pattern_interrupt",
+)
+
+
+def overlay_policy_for_niche(niche_id: str) -> Dict[str, Any]:
+    """Family overlay/copy policy. Clickbait and split are opt-in."""
+    family = get_niche_family(niche_id)
+    niche = NICHES.get(niche_id, NICHES["1_news_flash"])
+    kids = family == "kids"
+    clickbait = family in CLICKBAIT_FAMILIES and not kids
+    sticky = family in STICKY_BANNER_FAMILIES and not kids
+    allow_split = bool(niche.get("has_split_screen", False)) and not kids
+    return {
+        "family": family,
+        "clickbait_overlays": clickbait,
+        "allow_split": allow_split,
+        "allow_polarize": family in POLARIZE_FAMILIES and not kids,
+        "allow_detective_bait": family in DETECTIVE_BAIT_FAMILIES and not kids,
+        "allow_mistake_bait": family in DETECTIVE_BAIT_FAMILIES and not kids,
+        "allow_shopping": family in SHOPPING_FAMILIES and not kids,
+        "allow_sticky_banner": sticky,
+        "calm_floor": family in CALM_FAMILIES,
+        "effect_manifest_overrides": {
+            "item_211_blur_bait": clickbait,
+            "item_212_countdown": clickbait,
+            "item_246_curiosity": clickbait,
+            "item_232_sticky_banner": sticky,
+            "item_238_sticker": clickbait,
+            "item_260_white_flash": clickbait,
+            "item_201_pattern_interrupt": clickbait,
+        },
+    }
+
 SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
     "whatsapp": {
         "tr": (
@@ -1473,6 +1521,7 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
     from director.schema import STOIC_AUDIO_RULES, STOIC_EFFECT_MANIFEST_OVERRIDES
 
     niche = NICHES.get(niche_id, NICHES["1_news_flash"])
+    policy = overlay_policy_for_niche(niche.get("id", niche_id))
     music_terms = {
         "dramatic": "dramatic", "mysterious": "mysterious", "lofi": "lofi",
         "energetic": "energetic", "epic": "epic"
@@ -1489,18 +1538,26 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
         "competition_level": niche.get("competition_level", "medium"),
         "tier1_compatible": niche.get("tier1_compatible", False),
         "production_rules": {
-            "split_screen": niche.get("has_split_screen", False),
+            "split_screen": policy["allow_split"],
             "ken_burns": True,
             "subtitle_preset": "red_fire" if niche.get("default_music") == "dramatic" else "capcut_yellow",
             "music_keyword": music_terms.get(niche.get("default_music"), "ambient"),
             "use_dynamic_motion": True,
             "use_progress_bar": True,
-            "voice_style": niche["tone"]
+            "voice_style": niche["tone"],
+            "clickbait_overlays": policy["clickbait_overlays"],
+            "allow_polarize": policy["allow_polarize"],
+            "allow_detective_bait": policy["allow_detective_bait"],
+            "allow_mistake_bait": policy["allow_mistake_bait"],
+            "allow_shopping": policy["allow_shopping"],
+            "allow_sticky_banner": policy["allow_sticky_banner"],
         },
+        "overlay_policy": policy,
+        "effect_manifest_overrides": dict(policy["effect_manifest_overrides"]),
     }
     # P0-07: stoic/calm niches — lighter audio publish profile
     if niche_id == "6_stoic_philosophy":
-        profile["effect_manifest_overrides"] = dict(STOIC_EFFECT_MANIFEST_OVERRIDES)
+        profile["effect_manifest_overrides"].update(STOIC_EFFECT_MANIFEST_OVERRIDES)
         profile["audio_rules"] = dict(STOIC_AUDIO_RULES)
     return profile
 

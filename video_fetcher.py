@@ -253,7 +253,8 @@ def _generate_fallback_clip(scene_index, project_dir, target_duration=7,
                             narration="", niche_id=""):
     """
     Intentional procedural tier when stock fails: kinetic typography first,
-    then abstract cinematic gradient. Never solid color or "Gorsel Bulunamadi".
+    then abstract cinematic gradient, then a palette color card so fetch
+    cannot stall. Never "Gorsel Bulunamadi".
     """
     intent = visual_intent if isinstance(visual_intent, dict) else (
         visual_intent.to_dict() if hasattr(visual_intent, "to_dict") else None
@@ -280,6 +281,17 @@ def _generate_fallback_clip(scene_index, project_dir, target_duration=7,
             return out
     except Exception as e:
         print(f"    [PROCEDURAL] Warning generating fallback clip: {e}")
+    try:
+        from visuals.motion_graphics import build_solid_color_clip
+        path = os.path.join(project_dir, f"s{scene_index:03d}_solid_fallback.mp4")
+        out = build_solid_color_clip(
+            path, target_duration, niche_id=niche_id or "", scene_index=scene_index,
+        )
+        if out:
+            print(f"    [OK] [PROCEDURAL] Solid color card ({target_duration}s)")
+            return out
+    except Exception as e:
+        print(f"    [PROCEDURAL] Solid card note: {e}")
     return None
 
 def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
