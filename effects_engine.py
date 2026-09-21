@@ -104,6 +104,7 @@ from effects import (
     apply_mirror_and_pitch,
     get_diversified_fps,
     enforce_3s_broll_rule,
+    apply_capcut_density_cuts,
     apply_section2_anti_reused_pipeline,
     scramble_mp4_hash,
     get_hardware_acceleration_flags,

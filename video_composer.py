@@ -22,7 +22,7 @@ from effects_engine import (
     create_split_screen_clip, apply_anti_duplicate,
     apply_ken_burns, overlay_watermark, extract_frame0_thumbnail,
     apply_smart_crop, apply_horizontal_flip, apply_speed_ramp,
-    enforce_3s_broll_rule, apply_color_grading_jitter,
+    enforce_3s_broll_rule, apply_capcut_density_cuts, apply_color_grading_jitter,
     apply_multi_layer_overlay, inject_pixel_noise, get_diversified_fps,
     apply_section2_anti_reused_pipeline, overlay_graphic_badge, get_unsharp_filter,
     get_ffmpeg_static_grain_filter, overlay_micro_brand_signature,
@@ -108,7 +108,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                   split_screen=False, anti_duplicate=True, watermark_path=None,
                   enable_ken_burns=True, enable_section2_filters=True, gameplay_path=None,
                   niche_id="", audio_premastered=False, retention_metadata=None,
-                  hybrid_niche="", hybrid_render_overlay=None):
+                  hybrid_niche="", hybrid_render_overlay=None, human_craft=None):
     print(f"\n  [Composer] Building video with 500-Item Optimization Pipeline (Items 71-79)...")
     W, H = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
     print(f"  [Composer] Hedef Çözünürlük: {W}x{H} (Mod: {getattr(config, 'RENDER_RESOLUTION_MODE', '1080p')})", flush=True)
@@ -117,6 +117,40 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         print("  [Composer] ⚠ RENDER_SAFE_MODE=true — ağır overlay/efektler bypass (Tam Kural için false yap)", flush=True)
     else:
         print("  [Composer] RENDER_SAFE_MODE=false — full overlays active", flush=True)
+
+    # Human-craft edit directives (Discover density)
+    _hc = human_craft if isinstance(human_craft, dict) else {}
+    _edir = _hc.get("edit_directives") or {}
+    _mute_hook = (_hc.get("mute_hook_line") or "").strip()
+    try:
+        from craft import clamp_interrupt_duration
+        _interrupt_dur = clamp_interrupt_duration(_hc, default=1.5)
+    except Exception:
+        _interrupt_dur = float(_edir.get("pattern_interrupt_first_sec") or 1.5)
+    _max_hold = float(_edir.get("max_shot_hold_sec") or 3.5)
+    _cut_sec = float(_edir.get("target_cut_sec") or 2.8)
+    if _hc:
+        print(
+            f"  [Composer] HumanCraft POV={_hc.get('pov_angle')} "
+            f"hook={_mute_hook[:40]!r} max_hold={_max_hold}s cut={_cut_sec}s interrupt={_interrupt_dur}s",
+            flush=True,
+        )
+        # Force CapCut mid-frame karaoke even if caller forgot subtitle_opts merge
+        try:
+            from craft import subtitle_opts_from_craft
+            craft_subs = subtitle_opts_from_craft(_hc)
+            subtitle_opts = dict(subtitle_opts or {})
+            for k, v in craft_subs.items():
+                if k in ("y_position", "max_words_per_line", "max_words_per_frame",
+                         "human_craft", "allow_mid_frame") or k not in subtitle_opts:
+                    subtitle_opts[k] = v
+            print(
+                f"  [Composer] HumanCraft captions mid-frame "
+                f"y={subtitle_opts.get('y_position')} words/chunk={subtitle_opts.get('max_words_per_frame')}",
+                flush=True,
+            )
+        except Exception as se:
+            print(f"  [Composer] HumanCraft subtitle merge notice: {se}", flush=True)
 
     if cancel_check and cancel_check():
         raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
@@ -520,6 +554,13 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             if cancel_check and cancel_check():
                 raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
             p, d = sc.get("path"), sc.get("duration", 7)
+            # Human-craft: never hold a static shot past max_shot_hold_sec
+            try:
+                d = float(d)
+            except (TypeError, ValueError):
+                d = 3.0
+            if _hc:
+                d = min(d, _max_hold)
 
             if not p or not os.path.exists(p):
                 fallback_clip = ColorClip(size=(W, H), color=(15, 15, 25), duration=d)
@@ -538,6 +579,12 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         pip_path=pip_path,
                         gameplay_path=gameplay_path
                     )
+                    # HumanCraft CapCut density: jump-cut every ~2.8s EVEN in safe mode
+                    # (editing density ≠ heavy overlay). Alternating punch-in / flip.
+                    if _hc and clip_seg is not None and float(getattr(clip_seg, "duration", 0) or 0) > _cut_sec + 0.05:
+                        clip_seg = apply_capcut_density_cuts(
+                            clip_seg, cut_sec=_cut_sec, force=True
+                        )
                     if enable_ken_burns and not enable_section2_filters:
                         # Item 73: Mikro-Zoom (Ken Burns Jitter 1.00x -> 1.04x)
                         clip_seg = apply_ken_burns(clip_seg, zoom_start=1.00, zoom_end=1.04)
@@ -583,7 +630,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         if interrupt_type == "warning_badge":
                             interrupt_type = "glitch_flash"
                         clip_seg = apply_opening_pattern_interrupt(
-                            clip_seg, interrupt_type=interrupt_type, duration=1.5
+                            clip_seg, interrupt_type=interrupt_type, duration=_interrupt_dur
                         )
 
                     # Item 132: Görsel Hareketi Yön Değişimi (Alternating pan/tilt motion)
@@ -640,11 +687,12 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         # R10 #61: optional intro hook card prepend (non-safe mode)
         if not getattr(config, "RENDER_SAFE_MODE", True):
             try:
-                hook = (title or "İZLE")[:48]
-                intro = generate_intro_hook_card(W, H, hook, duration=1.0)
+                hook = (_mute_hook or title or "İZLE")[:48]
+                intro_dur = float((_edir.get("mute_hook_overlay_sec") or 1.0))
+                intro = generate_intro_hook_card(W, H, hook, duration=max(0.8, min(2.0, intro_dur)))
                 if intro is not None:
                     combined = concatenate_videoclips([intro, combined], method="chain")
-                    print("  [Composer] Intro hook card applied (R10 #61).")
+                    print(f"  [Composer] Intro hook card applied (HumanCraft/R10 #61): {hook[:40]!r}")
             except Exception as ie:
                 print(f"  [Composer] Intro card notice: {ie}")
 
@@ -699,11 +747,11 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             combined = apply_dynamic_progress_bar(combined, bar_height=4, position="bottom")
             print("  [Composer] Dynamic neon progress bar applied (Item 138).")
 
-        # Item 232: Sabit üst kanca banner
+        # Item 232: Sabit üst kanca banner — prefer HumanCraft mute hook
         if enable_section2_filters:
-            banner = ViralRetentionEngine.get_sticky_hook_banner("", mood="warning", lang="tr")
+            banner = _mute_hook or ViralRetentionEngine.get_sticky_hook_banner("", mood="warning", lang="tr")
             combined = apply_sticky_hook_banner_overlay(combined, banner_text=banner)
-            print("  [Composer] Sticky hook banner applied (Item 232).")
+            print(f"  [Composer] Sticky hook banner applied (Item 232): {banner[:48]!r}")
 
         # Item 238: Mikro-animasyonlu çıkartma (ok)
         if enable_section2_filters:

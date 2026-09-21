@@ -125,11 +125,13 @@ def delete_bgm_track(filename: str):
 
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from stock_providers import search_pexels, search_pixabay, search_coverr
+from stock_providers import search_pexels, search_pixabay, search_coverr, search_mixkit
+import config
 
 
 class FetchStockScenesRequest(BaseModel):
     scenes: List[Dict[str, Any]]
+    niche_id: Optional[str] = None
 
 
 @router.get("/api/subtitle_presets")
@@ -138,8 +140,78 @@ def get_subtitle_presets():
     return {"presets": SUBTITLE_PRESETS}
 
 
+def _paid_stock_keys_present() -> bool:
+    return bool(getattr(config, "PEXELS_API_KEY", "") or getattr(config, "PIXABAY_API_KEY", ""))
+
+
+def _candidate_to_selected(best: Dict[str, Any], query: str) -> Dict[str, Any]:
+    return {
+        "id": best.get("id", ""),
+        "source": best.get("source", "stock"),
+        "url": best.get("url", ""),
+        "thumbnail": best.get("thumbnail") or best.get("url") or "",
+        "duration": best.get("duration", 10),
+        "width": best.get("width", 1080),
+        "height": best.get("height", 1920),
+        "query": query,
+        "kind": best.get("kind", "video"),
+    }
+
+
+def _search_legacy_stock(query: str) -> List[Dict[str, Any]]:
+    for fn in (search_pexels, search_pixabay, search_coverr, search_mixkit):
+        try:
+            hits = fn(query) or []
+        except Exception:
+            hits = []
+        if hits:
+            return hits
+    return []
+
+
+def _search_keyless_visuals(queries: List[str], niche_id: str = "") -> Optional[Dict[str, Any]]:
+    """Openverse / Wikimedia when Pexels+Pixabay keys empty. Prefer openverse (less 429)."""
+    try:
+        from visuals.registry import ordered_providers, search_provider
+        from visuals.query_builder import keyless_seed_queries
+    except Exception as exc:
+        print(f"  [AutoStock] keyless import note: {exc}")
+        return None
+
+    seeds = keyless_seed_queries(niche_id=niche_id or "", queries=queries, max_seeds=5)
+    providers = ordered_providers(niche_id or "")
+    # Prefer image/openverse first when keys missing — faster + more hits for religious niche
+    preferred = [s for s in providers if s.key in ("openverse", "wikimedia_img", "wikimedia")]
+    if not preferred:
+        preferred = providers
+
+    for q in seeds:
+        for spec in preferred:
+            try:
+                cands = search_provider(spec, q, per_page=4) or []
+            except Exception as exc:
+                print(f"  [AutoStock:{spec.key}] {exc}")
+                continue
+            for cand in cands:
+                url = getattr(cand, "url", "") or ""
+                if not url:
+                    continue
+                return {
+                    "id": cand.id,
+                    "source": cand.source,
+                    "url": url,
+                    "thumbnail": cand.thumbnail or url,
+                    "duration": float(cand.duration or 8),
+                    "width": int(cand.width or 1080),
+                    "height": int(cand.height or 1920),
+                    "kind": getattr(cand, "kind", "image") or "image",
+                    "query": q,
+                }
+    return None
+
+
 @router.get("/api/stock/search")
-def api_stock_search(query: str, limit: int = 6):
+def api_stock_search(query: str, limit: int = 6, niche_id: str = ""):
     """Searches stock video providers and returns candidate video clips."""
     results = []
     try:
@@ -154,6 +226,14 @@ def api_stock_search(query: str, limit: int = 6):
             cv = search_coverr(query)
             if cv:
                 results.extend(cv[:limit - len(results)])
+        if len(results) < limit:
+            mx = search_mixkit(query)
+            if mx:
+                results.extend(mx[:limit - len(results)])
+        if len(results) < limit:
+            keyless = _search_keyless_visuals([query], niche_id=niche_id)
+            if keyless:
+                results.append(keyless)
     except Exception as e:
         print(f"  [StockSearch] Error: {e}")
     return {"status": "ok", "query": query, "results": results[:limit]}
@@ -163,58 +243,65 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 def _fetch_single_scene_video(args):
-    i, sc = args
+    i, sc, niche_id = args
     sc_copy = dict(sc)
-    queries = sc.get("search_queries", [])
+    niche = (
+        niche_id
+        or sc.get("niche_id")
+        or (sc.get("visual_intent") or {}).get("niche_id")
+        or ""
+    )
+    queries = list(sc.get("search_queries") or [])
     if not queries and sc.get("scene_description"):
         queries = [sc["scene_description"]]
     if not queries:
-        queries = ["cinematic aerial drone", "dramatic lighting"]
+        queries = ["architectural detail soft light", "nature aerial calm"]
 
     best_video = None
-    for q in queries[:2]:
+    matched_query = queries[0]
+    for q in queries[:3]:
         try:
-            candidates = search_pexels(q)
-            if not candidates:
-                candidates = search_pixabay(q)
-            if not candidates:
-                candidates = search_coverr(q)
-
+            candidates = _search_legacy_stock(q)
             if candidates:
                 best_video = candidates[0]
+                matched_query = q
                 break
         except Exception:
             continue
 
-    if not best_video:
+    if not best_video and _paid_stock_keys_present():
         try:
-            fallbacks = search_pexels("cinematic drone nature")
+            fallbacks = search_pexels("nature sunrise soft light") or []
             if fallbacks:
                 best_video = fallbacks[i % len(fallbacks)]
+                matched_query = "nature sunrise soft light"
         except Exception:
             pass
 
+    if not best_video:
+        keyless = _search_keyless_visuals(queries, niche_id=niche)
+        if keyless:
+            best_video = keyless
+            matched_query = keyless.get("query") or matched_query
+
     if best_video:
-        sc_copy["selected_video"] = {
-            "id": best_video["id"],
-            "source": best_video["source"],
-            "url": best_video["url"],
-            "thumbnail": best_video.get("thumbnail", ""),
-            "duration": best_video.get("duration", 10),
-            "width": best_video.get("width", 1080),
-            "height": best_video.get("height", 1920),
-            "query": queries[0] if queries else ""
-        }
+        sc_copy["selected_video"] = _candidate_to_selected(best_video, matched_query)
     return sc_copy
 
 
-def auto_fetch_videos_for_scenes(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Helper to associate top stock video candidates with scenes in parallel."""
+def auto_fetch_videos_for_scenes(
+    scenes: List[Dict[str, Any]],
+    niche_id: str = "",
+) -> List[Dict[str, Any]]:
+    """Associate top stock / keyless visual candidates with scenes."""
     if not scenes:
         return []
     try:
-        with ThreadPoolExecutor(max_workers=min(8, len(scenes))) as executor:
-            return list(executor.map(_fetch_single_scene_video, enumerate(scenes)))
+        # Fewer workers when relying on Openverse/Wikimedia — avoids 429 storms
+        workers = min(3 if not _paid_stock_keys_present() else 8, max(1, len(scenes)))
+        payload = [(i, sc, niche_id) for i, sc in enumerate(scenes)]
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            return list(executor.map(_fetch_single_scene_video, payload))
     except Exception as e:
         print(f"  [AutoStockParallel] {e}")
         return scenes
@@ -223,5 +310,15 @@ def auto_fetch_videos_for_scenes(scenes: List[Dict[str, Any]]) -> List[Dict[str,
 @router.post("/api/stock/fetch_for_scenes")
 def api_fetch_stock_for_scenes(req: FetchStockScenesRequest):
     """Fetches matched stock videos for all scenes in a plan."""
-    updated = auto_fetch_videos_for_scenes(req.scenes)
-    return {"status": "ok", "scenes": updated}
+    niche = req.niche_id or ""
+    if not niche and req.scenes:
+        niche = str(req.scenes[0].get("niche_id") or "")
+    updated = auto_fetch_videos_for_scenes(req.scenes, niche_id=niche)
+    assigned = sum(1 for s in updated if s.get("selected_video") and s["selected_video"].get("url"))
+    return {
+        "status": "ok",
+        "scenes": updated,
+        "assigned": assigned,
+        "total": len(updated),
+        "paid_keys": _paid_stock_keys_present(),
+    }

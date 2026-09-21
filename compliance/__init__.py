@@ -269,13 +269,48 @@ def evaluate_plan_compliance(plan: Dict[str, Any]) -> Dict[str, Any]:
         uses_photoreal_ai=bool(plan.get("uses_photoreal_ai")),
         lang=plan.get("language") or "tr",
     )
-    hard = risk["hard_fail"] or gate["action"] == "DROP"
+    # Human-craft / discovery-beast (AI slop ≠ Discover)
+    discovery = None
+    craft_reject = False
+    craft_reason = ""
+    try:
+        from craft import apply_human_craft, human_craft_hard_reject
+        if not (plan.get("human_craft") or (plan.get("meta") or {}).get("human_craft")):
+            plan = apply_human_craft(
+                plan,
+                title=str(plan.get("keyword") or plan.get("title") or ""),
+                niche_id=str(plan.get("niche_id") or ""),
+                language=str(plan.get("language") or "tr"),
+            )
+        craft_reject, craft_reason = human_craft_hard_reject(plan)
+        discovery = (plan.get("human_craft") or {}).get("discovery_beast")
+        if craft_reject:
+            risk = dict(risk)
+            risk["risk"] = min(100.0, float(risk.get("risk") or 0) + 20)
+            reasons = list(risk.get("reasons") or [])
+            reasons.append(f"discovery_beast_reject:{craft_reason}")
+            risk["reasons"] = reasons
+    except Exception:
+        pass
+
+    hard = (
+        risk["hard_fail"]
+        or gate["action"] == "DROP"
+        or craft_reject
+    )
+    # Discovery fail always marks ok=False for UI; hard_fail for spam-level risk
+    if craft_reject and float(risk.get("risk") or 0) >= 55:
+        hard = True
+
     return {
-        "ok": not hard,
+        "ok": not hard and not craft_reject,
         "hard_fail": hard,
         "inauthentic": risk,
         "niche_gate": gate,
         "ai_disclosure": disclosure,
+        "discovery_beast": discovery,
+        "human_craft_reject": craft_reject,
+        "human_craft_reason": craft_reason,
         "fingerprint": hashlib.sha1(
             (plan.get("full_narration") or "")[:2000].encode("utf-8", "ignore")
         ).hexdigest()[:16],

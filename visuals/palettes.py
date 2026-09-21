@@ -12,7 +12,8 @@ PALETTES: Dict[str, Dict] = {
         "text": (250, 244, 228),
         "motion": "slow_zoom",
         "particles": "dust",
-        "sources": ["pexels", "wikimedia", "pixabay", "openverse", "coverr"],
+        # openverse first: works without Pexels/Pixabay keys; wikimedia after (rate-limits)
+        "sources": ["openverse", "wikimedia", "pexels", "pixabay", "coverr"],
     },
     "stoic": {
         "colors": [(20, 20, 24), (48, 42, 36), (92, 78, 60)],
@@ -20,7 +21,7 @@ PALETTES: Dict[str, Dict] = {
         "text": (240, 236, 228),
         "motion": "slow_zoom",
         "particles": "dust",
-        "sources": ["pexels", "wikimedia", "pixabay", "openverse"],
+        "sources": ["openverse", "wikimedia", "pexels", "pixabay"],
     },
     "crypto": {
         "colors": [(6, 10, 18), (10, 30, 34), (4, 60, 44)],

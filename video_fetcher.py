@@ -285,7 +285,8 @@ def _generate_fallback_clip(scene_index, project_dir, target_duration=7,
 def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
                       scene_description="", preferred_source=None, cancel_check=None,
                       narration="", visual_intent=None, must_exclude=None,
-                      recent_texts=None, niche_id="", intent_dict=None):
+                      recent_texts=None, niche_id="", intent_dict=None,
+                      channel_id=None):
     """Stock-only path (license-aware visuals + legacy providers). No procedural."""
     exclude = list(must_exclude or [])
     intent_dict = intent_dict if isinstance(intent_dict, dict) else {}
@@ -315,6 +316,7 @@ def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
                 caption_text=narration or scene_description or "",
             )
             if path:
+                _promote_stock_to_archive(channel_id, niche_id, path, queries or shot_q)
                 return path
         except Exception as exc:
             print(f"    [visuals] layer note: {exc} — falling back to legacy providers")
@@ -408,15 +410,33 @@ def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
                 _job_used_ids.add(v["id"])
                 _used_hashes.add(fh)
                 print(f"    [OK] [{v['source'].upper()}] {v['fw']}x{v['fh']} {v['duration']}s score:{sc:.0f}")
+                _promote_stock_to_archive(
+                    channel_id, niche_id, path, queries or extended_queries,
+                    source=v.get("source", "stock"), source_id=str(v.get("id", "")),
+                )
                 return path
             time.sleep(0.1)
     return None
 
 
+def _promote_stock_to_archive(channel_id, niche_id, path, queries, source="stock", source_id=""):
+    if not channel_id or not path:
+        return
+    try:
+        from channel_broll import promote_clip
+        promote_clip(
+            channel_id, niche_id or "", path,
+            queries=queries, source=source, source_id=source_id,
+        )
+    except Exception as exc:
+        print(f"    [ChannelBroll] promote note: {exc}")
+
+
 def search_and_download(queries, scene_index, project_dir, target_duration=7,
                         scene_description="", preferred_source=None, cancel_check=None,
                         allow_custom=True, narration="", visual_intent=None,
-                        must_exclude=None, recent_texts=None, niche_id=""):
+                        must_exclude=None, recent_texts=None, niche_id="",
+                        channel_id=None):
     global _source_counter
 
     if isinstance(queries, str):
@@ -434,6 +454,18 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
     intent_dict = visual_intent if isinstance(visual_intent, dict) else (
         visual_intent.to_dict() if hasattr(visual_intent, "to_dict") else {}
     )
+
+    # Channel B-roll archive first (reuse before API)
+    if channel_id:
+        try:
+            from channel_broll import try_archive_hit
+            hit = try_archive_hit(
+                channel_id, niche_id or "", queries or [], project_dir, scene_index,
+            )
+            if hit:
+                return hit
+        except Exception as exc:
+            print(f"    [ChannelBroll] lookup note: {exc}")
 
     # Item 98: custom footage pool first
     custom_bg_dir = os.path.join(config.BASE_DIR, "assets", "custom_backgrounds")
@@ -513,7 +545,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
                     scene_description=scene_description, preferred_source=preferred_source,
                     cancel_check=cancel_check, narration=narration, visual_intent=visual_intent,
                     must_exclude=exclude, recent_texts=recent_texts, niche_id=niche_id,
-                    intent_dict=intent_dict,
+                    intent_dict=intent_dict, channel_id=channel_id,
                 )
                 if path:
                     return path
@@ -533,7 +565,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
         scene_description=scene_description, preferred_source=preferred_source,
         cancel_check=cancel_check, narration=narration, visual_intent=visual_intent,
         must_exclude=exclude, recent_texts=recent_texts, niche_id=niche_id,
-        intent_dict=intent_dict,
+        intent_dict=intent_dict, channel_id=channel_id,
     )
     if path:
         return path
@@ -828,6 +860,8 @@ def fetch_scene_clip(
     recent_texts=None,
     allow_custom=True,
     preferred_source=None,
+    niche_id="",
+    channel_id=None,
 ):
     """
     P0-05 / Item 130 – Per-scene multi-provider stock fetch.
@@ -858,6 +892,8 @@ def fetch_scene_clip(
             must_exclude=must_exclude,
             recent_texts=recent_texts,
             allow_custom=allow_custom,
+            niche_id=niche_id or "",
+            channel_id=channel_id,
         )
 
     clip_path = _try(primary)

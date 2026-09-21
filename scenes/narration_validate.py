@@ -317,7 +317,10 @@ def scene_narration_issues(text: str, *, normalized: bool = False) -> List[str]:
         last = sentences[-1]
         sw = last.split()
         if len(sw) < MIN_WORDS_PER_SENTENCE and last[-1:] in ".!?":
-            issues.append("fragment_sentence")
+            # Trailing short punchline/CTA after a full body is intentional
+            # (e.g. "Sakın bu videonun sonunu görmeden kaydırma.") — not a condense artifact.
+            if len(words) < MIN_WORDS_PER_SCENE:
+                issues.append("fragment_sentence")
         stail = sw[-1].lower().rstrip(".,!?;:") if sw else ""
         if stail in _DANGLING_END_WORDS:
             issues.append("dangling_sentence")

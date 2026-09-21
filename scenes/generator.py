@@ -484,5 +484,27 @@ def generate_scenes(
     except Exception:
         pass
 
+    # Human-craft final pass — unique POV, mute hook, loop, discovery score
+    # (ANTI AI-slop: not "template + stock"; editor-made feel)
+    try:
+        from craft import apply_human_craft
+        data = apply_human_craft(
+            data,
+            title=title,
+            niche_id=str(data.get("niche_id") or locked_niche or niche_type or ""),
+            language=lang,
+            variation=int(variation_attempt or 0),
+        )
+        total = sum(float(s.get("duration") or 3.5) for s in data.get("scenes") or [])
+    except Exception as craft_exc:
+        print(f"  [SceneGenerator] human_craft skip: {craft_exc}")
+
     print(f"  [SceneGenerator] Sahne Sayısı: {len(data['scenes'])}, Toplam Süre: {total}s | Tema: {data.get('visual_theme', '-')}")
+    if data.get("human_craft"):
+        db = (data["human_craft"].get("discovery_beast") or {})
+        print(
+            f"  [HumanCraft] POV={data['human_craft'].get('pov_angle')} "
+            f"discovery={db.get('score')} pass={db.get('pass')} "
+            f"hook={(data['human_craft'].get('mute_hook_line') or '')[:48]}"
+        )
     return sanitize_plan_scene_descriptions(data)

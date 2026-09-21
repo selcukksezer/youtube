@@ -209,6 +209,8 @@ document.addEventListener('DOMContentLoaded', () => {
             setSqpPill('sqp-clips', 'Klip: —', 'neutral');
             setSqpPill('sqp-narration', 'Anlatim: —', 'neutral');
             setSqpPill('sqp-plagiarism', 'Özgünlük: —', 'neutral');
+            setSqpPill('sqp-discovery', 'Keşfet: —', 'neutral');
+            setSqpPill('sqp-pov', 'POV: —', 'neutral');
             if (issuesEl) {
                 issuesEl.classList.add('hidden');
                 issuesEl.innerHTML = '';
@@ -253,25 +255,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const narrOk = validation.ok;
         setSqpPill('sqp-narration', narrOk ? 'Anlatim: OK' : 'Anlatim: SORUN', narrOk ? 'ok' : 'fail');
 
+        // Human-craft / discovery beast (anti AI-slop)
+        const hc = activePlan.human_craft || activePlan.meta?.human_craft || {};
+        const disc = hc.discovery_beast || activePlan.meta?.discovery_beast || validation.compliance?.discovery_beast || {};
+        const discScore = disc.score;
+        const discPass = disc.pass === true;
+        if (discScore != null) {
+            setSqpPill(
+                'sqp-discovery',
+                `Keşfet: ${Math.round(discScore)}${discPass ? '' : ' ✗'}`,
+                discPass ? 'ok' : (discScore >= 45 ? 'warn' : 'fail')
+            );
+        } else {
+            setSqpPill('sqp-discovery', 'Keşfet: —', 'neutral');
+        }
+        const pov = hc.pov_angle || '—';
+        const hook = (hc.mute_hook_line || '').slice(0, 28);
+        setSqpPill('sqp-pov', hook ? `POV: ${pov} · ${hook}` : `POV: ${pov}`, hc.pov_angle ? 'ok' : 'neutral');
+
         if (issuesEl) {
-            if (validation.issues?.length) {
+            const craftIssues = [];
+            if (disc.fail_reasons?.length) {
+                craftIssues.push(...disc.fail_reasons.map(r => `keşfet:${r}`));
+            }
+            const allIssues = [...(validation.issues || []), ...craftIssues];
+            if (allIssues.length) {
                 issuesEl.classList.remove('hidden');
-                issuesEl.innerHTML = validation.issues.map(i => `<li>${formatQualityIssueWithRoadmap(i)}</li>`).join('');
+                issuesEl.innerHTML = allIssues.map(i => `<li>${formatQualityIssueWithRoadmap(i)}</li>`).join('');
             } else {
                 issuesEl.classList.add('hidden');
                 issuesEl.innerHTML = '';
             }
         }
 
-        qualityPanelGreen = narrOk;
-        if (narrOk) {
+        qualityPanelGreen = narrOk && (discPass || discScore == null);
+        if (qualityPanelGreen) {
             badge.className = 'sqp-status-badge ok';
             badge.textContent = 'Render hazir';
             updateRenderButtonsBlocked(false);
         } else {
             badge.className = 'sqp-status-badge blocked';
-            badge.textContent = 'Render kapali';
-            updateRenderButtonsBlocked(true, validation.issues?.[0] || 'Anlatim kalite kapisi');
+            badge.textContent = discPass === false ? 'Keşfet skoru düşük' : 'Render kapali';
+            updateRenderButtonsBlocked(true, validation.issues?.[0] || disc.fail_reasons?.[0] || 'Anlatim kalite kapisi');
         }
 
         return validation;
@@ -2330,7 +2355,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
                 btn.disabled = true;
                 try {
-                    const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=3`);
+                    const niche = currentPlan.niche_id || currentPlan.meta?.locked_niche || '';
+                    const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=3&niche_id=${encodeURIComponent(niche)}`);
                     const data = await res.json();
                     if (data.results && data.results.length > 0) {
                         sc.selected_video = data.results[0];
@@ -2442,13 +2468,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/stock/fetch_for_scenes', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scenes: currentPlan.scenes })
+                body: JSON.stringify({
+                    scenes: currentPlan.scenes,
+                    niche_id: currentPlan.niche_id || currentPlan.meta?.locked_niche || ''
+                })
             });
             const data = await res.json();
             if (data.status === 'ok' && data.scenes) {
                 currentPlan.scenes = data.scenes;
                 renderTimelineScenes(currentPlan);
-                showToast('🎬 Tüm sahneler için stok videolar başarıyla çekildi ve eşleştirildi!');
+                const assigned = data.assigned ?? data.scenes.filter(s => s.selected_video?.url).length;
+                if (assigned > 0) {
+                    showToast(`🎬 ${assigned}/${data.total || data.scenes.length} sahne için stok/görsel atandı`);
+                } else if (data.paid_keys === false) {
+                    showToast('⚠️ PEXELS_API_KEY / PIXABAY_API_KEY boş — keyless kaynak da sonuç vermedi. Anahtar ekle veya custom_backgrounds doldur.', 'warn');
+                } else {
+                    showToast('⚠️ Stok eşleşmesi bulunamadı — sorguları zenginleştirip tekrar dene', 'warn');
+                }
             }
         } catch (err) {
             showToast('⚠️ Stok video çekme hatası: ' + err.message, 'error');

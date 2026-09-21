@@ -36,8 +36,29 @@ _TR_EN: Dict[str, str] = {
     "haber": "news studio desk", "acil": "breaking news red light",
 }
 
+# Short seeds for keyless providers (Openverse / Wikimedia) — long cinematic
+# phrases return 0 hits when Pexels/Pixabay keys are empty.
+_FAMILY_KEYLESS_SEEDS: Dict[str, List[str]] = {
+    "religious": [
+        "mosque", "minaret", "quran book", "islamic calligraphy",
+        "muslim prayer", "kaaba", "mosque dome",
+    ],
+    "stoic": ["marble bust", "roman columns", "olive tree", "parchment"],
+    "crypto": ["bitcoin", "trading chart", "server room", "stock market"],
+    "mystery": ["fog forest", "abandoned hallway", "deep space", "locked door"],
+    "dark": ["shadow silhouette", "rain city", "empty chair"],
+    "news": ["newsroom", "city skyline", "press conference"],
+    "history": ["old map", "museum archive", "stone ruins"],
+    "science": ["laboratory", "earth space", "microscope"],
+    "astrology": ["milky way", "telescope", "full moon"],
+    "general": ["sunrise", "ocean waves", "architecture", "nature"],
+}
+
+
 _FAMILY_BROLL: Dict[str, List[str]] = {
     "religious": [
+        "mosque",
+        "minaret golden hour",
         "mosque interior dome soft light",
         "quran open pages warm light",
         "muslim hands raised in prayer",
@@ -210,3 +231,47 @@ def validate_query_list(queries: Sequence[str], niche_id: str = "") -> List[str]
             continue
         clean.append(cq)
     return clean
+
+
+def keyless_seed_queries(
+    niche_id: str = "",
+    queries: Optional[Sequence[str]] = None,
+    max_seeds: int = 5,
+) -> List[str]:
+    """Short searchable seeds for Openverse/Wikimedia when paid stock keys missing."""
+    family = family_for_niche(niche_id)
+    seeds: List[str] = []
+    seen = set()
+
+    def _push(raw: str) -> None:
+        q = _clean(raw)
+        if not q or len(q) < 4:
+            return
+        # Prefer first 1–3 content words for keyless APIs
+        words = [w for w in q.split() if w.lower() not in {
+            "soft", "natural", "light", "golden", "hour", "dim", "practical",
+            "cool", "blue", "warm", "cinematic", "atmospheric", "over", "in",
+            "the", "and", "with", "close", "up", "pages",
+        }]
+        short = " ".join(words[:3]) if words else q
+        short = short.strip()[:48]
+        if len(short) < 4:
+            return
+        if family == "religious" and _RELIGIOUS_BAN.search(short):
+            return
+        key = short.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        seeds.append(short)
+
+    for q in queries or []:
+        _push(str(q))
+        if len(seeds) >= max_seeds:
+            return seeds
+
+    for seed in _FAMILY_KEYLESS_SEEDS.get(family, _FAMILY_KEYLESS_SEEDS["general"]):
+        _push(seed)
+        if len(seeds) >= max_seeds:
+            break
+    return seeds or list(_FAMILY_KEYLESS_SEEDS.get(family, _FAMILY_KEYLESS_SEEDS["general"])[:3])

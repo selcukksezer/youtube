@@ -311,20 +311,32 @@ def _clean_timings(timings):
     return cleaned
 
 def _resolve_subtitle_layout(opts, target_w, target_h):
-    """Items 206 & 265: safe zone margins + max words per frame."""
+    """Items 206 & 265: safe zone margins + max words per frame.
+
+    Human-craft karaoke_mid_frame: allow center Y (Shorts UI covers bottom —
+    mute viewers read mid captions). When opts.human_craft / allow_mid_frame,
+    do not force bottom_ui_margin.
+    """
     safe = ViralRetentionEngine.get_subtitles_safe_zone(
         screen_height=target_h, screen_width=target_w
     )
-    max_words = safe.get("max_words_per_frame", 4)
+    max_words = int(
+        opts.get("max_words_per_line")
+        or opts.get("max_words_per_frame")
+        or safe.get("max_words_per_frame", 4)
+    )
+    max_words = max(2, min(5, max_words))
     bottom_margin = safe["bottom_ui_margin"]
 
     y_pos = opts.get("y_position")
     if y_pos is None:
-        y_pos = 1.0 - (bottom_margin / target_h)  # default: top of safe bottom zone (~0.75)
+        y_pos = 1.0 - (bottom_margin / target_h)
     y_pos = max(0.1, min(0.9, float(y_pos)))
 
     margin_v = int((1.0 - y_pos) * target_h)
-    margin_v = max(margin_v, bottom_margin)  # enforce bottom 25% UI margin
+    mid_ok = bool(opts.get("human_craft") or opts.get("allow_mid_frame"))
+    if not mid_ok:
+        margin_v = max(margin_v, bottom_margin)  # enforce bottom 25% UI margin
     return max_words, margin_v
 
 

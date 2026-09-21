@@ -56,30 +56,73 @@ def enforce_3s_broll_rule(clip: VideoFileClip, max_duration: float = 3.2) -> Vid
     3.2 saniyeyi aşan klipler dinamik alt parçalara bölünür ve mikro-zoom (1.03x)
     veya aynalama ile görsel yenilenme sağlanır.
     """
-    if clip.duration <= max_duration:
+    return apply_capcut_density_cuts(clip, cut_sec=max_duration, force=False)
+
+
+def apply_capcut_density_cuts(
+    clip: VideoFileClip,
+    cut_sec: float = 2.8,
+    *,
+    force: bool = False,
+) -> VideoFileClip:
+    """
+    CapCut/Submagic-style jump-cut density: hard cut every ~cut_sec with
+    alternating horizontal flip (cheap). Avoid nested resize/CompositeVideoClip —
+    that spawned dozens of ffmpeg pipes and hung 1080p MoviePy exports.
+
+    force=True → runs even under RENDER_SAFE_MODE.
+    """
+    cut_sec = max(2.0, min(3.5, float(cut_sec or 2.8)))
+    if clip is None or getattr(clip, "duration", 0) <= cut_sec + 0.15:
         return clip
     import config
-    if getattr(config, 'RENDER_SAFE_MODE', True):
+    if not force and getattr(config, "RENDER_SAFE_MODE", True):
         return clip
+    # Cap cut count — 60s clip @ 2s = 30 segments kills MoviePy; max 4 segments/scene
+    max_segments = 4
     try:
+        from moviepy.editor import vfx
+        dur = float(clip.duration)
+        # Prefer fewer longer cuts over many short ones
+        effective_cut = max(cut_sec, dur / max_segments)
+        if dur <= effective_cut + 0.15:
+            return clip
         subclips = []
         t = 0.0
-        flip = False
-        while t < clip.duration:
-            sub_end = min(t + max_duration, clip.duration)
+        i = 0
+        while t < dur - 0.01 and i < max_segments:
+            remaining = dur - t
+            # Last segment takes the rest
+            if i == max_segments - 1:
+                sub_end = dur
+            else:
+                sub_end = min(t + effective_cut, dur)
+            if sub_end - t < 0.4:
+                break
             sub = clip.subclip(t, sub_end)
-            if flip:
-                sub = sub.crop(x_center=sub.w / 2, y_center=sub.h / 2, width=clip.w, height=clip.h)
+            # Cheap visual refresh only: flip every other segment (no resize/composite)
+            if i % 2 == 1:
+                try:
+                    sub = sub.fx(vfx.mirror_x)
+                except Exception:
+                    pass
             subclips.append(sub)
             t = sub_end
-            flip = not flip
+            i += 1
 
+        if len(subclips) <= 1:
+            return clip
         res = concatenate_videoclips(subclips, method="chain")
-        res.duration = clip.duration
+        res.duration = dur
+        print(
+            f"    [CapCutDensity] {i} cuts @ ~{effective_cut:.1f}s "
+            f"(force={force}, dur={dur:.1f}s, lite)"
+        )
         return res
     except Exception as e:
-        print(f"    [3sRule] Notice: {e}")
+        print(f"    [CapCutDensity] Notice: {e}")
         return clip
+
 
 def apply_section2_anti_reused_pipeline(
     clip: VideoFileClip,

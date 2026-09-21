@@ -172,5 +172,16 @@ class TestPlanValidateApi(unittest.TestCase):
         self.assertTrue(body.get("plan_narration_ok"), msg=body.get("narration_integrity") or body.get("pre_render_score"))
 
 
+class TestTrailingCtaNotFragment(unittest.TestCase):
+    def test_short_cta_after_body_ok(self):
+        from scenes.narration_validate import scene_narration_issues
+
+        narr = (
+            "Cami avlusunda şafak ışığı varken eller açılır; dil tesbih çeker. "
+            "Sakın sonunu görmeden kaydırma."
+        )
+        self.assertNotIn("fragment_sentence", scene_narration_issues(narr))
+
+
 if __name__ == "__main__":
     unittest.main()

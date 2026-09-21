@@ -1,4 +1,4 @@
-"""TTS — Edge TTS (0 TL default) with optional Gemini TTS + sentence-level rhythm."""
+"""TTS — Edge TTS (0 TL fallback) with Azure preferred + optional Gemini/ElevenLabs."""
 import asyncio, os, re, shutil, subprocess, tempfile, wave
 from typing import Tuple
 import imageio_ffmpeg
@@ -10,6 +10,16 @@ def active_tts_provider() -> str:
     from tts_voices import is_elevenlabs_voice, voice_label_for_id  # noqa: PLC0415
     if is_elevenlabs_voice(config.TTS_VOICE) and getattr(config, "ELEVENLABS_API_KEY", ""):
         return f"ElevenLabs ({voice_label_for_id(config.TTS_VOICE)})"
+    try:
+        from azure_tts import is_configured as azure_configured
+        if (
+            getattr(config, "PREFER_AZURE_TTS", True)
+            and azure_configured()
+            and not is_elevenlabs_voice(config.TTS_VOICE)
+        ):
+            return f"Azure Speech ({config.TTS_VOICE})"
+    except Exception:
+        pass
     if getattr(config, "USE_PIPER_TTS", False) and _piper_binary():
         return f"Piper local ({getattr(config, 'PIPER_MODEL', 'default')})"
     if getattr(config, "USE_GEMINI_TTS", False) and getattr(config, "GEMINI_API_KEY", ""):
@@ -95,6 +105,37 @@ def _generate_elevenlabs_narration(text, output_path, voice_profile=None):
     dur = _wav_duration_seconds(output_path)
     timings = _estimate_word_timings(plain, dur)
     print(f"  [TTS/ElevenLabs] {msg} | ~{dur:.1f}s | {len(timings)} kelime (tahmini)")
+    return output_path, _sanitize_word_timings(timings)
+
+
+def _generate_azure_narration(text, output_path, voice_profile=None):
+    """Single-pass Azure Speech TTS with estimated karaoke timings."""
+    from azure_tts import generate_tts_wav
+    from voice_humanizer import VoiceHumanizer
+
+    plain = VoiceHumanizer.clean_narration_for_speech(text)
+    plain = _strip_ssml_markup(plain)
+    if not plain.strip():
+        raise ValueError("Empty TTS text")
+
+    rate = config.TTS_RATE
+    pitch = getattr(config, "TTS_PITCH", "+0Hz")
+    if voice_profile and voice_profile.get("enabled") and voice_profile.get("rate"):
+        rate = voice_profile.get("rate")
+
+    ok, msg = generate_tts_wav(
+        plain,
+        output_path,
+        voice=config.TTS_VOICE,
+        rate=rate,
+        pitch=pitch,
+    )
+    if not ok:
+        raise RuntimeError(msg)
+
+    dur = _wav_duration_seconds(output_path)
+    timings = _estimate_word_timings(plain, dur)
+    print(f"  [TTS/Azure] {msg} | ~{dur:.1f}s | {len(timings)} kelime (tahmini)")
     return output_path, _sanitize_word_timings(timings)
 
 
@@ -432,9 +473,25 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
         try:
             return _generate_elevenlabs_narration(text, output_path, voice_profile=voice_profile)
         except Exception as el_err:
-            print(f"  [TTS] ElevenLabs başarısız, Edge-TTS yedek: {el_err}")
+            print(f"  [TTS] ElevenLabs başarısız, Azure/Edge yedek: {el_err}")
             from tts_voices import resolve_voice
             config.TTS_VOICE = resolve_voice(config.LANGUAGE, gender=config.TTS_GENDER)
+
+    # Azure preferred when keys present (production ToS path); Edge remains zero-config fallback
+    try:
+        from azure_tts import is_configured as azure_configured
+        use_azure = (
+            getattr(config, "PREFER_AZURE_TTS", True)
+            and azure_configured()
+            and not is_elevenlabs_voice(config.TTS_VOICE)
+        )
+    except Exception:
+        use_azure = False
+    if use_azure:
+        try:
+            return _generate_azure_narration(text, output_path, voice_profile=voice_profile)
+        except Exception as az_err:
+            print(f"  [TTS] Azure Speech başarısız, Edge-TTS yedek: {az_err}")
 
     use_gemini = (
         getattr(config, "USE_GEMINI_TTS", False)

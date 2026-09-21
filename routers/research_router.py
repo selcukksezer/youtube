@@ -111,7 +111,9 @@ def api_generate_script(req: ScriptGenerateRequest):
         try:
             from routers.media_router import auto_fetch_videos_for_scenes
             if "scenes" in plan and plan["scenes"]:
-                plan["scenes"] = auto_fetch_videos_for_scenes(plan["scenes"])
+                plan["scenes"] = auto_fetch_videos_for_scenes(
+                    plan["scenes"], niche_id=locked_niche,
+                )
         except Exception as err:
             print(f"  [AutoStock] Note: {err}")
 
@@ -198,7 +200,11 @@ def api_generate_script(req: ScriptGenerateRequest):
                 "inauthentic": compliance.get("inauthentic"),
                 "niche_gate": compliance.get("niche_gate"),
                 "ai_disclosure": compliance.get("ai_disclosure"),
+                "discovery_beast": compliance.get("discovery_beast"),
+                "human_craft_reject": compliance.get("human_craft_reject"),
             }
+            if plan.get("human_craft"):
+                plan["meta"]["human_craft"] = plan["human_craft"]
             # Attach disclosure paragraph for SEO/description pipelines
             disc = (compliance.get("ai_disclosure") or {}).get("description_paragraph")
             if disc:
@@ -207,7 +213,8 @@ def api_generate_script(req: ScriptGenerateRequest):
                 print(
                     f"  [Compliance] HARD FAIL risk="
                     f"{(compliance.get('inauthentic') or {}).get('risk')} "
-                    f"verdict={(compliance.get('inauthentic') or {}).get('verdict')}"
+                    f"verdict={(compliance.get('inauthentic') or {}).get('verdict')} "
+                    f"craft={compliance.get('human_craft_reason')}"
                 )
         except Exception as comp_err:
             print(f"  [Compliance] note: {comp_err}")

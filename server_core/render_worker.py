@@ -133,13 +133,19 @@ def _sweep_render_temp_files(job_prefix: str = "") -> None:
                 pass
 
 
-def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None):
+def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None, channel_id=None):
     """Sync fetch for one scene — used from parallel executor (P1-13)."""
     q = scene.get("search_queries", [scene.get("search_query", "nature")])
     d = scene.get("duration", 7)
     desc = scene.get("scene_description", "")
     intent = scene.get("visual_intent") or {}
     narr = scene.get("narration", "")
+    niche_id = (
+        (plan or {}).get("locked_niche")
+        or (plan or {}).get("niche_id")
+        or scene.get("niche_id")
+        or ""
+    )
     p = None
     gemini_circuit_open = _gemini_image_circuit_open()
 
@@ -207,6 +213,8 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
             visual_intent=intent,
             must_exclude=(intent.get("must_exclude") if isinstance(intent, dict) else None),
             recent_texts=None,
+            niche_id=niche_id,
+            channel_id=channel_id,
         )
 
     clip_entry = {
@@ -230,7 +238,7 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
     return i, clip_entry, p
 
 
-async def _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=None):
+async def _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=None, channel_id=None):
     """P1-13: asyncio.gather per-scene stock fetch via thread pool."""
     loop = asyncio.get_running_loop()
 
@@ -238,7 +246,8 @@ async def _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=None
         return await loop.run_in_executor(
             None,
             lambda i=i, scene=scene: _fetch_single_scene_visual(
-                i, scene, plan, proj, total_s, gameplay_path=gameplay_path
+                i, scene, plan, proj, total_s,
+                gameplay_path=gameplay_path, channel_id=channel_id,
             ),
         )
 
@@ -412,28 +421,26 @@ def process_video_task(req: VideoRenderRequest):
             # (covers UI-supplied plans that skipped generate_scenes)
             from scenes.retention_hooks import ensure_retention_hooks_on_plan
 
-            # Human-craft BEFORE hooks so mute hook / POV / shot holds survive into Director
-            # SAFE_MODE skips craft — it can shred procedural narrations into fragment scenes.
-            if not getattr(config, "RENDER_SAFE_MODE", False):
-                try:
-                    from craft import apply_human_craft
-                    plan = apply_human_craft(
-                        plan,
-                        title=keyword,
-                        niche_id=locked_niche,
-                        language=target_lang,
-                        variation=orig_attempt,
-                    )
-                    db = (plan.get("human_craft") or {}).get("discovery_beast") or {}
-                    _log(
-                        f"[HumanCraft] POV={(plan.get('human_craft') or {}).get('pov_angle')} "
-                        f"discovery={db.get('score')} pass={db.get('pass')}",
-                        15,
-                    )
-                except Exception as hc_err:
-                    _log(f"[HumanCraft] skip: {hc_err}")
-            else:
-                _log("[HumanCraft] RENDER_SAFE_MODE — craft bypass", 15)
+            # Human-craft BEFORE hooks — always (script layer is cheap).
+            # CapCut density cuts run in composer with force=True when human_craft present,
+            # including under RENDER_SAFE_MODE. Do NOT bypass craft here.
+            try:
+                from craft import apply_human_craft
+                plan = apply_human_craft(
+                    plan,
+                    title=keyword,
+                    niche_id=locked_niche,
+                    language=target_lang,
+                    variation=orig_attempt,
+                )
+                db = (plan.get("human_craft") or {}).get("discovery_beast") or {}
+                _log(
+                    f"[HumanCraft] POV={(plan.get('human_craft') or {}).get('pov_angle')} "
+                    f"discovery={db.get('score')} pass={db.get('pass')}",
+                    15,
+                )
+            except Exception as hc_err:
+                _log(f"[HumanCraft] skip: {hc_err}")
 
             plan = ensure_retention_hooks_on_plan(
                 plan,
@@ -628,8 +635,12 @@ def process_video_task(req: VideoRenderRequest):
 
         check_cancelled()
         _log(f"[Visual] Paralel stok fetch başlıyor ({total_s} sahne, asyncio.gather)...", 32)
+        _channel_id = getattr(req, "channel_id", None)
         fetch_results = asyncio.run(
-            _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=gameplay_path)
+            _fetch_scenes_parallel(
+                scenes, plan, proj, total_s,
+                gameplay_path=gameplay_path, channel_id=_channel_id,
+            )
         )
         clips = [None] * total_s
         for i, clip_entry, p in sorted(fetch_results, key=lambda row: row[0]):
@@ -681,6 +692,12 @@ def process_video_task(req: VideoRenderRequest):
                         visual_intent=intent,
                         cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
                         recent_texts=recent_texts,
+                        niche_id=(
+                            (plan or {}).get("locked_niche")
+                            or (plan or {}).get("niche_id")
+                            or ""
+                        ),
+                        channel_id=getattr(req, "channel_id", None),
                     )
                     clips[i]["path"] = p
                     if p:
