@@ -164,7 +164,13 @@ def ensure_retention_hooks_on_plan(
     )
 
     scenes = plan.get("scenes") or []
-    if scenes:
+    # Skip celebrity name injection on religious / sacred niches — mangling
+    # "Hz Peygamber" with "Einstein'ın …" is niche-inappropriate (Item 240 opt-out).
+    _niche = (niche_type or plan.get("niche_id") or "").lower()
+    _skip_trigger = _niche.startswith(
+        ("10_religious", "11_quran", "4_mystery", "religious")
+    )
+    if scenes and not _skip_trigger:
         first_narr = (scenes[0].get("narration") or "").strip()
         if first_narr:
             scenes[0]["narration"] = ViralRetentionEngine.inject_trigger_name_hook(

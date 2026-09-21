@@ -89,6 +89,23 @@ class TestSection4Items226240(unittest.TestCase):
         hook = ViralRetentionEngine.inject_trigger_name_hook("Zihnini kontrol et.", topic="Disiplin", lang="tr")
         self.assertTrue(any(n in hook for n in ViralRetentionEngine.TRIGGER_NAMES))
 
+    def test_item_240_skips_religious_topics(self):
+        hook = "Hz Peygamberin duası kalpleri yumuşatır."
+        out = ViralRetentionEngine.inject_trigger_name_hook(
+            hook, topic="Hz Peygamber in en çok tekrar ettiği o dua", lang="tr"
+        )
+        self.assertEqual(out, hook)
+        for name in ViralRetentionEngine.TRIGGER_NAMES:
+            self.assertNotIn(name, out)
+
+    def test_item_240_skips_sabah_dua_topic(self):
+        hook = "Bunu öğrenene kadar bu konu hakkında bildiğiniz her şey yanlıştı."
+        topic = "Sabah uyanınca okunan şu dua kalbi yumuşatır ve günü bereketler"
+        out = ViralRetentionEngine.inject_trigger_name_hook(hook, topic=topic, lang="tr")
+        self.assertEqual(out, hook)
+        for name in ViralRetentionEngine.TRIGGER_NAMES:
+            self.assertNotIn(name, out)
+
 
 if __name__ == "__main__":
     unittest.main()

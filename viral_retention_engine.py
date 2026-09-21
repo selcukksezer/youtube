@@ -435,9 +435,34 @@ class ViralRetentionEngine:
         """
         Item 240: Tetikleyici İsimler Kullanma.
         İlk cümlede algoritma-dostu isim yoksa rastgele trigger name ekler.
+        Sacred / prophetic topics keep the hook untouched.
         """
         hook = (hook or "").strip()
         lower = hook.lower()
+        topic_l = (topic or "").lower()
+        # Sacred / Islamic topics must never get celebrity name-drop prefixes
+        # (e.g. "Napoleon'ın … dua … hakkında söylediği").
+        _sacred = (
+            "peygamber",
+            "hz.",
+            "hz ",
+            "allah",
+            "kuran",
+            "quran",
+            "dua",
+            "amin",
+            "hadis",
+            "ayet",
+            "namaz",
+            "islam",
+            "mosque",
+            "cami",
+            "sahabe",
+            "sünnet",
+            "sunnah",
+        )
+        if any(tok in topic_l or tok in lower for tok in _sacred):
+            return hook
         if any(n.lower() in lower for n in cls.TRIGGER_NAMES):
             return hook
         name = random.choice(cls.TRIGGER_NAMES)

@@ -412,8 +412,10 @@ def generate_scenes(
     data["scenes"] = enrich_numbered_rule_narration(data["scenes"], lang=lang)
 
     # Items 202-204, 209-210, 239, 244, 248, 257 (+ Item 240 trigger name)
+    _hook_niche = locked_niche or niche_type
+    data["niche_id"] = data.get("niche_id") or _hook_niche
     data = ensure_retention_hooks_on_plan(
-        data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
+        data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
     )
 
     # Batch D — soft word budget before Director hard condense (~60s Shorts headroom)
@@ -435,7 +437,7 @@ def generate_scenes(
         )
         data["procedural_fallback"] = True
         data = ensure_retention_hooks_on_plan(
-            data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
+            data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
         )
         data = repair_post_hook_word_budget(data, max_words=172)
 
@@ -450,7 +452,7 @@ def generate_scenes(
         )
         data["procedural_fallback"] = True
         data = ensure_retention_hooks_on_plan(
-            data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
+            data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
         )
         data = repair_post_hook_word_budget(data, max_words=172)
 
