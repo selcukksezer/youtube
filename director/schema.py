@@ -120,11 +120,32 @@ class ScenePlan:
         )
 
 
+# tr-TR Edge TTS ≈ 2.3–2.6 words/s. 2.45 sits in-band; 60s × 2.5 × 1.15 ≈ 172 words cap.
+TTS_WORDS_PER_SEC = 2.45
+TTS_BUDGET_WPS = 2.5
+
+
+def natural_target_duration(
+    word_count: int,
+    min_d: float = 38.0,
+    max_d: float = 60.0,
+    wps: float = TTS_WORDS_PER_SEC,
+) -> float:
+    """Content-driven Shorts length. Floor 38, cap 60 — 48 is not a magnet."""
+    natural = max(0, int(word_count or 0)) / max(float(wps) or TTS_WORDS_PER_SEC, 0.1)
+    return round(min(float(max_d), max(float(min_d), natural)), 2)
+
+
+def shorts_word_budget(max_duration: float = 60.0, max_audio_speed: float = 1.15) -> int:
+    """Never condense narration to hit 42/45/48 — only the 60s cap."""
+    return max(172, int(float(max_duration) * TTS_BUDGET_WPS * float(max_audio_speed)))
+
+
 @dataclass
 class QualityThresholds:
     min_duration: float = 38.0
     max_duration: float = 60.0
-    target_duration: float = 48.0
+    target_duration: float = 0.0  # 0 = content-driven via natural_target_duration
     min_scenes: int = 8
     max_audio_speed: float = 1.15
     max_av_delta: float = 0.05

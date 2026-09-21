@@ -458,6 +458,7 @@ class TestTopicIntelligenceMatrix(unittest.TestCase):
         ("lamborghini süper araba", "1_news_flash", "31_supercars_automotive"),
         ("protein tozu fitness kas", "1_news_flash", "23_fitness_nutrition_hacks"),
         ("kuran ayeti dini söz", "1_news_flash", "10_religious_quotes"),
+        ("Hz Peygamber in en çok tekrar ettiği o dua bugün hayatınızı değiştirebilir", "6_stoic_philosophy", "10_religious_quotes"),
         ("stoacilik disiplin motivasyon", "13_mystery_paranormal", "6_stoic_philosophy"),
         ("flaş haber trafik kaza", "6_stoic_philosophy", "1_news_flash"),
     ]

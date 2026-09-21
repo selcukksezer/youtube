@@ -76,7 +76,7 @@ def extract_format_fingerprint_from_title(title: str, hook_analysis: str = "") -
     return {
         "scene_count": scene_count,
         "hook_style": hook_style,
-        "avg_scene_duration": round(42.0 / max(1, scene_count), 1),
+        "avg_scene_duration": round(4.0, 1),
         "source_title": title,
     }
 
@@ -97,7 +97,7 @@ def aggregate_format_fingerprint(items: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "scene_count": avg_scenes,
         "hook_style": hook_mode,
-        "avg_scene_duration": round(42.0 / max(1, avg_scenes), 1),
+        "avg_scene_duration": round(4.0, 1),
         "sample_size": len(items),
     }
 

@@ -123,8 +123,34 @@ class TestScenarioNichePacks(unittest.TestCase):
             src = fh.read()
         self.assertNotIn("Cadence: ${scenes.length}/14", src)
         self.assertIn("totalSec >= 38 && totalSec <= 60", src)
+        self.assertNotIn("hedef 48", src)
+        self.assertIn("tavan 60", src)
+        self.assertIn("totalSec * 0.07", src)
         self.assertIn(r"[^\p{L}\p{N}\s\-&]", src)
         self.assertIn("words.length < 10", src)
+
+    def test_religious_fallback_is_not_stoic(self):
+        topic = "Hz Peygamber in en çok tekrar ettiği o dua bugün hayatınızı değiştirebilir"
+        plan = _generate_procedural_fallback_scenes(
+            topic, niche_type="10_religious_quotes", language="tr"
+        )
+        qjoin = " ".join(" ".join(s.get("search_queries") or []) for s in plan["scenes"]).lower()
+        djoin = " ".join((s.get("scene_description") or "") for s in plan["scenes"]).lower()
+        for tok in ("marcus", "aurelius", "roman bust", "colosseum", "stoic", "statue", "blacksmith"):
+            self.assertNotIn(tok, qjoin, tok)
+            self.assertNotIn(tok, djoin, tok)
+        self.assertTrue("mosque" in qjoin or "quran" in qjoin or "prayer" in qjoin)
+        moods = {(s.get("mood") or "").lower() for s in plan["scenes"]}
+        self.assertGreaterEqual(len(moods), 4)
+        total = sum(float(s.get("duration") or 0) for s in plan["scenes"])
+        self.assertGreaterEqual(total, 38.0)
+        self.assertLessEqual(total, 60.0)
+        self.assertGreaterEqual(len(plan["scenes"]), 8)
+        self.assertLessEqual(len(plan["scenes"]), 16)
+        for sc in plan["scenes"]:
+            self.assertNotIn("SCENE_DESCRIPTION", (sc.get("scene_description") or "").upper())
+        under = sum(1 for s in plan["scenes"] if float(s.get("duration") or 0) < 3.2)
+        self.assertLessEqual(under, 2)
 
 
 if __name__ == "__main__":

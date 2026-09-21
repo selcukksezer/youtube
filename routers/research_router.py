@@ -18,7 +18,7 @@ from research_service import (
 from director import resolve_niche_from_topic, compile_director_plan, pre_render_score
 from director.visual_intent import resolve_topic_intelligence
 from scene_generator import generate_scenes, generate_reddit_rewrite_script
-from scenes.narration_validate import apply_auto_repair_if_needed
+from scenes.narration_validate import apply_auto_repair_if_needed, sanitize_plan_scene_descriptions
 from viral_seo_agent import append_research_source_reference
 from reddit_client import fetch_public_posts
 from rss_scanner import DEFAULT_RSS_FEEDS, get_breaking_news_topics
@@ -180,6 +180,8 @@ def api_generate_script(req: ScriptGenerateRequest):
             print(f"  [ScriptGenerate] Plagiarism note: {plag_err}")
 
         ch_paths = config.channel_paths(getattr(req, "channel_id", None))
+
+        plan = sanitize_plan_scene_descriptions(plan or {})
 
         return {
             "status": "ok",

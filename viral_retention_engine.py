@@ -546,58 +546,89 @@ class ViralRetentionEngine:
         return cls.SUBCONSCIOUS_PALETTES["stoic_philosophy"]
 
     @classmethod
-    def calculate_cadence_acceleration(cls, total_duration: float = 45.0, scene_count: int = 14) -> List[float]:
+    def calculate_cadence_acceleration(cls, total_duration: float = 60.0, scene_count: int = 14) -> List[float]:
         """
         Item 266: Kurgu Ritim Hızlandırması (Cadence Acceleration Curve).
-        Video sonuna doğru kesim sürelerini 3.2s'den 1.4s'ye düşürerek heyecan ve retention tırmandırır.
+        Early scenes slightly longer; later scenes quicker. Floor most cuts at 3.2s
+        when the 38–60s band allows it (13×3.2=41.6 < 48).
         """
         if scene_count <= 0:
             return []
-        
-        # Linear weight deceleration for duration: early scenes get higher weight, climax gets lower weight
+
+        min_scene = 3.2
         weights = [1.0 - (0.5 * (i / max(1, scene_count - 1))) for i in range(scene_count)]
-        sum_weights = sum(weights)
-        durations = [round((w / sum_weights) * total_duration, 2) for w in weights]
-        
-        # Clamp between 1.2s and 4.5s
-        adjusted = [max(1.2, min(4.5, d)) for d in durations]
-        diff = round(total_duration - sum(adjusted), 2)
-        adjusted[-1] = round(adjusted[-1] + diff, 2)
+        sum_weights = sum(weights) or 1.0
+        durations = [(w / sum_weights) * total_duration for w in weights]
+
+        if scene_count * min_scene <= total_duration + 0.05:
+            durations = [max(min_scene, d) for d in durations]
+            overflow = sum(durations) - total_duration
+            i = len(durations) - 1
+            while overflow > 0.01 and i >= 0:
+                spare = durations[i] - min_scene
+                take = min(spare, overflow)
+                durations[i] -= take
+                overflow -= take
+                i -= 1
+            if overflow < -0.01:
+                durations[0] += -overflow
+        else:
+            durations = [max(1.2, min(4.5, d)) for d in durations]
+
+        adjusted = [round(d, 2) for d in durations]
+        if adjusted:
+            last_floor = min_scene if scene_count * min_scene <= total_duration + 0.05 else 1.2
+            ms = [int(round(x * 100)) for x in adjusted]
+            target_ms = int(round(total_duration * 100))
+            ms[-1] += target_ms - sum(ms)
+            floor_ms = int(round(last_floor * 100))
+            if ms[-1] < floor_ms:
+                steal = floor_ms - ms[-1]
+                ms[-1] = floor_ms
+                ms[0] -= steal
+            ms[-1] += target_ms - sum(ms)
+            out = [m / 100.0 for m in ms[:-1]]
+            head = sum(out)
+            out.append(float(target_ms) / 100.0 - head)
+            return out
         return adjusted
 
     @classmethod
-    def build_shorts_story_arc_breakdown(cls, duration: float = 45.0) -> Dict[str, Any]:
+    def build_shorts_story_arc_breakdown(cls, duration: float = 60.0) -> Dict[str, Any]:
         """
-        Item 274: 45-Saniyelik Klasik Shorts Hikaye Arkı (Story Arc Breakdown).
-        Giriş (0-3s) -> Çatışma (4-20s) -> Doruk (21-35s) -> Çözüm & Döngü (36-45s).
+        Item 274: Shorts hikaye arkı — percent of actual duration, not a 45s lock.
+        Intro 0–7%, conflict –45%, climax –75%, loop –100%.
         """
+        intro_end = round(duration * 0.07, 1)
+        conflict_end = round(duration * 0.45, 1)
+        climax_end = round(duration * 0.75, 1)
         return {
             "total_duration": duration,
             "phases": [
                 {
                     "phase": "Hook / Giriş",
-                    "time_range": "0 - 3s",
+                    "time_range": f"0 - {intro_end:.0f}s",
                     "goal": "Pattern interrupt, şok görsel, kaydırmayı engelleme (%75+ Viewed)",
                     "sfx": "Whoosh + Ding",
                     "scale_punch": True
                 },
                 {
                     "phase": "Conflict / Çatışma & Gelişme",
-                    "time_range": "4 - 20s",
+                    "time_range": f"{intro_end:.0f} - {conflict_end:.0f}s",
                     "goal": "Bilişsel çelişkiyi detaylandırma, tez ve antitez argümanları",
                     "sfx": "Subtle heartbeat & ambient sound",
                     "scale_punch": False
                 },
                 {
                     "phase": "Climax / Duygusal Zirve",
-                    "time_range": "21 - 35s",
+                    "time_range": f"{conflict_end:.0f} - {climax_end:.0f}s",
                     "goal": "En sarsıcı bilginin açıklanması, kurgu ritminin hızlanması",
                     "sfx": "Rising tension riser",
                     "scale_punch": True
                 },
                 {
                     "phase": "Resolution & Loop / Çözüm & Döngü",
-                    "time_range": "36 - 45s",
+                    "time_range": f"{climax_end:.0f} - {duration:.0f}s",
                     "goal": "Sentez çıkarımı, kusursuz sonsuz döngü köprüsü (Seamless Loop)",
                     "sfx": "Zero fade-out cut",
                     "scale_punch": False

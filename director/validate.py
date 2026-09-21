@@ -28,8 +28,9 @@ def validate_director_plan(plan: DirectorPlan) -> Dict[str, Any]:
         if plan.scenes[0].beat_type != "hook" and plan.scenes[0].t1 > 3.5:
             warnings.append("Madde 201-203: ilk sahne hook beat olarak işaretlenmeli")
         hook_end = plan.scenes[0].t1 if plan.scenes else 0
-        if hook_end > 4.0:
-            warnings.append("Madde 201: hook penceresi 0-3s ideal; ilk sahne uzun")
+        hook_cap = max(4.0, total * 0.10)
+        if hook_end > hook_cap:
+            warnings.append("Madde 201: hook penceresi ilk %7–10 ideal; ilk sahne uzun")
 
     climax_scenes = [s for s in plan.scenes if s.beat_type == "climax"]
     if not climax_scenes and total >= 30:
@@ -39,11 +40,11 @@ def validate_director_plan(plan: DirectorPlan) -> Dict[str, Any]:
         errors.append("full_narration boş")
 
     word_count = len((plan.full_narration or "").split())
-    # Rough intelligibility: ~2.8 words/sec at natural rate for 42s ≈ 118 words
-    target_words = int(qt.target_duration * 2.6)
-    if word_count > int(target_words * qt.max_audio_speed * 1.05):
+    # Intelligibility: ~2.45 wps; warn only if words exceed the 60s cap (~172).
+    cap_words = int(qt.max_duration * 2.5 * qt.max_audio_speed)
+    if word_count > int(cap_words * 1.05):
         warnings.append(
-            f"Narration {word_count} kelime; ~{target_words} hedef — TTS hız tavanı aşılabilir"
+            f"Narration {word_count} kelime; ~{cap_words} tavan (60s) — TTS 60s'i aşabilir"
         )
 
     for ni in check_narration_integrity(plan):

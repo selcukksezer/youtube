@@ -283,7 +283,7 @@ NICHES: Dict[str, Dict[str, Any]] = {
         "tier1_compatible": False,
         "episodic_capable": True,
         "loop_formula": "cause_and_effect",
-        "trending_keywords": ["dua", "hadis", "ayet", "İslam", "günlük dua"],
+        "trending_keywords": ["dua", "hadis", "ayet", "İslam", "günlük dua", "peygamber", "namaz", "kuran", "sahabe", "sünnet"],
         "ab_test_hook_variants": [
             "Gününüzü aydınlatacak ve içinizi ferahlatacak bu duaya amin deyin...",
             "Hz. Peygamber'in en çok tekrar ettiği o dua bugün hayatınızı değiştirebilir.",
@@ -1004,7 +1004,7 @@ NICHE_FAMILY_MAP: Dict[str, str] = {
     "7_dark_psychology": "dark",
     "8_crypto_market": "crypto",
     "9_five_facts": "quiz",
-    "10_religious_quotes": "stoic",
+    "10_religious_quotes": "religious",
     "11_language_learning": "quiz",
     "12_amazon_affiliate": "product",
     "13_mystery_paranormal": "mystery",
@@ -1095,6 +1095,24 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
             "- Scenes 11-13: Synthesis — how all three rules build discipline.\n"
             "- Scene 14: Seamless loop + self-reflection question.\n"
             "FORBIDDEN: Breaking news, flash bulletin, or \"three key facts\" news format. This is philosophy/guidance."
+        ),
+    },
+    "religious": {
+        "tr": (
+            "DİNİ SÖZ / DUA / HADİS YAPISI (zorunlu):\n"
+            "- Sahne 1: duasının/hadisin kancası — Hz. Peygamber'in sözü veya ayet bağlamı, saygılı ton.\n"
+            "- Orta: duasının anlamı, ne zaman okunduğu, günlük hayata etkisi. İsimleri saygıyla an.\n"
+            "- Son: amin / yorumda dua isteği + döngü.\n"
+            "GÖRSEL: cami, Kuran sayfası, dua eden eller, şafak, hat sanatı, geometrik desen.\n"
+            "YASAK: heykel, put, Marcus Aurelius, Roma büstü, colosseum, stoacı mermer, alkol, peygamber yüzü."
+        ),
+        "en": (
+            "RELIGIOUS QUOTE / DUA / HADITH STRUCTURE (mandatory):\n"
+            "- Scene 1: respectful hook of the prayer or hadith.\n"
+            "- Middle: meaning, when it is recited, daily effect. Honor names.\n"
+            "- Last: amin / comment ask + loop.\n"
+            "VISUALS: mosque, Quran pages, prayer hands, sunrise, calligraphy, geometry.\n"
+            "FORBIDDEN: statues, idols, Marcus Aurelius, Roman busts, colosseum, stoic marble, alcohol, faces of prophets."
         ),
     },
     "news": {
@@ -1285,7 +1303,7 @@ def get_scenario_pack(niche_key: str, language: str = "tr") -> Dict[str, Any]:
         "max_scenes": 16,
         "min_duration": 38.0,
         "max_duration": 60.0,
-        "target_duration": 48.0,
+        "target_duration": 0.0,
         "scene_structure": get_niche_scene_structure(key, language),
     }
 

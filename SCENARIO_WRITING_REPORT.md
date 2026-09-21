@@ -5,7 +5,52 @@
 **Kaynak:** Diskteki **güncel kod**. `SCENARIO_WRITING_AUDIT.md` (A–H Done) **doğrulanmış gerçek değil**.  
 **Canlı kanıt (eski dump):** Bitcoin stub + `(SCENE_DESCRIPTION)` + `/14` + horror query. **Kodda P0-1..5 kapatıldı** (2026-09-21 niş paket). Canlı teyit: `./run_ui.sh` + Senaryoyu Yeniden Üret.
 
-**Sonuç cümlesi:** Ortak zarf şema/süre; içerik niş paketi. Tek `PROMPT_TR` ile 35 niş yazılmaz. P0 kapalı. P1 alignment / 429 banner / generate hard-fail açık.
+**Sonuç cümlesi:** Ortak zarf şema/süre; içerik niş paketi. Dini konu `10_religious_quotes` / family `religious`. Süre 38–60, tavan 60, 48 mıknatıs yok. P0 kapalı.
+
+---
+
+## Canlı arıza (Peygamber duası → stoacı Roma) — KAPANDI
+
+Konu: `Hz Peygamber in en çok tekrar ettiği o dua bugün hayatınızı değiştirebilir`. Sunucu yeni koddaydı (Cadence 13 sahne) ama 13× mood `STOIC CALM CONTEMPLATIVE`, Marcus/Roma query, `(SCENE_DESCRIPTION)`, 48.0s.
+
+| Bug | Kök neden | Fix |
+|-----|-----------|-----|
+| Niş | `TOPIC_NICHE_LOCK` dini regex yalnız `dini\|ayet\|hadis\|kuran\|ibadet` — `peygamber`/`dua` yok. Fuzzy `dua` bazen tutardı; UI stoacı passthrough da mümkün. | Lock: peygamber, dua, Allah, namaz, sure, sahabe, sünnet. `kaza` artık `\bkaza\b` (`kazanç` haber çalmaz). |
+| Aile | `NICHE_FAMILY_MAP["10_religious_quotes"] = "stoic"` → fallback `_generate_stoic_scenes`, motif bankası Marcus/heykel. | Family `religious`. İslami fallback + motif (cami, Kuran, dua elleri, hat). `must_exclude`: statue/idol/marcus/roman bust/alcohol/prophet face. |
+| Placeholder | `apply_visual_intents` yetmez: compile exception veya generator placeholder bırakınca router ham plan döner. UI `GÖRSEL AÇIKLAMA: (SCENE_DESCRIPTION)`. | `sanitize_plan_scene_descriptions` router sınırında (`research_router` 184, `video_router` 278/431). `scene_description` substring yasak. |
+| Mood 13× aynı | Stoic bankasında `mood_palette` yok; `apply_visual_intents` hepsine `intent.mood` yazdı. | Palette + fallback beat mood. |
+| 3.2s ×9 | `target=48` + cadence 1.2–4.5 son sahneleri kısalttı. | Cadence taban 3.2 (band izin verince). Hedef kelime/TTS, 48 değil. |
+
+Kanıt HTTP (port **8012**, `SHORTS_FORCE_PROCEDURAL_FALLBACK=1`): `/tmp/script_generate_religious.json` — niche `10_religious_quotes`, 12 sahne, 60.0s, query `mosque/quran/prayer`, placeholder yok, 8 mood, 0 sahne <3.2s. Aynı yol: crypto `/tmp/script_generate_crypto.json`, astroloji `/tmp/script_generate_astrology.json`.
+
+Test: `tests/test_niche_routing_tr.py`, `tests/test_shorts_duration_band.py`, `tests/test_script_generate_placeholder_router.py`, `tests/test_scenario_niche_packs.py::test_religious_fallback_is_not_stoic`.
+
+---
+
+## 45/48 kilidi kaldırıldı
+
+48 mıknatıs değil. Hedef = `clamp(kelime / 2.45 wps, 38, 60)`. Yalnız 60 tavan (Shorts loop). 55s script 48’e sıkıştırılmaz. TTS ≤60s iken speed×1.15 yok.
+
+| Dosya | Satır | Ne değişti |
+|-------|-------|------------|
+| `director/schema.py` | 124–148 | `TTS_WORDS_PER_SEC=2.45`, `natural_target_duration`, `shorts_word_budget` (≥172), `QualityThresholds.target_duration=0` |
+| `director/timeline.py` | 20–34, 342, 367, ~448 | Beat % (0–7/45/75/100); hedef kelimeden; tavan 172 kelime; `fit_tts_to_timeline` TTS≤60 ise speed=1.0 |
+| `viral_retention_engine.py` | 549–593, 588+ | Cadence taban 3.2s; hikaye arkı süreye orantılı |
+| `scenes/fallback.py` | 105–140, 1155 | Finalize TTS uzunluğu (48 magnet yok); religious dispatcher |
+| `scenes/prompts.py` | 8–27, 87 | Zarf: “konu ne kadar istiyorsa, 60’ı aşma”; 38–48 varyant silindi |
+| `scenes/generator.py` | 125, 169, 420, 486 | Fingerprint 4.0s; `SHORTS_FORCE_PROCEDURAL_FALLBACK`; kelime 172; sanitize çıkış |
+| `scenes/narration_validate.py` | 158–210, 433 | Placeholder substring; `sanitize_plan_scene_descriptions`; default 172 |
+| `director/validate.py` | 41–48 | 42s≈118 kelime uyarısı kalktı; 60s tavan |
+| `research_service.py` | 79, 100 | `42.0 / n` → 4.0s avg |
+| `server_core/render_worker.py` | 800 | Log: hız yalnız 60s tavanı aşınca |
+| `static/app.js` | 579, 2127–2148, 2550 | “hedef 48” yok; ark %; dengele 38 veya 60 |
+| `static/index.html` | 659, 685–688, 702 | Chip tavan 60; ark etiket id |
+| `niche_templates.py` | 1007, 1288 | religious family; pack `target_duration=0` |
+| `ROADMAP_AUDIT.md` | 266, 274, 494 | Done kaldı; kanıt “38–60, cap 60, content-driven” |
+
+Test: `test_compiled_150_word_plan_not_shrunk_to_48`, `test_fit_tts_no_speedup_when_under_60`, `test_ui_arc_labels_are_percent_based`.
+
+Madde 88 / 266 / 274 / 494 **Done**. 45s hikaye arkı artık yüzde.
 
 ---
 
@@ -18,13 +63,13 @@ Uçtan uca 11 adım. Sahip: dosya + fonksiyon.
 | 1 | Konu al, varsa eski planı göster | `static/app.js` `generateScriptFromTopic` (1919–1998) | `forceRegenerate` yoksa ve `hasExistingPlan()` true ise **API çağırmaz**, timeline’a gider. Konuyu `sanitizeTopicTitleForDisplay` ile kırpar, `keyword` olarak gönderir. |
 | 2 | HTTP üret | `routers/research_router.py` `api_generate_script` (78–193) | Niş kilit (`resolve_topic_intelligence`), `generate_scenes` veya Reddit rewrite, stok adayları, enrich + auto-repair, `compile_director_plan`, QualityGate **notu**, planı JSON döner. Kapı kırmızı olsa da **plan yine döner**. |
 | 3 | AI senaryo | `scenes/generator.py` `generate_scenes` (141–480) | Prompt + user mesajı; Gemini/OpenAI zinciri; 429’da circuit; şema retry; `plan_quality_usable` fail → prosedürel fallback. |
-| 4 | Prompt | `scenes/prompts.py` `get_rotated_system_prompt` / `PROMPT_TR` | 8–16 sahne, 38–60 sn, sahne başına ≥12 kelime. Varyant 3 ise **38–48 sn** der — çelişki. |
+| 4 | Prompt | `scenes/prompts.py` `get_rotated_system_prompt` / `PROMPT_TR` | 8–16 sahne, 38–60 sn; konu ne kadar istiyorsa, 60’ı aşma. |
 | 5 | Zenginleştirme | `scenes/enrichment.py` (`enrich_cinematic_search_queries`, `enforce_visual_cadence_14`, `enrich_audio_visual_contrast_scenes`, `enrich_plan_scenes`) | Sinematik sonek, cadence pad, **Item 273 şok/horror query**, kapanış bakışı. Generate **ve** `/api/plan/validate` tekrar çalıştırır. |
 | 6 | AI yok / kalitesiz | `scenes/fallback.py` `_generate_procedural_fallback_scenes` (891–940) + `_generate_crypto_market_scenes` (783–888) | Kripto nişinde 14 sahne, her biri `duration: 3.0` → **42 sn**. Kardeş ajan anlatımı uzatıyor + `_pad_narration_to_min_words`; sahne sayısı hâlâ 14. |
 | 7 | Anlatım kapısı | `scenes/narration_validate.py` (`scene_narration_usable`, `plan_quality_usable`, `repair_post_hook_word_budget`) | Sahne ≥10 kelime (diskte; HEAD’de 12’ydi). Stub + placeholder AI planını teoride reddeder. `min_ratio=1.0` = tüm sahneler. |
 | 8 | Çeşitlilik | `scenes/plan_linter.py` `lint_plan_diversity` | Mood/query tekrar + stub uyarısı. `weak` ise generator prosedürel fallback’e geçer (AI planı için). |
 | 9 | Derleme | `director/compiler.py` `compile_director_plan` (79–243) | Zayıf plan → prosedürel enjekte (`plan_needs_procedural_inject`, kardeş ajan). `solve_timeline`, visual intent, SFX, `to_legacy_plan`. |
-| 10 | Süre / kelime | `director/timeline.py` `solve_timeline` (324–403) | `target_duration=48`. Cadence ≥ `min_scenes=8`. Kelime tavanı: **diskte** `max(120, 60×2.5×1.15)=172`; **HEAD** `max(80, 48×2.0×1.15)=110`. Süreleri cadence eğrisine yazar. |
+| 10 | Süre / kelime | `director/timeline.py` `solve_timeline` | Hedef `natural_target_duration` (38–60). Kelime tavanı 172. Cadence ≥ `min_scenes=8`. |
 | 11 | Kart + panel | `static/app.js` `renderTimelineScenes` (2154–2266), `updateStudioQualityPanel` (186–218) | `scene_description` kutusu, “X klm”, Cadence `n/14`, süre yeşil **yalnız 38–48 sn**. `planVersion: 2` localStorage. |
 
 Render (`server_core/render_worker.py`) bu raporun dışında (randint crash ayrı ajan).
@@ -45,11 +90,11 @@ Kanıt: kullanıcının Bitcoin dump’u + kod. Öncelik P0/P1/P2.
 **P0-2. 6 kelimelik stub cache — KAPANDI (UI)**  
 `planHasBrokenNarration` min 10 kelime + `sceneDescriptionUsable`. Bozuk plan “Oluştur” ile sessiz açılmaz, regen zorlanır. Kart `<10` kırmızı. Generate kapısı hâlâ plan döndürebilir (P1).
 
-**P0-3. `(SCENE_DESCRIPTION)` — KAPANDI**  
-`apply_visual_intents` `scene_description_usable` false ise motif cümlesi yazar. Tüm nişler.
+**P0-3. `(SCENE_DESCRIPTION)` — KAPANDI (router sınır)**  
+`apply_visual_intents` + generator synthesize + `sanitize_plan_scene_descriptions` API JSON’da.
 
-**P0-4. Süre 38–60 / cadence 8–16 — KAPANDI (UI + fallback hedef 48)**  
-UI yeşil 38–60. Cadence `n sahne` (8–16), `/14` yok. `_finalize_fallback_plan` hedef 48. `enforce_visual_cadence_14` helper duruyor (Madde 88).
+**P0-4. Süre 38–60 / cadence 8–16 — KAPANDI (48 magnet yok)**  
+UI yeşil 38–60, tavan 60. Fallback TTS uzunluğu. `enforce_visual_cadence_14` helper duruyor (Madde 88).
 
 **P0-5. Bozuk plan yeniden üretilmez — KAPANDI**  
 Bozuk cache silinir; Oluştur API’ye gider.
@@ -73,7 +118,7 @@ Bozuk cache silinir; Oluştur API’ye gider.
 
 ### Audit notu
 
-Madde 88 (`enforce_visual_cadence_14`) ve Madde 273 (mystery/dark şok) **Done kaldı**. Madde 494 diskte zaten 38–60 / hedef 48; UI yeşil bant buna çekildi. ROADMAP_AUDIT sayacı değişmedi.
+Madde 88 (`enforce_visual_cadence_14`) ve Madde 273 (mystery/dark şok) **Done kaldı**. Madde 494: 38–60 / tavan 60, content-driven hedef. ROADMAP_AUDIT sayacı değişmedi.
 
 
 ### Audit A–H vs gerçek

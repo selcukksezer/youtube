@@ -86,6 +86,7 @@ class TestNiches(unittest.TestCase):
         self.assertEqual(get_niche_family("2_reddit_confessions"), "reddit")
         self.assertEqual(get_niche_family("1_news_flash"), "news")
         self.assertEqual(get_niche_family("9_five_facts"), "quiz")
+        self.assertEqual(get_niche_family("10_religious_quotes"), "religious")
 
     def test_list_all_niches_includes_family(self):
         for n in list_all_niches():

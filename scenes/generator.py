@@ -3,6 +3,7 @@ Core scene generator with multi-provider AI fallback and post-processing filters
 """
 
 import json
+import os
 import re
 from openai import OpenAI
 import config
@@ -25,6 +26,8 @@ from .narration_validate import (
     validate_and_fix_scenes,
     plan_quality_usable,
     scene_description_usable,
+    synthesize_scene_description,
+    sanitize_plan_scene_descriptions,
     SHORTS_MIN_DURATION,
     SHORTS_MAX_DURATION,
     MIN_SCENE_COUNT,
@@ -120,7 +123,7 @@ def _build_competitor_fingerprint_block(fp: dict, lang: str = "tr") -> str:
     scene_count = int(fp.get("scene_count") or 12)
     scene_count = max(MIN_SCENE_COUNT, min(16, scene_count))
     hook_style = fp.get("hook_style") or "Gizem / Merak Kancası"
-    avg_dur = float(fp.get("avg_scene_duration") or round(48.0 / max(1, scene_count), 1))
+    avg_dur = float(fp.get("avg_scene_duration") or 4.0)
     if lang == "en":
         return (
             f"\n\nCOMPETITOR FORMAT FINGERPRINT (mirror this viral structure — mandatory):\n"
@@ -163,6 +166,9 @@ def generate_scenes(
         locked_niche = resolve_niche_from_topic(title, niche_type or "1_news_flash")
     except Exception:
         locked_niche = niche_type or "1_news_flash"
+    force_fb = os.environ.get("SHORTS_FORCE_PROCEDURAL_FALLBACK", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
     try:
         from niche_templates import get_niche_prompt
         prompt = get_niche_prompt(locked_niche, title, language=lang)
@@ -206,7 +212,7 @@ def generate_scenes(
             f"KRİTİK: Her sahnenin 'narration' alanı en az 12 kelimelik TAM Türkçe cümle(ler) olmalı; "
             f"sadece mood etiketi, nokta veya emoji placeholder YASAK. "
             f"scene_description gerçek İngilizce görsel cümle olmalı — placeholder YASAK. "
-            f"8-16 sahne, toplam 38-60 saniye."
+            f"8-16 sahne, toplam 38-60 saniye; konu ne kadar istiyorsa o kadar, 60'ı aşma."
         )
 
     # Build fallback provider chain
@@ -228,6 +234,10 @@ def generate_scenes(
 
     last_error = None
     data = None
+
+    if force_fb:
+        providers = []
+        last_error = "SHORTS_FORCE_PROCEDURAL_FALLBACK"
 
     for provider_name, api_key, base_url, model_name in providers:
         if ("Gemini" in provider_name or "gemma" in (model_name or "").lower()) and _gemini_script_circuit_open():
@@ -347,11 +357,7 @@ def generate_scenes(
             w = q.split()
             s["search_queries"] = [q, " ".join(w[:2]) if len(w) > 2 else q, w[0] if w else "nature"]
         if not scene_description_usable(s.get("scene_description") or ""):
-            fallback_desc = (s.get("search_queries") or ["cinematic b-roll"])[0]
-            if scene_description_usable(fallback_desc):
-                s["scene_description"] = fallback_desc
-            elif not (s.get("scene_description") or "").strip():
-                s["scene_description"] = f"Cinematic b-roll illustrating {fallback_desc}"
+            s["scene_description"] = synthesize_scene_description(s)
 
         # Enrich search queries with cinematic adjectives (Item 89)
         if "search_queries" in s:
@@ -411,7 +417,7 @@ def generate_scenes(
     )
 
     # Batch D — soft word budget before Director hard condense (~60s Shorts headroom)
-    data = repair_post_hook_word_budget(data, max_words=160)
+    data = repair_post_hook_word_budget(data, max_words=172)
 
     # Batch E — mood/query diversity linter (regenerate weak AI plans)
     diversity = lint_plan_diversity(data)
@@ -431,7 +437,7 @@ def generate_scenes(
         data = ensure_retention_hooks_on_plan(
             data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
         )
-        data = repair_post_hook_word_budget(data, max_words=160)
+        data = repair_post_hook_word_budget(data, max_words=172)
 
     # Final quality gate — regenerate if hooks/budget left stub narrations
     if not plan_quality_usable(data.get("scenes") or []) and not data.get("procedural_fallback"):
@@ -446,7 +452,7 @@ def generate_scenes(
         data = ensure_retention_hooks_on_plan(
             data, title, lang=lang, niche_type=niche_type, variation_attempt=variation_attempt
         )
-        data = repair_post_hook_word_budget(data, max_words=160)
+        data = repair_post_hook_word_budget(data, max_words=172)
 
     # Final soft normalization — preserve relative pacing within 38-60s
     total = sum(float(s.get("duration") or 3.5) for s in data["scenes"])
@@ -477,4 +483,4 @@ def generate_scenes(
         pass
 
     print(f"  [SceneGenerator] Sahne Sayısı: {len(data['scenes'])}, Toplam Süre: {total}s | Tema: {data.get('visual_theme', '-')}")
-    return data
+    return sanitize_plan_scene_descriptions(data)

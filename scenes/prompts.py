@@ -8,7 +8,7 @@ from typing import Optional
 SHARED_ENVELOPE_TR = """ORTAK ŞEMA (tüm nişler aynı; içerik kuralları niş paketinden gelir):
 - SADECE geçerli JSON döndür.
 - 8-16 sahne (konuya göre; tam 14 zorunlu değil).
-- Toplam süre 38-60 saniye (hedef 48, tavan 60 — Madde 494).
+- Toplam süre 38-60 saniye; konu ne kadar istiyorsa o kadar, 60'ı aşma. 48 mıknatıs YASAK.
 - Her narration: en az 10 kelimelik TAM cümle, . ! ? ile bit. 6 kelimelik stub YASAK.
 - scene_description: gerçek İngilizce görsel cümle; (SCENE_DESCRIPTION) / tbd / n/a YASAK.
 - search_queries: 3 İngilizce stok terim; niş must_exclude listesine aykırı görsel YASAK.
@@ -19,7 +19,7 @@ JSON iskeleti:
 SHARED_ENVELOPE_EN = """SHARED SCHEMA (all niches; content rules come from the niche pack):
 - Return valid JSON only.
 - 8-16 scenes (topic decides; exactly 14 is not required).
-- Total duration 38-60 seconds (target 48, cap 60 — Item 494).
+- Total duration 38-60 seconds; as long as the topic needs, never past 60. 48 is not a magnet.
 - Each narration: at least 10 complete words ending with . ! ?
 - scene_description: real English visual sentence; placeholders forbidden.
 - search_queries: 3 English stock terms; never violate niche must_exclude.
@@ -29,7 +29,7 @@ JSON skeleton:
 PROMPT_TR = """Sen profesyonel bir YouTube Shorts senaristi ve seslendirme yazarısın.
 Verilen başlık için:
 
-1. Türkçe anlatım metni yaz (120-160 KELİME, 38-60 SANİYE Shorts süresi — Madde 494).
+1. Türkçe anlatım metni yaz (120-170 KELİME, 38-60 SANİYE Shorts süresi — konu ne kadar istiyorsa, 60'ı aşma).
 
 2. 8-16 sahne oluştur (konuya göre sen karar ver). TOPLAM 38-60 SANİYE. Sen duration belirle (2.5-5 sn, doğal tempo).
    Her sahne:
@@ -53,7 +53,7 @@ SADECE JSON:
 PROMPT_EN = """You are a professional YouTube Shorts scriptwriter.
 For the given title:
 
-1. Write English narration (120-160 WORDS, 38-60 SECOND Shorts length — Item 494).
+1. Write English narration (120-170 WORDS, 38-60 SECOND Shorts length — as long as the topic needs, never past 60).
 
 2. Create 8-16 scenes (~3-5s each). TOTAL 38-60 SECONDS.
    Each scene:
@@ -84,7 +84,7 @@ Kurallar:
 SADECE JSON formatında çıktı ver:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"dramatic"}]}""",
     """Sen YouTube Shorts için sinematik belgesel ve hikaye anlatıcısısın.
-Hedef: Verilen başlığı derinlikli, bilimsel veya tarihi kanıtlarla zenginleştirerek açıklayan 38-48 saniyelik video senaryosu oluşturmak.
+Hedef: Verilen başlığı derinlikli, bilimsel veya tarihi kanıtlarla zenginleştirerek açıklayan 38-60 saniyelik video senaryosu oluşturmak (konu ne kadar istiyorsa o kadar, 60'ı aşma).
 Kurallar:
 - 8-16 sahne, güçlü kancalar ve organik emojiler, ~120-160 kelime.
 - Her sahnede İngilizce görsel sahne tarifi ve sinematik arama terimleri.

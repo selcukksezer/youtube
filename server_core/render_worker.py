@@ -797,7 +797,7 @@ def process_video_task(req: VideoRenderRequest):
                     clips[i]["t1"] = s.t1
             plan = director.to_legacy_plan()
             _log(
-                f"[Timeline] Ses bütçeye kilitlendi: {audio_dur:.1f}s (speed×{speed:.2f}, tavan {director.quality_thresholds.max_audio_speed})",
+                f"[Timeline] TTS {audio_dur:.1f}s (speed×{speed:.2f}; hız yalnızca 60s tavanı aşınca)",
                 70,
             )
 

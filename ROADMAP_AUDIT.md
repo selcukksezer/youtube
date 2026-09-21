@@ -383,7 +383,7 @@
 | 263 | İzleyiciye Ters Köşe Yapma | ✅ Done | `viral_retention_engine.py` | Hook generator fonksiyonları | ✅ |
 | 264 | Sesli İpuçları | ✅ Done | `effects/motion` subtitle punch default | Audio hint wired | ✅ |
 | 265 | Metinlerin Dikey Konumu | ✅ Done | `viral_retention_engine.py:get_subtitles_safe_zone` | Y | Default render yolunda doğrulandı (kod+test) |
-| 266 | Kurgu Ritim Hızlandırması | ✅ Done | `director/timeline.py` | Climax 30-35s + cadence acceleration | ✅ |
+| 266 | Kurgu Ritim Hızlandırması | ✅ Done | `director/timeline.py` | Cadence acceleration; most cuts ≥3.2s inside 38-60s band | ✅ |
 | 267 | Görsel Yönlendirme | ✅ Done | `—` | Batı kültürü yön psikolojisi not documented | — |
 | 268 | Karar Verme Süresi Baskısı | ✅ Done | `viral_retention_engine.py` decision hooks | Decision pressure wired | ✅ |
 | 269 | Yorumları Sabitleme Müjdesi | ✅ Done | `viral_retention_engine.py` | Mistake bait, polarize, quiz, pinned bait | ✅ |
@@ -391,7 +391,7 @@
 | 271 | Görsel Boşluk Bırakmama | ✅ Done | `enrich_continuous_motion_hints` + `test_section4_items_271_275.py` | Motion default | ✅ |
 | 272 | Görsel Parlaklık Dalgalanması | ✅ Done | `apply_scene_brightness_alternation` + tests | Brightness wired | ✅ |
 | 273 | Ses ve Görselin Ters Uyumu | ✅ Done | `enrich_audio_visual_contrast_scenes` + tests | A/V contrast wired | ✅ |
-| 274 | Hikaye Arkı (Story Arc) | ✅ Done | `viral_retention_engine.py + director/timeline.py` | 12 loop formula, story arc, retention score | ✅ |
+| 274 | Hikaye Arkı (Story Arc) | ✅ Done | `viral_retention_engine.py + director/timeline.py` | Percent-based arc (0-7/45/75/100) of actual duration, cap 60 | ✅ |
 | 275 | Kaydırma Oranı (Viewed vs Swiped Away) | ✅ Done | `viral_retention_engine.py + director/timeline.py` | 12 loop formula, story arc, retention score | ✅ |
 
 ### Bölüm 5: Hibrit Nişler & Sinerjiler (Madde 276–345)
@@ -631,7 +631,7 @@
 | 491 | Kanalın Dilini Asla Karıştırmama | ✅ Done | `database.py managed_channels` | Kanal dil alanı; enforce policy kısmen | ✅ |
 | 492 | YouTube Shorts Algoritması Güncelleme Tak… | 🔜 Deferred | `—` | Creator Insider takibi manuel | — |
 | 493 | Uzun Vadeli Otorite İnşası | 🔜 Deferred | `—` | 100 video otorite — zaman/maraton | — |
-| 494 | Video Süresi Stratejisi | ✅ Done | `director/timeline.py + quality_gate.py` | 38-48s TTS süre bandı hard-fail | ✅ |
+| 494 | Video Süresi Stratejisi | ✅ Done | `director/timeline.py + quality_gate.py` | 38-60s band, cap 60, content-driven target (48 not a magnet) | ✅ |
 | 495 | Yorum Denetiminde Negatif Kelime Engeli | ✅ Done | `proof_archiver.py` | Negatif kelime listesi kısmen | ✅ |
 | 496 | Mobil Doğrulama Rozetleri | 🔜 Deferred | `—` | AdSense/Studio manuel operasyon | — |
 | 497 | Düzenli Veri Yedekleme | ✅ Done | `config.py output dirs` | Yerel arşiv; bulut yedek yok | ✅/— |
@@ -672,7 +672,7 @@
 - **Proof of effort archiver** (#471, 133) — YouTube itiraz dossier otomasyonu
 - **Circuit breaker + retry** (#416, 462) — API resilience production-grade
 - **0 TL stack compliance** (#465) — Gemini free + Edge-TTS + Pexels/Pixabay
-- **Director quality gate** (#494) — TTS süre bandı hard-fail render öncesi
+- **Director quality gate** (#494) — 38–60s band, cap 60, content-driven target; hard-fail only past 60s
 - **SSE live render progress** (#421) — Operator UX
 
 ## 6. Quick Wins (≈80% Done, Küçük Patch)

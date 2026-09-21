@@ -109,19 +109,54 @@ def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
     n = len(scenes)
     if n:
         try:
-            from director.schema import QualityThresholds
+            from director.schema import QualityThresholds, natural_target_duration
+            from viral_retention_engine import ViralRetentionEngine
             qt = QualityThresholds()
-            target, min_d, max_d = qt.target_duration, qt.min_duration, qt.max_duration
+            min_d, max_d = qt.min_duration, qt.max_duration
+            wc = sum(len((sc.get("narration") or "").split()) for sc in scenes)
+            target = natural_target_duration(wc, min_d, max_d)
+            cadence = ViralRetentionEngine.calculate_cadence_acceleration(
+                total_duration=target, scene_count=n
+            )
         except Exception:
-            target, min_d, max_d = 48.0, 38.0, 60.0
-        total = sum(float(sc.get("duration") or 3.0) for sc in scenes)
-        if total < min_d or total > max_d or abs(total - target) > 0.75:
-            per = round(max(2.0, min(7.5, target / n)), 2)
-            for sc in scenes:
-                sc["duration"] = per
-            drift = round(target - per * n, 2)
-            if scenes and abs(drift) > 0.01:
-                scenes[-1]["duration"] = round(scenes[-1]["duration"] + drift, 2)
+            wc = sum(len((sc.get("narration") or "").split()) for sc in scenes)
+            target = max(38.0, min(60.0, round(wc / 2.45, 2) if wc else 38.0))
+            cadence = [round(target / n, 2)] * n
+            cadence[-1] = round(target - sum(cadence[:-1]), 2)
+        moods = [
+            "urgent", "dramatic", "energetic", "tense", "calm",
+            "epic", "mysterious", "hopeful", "solemn", "warm",
+            "reverent", "luminous",
+        ]
+        beat_n = n
+        for i, sc in enumerate(scenes):
+            sc["duration"] = float(cadence[i]) if i < len(cadence) else round(target / n, 2)
+            if not (sc.get("mood") or "").strip() or (sc.get("mood") or "").strip().lower() == (
+                scenes[0].get("mood") or ""
+            ).strip().lower() and i > 0:
+                sc["mood"] = moods[i % len(moods)]
+            pct = (i + 0.5) / beat_n
+            if i == 0 or pct <= 0.07:
+                sc["beat_type"] = "hook"
+            elif pct <= 0.45:
+                sc["beat_type"] = "conflict"
+            elif pct <= 0.75:
+                sc["beat_type"] = "climax"
+            else:
+                sc["beat_type"] = "resolution"
+        ms = [int(round(float(sc.get("duration") or 0) * 100)) for sc in scenes]
+        target_ms = int(round(min(max_d, max(min_d, target)) * 100))
+        if ms:
+            ms[-1] += target_ms - sum(ms)
+            for i, sc in enumerate(scenes[:-1]):
+                sc["duration"] = ms[i] / 100.0
+            head = sum(float(sc["duration"]) for sc in scenes[:-1])
+            scenes[-1]["duration"] = float(target_ms) / 100.0 - head
+        # Force mood diversity even when a family stamped one mood on every row
+        unique_moods = {(sc.get("mood") or "").strip().lower() for sc in scenes}
+        if len(unique_moods) < min(4, n):
+            for i, sc in enumerate(scenes):
+                sc["mood"] = moods[i % len(moods)]
     plan["scenes"] = scenes
     plan["full_narration"] = " ".join(
         (s.get("narration") or "").strip() for s in scenes if (s.get("narration") or "").strip()
@@ -619,6 +654,94 @@ def _generate_stoic_scenes(clean_title: str, is_tr: bool, variation_seed: int = 
     }
 
 
+def _generate_religious_quotes_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0):
+    """Islamic dua/hadith fallback — mosque/Quran/prayer visuals, never stoic/Roman/idols."""
+    topic = (clean_title or "").strip() or ("Günün duası" if is_tr else "Daily prayer")
+    if is_tr:
+        narrations = [
+            f"Hz. Peygamber'in en çok tekrar ettiği o dua bugün {topic} ile hayatınıza dokunabilir, dinleyin.",
+            "Bu dua sabah uyanınca okunur; kalbi yumuşatır, günü Allah'ın zikriyle açar ve içi ferahlatır.",
+            "Hadis ehli nakleder: az söz, çok sevap. Kısa dua, samimi niyetle tekrar edilince bereket büyür.",
+            "Cami avlusunda şafak ışığı varken eller açılır; dil tesbih çeker, gönül Rabbine yönelir.",
+            "Ayet mealini saygıyla oku: her harf bir kapı açar, her amin bir sığınaktır dertlere karşı.",
+            "Namazdan sonra üç kere okunan bu dua, günahı silmez iddiası değil; tevbe kapısını hatırlatır.",
+            "Sahabe bu zikri yolda, evde, uykudan önce söylerdi; sünnet olan sürekliliktir, gösteriş asla olmaz.",
+            "Kuran sayfası açık dururken acele etme; anlamı kalbe indir, sonra dili onunla konuştur.",
+            "Dua etmek şikayet değildir. Kul aczini bilir, Rabbi kerimini bilir, aradaki bağ kopmaz.",
+            "Bugün bir kez dur: ellerini kaldır, bu duayı oku, kalbindeki düğümü Allah'a bırak ve amin deyin.",
+            "Yarın aynı saatte aynı dua; alışkanlık ibadeti taşır, taş kalbi yumuşatır, evi aydınlatır.",
+            "Peki sen bu duayı kaç kez okudun? Yorumda amin yaz, döngü başa bağlansın kardeşlerim.",
+        ]
+    else:
+        narrations = [
+            f"The prayer the Prophet repeated most can still reshape a day around {topic}, listen closely.",
+            "This dua is recited at dawn; it softens the heart and opens the morning with remembrance of God.",
+            "Hadith scholars note: few words, great reward. A short prayer grows when the intention is sincere.",
+            "Hands rise in a mosque courtyard at first light; the tongue remembers, the chest turns to the Lord.",
+            "Read the verse meaning with respect: each letter is a door, each amin a shelter against hardship.",
+            "After prayer this dua is said three times; it is not a magic wipe, it is a door to repentance.",
+            "The companions repeated this dhikr at home and on the road; the sunnah is constancy, not display.",
+            "When a Quran page is open, do not rush; let the meaning reach the heart, then let the tongue follow.",
+            "Dua is not complaint. The servant knows his need, the Lord knows His generosity, the bond remains.",
+            "Stop once today: raise your hands, recite this prayer, leave the knot in your chest with God, and say amin.",
+            "Tomorrow the same hour, the same dua; habit carries worship, softens a hard heart, lights a home.",
+            "How many times have you read this prayer? Write amin in the comments so the loop can restart.",
+        ]
+    visuals = [
+        ("Mosque dome catching golden sunrise light, no people facing camera",
+         ["mosque dome golden sunrise", "islamic architecture dawn", "minaret silhouette morning"]),
+        ("Open Quran pages with soft window light, no faces",
+         ["open quran pages soft light", "arabic manuscript closeup", "holy book still life"]),
+        ("Prayer hands raised at dusk, cropped at wrists, respectful",
+         ["prayer hands raised dusk", "open palms dua", "hands supplication sunset"]),
+        ("Islamic geometric tile and gold calligraphy wall, no figurative idols",
+         ["islamic geometric calligraphy", "arabesque tile pattern", "gold kufic art wall"]),
+        ("Minaret silhouette against dawn sky and crescent",
+         ["minaret silhouette dawn", "crescent moon mosque", "islamic skyline sunrise"]),
+        ("Olive grove in peaceful morning mist, Mediterranean",
+         ["olive grove peaceful morning", "mediterranean olive trees dawn", "calm orchard mist"]),
+        ("Mosque interior lanterns glowing over empty prayer hall",
+         ["mosque lantern interior glow", "prayer hall lamps", "islamic architecture interior"]),
+        ("Courtyard fountain for ablution, water ripples, no faces",
+         ["ablution water fountain courtyard", "mosque courtyard fountain", "wudu water closeup"]),
+        ("Crescent moon above a distant mosque at night",
+         ["crescent moon over mosque", "night sky islamic architecture", "ramadan night sky"]),
+        ("Prayer rug still life with tasbih beads, no figurative art",
+         ["prayer rug still life", "tasbih beads closeup", "islamic prayer mat detail"]),
+        ("Desert dunes at calm sunrise, empty horizon",
+         ["desert dunes sunrise calm", "golden sand sunrise aerial", "empty desert dawn"]),
+        ("Close-up of Arabic calligraphy ink on paper, abstract letters only",
+         ["arabic calligraphy closeup", "islamic calligraphy ink", "quranic script macro"]),
+    ]
+    moods = [
+        "reverent", "hopeful", "peaceful", "solemn",
+        "luminous", "calm", "warm", "contemplative",
+        "hopeful", "reverent", "peaceful", "warm",
+    ]
+    shift = variation_seed % len(visuals)
+    scenes = []
+    for i, narr in enumerate(narrations):
+        desc, queries = visuals[(i + shift) % len(visuals)]
+        scenes.append({
+            "scene_number": i + 1,
+            "narration": narr,
+            "scene_description": desc,
+            "search_queries": queries,
+            "duration": 4.5,
+            "mood": moods[i % len(moods)],
+            "beat_type": "hook" if i == 0 else "resolution" if i == len(narrations) - 1 else "conflict",
+        })
+    return {
+        "title": topic if is_tr else f"Dua: {topic}",
+        "visual_theme": "mosque quran prayer calligraphy sunrise respectful islamic",
+        "full_narration": " ".join(narrations),
+        "scenes": scenes,
+        "niche_id": "10_religious_quotes",
+        "procedural_fallback": True,
+        "scenario_pack_family": "religious",
+    }
+
+
 def _generate_dark_psychology_scenes(clean_title: str, is_tr: bool):
     """
     Constructs 14-scene Dark Psychology & Body Language format (Tone: mysterious, analytical, cautionary).
@@ -998,6 +1121,11 @@ def _generate_procedural_fallback_scenes(
             resolved = "2_reddit_confessions" if "whatsapp" not in combined else "20_whatsapp_chat_story"
         elif any(k in title.lower() for k in ["son dakika", "flaş", "haber", "açıklama", "deprem", "karar"]):
             resolved = "1_news_flash"
+        elif any(k in combined for k in [
+            "peygamber", "dua", "ayet", "hadis", "kuran", "kur'an",
+            "allah", "namaz", "islam", "islâm", "sahabe", "sünnet", "ibadet", "dini",
+        ]):
+            resolved = "10_religious_quotes"
         elif any(k in title.lower() for k in ["stoa", "marcus aurelius", "seneca", "felsefe"]):
             resolved = "6_stoic_philosophy"
         elif any(k in title.lower() for k in ["karanlık psikoloji", "manipülasyon", "beden dili"]):
@@ -1024,6 +1152,11 @@ def _generate_procedural_fallback_scenes(
         return _finalize_fallback_plan(_generate_reddit_confession_scenes(clean_title, combined, is_tr), is_tr=is_tr)
     if nid in ("1_news_flash",) or family == "news":
         return _finalize_fallback_plan(_generate_news_flash_scenes(clean_title, is_tr), is_tr=is_tr)
+    if nid == "10_religious_quotes" or family == "religious":
+        return _finalize_fallback_plan(
+            _generate_religious_quotes_scenes(clean_title, is_tr, variation_seed=variation_seed),
+            is_tr=is_tr,
+        )
     if nid in ("6_stoic_philosophy",) or family == "stoic":
         return _finalize_fallback_plan(_generate_stoic_scenes(clean_title, is_tr, variation_seed=variation_seed), is_tr=is_tr)
     if nid == "7_dark_psychology" or family == "dark":

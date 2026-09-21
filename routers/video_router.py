@@ -22,6 +22,7 @@ from server_core import (
     process_video_task
 )
 from server_core import state
+from scenes.narration_validate import sanitize_plan_scene_descriptions
 
 router = APIRouter(tags=["Video"])
 
@@ -274,6 +275,8 @@ def _plan_gate_result(
         )
         plan_out = plan_in
 
+    plan_out = sanitize_plan_scene_descriptions(plan_out or {})
+
     integrity = check_narration_integrity(director)
     pre = pre_render_score(director)
     narr_block = list(integrity) + [
@@ -424,6 +427,8 @@ def get_project_plan(slug: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Plan dogrulanamadi: {e}")
+
+    plan = sanitize_plan_scene_descriptions(plan or {})
 
     return {
         "status": "ok",

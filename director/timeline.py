@@ -8,19 +8,27 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from scenes.narration_validate import MIN_WORDS_PER_SCENE, MIN_WORDS_PER_SENTENCE, scene_narration_issues
 
-from .schema import DirectorPlan, ScenePlan, QualityThresholds
+from .schema import (
+    DirectorPlan,
+    ScenePlan,
+    QualityThresholds,
+    natural_target_duration,
+    shorts_word_budget,
+)
 
 
 def _assign_beat_types(scenes: List[ScenePlan], total: float) -> None:
-    """Map scenes onto classic Shorts arc (Item 274)."""
+    """Map scenes onto classic Shorts arc (Item 274) — percent of actual duration."""
+    span = total if total and total > 0 else 1.0
     for s in scenes:
         mid = (s.t0 + s.t1) / 2.0
+        pct = mid / span
         narr_l = (s.narration or "").lower()
-        if s.index == 0 or mid <= 3.0:
+        if s.index == 0 or pct <= 0.07:
             s.beat_type = "hook"
-        elif mid <= 20.0:
+        elif pct <= 0.45:
             s.beat_type = "conflict"
-        elif mid <= 35.0:
+        elif pct <= 0.75:
             s.beat_type = "climax"
         else:
             s.beat_type = "resolution"
@@ -324,12 +332,16 @@ def _apply_word_budget(scenes: List[ScenePlan], max_words: int, min_scenes: int)
 def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
     """
     Enforce 38-60s budget, flexible cadence (≥8 cuts), cadence acceleration, rebuild narration.
+    Target follows narration length — never shrink a 55s script to 48.
     """
     qt = plan.quality_thresholds or QualityThresholds()
-    target = qt.target_duration
     scenes = list(plan.scenes)
     if not scenes:
         return plan
+    word_n = _scene_word_count(scenes)
+    target = natural_target_duration(word_n, qt.min_duration, qt.max_duration)
+    qt.target_duration = target
+    plan.quality_thresholds = qt
 
     # Ensure minimum cadence (Item 88) — never shred narration mid-sentence
     while len(scenes) < qt.min_scenes and scenes:
@@ -351,8 +363,8 @@ def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
             pad = _visual_pad_scene(longest, len(scenes))
             scenes.insert(scenes.index(longest) + 1, pad)
 
-    # Turkish TTS ≈ 2.0–2.5 wps; budget scales to Shorts max (38–60s, Madde 494).
-    max_words = max(120, int(qt.max_duration * 2.5 * qt.max_audio_speed))
+    # Turkish TTS ≈ 2.3–2.6 wps; only condense when over the 60s cap (Madde 494).
+    max_words = shorts_word_budget(qt.max_duration, qt.max_audio_speed)
     total_w = _scene_word_count(scenes)
     if total_w <= max_words and _scenes_narration_ok(scenes):
         pass  # validated plan — preserve user-authored narrations
@@ -414,16 +426,15 @@ def fit_tts_to_timeline(
     Returns (audio_path, timings, audio_dur, speed_factor).
     Preferred speed ≤ quality_thresholds.max_audio_speed; emergency budget lock
     may go up to 1.35 so final Shorts stay inside max_duration (Item 494).
-    If even 1.35× cannot fit the 38–48s band, raises RuntimeError (hard-fail —
-    never publish a 76s stretched Shorts).
+    If even 1.35× cannot fit the 60s cap, raises RuntimeError (hard-fail —
+    never publish a 76s stretched Shorts). Natural TTS ≤ 60s is never sped up.
     """
     import wave
     import os
 
     qt = plan.quality_thresholds
-    target = plan.total_duration() or qt.target_duration
     # Hard ceiling keeps videos inside Shorts band even when TTS overruns
-    budget_ceiling = min(max(qt.max_duration, target), 60.0)
+    budget_ceiling = min(max(qt.max_duration, 60.0), 60.0)
     out = output_path or audio_path
     emergency_max_speed = 1.35
 
@@ -433,14 +444,26 @@ def fit_tts_to_timeline(
     except Exception:
         return audio_path, word_timings or [], 0.0, 1.0
 
-    if audio_dur <= 0 or target <= 0:
+    if audio_dur <= 0:
         return audio_path, word_timings or [], audio_dur, 1.0
 
-    ratio = audio_dur / target
-    if abs(ratio - 1.0) <= 0.06:
-        # Snap scene ends to audio if nearly equal (Item 129)
+    def _rescale_scenes_to(dur: float) -> None:
+        if dur <= 2.0 or not plan.scenes:
+            return
+        scale = dur / max(plan.total_duration(), 0.01)
+        t = 0.0
+        for s in plan.scenes:
+            s.duration = round(s.duration * scale, 3)
+            s.t0 = round(t, 3)
+            t = round(t + s.duration, 3)
+            s.t1 = t
+
+    # Natural TTS that already fits Shorts cap: never speed up to 42/45/48.
+    if audio_dur <= qt.max_duration * 1.02:
+        _rescale_scenes_to(audio_dur)
         return audio_path, word_timings or [], audio_dur, 1.0
 
+    ratio = audio_dur / max(qt.max_duration, 0.01)
     if ratio > 1.0:
         from voice.audio_dsp import fit_audio_to_duration
         fitted = out if out != audio_path else audio_path.replace(".wav", "_fitted.wav")
@@ -491,22 +514,9 @@ def fit_tts_to_timeline(
                 wt["offset"] = wt.get("offset", 0.0) / used
                 wt["duration"] = wt.get("duration", 0.0) / used
         # Rescale scene durations to final audio (Item 129 ±0.05)
-        if new_dur > 2.0 and plan.scenes:
-            scale = new_dur / max(plan.total_duration(), 0.01)
-            t = 0.0
-            for s in plan.scenes:
-                s.duration = round(s.duration * scale, 3)
-                s.t0 = round(t, 3)
-                t = round(t + s.duration, 3)
-                s.t1 = t
+        _rescale_scenes_to(new_dur)
         return path, word_timings or [], new_dur, used
 
     # Audio shorter than scenes — shrink scenes to audio
-    scale = audio_dur / plan.total_duration()
-    t = 0.0
-    for s in plan.scenes:
-        s.duration = round(max(1.2, s.duration * scale), 3)
-        s.t0 = round(t, 3)
-        t = round(t + s.duration, 3)
-        s.t1 = t
+    _rescale_scenes_to(audio_dur)
     return audio_path, word_timings or [], audio_dur, 1.0

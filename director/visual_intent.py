@@ -17,6 +17,10 @@ NICHE_MOTIFS: Dict[str, Dict[str, Any]] = {
         "motif": "imperial_rome",
         "era": "ancient rome",
         "mood": "stoic calm contemplative",
+        "mood_palette": [
+            "contemplative", "solemn", "disciplined", "calm",
+            "epic", "reflective", "tense", "hopeful",
+        ],
         "subjects": [
             "bronze marcus aurelius statue",
             "ancient roman marble columns",
@@ -93,12 +97,46 @@ NICHE_MOTIFS: Dict[str, Dict[str, Any]] = {
         "must_include": ["chart", "coin", "market"],
         "must_exclude": ["horror", "skull", "ghost"],
     },
+    "10_religious_quotes": {
+        "motif": "islamic_devotion",
+        "era": "sacred contemporary",
+        "mood": "reverent peaceful",
+        "mood_palette": [
+            "reverent", "hopeful", "peaceful", "solemn",
+            "luminous", "calm", "warm", "contemplative",
+        ],
+        "subjects": [
+            "mosque dome golden sunrise",
+            "open quran pages soft light",
+            "prayer hands raised dusk",
+            "islamic geometric calligraphy",
+            "minaret silhouette dawn",
+            "olive grove peaceful morning",
+            "mosque lantern interior glow",
+            "ablution water fountain courtyard",
+            "crescent moon over mosque",
+            "prayer rug still life",
+            "desert dunes sunrise calm",
+            "arabic calligraphy closeup",
+        ],
+        "must_include": ["mosque", "quran", "prayer", "calligraphy", "sunrise"],
+        "must_exclude": [
+            "statue", "idol", "marcus", "aurelius", "roman bust", "roman",
+            "colosseum", "stoic", "philosopher portrait", "blacksmith",
+            "bronze eagle", "alcohol", "beer", "wine", "pig", "pork",
+            "prophet face", "muhammad face", "face of prophet",
+        ],
+    },
 }
 
 _DEFAULT_MOTIF = {
     "motif": "cinematic_general",
     "era": "contemporary",
     "mood": "cinematic atmospheric",
+    "mood_palette": [
+        "urgent", "dramatic", "energetic", "tense", "calm",
+        "epic", "mysterious", "hopeful", "solemn", "warm",
+    ],
     "subjects": [
         "cinematic landscape aerial",
         "dramatic light through clouds",
@@ -108,6 +146,8 @@ _DEFAULT_MOTIF = {
     "must_include": ["cinematic"],
     "must_exclude": ["horror", "skull", "ghost"],
 }
+
+DEFAULT_MOOD_CYCLE = _DEFAULT_MOTIF["mood_palette"]
 
 # Family banks — every niche family has a visual policy; per-id NICHE_MOTIFS wins.
 FAMILY_MOTIFS: Dict[str, Dict[str, Any]] = {
@@ -126,6 +166,7 @@ FAMILY_MOTIFS: Dict[str, Dict[str, Any]] = {
     },
     "crypto": NICHE_MOTIFS["8_crypto_market"],
     "stoic": NICHE_MOTIFS["6_stoic_philosophy"],
+    "religious": NICHE_MOTIFS["10_religious_quotes"],
     "mystery": NICHE_MOTIFS["13_mystery_paranormal"],
     "dark": NICHE_MOTIFS["7_dark_psychology"],
     "reddit": {
@@ -222,7 +263,7 @@ TOPIC_NICHE_LOCK: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"kripto|bitcoin|borsa|altın|hisse|dolar|enflasyon", re.I), "8_crypto_market"),
     (re.compile(r"karanlık psikoloji|manipülasyon|dark psychology", re.I), "7_dark_psychology"),
     (re.compile(r"transfer|futbol|premier league|şampiyonlar ligi|mbappe|messi", re.I), "15_football_transfers"),
-    (re.compile(r"son dakika|flaş|\bhaber\b|deprem|kaza|trafik", re.I), "1_news_flash"),
+    (re.compile(r"son dakika|\bflaş\b|\bhaber\b|deprem|\bkaza\b|trafik", re.I), "1_news_flash"),
     (re.compile(r"sigma|gigachad|alpha male|lone wolf", re.I), "24_sigma_character_study"),
     (re.compile(r"split.?screen|gameplay|minecraft|parkour|subway.?surfers", re.I), "3_split_gameplay"),
     (re.compile(r"zengin|milyoner|girişimci|pasif gelir|billionaire", re.I), "16_wealth_entrepreneurship"),
@@ -232,7 +273,21 @@ TOPIC_NICHE_LOCK: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"rüya tabiri|rüyada|dream meaning", re.I), "28_dream_meanings"),
     (re.compile(r"süper araba|lamborghini|ferrari|hypercar", re.I), "31_supercars_automotive"),
     (re.compile(r"fitness|protein|kilo ver|kas yap", re.I), "23_fitness_nutrition_hacks"),
-    (re.compile(r"dini|ayet|hadis|kuran|ibadet", re.I), "10_religious_quotes"),
+    (re.compile(r"dini|ayet|hadis|kuran|kur'an|ibadet|peygamber|\bdua\b|allah|namaz|isl[aâ]m|sahabe|sünnet|sunnet|\bsure(?:si|ler)?\b", re.I), "10_religious_quotes"),
+    (re.compile(r"ingilizce deyim|dil öğrenme|language hack|yabancı dil", re.I), "11_language_learning"),
+    (re.compile(r"amazon ürün|trendyol|viral gadget|affiliate ürün", re.I), "12_amazon_affiliate"),
+    (re.compile(r"before after|evrim belgesel|then vs now|100 yıl önce", re.I), "17_before_after_evolution"),
+    (re.compile(r"tarihi savaş|osmanlı|savaş taktik|history battle", re.I), "19_historical_battles"),
+    (re.compile(r"emoji quiz|emoji oyunu|guess the movie emoji", re.I), "22_emoji_guess_game"),
+    (re.compile(r"ünlü serveti|net worth|zengin ünlü|celebrity fortune", re.I), "25_celebrity_net_worth"),
+    (re.compile(r"tehlikeli yerler|yasak bölge|forbidden places|ölümcül ada", re.I), "26_dangerous_places"),
+    (re.compile(r"optik illüzyon|zeka testi|optical illusion|iq test", re.I), "29_optical_illusions_iq"),
+    (re.compile(r"nazım hikmet|cemal süreya|aşk şiiri|şiir dinle", re.I), "30_poetry_quotes"),
+    (re.compile(r"tüketici hakları|iade hakkı|hukuki hak|vatandaş hakkı", re.I), "32_legal_consumer_hacks"),
+    (re.compile(r"ebeveynlik|çocuk psikolojisi|parenting hack|anne baba tüyosu", re.I), "33_parenting_child_hacks"),
+    (re.compile(r"easter egg|gta sırları|oyun sırrı|game secret", re.I), "34_gaming_easter_eggs"),
+    (re.compile(r"vahşi hayvan|hayvanlar alemi|animal kingdom|doğa belgeseli", re.I), "35_animal_kingdom_stories"),
+    (re.compile(r"biliyor muydunuz|ilginç bilgi|mind blowing facts", re.I), "9_five_facts"),
 ]
 
 # P1-02: alias phrases → niche (substring match, lower priority than regex lock)
@@ -257,6 +312,10 @@ TOPIC_NICHE_ALIASES: List[Tuple[str, str]] = [
     ("flaş haber", "1_news_flash"),
     ("yanlış bilinen", "27_common_myths_busted"),
     ("mitler", "27_common_myths_busted"),
+    ("peygamber duası", "10_religious_quotes"),
+    ("günlük dua", "10_religious_quotes"),
+    ("hadis şerifi", "10_religious_quotes"),
+    ("kuran ayeti", "10_religious_quotes"),
 ]
 
 # P1-02: dual-domain signals → hybrid niche id (metadata only; compile uses resolved standard niche)
@@ -544,9 +603,10 @@ def apply_visual_intents(scenes: List[ScenePlan], niche_id: str, title: str = ""
         else:
             scene.search_queries = intent.search_queries
         if not scene_description_usable(scene.scene_description or ""):
-            scene.scene_description = f"{intent.subject} — {intent.mood}"
-        palette = bank.get("mood_palette") or []
-        scene.mood = palette[i % len(palette)] if palette else intent.mood
+            from scenes.narration_validate import synthesize_scene_description
+            scene.scene_description = synthesize_scene_description(scene)
+        palette = bank.get("mood_palette") or DEFAULT_MOOD_CYCLE
+        scene.mood = palette[i % len(palette)]
     return scenes
 
 

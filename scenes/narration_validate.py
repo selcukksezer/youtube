@@ -155,11 +155,59 @@ def scene_description_usable(text: str) -> bool:
     if _PLACEHOLDER_DESC_RE.match(raw):
         return False
     lower = raw.lower()
-    if "scene_description" in lower and len(raw) < 40:
+    if "scene_description" in lower:
         return False
     if lower in {"description", "visual", "n/a", "tbd", "..."}:
         return False
     return True
+
+
+def synthesize_scene_description(scene: Any) -> str:
+    """English visual sentence from first search query + narration motif. Never a placeholder."""
+    if not isinstance(scene, dict):
+        queries = list(getattr(scene, "search_queries", None) or [])
+        narr = str(getattr(scene, "narration", "") or "")
+        existing = str(getattr(scene, "scene_description", "") or "")
+    else:
+        queries = list(scene.get("search_queries") or [])
+        narr = str(scene.get("narration") or "")
+        existing = str(scene.get("scene_description") or "")
+    q = ""
+    for cand in queries:
+        c = str(cand or "").strip()
+        if c and "scene_description" not in c.lower() and len(c) >= 4:
+            q = c
+            break
+    motif_words = [
+        w.strip(".,!?;:\"'")
+        for w in (narr or "").split()
+        if len(w.strip(".,!?;:\"'")) >= 4
+    ][:4]
+    motif = " ".join(motif_words)
+    if q:
+        desc = f"{q} cinematic atmospheric"
+    elif motif:
+        desc = f"Cinematic b-roll illustrating {motif}"
+    elif existing and "scene_description" not in existing.lower():
+        desc = existing
+    else:
+        desc = "Cinematic atmospheric b-roll matching the narration"
+    if desc and desc[0].islower():
+        desc = desc[0].upper() + desc[1:]
+    return desc
+
+
+def sanitize_plan_scene_descriptions(plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Router-boundary: API JSON must never carry placeholder scene_description."""
+    scenes = plan.get("scenes") if isinstance(plan, dict) else None
+    if not scenes:
+        return plan
+    for sc in scenes:
+        if not isinstance(sc, dict):
+            continue
+        if not scene_description_usable(sc.get("scene_description") or ""):
+            sc["scene_description"] = synthesize_scene_description(sc)
+    return plan
 
 
 def plan_narration_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0) -> bool:
@@ -430,7 +478,7 @@ def _scene_word_total(scenes: List[Dict[str, Any]]) -> int:
     return sum(len((s.get("narration") or "").split()) for s in scenes)
 
 
-def repair_post_hook_word_budget(plan: Dict[str, Any], max_words: int = 110) -> Dict[str, Any]:
+def repair_post_hook_word_budget(plan: Dict[str, Any], max_words: int = 172) -> Dict[str, Any]:
     """
     Batch D — soft pre-compile trim after retention hooks.
     Drops trailing sentences from hook/closing scenes before Director hard condense.
