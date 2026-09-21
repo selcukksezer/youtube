@@ -208,6 +208,30 @@ class TestDirectorPlan(unittest.TestCase):
         pre = pre_render_score(plan)
         self.assertTrue(pre["ok"], msg=pre["issues"])
 
+    def test_ellipsis_scene_vs_full_not_false_stale(self):
+        """Trailing '...' normalize asymmetry must not flag fragment_sentence_full."""
+        raw = _sample_raw_plan(n=3)
+        plan = compile_director_plan(raw, title=raw["title"], niche_id="8_crypto_market")
+        plan.scenes[0].narration = (
+            "Bitcoin şu an kritik destek seviyesinde sıkışıyor ve yatırımcılar nefesini tutuyor..."
+        )
+        plan.scenes[1].narration = (
+            "Bu seviyeyi geçerse tüm piyasa dengesi bir anda değişebilir, dikkatli olun."
+        )
+        plan.scenes[2].narration = (
+            "Hacim artmadan kırılım gelirse tuzak olabilir, planına sadık kal ve bekle."
+        )
+        # Full keeps mid-text ellipsis form that per-scene normalize would collapse.
+        plan.full_narration = (
+            plan.scenes[0].narration.replace("...", "…")
+            + " "
+            + plan.scenes[1].narration
+            + " "
+            + plan.scenes[2].narration
+        )
+        issues = check_narration_integrity(plan)
+        self.assertNotIn("fragment_sentence_full", issues, msg=issues)
+
     def test_solve_timeline_enforces_word_budget(self):
         raw = _sample_raw_plan()
         # Inflate narration to force condense

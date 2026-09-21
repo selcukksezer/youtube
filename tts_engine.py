@@ -422,7 +422,8 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
     try:
         for index, segment in enumerate(segments):
             plain_text = VoiceHumanizer.clean_narration_for_speech(segment["text"])
-            if not plain_text.strip():
+            # Punctuation-only segments ("...", "—") make Edge TTS raise NoAudioReceived
+            if not plain_text.strip() or not re.search(r"\w", plain_text, flags=re.UNICODE):
                 continue
             is_quote = bool(segment.get("is_quote")) or segment.get("style") == "quote"
             if is_quote:

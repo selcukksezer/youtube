@@ -57,7 +57,11 @@ def check_narration_integrity(plan: DirectorPlan) -> List[str]:
         if (s.narration or "").strip()
     )
     full = normalize_narration_for_validation(plan.full_narration or "")
-    if full.replace(" ", "") != scene_joined.replace(" ", ""):
+    # Compare letters/digits only: per-scene normalization collapses trailing
+    # "..." / "!?" runs while the full-text pass keeps them mid-sentence, which
+    # used to flag a false "stale" mismatch and block render on scenes ending in "...".
+    _alnum = lambda t: re.sub(r"[\W_]+", "", t, flags=re.UNICODE)
+    if _alnum(full) != _alnum(scene_joined):
         for sent in _split_sentences(full):
             if len(sent.split()) < MIN_WORDS_PER_SENTENCE:
                 _add("fragment_sentence_full")
