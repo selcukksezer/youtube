@@ -1,8 +1,8 @@
 """
 Visual Filters, Noise, Color Grading & Procedural FX
-Covers items: 71, 72, 84, 86, 92, 111, 115, 123
+Covers items: 71, 72, 84, 86, 92, 111, 115, 123 + R10 #75 chroma
 """
-import random, math, subprocess
+import os, random, math, subprocess
 from typing import Tuple
 from moviepy.editor import VideoFileClip, VideoClip, CompositeVideoClip, vfx
 import numpy as np
@@ -355,3 +355,75 @@ def apply_fluid_gradient_background(base_clip, color_scheme: str = "auto",
     )
     composite.duration = dur
     return composite
+
+
+def apply_chroma_key(
+    foreground: VideoFileClip,
+    background: VideoFileClip,
+    key_rgb: Tuple[int, int, int] = (0, 255, 0),
+    threshold: float = 42.0,
+    soft_edge: float = 18.0,
+) -> VideoFileClip:
+    """
+    R10 #75: Yeşil ekran (chroma key) — foreground'taki key rengi şeffaf yapıp
+    background üzerine bindirir. Subscribe/CTA yeşil ekran klipleri için.
+    """
+    try:
+        w, h = background.size
+        dur = min(float(foreground.duration or 0.1), float(background.duration or 0.1))
+        fg = foreground.resize((w, h)).set_duration(dur)
+        bg = background.set_duration(dur)
+        key = np.array(key_rgb, dtype=np.float32)
+        thr = max(1.0, float(threshold))
+        soft = max(1.0, float(soft_edge))
+
+        def make_frame(t):
+            base = bg.get_frame(t).astype(np.float32)
+            over = fg.get_frame(t).astype(np.float32)
+            dist = np.linalg.norm(over - key, axis=2)
+            alpha = np.clip((dist - thr) / soft, 0.0, 1.0)[:, :, np.newaxis]
+            out = over * alpha + base * (1.0 - alpha)
+            return np.clip(out, 0, 255).astype(np.uint8)
+
+        fps = getattr(background, "fps", None) or getattr(foreground, "fps", None) or 30.0
+        res = VideoClip(make_frame, duration=dur).set_fps(fps)
+        if background.audio:
+            res = res.set_audio(background.audio)
+        elif foreground.audio:
+            res = res.set_audio(foreground.audio)
+        print(f"    [R10 #75] Chroma key applied key={key_rgb} thr={thr}")
+        return res
+    except Exception as e:
+        print(f"    [ChromaKey] Notice: {e}")
+        return background
+
+
+def apply_chroma_key_ffmpeg(
+    foreground_path: str,
+    background_path: str,
+    output_path: str,
+    color: str = "0x00FF00",
+    similarity: float = 0.28,
+    blend: float = 0.08,
+) -> bool:
+    """R10 #75: FFmpeg chromakey path (file→file)."""
+    if not (os.path.exists(foreground_path) and os.path.exists(background_path)):
+        return False
+    try:
+        ff = imageio_ffmpeg.get_ffmpeg_exe()
+        filt = (
+            f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,"
+            f"crop=1080:1920,chromakey={color}:{similarity}:{blend}[fg];"
+            f"[1:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg];"
+            f"[bg][fg]overlay=0:0:shortest=1[out]"
+        )
+        cmd = [
+            ff, "-y", "-i", foreground_path, "-i", background_path,
+            "-filter_complex", filt, "-map", "[out]", "-an",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
+            output_path,
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return res.returncode == 0 and os.path.exists(output_path)
+    except Exception:
+        return False

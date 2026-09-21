@@ -538,10 +538,19 @@ def process_video_task(req: VideoRenderRequest):
         gameplay_path = None
         recent_texts = []
         retention_meta = (plan or {}).get("retention_metadata") or {}
+        niche_profile = (plan or {}).get("niche_profile") or {}
+        if not niche_profile and locked_niche:
+            try:
+                niche_profile = get_niche_production_profile(locked_niche) or {}
+                plan["niche_profile"] = niche_profile
+            except Exception:
+                niche_profile = {}
+        production_rules = (niche_profile.get("production_rules") or {}) if isinstance(niche_profile, dict) else {}
         needs_split_screen = (
             getattr(req, "split_screen", False)
             or bool(plan.get("hybrid_split_screen"))
             or bool(retention_meta.get("dopamin_split_screen"))
+            or bool(production_rules.get("split_screen"))  # R10 #3 niche profile auto-wire
         )
         if needs_split_screen:
             req.split_screen = True

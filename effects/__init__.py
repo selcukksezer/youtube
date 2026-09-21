@@ -27,6 +27,8 @@ from .motion import (
     apply_heartbeat_zoom,
     apply_alternating_motion,
     apply_opening_pattern_interrupt,
+    apply_crossfade_in,
+    concatenate_with_scene_transitions,
 )
 from .filters import (
     inject_pixel_noise,
@@ -45,10 +47,16 @@ from .filters import (
     apply_color_splash_moviepy,
     generate_fluid_gradient_background,
     apply_fluid_gradient_background,
+    apply_chroma_key,
+    apply_chroma_key_ffmpeg,
 )
 from .overlays import (
     overlay_watermark,
     extract_frame0_thumbnail,
+    score_frame_thumbnail_quality,
+    select_best_thumbnail_timestamp,
+    generate_intro_hook_card,
+    apply_keyword_pop_text,
     apply_multi_layer_overlay,
     overlay_graphic_badge,
     overlay_micro_brand_signature,
@@ -123,6 +131,8 @@ __all__ = [
     "apply_heartbeat_zoom",
     "apply_alternating_motion",
     "apply_opening_pattern_interrupt",
+    "apply_crossfade_in",
+    "concatenate_with_scene_transitions",
     # filters
     "inject_pixel_noise",
     "apply_color_grading_jitter",
@@ -140,9 +150,15 @@ __all__ = [
     "apply_color_splash_moviepy",
     "generate_fluid_gradient_background",
     "apply_fluid_gradient_background",
+    "apply_chroma_key",
+    "apply_chroma_key_ffmpeg",
     # overlays
     "overlay_watermark",
     "extract_frame0_thumbnail",
+    "score_frame_thumbnail_quality",
+    "select_best_thumbnail_timestamp",
+    "generate_intro_hook_card",
+    "apply_keyword_pop_text",
     "apply_multi_layer_overlay",
     "overlay_graphic_badge",
     "overlay_micro_brand_signature",

@@ -35,13 +35,83 @@ def overlay_watermark(clip: VideoFileClip, watermark_path: str, opacity: float =
         print(f"    [Watermark] Error: {e}")
         return clip
 
+def score_frame_thumbnail_quality(frame: np.ndarray) -> float:
+    """
+    R10 #59/#92: Contrast + mid-bright luminance score for Shorts frame-0 pick.
+    Higher = more feed-visible (avoid near-black / flat frames).
+    """
+    if frame is None or getattr(frame, "size", 0) == 0:
+        return 0.0
+    arr = frame.astype(np.float32)
+    if arr.ndim == 3:
+        # Rec.601 luma
+        luma = 0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2]
+    else:
+        luma = arr
+    mean = float(np.mean(luma))
+    std = float(np.std(luma))
+    # Prefer mid-bright (90–180) with high contrast
+    brightness_penalty = abs(mean - 135.0) / 135.0
+    contrast = min(1.0, std / 64.0)
+    return max(0.0, (contrast * 70.0) + (30.0 * (1.0 - min(1.0, brightness_penalty))))
+
+
+def select_best_thumbnail_timestamp(
+    video_path: str,
+    sample_times: Optional[list] = None,
+    max_samples: int = 8,
+) -> Tuple[float, float]:
+    """
+    R10 #59/#92: Sample early frames and return (best_t, score).
+    Defaults to first ~3s (Shorts feed decision window).
+    """
+    if not os.path.exists(video_path):
+        return 1.0, 0.0
+    times = list(sample_times or [])
+    if not times:
+        times = [0.05, 0.35, 0.7, 1.0, 1.4, 1.8, 2.3, 2.8][:max_samples]
+    best_t, best_score = times[0], -1.0
+    try:
+        with VideoFileClip(video_path, audio=False) as clip:
+            dur = float(clip.duration or 1.0)
+            for t in times:
+                tt = min(max(0.0, float(t)), max(0.0, dur - 0.04))
+                try:
+                    frame = clip.get_frame(tt)
+                    sc = score_frame_thumbnail_quality(frame)
+                    if sc > best_score:
+                        best_score, best_t = sc, tt
+                except Exception:
+                    continue
+    except Exception:
+        return 1.0, 0.0
+    return best_t, best_score
+
+
 def extract_frame0_thumbnail(video_path: str, output_thumb_path: str) -> bool:
     """
-    Items 59, 92: Extract Frame 0 / Peak curiosity frame for Shorts thumbnail.
+    Items 59, 92 / R10 #59/#92: Peak-curiosity thumbnail via contrast/brightness scan.
+    Falls back to t=1s still if scoring fails.
     """
     if not os.path.exists(video_path):
         return False
     try:
+        best_t, score = select_best_thumbnail_timestamp(video_path)
+        ss = max(0.0, float(best_t))
+        cmd = [
+            "ffmpeg", "-y", "-ss", f"{ss:.3f}", "-i", video_path,
+            "-frames:v", "1", "-q:v", "2", output_thumb_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if res.returncode == 0 and os.path.exists(output_thumb_path):
+            meta_path = output_thumb_path.rsplit(".", 1)[0] + "_thumb_meta.txt"
+            try:
+                with open(meta_path, "w", encoding="utf-8") as fh:
+                    fh.write(f"t={ss:.3f}\nscore={score:.2f}\nrule=r10_59_92\n")
+            except Exception:
+                pass
+            return True
+        # Legacy fallback
         cmd = [
             "ffmpeg", "-y", "-ss", "00:00:01", "-i", video_path,
             "-frames:v", "1", "-q:v", "2", output_thumb_path
@@ -50,6 +120,88 @@ def extract_frame0_thumbnail(video_path: str, output_thumb_path: str) -> bool:
         return res.returncode == 0
     except Exception:
         return False
+
+
+def generate_intro_hook_card(
+    width: int,
+    height: int,
+    hook_text: str,
+    duration: float = 1.2,
+    bg_color: Tuple[int, int, int] = (12, 12, 20),
+    accent: Tuple[int, int, int] = (255, 220, 40),
+):
+    """
+    R10 #61: 1–1.5s branded intro card before main timeline (text hook + accent bar).
+    Returns an ImageClip or None.
+    """
+    try:
+        img = Image.new("RGB", (width, height), bg_color)
+        draw = ImageDraw.Draw(img)
+        bar_h = max(8, height // 80)
+        draw.rectangle([0, 0, width, bar_h], fill=accent)
+        draw.rectangle([0, height - bar_h, width, height], fill=accent)
+        try:
+            font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", size=max(36, width // 18))
+        except Exception:
+            font = ImageFont.load_default()
+        text = (hook_text or "İZLE").strip()[:72]
+        # word-wrap rough
+        words = text.split()
+        lines, cur = [], ""
+        for w in words:
+            trial = (cur + " " + w).strip()
+            if len(trial) > 22 and cur:
+                lines.append(cur)
+                cur = w
+            else:
+                cur = trial
+        if cur:
+            lines.append(cur)
+        lines = lines[:4] or ["İZLE"]
+        y = height // 2 - (len(lines) * 48) // 2
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            tw = bbox[2] - bbox[0]
+            draw.text(((width - tw) // 2, y), line, fill=(255, 255, 255), font=font)
+            y += 52
+        arr = np.array(img)
+        return ImageClip(arr).set_duration(max(0.6, float(duration)))
+    except Exception as e:
+        print(f"    [IntroHookCard] Notice: {e}")
+        return None
+
+
+def apply_keyword_pop_text(
+    clip: VideoFileClip,
+    text: str,
+    start: float = 0.0,
+    duration: float = 0.85,
+    color: Tuple[int, int, int] = (255, 255, 80),
+) -> VideoFileClip:
+    """
+    R10 #74: Keyword pop — short emphasis text scales in over base clip.
+    """
+    try:
+        w, h = clip.size
+        card = generate_intro_hook_card(w, h // 5, text, duration=duration, bg_color=(0, 0, 0), accent=color)
+        if card is None:
+            return clip
+        # Transparent-ish band at mid
+        band = (
+            card.resize(height=max(80, h // 6))
+            .set_opacity(0.92)
+            .set_start(max(0.0, float(start)))
+            .set_duration(max(0.4, float(duration)))
+            .set_position(("center", h // 2 - 40))
+        )
+        out = CompositeVideoClip([clip, band], size=clip.size)
+        out.duration = clip.duration
+        if clip.audio:
+            out = out.set_audio(clip.audio)
+        return out
+    except Exception as e:
+        print(f"    [KeywordPop] Notice: {e}")
+        return clip
 
 def apply_multi_layer_overlay(clip: VideoFileClip, opacity: float = 0.10, overlay_type: str = "light_leak") -> VideoFileClip:
     """

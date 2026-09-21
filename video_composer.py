@@ -33,6 +33,7 @@ from effects_engine import (
     apply_broll_speed_boost, apply_impact_screen_shake, apply_micro_zoom_out,
     apply_particle_overlay, apply_heartbeat_zoom, apply_speaker_avatar_overlay,
     build_emoji_events_from_timings, generate_emoji_subtitle_overlay,
+    concatenate_with_scene_transitions, generate_intro_hook_card,
     apply_alternating_motion, apply_ui_element_overlay,
     apply_dynamic_progress_bar, apply_sticky_hook_banner_overlay,
     apply_micro_animated_sticker_overlay, apply_neon_curiosity_opening_graphic,
@@ -429,6 +430,16 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     # Step B: Check for BGM mixing (Items 166, 169, 170)
     final_audio = processed_audio
     chosen_bgm = bgm_track or getattr(config, "DEFAULT_BGM_TRACK", "")
+    # R10 #87: when no explicit track, pick trend-hybrid profile for niche
+    if not chosen_bgm:
+        try:
+            from bgm_manager import select_trend_hybrid_bgm
+            hybrid = select_trend_hybrid_bgm(niche_id=niche_id or "", topic=title or "")
+            if hybrid.get("track"):
+                chosen_bgm = hybrid["track"]
+                print(f"  [BGM] Trend-hybrid profile={hybrid.get('profile_id')} track={chosen_bgm}")
+        except Exception:
+            pass
     if not chosen_bgm and getattr(config, "ENABLE_BGM", True):
         # Item 169: Müzik BPM Eşleştirmesi (Niş Temposu: Motivasyon 120-130 BPM, Felsefe/Gizem 70-85 BPM)
         from bgm_manager import match_bgm_track_to_niche
@@ -619,8 +630,23 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         if not segs:
             return ""
 
-        # Concatenate sequentially with method="chain" (zero double-encoding, low memory, fast single pass)
-        combined = concatenate_videoclips(segs, method="chain")
+        # R10 #79: soft crossfade between scenes (safe mode keeps hard chain)
+        transition_kind = "hard" if getattr(config, "RENDER_SAFE_MODE", True) else "crossfade"
+        try:
+            combined = concatenate_with_scene_transitions(segs, transition=transition_kind, fade_dur=0.22)
+        except Exception:
+            combined = concatenate_videoclips(segs, method="chain")
+
+        # R10 #61: optional intro hook card prepend (non-safe mode)
+        if not getattr(config, "RENDER_SAFE_MODE", True):
+            try:
+                hook = (title or "İZLE")[:48]
+                intro = generate_intro_hook_card(W, H, hook, duration=1.0)
+                if intro is not None:
+                    combined = concatenate_videoclips([intro, combined], method="chain")
+                    print("  [Composer] Intro hook card applied (R10 #61).")
+            except Exception as ie:
+                print(f"  [Composer] Intro card notice: {ie}")
 
         if enable_section2_filters and not getattr(config, 'RENDER_SAFE_MODE', True):
             emoji_events = build_emoji_events_from_timings(word_timings, scene_clips)

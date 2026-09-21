@@ -517,3 +517,52 @@ def apply_alternating_motion(clip, scene_index: int = 0):
     except Exception as e:
         print(f"    [Item 132] Notice: {e}")
         return clip
+
+
+def apply_crossfade_in(clip: VideoFileClip, fade_dur: float = 0.28) -> VideoFileClip:
+    """R10 #79: Soft crossfade-in for scene joins (avoids hard cuts)."""
+    try:
+        d = min(max(0.05, float(fade_dur)), max(0.05, float(clip.duration or 0.1) * 0.45))
+        return clip.crossfadein(d)
+    except Exception:
+        return clip
+
+
+def concatenate_with_scene_transitions(
+    clips,
+    transition: str = "crossfade",
+    fade_dur: float = 0.28,
+):
+    """
+    R10 #79: Scene transitions — crossfade (default), glitch flash lead-in, or hard chain.
+    """
+    from moviepy.editor import concatenate_videoclips
+
+    if not clips:
+        return None
+    if len(clips) == 1:
+        return clips[0]
+    kind = (transition or "crossfade").lower().strip()
+    try:
+        if kind in ("none", "hard", "cut"):
+            return concatenate_videoclips(list(clips), method="chain")
+        prepared = [clips[0]]
+        for i, c in enumerate(clips[1:], start=1):
+            if kind == "glitch":
+                # brief interrupt then soft fade
+                c = apply_opening_pattern_interrupt(c, interrupt_type="glitch_flash", duration=min(0.35, fade_dur + 0.1))
+                c = apply_crossfade_in(c, fade_dur=min(0.18, fade_dur))
+            elif kind == "zoom":
+                c = apply_opening_pattern_interrupt(c, interrupt_type="zoom_punch", duration=min(0.45, fade_dur + 0.15))
+                c = apply_crossfade_in(c, fade_dur=fade_dur)
+            else:
+                c = apply_crossfade_in(c, fade_dur=fade_dur)
+            prepared.append(c)
+        # Negative padding overlaps fades for true crossfade
+        pad = -abs(float(fade_dur)) if kind in ("crossfade", "blur", "fade") else 0
+        if pad < 0:
+            return concatenate_videoclips(prepared, method="compose", padding=pad)
+        return concatenate_videoclips(prepared, method="chain")
+    except Exception as e:
+        print(f"    [R10 #79] Transition fallback to chain: {e}")
+        return concatenate_videoclips(list(clips), method="chain")
