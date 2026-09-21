@@ -483,24 +483,24 @@ def fit_tts_to_timeline(
         path, new_dur, used = fit_audio_to_duration(audio_path, fitted, target_for_fit, tolerance=0.04)
 
         # Pass 2: if still outside Shorts band, emergency speed toward budget_ceiling
+        # Always re-fit from the ORIGINAL wav — never ffmpeg in-place (path==fitted).
         if new_dur > budget_ceiling * 1.02:
-            need = new_dur / budget_ceiling
-            if need > 1.01:
-                # Compose with already-applied speed; request absolute target
-                path, new_dur, used2 = fit_audio_to_duration(
-                    path, fitted, budget_ceiling, tolerance=0.04
+            need_from_raw = audio_dur / budget_ceiling
+            emergency_out = fitted.replace(".wav", "_emergency.wav")
+            if need_from_raw <= emergency_max_speed + 0.01:
+                path, new_dur, _used2 = fit_audio_to_duration(
+                    audio_path, emergency_out, budget_ceiling, tolerance=0.04
                 )
-                used = audio_dur / max(new_dur, 0.01)
-                if used > emergency_max_speed + 0.01:
-                    # Cap emergency speed — then hard-fail if still over band
-                    cap_target = audio_dur / emergency_max_speed
-                    path, new_dur, used = fit_audio_to_duration(
-                        audio_path, fitted, cap_target, tolerance=0.04
-                    )
-                print(
-                    f"  [Timeline] Budget lock emergency speed×{used:.2f} "
-                    f"-> {new_dur:.1f}s (hedef <={budget_ceiling:.0f}s, Madde 494)"
+            else:
+                cap_target = audio_dur / emergency_max_speed
+                path, new_dur, _used2 = fit_audio_to_duration(
+                    audio_path, emergency_out, cap_target, tolerance=0.04
                 )
+            used = audio_dur / max(new_dur, 0.01)
+            print(
+                f"  [Timeline] Budget lock emergency speed×{used:.2f} "
+                f"-> {new_dur:.1f}s (hedef <={budget_ceiling:.0f}s, Madde 494)"
+            )
 
         if new_dur > budget_ceiling * 1.05:
             raise RuntimeError(

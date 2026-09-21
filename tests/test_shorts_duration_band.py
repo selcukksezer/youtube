@@ -81,6 +81,43 @@ class TestShortsDurationBand(unittest.TestCase):
             except OSError:
                 pass
 
+    def test_fit_tts_emergency_from_72s_reaches_60(self):
+        """Pass-2 must re-fit from ORIGINAL wav (never ffmpeg in-place on fitted)."""
+        words = FIFTEEN
+        scenes = [
+            ScenePlan(index=i, narration=words, duration=5.0, scene_description="cinematic landscape aerial")
+            for i in range(12)
+        ]
+        plan = DirectorPlan(
+            title="test",
+            niche_id="10_religious_quotes",
+            scenes=scenes,
+            quality_thresholds=QualityThresholds(),
+        )
+        plan = solve_timeline(plan)
+        path = tempfile.mktemp(suffix="_tts72.wav")
+        fitted = path.replace(".wav", "_fitted.wav")
+        fr = 8000
+        nframes = fr * 72
+        with wave.open(path, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(fr)
+            w.writeframes(b"\x00\x00" * nframes)
+        try:
+            _p, _t, dur, speed = fit_tts_to_timeline(
+                path, plan, word_timings=[], output_path=fitted
+            )
+            self.assertLessEqual(dur, 60.0 * 1.05)
+            self.assertLessEqual(speed, 1.36)
+            self.assertGreaterEqual(speed, 1.15)
+        finally:
+            for f in (path, fitted, fitted.replace(".wav", "_emergency.wav")):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+
     def test_ui_arc_labels_are_percent_based(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         with open(os.path.join(root, "static", "app.js"), encoding="utf-8") as fh:
