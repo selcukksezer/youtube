@@ -247,6 +247,24 @@ FAMILY_MOTIFS: Dict[str, Dict[str, Any]] = {
         "must_include": ["cinematic", "story"],
         "must_exclude": ["horror", "skull", "ghost", "bitcoin chart"],
     },
+    "kids": {
+        "motif": "kids_soft_cartoon",
+        "era": "storybook",
+        "mood": "warm pastel playful",
+        "mood_palette": ["sunny meadow", "soft rainbow", "gentle bedtime glow"],
+        "subjects": [
+            "friendly cartoon forest animals",
+            "pastel alphabet letters floating",
+            "cute cartoon cat sharing toys",
+            "colorful numbers dancing softly",
+            "gentle cartoon birds in treehouse",
+        ],
+        "must_include": ["cartoon", "pastel", "friendly"],
+        "must_exclude": [
+            "horror", "skull", "ghost", "blood", "weapon", "jump scare",
+            "photoreal child", "real kid face", "dark psychology", "gore",
+        ],
+    },
     "general": _DEFAULT_MOTIF,
 }
 
@@ -287,6 +305,11 @@ TOPIC_NICHE_LOCK: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"ebeveynlik|çocuk psikolojisi|parenting hack|anne baba tüyosu", re.I), "33_parenting_child_hacks"),
     (re.compile(r"easter egg|gta sırları|oyun sırrı|game secret", re.I), "34_gaming_easter_eggs"),
     (re.compile(r"vahşi hayvan|hayvanlar alemi|animal kingdom|doğa belgeseli", re.I), "35_animal_kingdom_stories"),
+    (re.compile(
+        r"çocuk animasyon|kids cartoon|alfabe şarkısı|yumuşak eğitim|"
+        r"çocuklar için animasyon|kids shorts|ahlak hikayesi çocuk",
+        re.I,
+    ), "36_kids_animation"),
     (re.compile(r"biliyor muydunuz|ilginç bilgi|mind blowing facts", re.I), "9_five_facts"),
 ]
 

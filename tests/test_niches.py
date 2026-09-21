@@ -12,13 +12,13 @@ from niche_templates import (
 
 class TestNiches(unittest.TestCase):
     def test_total_niches_count(self):
-        """Verify exactly 35 distinct niches are registered."""
-        self.assertEqual(len(NICHES), 35)
+        """Verify 36 distinct niches are registered (35 classic + kids animation)."""
+        self.assertEqual(len(NICHES), 36)
 
     def test_list_all_niches(self):
         """Verify list_all_niches provides valid metadata for each niche."""
         niches = list_all_niches()
-        self.assertEqual(len(niches), 35)
+        self.assertEqual(len(niches), 36)
         for n in niches:
             self.assertIn("id", n)
             self.assertIn("name", n)

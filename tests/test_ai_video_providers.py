@@ -21,6 +21,12 @@ from visuals.ai_video.providers.huggingface import HuggingFaceVideoProvider
 from visuals.ai_video.providers.replicate import ReplicateVideoProvider
 from visuals.ai_video.providers.deepinfra import DeepInfraVideoProvider
 from visuals.ai_video.providers.piapi import PiAPIVideoProvider
+from visuals.ai_video.providers.higgsfield import (
+    HiggsfieldVideoProvider,
+    resolve_higgsfield_credentials,
+    _clamp_duration,
+    _aspect_ratio,
+)
 
 
 class MixerTests(unittest.TestCase):
@@ -164,6 +170,76 @@ class AdapterMockTests(unittest.TestCase):
                 res = HuggingFaceVideoProvider().generate("walking street", output_path=out)
             self.assertIsNotNone(res)
 
+    def test_higgsfield_credentials_combined(self):
+        with patch.dict(os.environ, {
+            "HIGGSFIELD_CREDENTIALS": "kid123:secret456",
+            "HIGGSFIELD_API_KEY_ID": "",
+            "HIGGSFIELD_API_KEY_SECRET": "",
+            "HF_API_KEY_ID": "",
+            "HF_API_KEY_SECRET": "",
+            "HF_CREDENTIALS": "",
+        }, clear=False):
+            # Clear competing names via env_key path — patch env_key
+            with patch(
+                "visuals.ai_video.providers.higgsfield.env_key",
+                side_effect=lambda *names: (
+                    "kid123:secret456" if "CREDENTIALS" in names[0] else ""
+                ),
+            ):
+                kid, secret = resolve_higgsfield_credentials()
+            self.assertEqual(kid, "kid123")
+            self.assertEqual(secret, "secret456")
+
+    def test_higgsfield_duration_and_aspect(self):
+        self.assertEqual(_clamp_duration(2.0), 4)
+        self.assertEqual(_clamp_duration(12.0), 12)
+        self.assertEqual(_clamp_duration(99.0), 30)
+        self.assertEqual(_aspect_ratio("9:16"), "9:16")
+        self.assertEqual(_aspect_ratio("portrait"), "9:16")
+
+    @patch("visuals.ai_video.providers.higgsfield.download_url")
+    @patch("visuals.ai_video.providers.higgsfield.requests.get")
+    @patch("visuals.ai_video.providers.higgsfield.requests.post")
+    @patch(
+        "visuals.ai_video.providers.higgsfield.resolve_higgsfield_credentials",
+        return_value=("kid", "secret"),
+    )
+    def test_higgsfield_adapter_poll(self, _cred, mock_post, mock_get, mock_dl):
+        mock_post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "status": "queued",
+                "request_id": "req-1",
+                "status_url": "https://api.higgsfield.ai/requests/req-1/status",
+            },
+        )
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {
+                "status": "completed",
+                "request_id": "req-1",
+                "video": {"url": "https://cdn.example.com/h.mp4"},
+            },
+        )
+        mock_dl.side_effect = lambda url, path, **kw: self._fake_mp4(path)
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "o.mp4")
+            res = HiggsfieldVideoProvider().generate(
+                "cartoon fox in forest",
+                duration=5.0,
+                aspect="9:16",
+                output_path=out,
+            )
+            self.assertIsNotNone(res)
+            self.assertEqual(res.provider, "higgsfield")
+            self.assertIn("seedance", res.model)
+            mock_post.assert_called()
+            args, kwargs = mock_post.call_args
+            self.assertIn("Authorization", kwargs["headers"])
+            self.assertTrue(kwargs["headers"]["Authorization"].startswith("Key kid:secret"))
+            self.assertEqual(kwargs["json"]["aspect_ratio"], "9:16")
+            self.assertFalse(kwargs["json"]["generate_audio"])
+
 
 class ChainFailoverTests(unittest.TestCase):
     def test_chain_tries_second_provider(self):
@@ -203,6 +279,7 @@ class ChainFailoverTests(unittest.TestCase):
     any(os.getenv(k) for k in (
         "FAL_API_KEY", "FAL_KEY", "HF_TOKEN", "REPLICATE_API_TOKEN",
         "DEEPINFRA_TOKEN", "PIAPI_KEY", "LOCAL_AI_VIDEO_URL",
+        "HIGGSFIELD_CREDENTIALS", "HIGGSFIELD_API_KEY_ID", "HF_API_KEY_ID",
     )),
     "live AI video keys not set",
 )

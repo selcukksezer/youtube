@@ -55,14 +55,34 @@ def upload_video_to_youtube(
     pinned_comment: Optional[str] = None,
     scheduled_publish_at: Optional[str] = None,
     has_realistic_human_clone: bool = False,
-    is_news_manipulation: bool = False
+    is_news_manipulation: bool = False,
+    niche_id: str = "",
+    made_for_kids: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Uploads a video to YouTube with advanced SEO metadata, scheduling, pinned comments
     and Item 80 altered/synthetic content policy check.
+    Kids niches force selfDeclaredMadeForKids=True + disclosure (COPPA).
     """
     token_path = get_channel_token_path(channel_id)
     creds = None
+
+    # Hard-code Made for Kids disclosure / no data-collection metadata
+    try:
+        from compliance.kids_disclosure import apply_kids_upload_fields
+        kids_meta = apply_kids_upload_fields(
+            niche_id=niche_id or "",
+            description=description or "",
+            tags=list(tags or []),
+            force=made_for_kids,
+        )
+        description = kids_meta["description"]
+        tags = kids_meta["tags"]
+        mfk = bool(kids_meta["selfDeclaredMadeForKids"])
+        if kids_meta.get("suppress_pinned_comment"):
+            pinned_comment = None
+    except Exception:
+        mfk = bool(made_for_kids) if made_for_kids is not None else False
 
     if os.path.exists(token_path):
         creds = Credentials.from_authorized_user_file(token_path, SCOPES)
@@ -88,7 +108,7 @@ def upload_video_to_youtube(
 
         status_body: Dict[str, Any] = {
             'privacyStatus': privacy_status,
-            'selfDeclaredMadeForKids': False,
+            'selfDeclaredMadeForKids': bool(mfk),
         }
 
         # Item 53: Scheduled publish (must be private before scheduled time)

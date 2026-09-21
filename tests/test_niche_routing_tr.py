@@ -187,12 +187,17 @@ TR_TOPICS = {
         "vahşi hayvan belgesel kurt",
         "doğa belgeseli animal kingdom",
     ],
+    "36_kids_animation": [
+        "çocuk animasyon alfabe şarkısı",
+        "kids cartoon yumuşak eğitim hayvan dostları",
+        "çocuklar için animasyon ahlak hikayesi",
+    ],
 }
 
 
 class TestNicheRoutingTr(unittest.TestCase):
-    def test_all_35_niches_have_at_least_three_topics(self):
-        self.assertEqual(len(NICHES), 35)
+    def test_all_36_niches_have_at_least_three_topics(self):
+        self.assertEqual(len(NICHES), 36)
         self.assertEqual(set(TR_TOPICS), set(NICHES))
         for nid, topics in TR_TOPICS.items():
             self.assertGreaterEqual(len(topics), 3, nid)

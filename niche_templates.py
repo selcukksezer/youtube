@@ -989,6 +989,48 @@ NICHES: Dict[str, Dict[str, Any]] = {
             "Bu küçük hayvan bir timsahı tek başına yeniyor — gerçek mi?",
             "Doğanın en akıllı 3 avı: Beyin, strateji ve sabır."
         ]
+    },
+    "36_kids_animation": {
+        "id": "36_kids_animation",
+        "name": "Çocuk Animasyon Shorts (Yumuşak Eğitim)",
+        "name_en": "Kids Soft Educational Animation Shorts",
+        "category": "Çocuk & Aile Animasyon",
+        "tone": "warm, gentle, playful, clear moral",
+        "hook_style": "Bugün minik dostlarımız paylaşmayı öğreniyor — hadi birlikte bakalım!",
+        "system_instruction": (
+            "3–8 yaş soft eğitim / ahlak / hayvan / alfabe Shorts senaryosu yaz. "
+            "Parlak, yumuşak çizgi film dili; korku, şiddet, karanlık psikoloji YASAK. "
+            "Gerçek çocuk yüzü veya okul saldırısı ASLA. Her Short net başlangıç-orta-son ve tek basit ahlak. "
+            "Made for Kids; yorum tuzağı / abone baskısı kurma. Süre hedefi 45–60 sn."
+        ),
+        "default_music": "kids",
+        "has_split_screen": False,
+        "icon": "fa-child",
+        "color_palette": "kids_pastel",
+        "rpm_tier": "$1-4",
+        "viral_score": 70,
+        "avg_retention_pct": 72,
+        "competition_level": "high",
+        "best_posting_time": "09:00-11:00 & 16:00-18:00 TRT",
+        "cta_type": "save",
+        "tier1_compatible": True,
+        "episodic_capable": True,
+        "loop_formula": "gentle_reprise",
+        "trending_keywords": [
+            "çocuk animasyon", "alfabe şarkısı", "hayvan dostları",
+            "kids cartoon shorts", "yumuşak eğitim", "ahlak hikayesi"
+        ],
+        "ab_test_hook_variants": [
+            "Bugün minik dostlarımız paylaşmayı öğreniyor — hadi birlikte bakalım!",
+            "A harfi nerede saklanmış? Renkli ormanda bulalım!",
+            "Küçük kedi dürüst olunca herkes mutlu oldu — neden?"
+        ],
+        "made_for_kids": True,
+        "style_preset": "kids_cartoon",
+        "forbidden_visuals": [
+            "real child face", "photoreal kid", "violence", "horror",
+            "jump scare", "dark psychology", "sexualization", "weapons"
+        ],
     }
 }
 
@@ -1030,6 +1072,7 @@ NICHE_FAMILY_MAP: Dict[str, str] = {
     "33_parenting_child_hacks": "product",
     "34_gaming_easter_eggs": "entertainment",
     "35_animal_kingdom_stories": "entertainment",
+    "36_kids_animation": "kids",
 }
 
 # Item 273 shock/horror queries only for these families
@@ -1180,6 +1223,24 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
             "- Scene 1: body-language warning hook.\n"
             "- Middle: three tells, hidden intent, defense.\n"
             "- Last: trust question. Shock visuals allowed; kids/cartoon forbidden."
+        ),
+    },
+    "kids": {
+        "tr": (
+            "ÇOCUK ANIMASYON YAPISI (Made for Kids — zorunlu):\n"
+            "- Sahne 1: yumuşak, neşeli kanca (hayvan / alfabe / paylaşım).\n"
+            "- Orta sahneler: tek net ahlak veya öğrenme adımı; parlak pastel çizgi film.\n"
+            "- Son: nazik tekrar + 'birlikte öğrendik' kapanışı (yorum tuzağı YOK).\n"
+            "YASAK: gerçek çocuk yüzü, korku, şiddet, jump scare, karanlık psikoloji, cinsel ima, silah.\n"
+            "Hedef süre 45–60 sn; AI clip'ler birleştirilebilir."
+        ),
+        "en": (
+            "KIDS ANIMATION STRUCTURE (Made for Kids — mandatory):\n"
+            "- Scene 1: soft cheerful hook (animal / alphabet / sharing).\n"
+            "- Middle: one clear moral or learning step; bright pastel cartoon.\n"
+            "- End: gentle reprise; no comment-bait CTA.\n"
+            "FORBIDDEN: real child faces, horror, violence, jump scares, dark psych, sexualization, weapons.\n"
+            "Target 45–60s; AI clips may be stitched."
         ),
     },
     "astrology": {
@@ -1378,7 +1439,7 @@ Do not clone another niche's template (crypto charts, horoscope list, confession
 
 
 def list_all_niches() -> List[Dict[str, Any]]:
-    """Returns full metadata of all 35 niches including advanced analytics fields."""
+    """Returns full metadata of all niches including advanced analytics fields."""
     return [
         {
             "id": k,

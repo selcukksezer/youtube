@@ -42,6 +42,11 @@ def niche_bias(niche_id: str = "") -> Dict[VisualSource, float]:
         m[VisualSource.AI] = 1.1
         m[VisualSource.STOCK] = 1.0
         m[VisualSource.PROCEDURAL] = 1.15
+    elif any(k in n for k in ("kids", "cocuk", "çocuk", "kids_animation", "36_kids")):
+        # Kids Shorts: AI cartoon high; stock only soft nature/animals; procedural pastels
+        m[VisualSource.AI] = 1.7
+        m[VisualSource.STOCK] = 0.55
+        m[VisualSource.PROCEDURAL] = 1.25
     return m
 
 

@@ -15,7 +15,7 @@ APP_JS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 
 class TestScenarioNichePacks(unittest.TestCase):
     def test_all_35_niches_have_a_family(self):
-        self.assertEqual(len(NICHES), 35)
+        self.assertEqual(len(NICHES), 36)
         for nid in NICHES:
             fam = get_niche_family(nid)
             self.assertTrue(fam, nid)

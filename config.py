@@ -84,6 +84,47 @@ DEEPINFRA_TOKEN = os.getenv("DEEPINFRA_TOKEN", "") or os.getenv("DEEPINFRA_API_K
 PIAPI_KEY = os.getenv("PIAPI_KEY", "") or os.getenv("PIAPI_API_KEY", "")
 LOCAL_AI_VIDEO_URL = os.getenv("LOCAL_AI_VIDEO_URL", "")  # ComfyUI / self-host Wan proxy
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")  # optional paid Hailuo
+MINIMAX_GROUP_ID = os.getenv("MINIMAX_GROUP_ID", "")
+RUNWAYML_API_SECRET = (
+    os.getenv("RUNWAYML_API_SECRET", "")
+    or os.getenv("RUNWAY_API_KEY", "")
+    or os.getenv("RUNWAY_API_SECRET", "")
+)
+LUMA_API_KEY = (
+    os.getenv("LUMA_API_KEY", "")
+    or os.getenv("LUMAAI_API_KEY", "")
+    or os.getenv("LUMA_KEY", "")
+)
+USE_OPENAI_SORA = os.getenv("USE_OPENAI_SORA", "true").lower() not in ("0", "false", "no", "off")
+AI_VIDEO_CLIP_MAX_SEC = float(os.getenv("AI_VIDEO_CLIP_MAX_SEC", "5") or 5)
+AI_VIDEO_STYLE_PRESET = os.getenv("AI_VIDEO_STYLE_PRESET", "")  # kids_cartoon auto for niche 36
+
+# Higgsfield Cloud (https://docs.higgsfield.ai) — KEY_ID:SECRET, NOT HF_TOKEN
+# Prefer HIGGSFIELD_CREDENTIALS=id:secret OR the pair below
+HIGGSFIELD_CREDENTIALS = (
+    os.getenv("HIGGSFIELD_CREDENTIALS", "")
+    or os.getenv("HIGGSFIELD_API_CREDENTIALS", "")
+    or os.getenv("HF_CREDENTIALS", "")
+)
+HIGGSFIELD_API_KEY_ID = (
+    os.getenv("HIGGSFIELD_API_KEY_ID", "")
+    or os.getenv("HIGGSFIELD_KEY_ID", "")
+    or os.getenv("HF_API_KEY_ID", "")
+)
+HIGGSFIELD_API_KEY_SECRET = (
+    os.getenv("HIGGSFIELD_API_KEY_SECRET", "")
+    or os.getenv("HIGGSFIELD_KEY_SECRET", "")
+    or os.getenv("HF_API_KEY_SECRET", "")
+)
+HIGGSFIELD_T2V_MODEL = os.getenv(
+    "HIGGSFIELD_T2V_MODEL",
+    "bytedance/seedance-2.5/text-to-video",
+)
+HIGGSFIELD_BASE_URL = os.getenv("HIGGSFIELD_BASE_URL", "https://api.higgsfield.ai")
+HIGGSFIELD_RESOLUTION = os.getenv("HIGGSFIELD_RESOLUTION", "720p")
+HIGGSFIELD_GENERATE_AUDIO = os.getenv("HIGGSFIELD_GENERATE_AUDIO", "false").lower() in (
+    "1", "true", "yes", "on",
+)
 
 # Visual mixer: AI + stock + procedural as equal peers (not fallback-only)
 # Default USE_AI_VIDEO = true when any video key present (resolved at runtime)

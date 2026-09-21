@@ -248,6 +248,8 @@ def niche_gate(niche_id: str, narration: str = "") -> Dict[str, Any]:
         return {"action": "GATE", "reason": "harmful_instruction_check"}
     if any(x in nid for x in ("fitness", "health", "parent")):
         return {"action": "GATE", "reason": "health_disclaimer_required"}
+    if any(x in nid for x in ("kids", "36_kids", "çocuk")):
+        return {"action": "GATE", "reason": "made_for_kids_coppa_limited_ads_mass_ai_risk"}
     if any(x in nid for x in ("mystery", "4_mystery", "unsolved")):
         return {"action": "GATE", "reason": "claim_vs_entertainment_framing"}
     if any(x in nid for x in ("news", "celebrity", "1_news")):

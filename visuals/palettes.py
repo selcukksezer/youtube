@@ -87,6 +87,14 @@ PALETTES: Dict[str, Dict] = {
         "particles": "grid",
         "sources": ["pexels", "pixabay", "openverse"],
     },
+    "kids": {
+        "colors": [(255, 248, 240), (186, 230, 253), (254, 215, 170)],
+        "accent": (251, 146, 60),
+        "text": (30, 41, 59),
+        "motion": "drift",
+        "particles": "dust",
+        "sources": ["pexels", "pixabay"],  # kid-safe animal/nature stock only
+    },
     "general": {
         "colors": [(10, 12, 20), (24, 30, 52), (40, 60, 90)],
         "accent": (120, 200, 255),
@@ -105,6 +113,7 @@ _FAMILY_ALIASES = {
     "football": "news",
     "wealth": "stoic",
     "gaming": "quiz",
+    "kids": "kids",
 }
 
 _NICHE_ID_FAMILY_HINT = [
@@ -123,6 +132,8 @@ _NICHE_ID_FAMILY_HINT = [
     ("guess", "quiz"),
     ("would_you", "quiz"),
     ("emoji", "quiz"),
+    ("kids", "kids"),
+    ("36_kids", "kids"),
 ]
 
 
