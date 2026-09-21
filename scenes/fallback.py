@@ -106,6 +106,22 @@ def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
     scenes = plan.get("scenes") or []
     for sc in scenes:
         sc["narration"] = _pad_narration_to_min_words(sc.get("narration") or "", is_tr=is_tr)
+    n = len(scenes)
+    if n:
+        try:
+            from director.schema import QualityThresholds
+            qt = QualityThresholds()
+            target, min_d, max_d = qt.target_duration, qt.min_duration, qt.max_duration
+        except Exception:
+            target, min_d, max_d = 48.0, 38.0, 60.0
+        total = sum(float(sc.get("duration") or 3.0) for sc in scenes)
+        if total < min_d or total > max_d or abs(total - target) > 0.75:
+            per = round(max(2.0, min(7.5, target / n)), 2)
+            for sc in scenes:
+                sc["duration"] = per
+            drift = round(target - per * n, 2)
+            if scenes and abs(drift) > 0.01:
+                scenes[-1]["duration"] = round(scenes[-1]["duration"] + drift, 2)
     plan["scenes"] = scenes
     plan["full_narration"] = " ".join(
         (s.get("narration") or "").strip() for s in scenes if (s.get("narration") or "").strip()
@@ -114,6 +130,8 @@ def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
 
 
 def _topic_is_crypto_market(title: str, body: str = "", niche_type: str = None) -> bool:
+    if niche_type and niche_type != "8_crypto_market":
+        return False
     if niche_type == "8_crypto_market":
         return True
     combined = f"{title} {body}".lower()
@@ -888,6 +906,74 @@ def _generate_crypto_market_scenes(clean_title: str, is_tr: bool, variation_seed
     }
 
 
+def _generate_pack_fallback_scenes(pack: dict, clean_title: str, is_tr: bool):
+    """Family-generic fallback using this niche's pack — never a crypto clone."""
+    topic = (clean_title or "").strip() or pack.get("name") or "Konu"
+    name = pack.get("name") or "Shorts"
+    hook = pack.get("hook_style") or topic
+    subjects = list(pack.get("subjects") or []) or [
+        "cinematic landscape aerial",
+        "dramatic light through clouds",
+        "person walking empty street",
+        "abstract light particles",
+    ]
+    include = list(pack.get("must_include") or ["cinematic"])
+    if is_tr:
+        narrations = [
+            f"{hook} {topic} hakkında bugün net ve eksiksiz konuşuyoruz, kısa stub yok.",
+            f"{name} formatında {topic} için ilk kritik nokta tam burada başlıyor izleyici.",
+            f"Bu nişin kuralları başka şablona kaymaz; görseller {include[0]} dünyasında kalır.",
+            f"İkinci katman: {topic} iddiasını somut örnekle bağlarız ve tempo düşmez.",
+            f"Çoğu kanal burada genel belgesel kopyalar; biz {name} tonunu koruyoruz.",
+            f"Kanıt sahnesi: {topic} detayı izleyiciyi yorum yazmaya zorlayacak kadar net.",
+            f"Risk ve itiraz var ama {name} paketindeki yasak görselleri asla kullanmayız.",
+            f"Dönüş sahnesi: {topic} sonucunu tek cümlede bağla ve merakı açık bırak.",
+            f"Özet: {topic} bu nişte kanca, kanıt ve soru ile kapanır, başka niş kopyası değil.",
+            f"Peki sen {topic} konusunda ne düşünüyorsun? Yorumlara yaz, döngü başa bağlanır!",
+        ]
+    else:
+        narrations = [
+            f"{hook} Today we cover {topic} fully inside the {name} niche pack.",
+            f"First beat stays on {topic} with complete sentences, never a six-word stub.",
+            f"Visuals stay in {include[0]} territory; we do not clone another niche template.",
+            f"Second layer: a concrete example that keeps {topic} specific and paced.",
+            f"Most channels paste a generic documentary; this pack keeps {name} tone.",
+            f"Proof beat: a detail about {topic} strong enough to force a comment.",
+            f"There is tension, but forbidden visuals from this pack never appear.",
+            f"Turn: close the {topic} result in one full sentence and keep curiosity.",
+            f"Summary: {topic} ends with hook, proof, and a question — not a crypto stub.",
+            f"What do you think about {topic}? Comment below so the loop can restart!",
+        ]
+    moods = ["urgent", "dramatic", "energetic", "tense", "mysterious", "calm", "epic", "dark", "bright", "calm"]
+    scenes = []
+    for i, narr in enumerate(narrations):
+        subject = subjects[i % len(subjects)]
+        desc = f"{subject} cinematic atmospheric"
+        queries = [
+            subject,
+            f"{subject} {include[0]}" if include else f"{subject} cinematic",
+            "cinematic 4k b-roll",
+        ]
+        scenes.append({
+            "scene_number": i + 1,
+            "narration": narr,
+            "scene_description": desc,
+            "search_queries": queries,
+            "duration": 4.8,
+            "mood": moods[i % len(moods)],
+            "beat_type": "hook" if i == 0 else "resolution" if i == len(narrations) - 1 else "conflict",
+        })
+    return {
+        "title": topic if is_tr else f"{name}: {topic}",
+        "visual_theme": pack.get("family") or "cinematic",
+        "full_narration": " ".join(narrations),
+        "scenes": scenes,
+        "niche_id": pack.get("id"),
+        "procedural_fallback": True,
+        "scenario_pack_family": pack.get("family"),
+    }
+
+
 def _generate_procedural_fallback_scenes(
     title: str,
     niche_type: str = None,
@@ -896,120 +982,55 @@ def _generate_procedural_fallback_scenes(
     variation_seed: int = 0,
 ) -> dict:
     """
-    Failsafe procedural scene generator when external AI models are inaccessible.
-    Guarantees rich 14-scene retention-friendly script structure with pure English search terms.
-    Dispatches directly to specialized niche templates based on category & tone.
+    Failsafe when AI is unavailable. Dispatch by this topic's niche pack —
+    never dump a crypto-shaped stub onto an unrelated niche.
     """
+    from niche_templates import NICHES, get_scenario_pack
+
     clean_title, main_kw, words, matched_en = _detect_niche_and_terms(title, raw_body)
     lang = language or getattr(config, "LANGUAGE", "tr")
     is_tr = (lang == "tr")
     combined = f"{title} {raw_body}".lower()
 
-    # 1. Reddit Confessions, WhatsApp chats & Split-screen stories
-    if niche_type in ("2_reddit_confessions", "20_whatsapp_chats", "3_split_gameplay") or any(k in combined for k in ["itiraf", "reddit", "whatsapp", "mülakat", "iş görüşmesi", "patron", "aldat", "gizli"]):
-        return _finalize_fallback_plan(_generate_reddit_confession_scenes(clean_title, combined, is_tr), is_tr=is_tr)
+    resolved = niche_type if niche_type in NICHES else None
+    if not resolved:
+        if any(k in combined for k in ["itiraf", "reddit", "whatsapp", "mülakat", "iş görüşmesi", "patron", "aldat", "gizli"]):
+            resolved = "2_reddit_confessions" if "whatsapp" not in combined else "20_whatsapp_chat_story"
+        elif any(k in title.lower() for k in ["son dakika", "flaş", "haber", "açıklama", "deprem", "karar"]):
+            resolved = "1_news_flash"
+        elif any(k in title.lower() for k in ["stoa", "marcus aurelius", "seneca", "felsefe"]):
+            resolved = "6_stoic_philosophy"
+        elif any(k in title.lower() for k in ["karanlık psikoloji", "manipülasyon", "beden dili"]):
+            resolved = "7_dark_psychology"
+        elif any(k in combined for k in ["burç", "burcu", "astroloji", "horoskop", "zodyak", "zodiac", "horoscope"]):
+            resolved = "18_astrology_horoscope"
+        elif _topic_is_crypto_market(title, raw_body, niche_type=None):
+            resolved = "8_crypto_market"
+        else:
+            resolved = "9_five_facts"
 
-    # 2. Breaking News & Flash News
-    if niche_type in ("1_news_flash", "57_rss_breaking") or any(k in title.lower() for k in ["son dakika", "flaş", "haber", "açıklama", "deprem", "karar"]):
-        return _finalize_fallback_plan(_generate_news_flash_scenes(clean_title, is_tr), is_tr=is_tr)
+    pack = get_scenario_pack(resolved, language=lang)
+    family = pack["family"]
+    nid = pack["id"]
 
-    # 3. Stoic Philosophy — niche_type from UI takes precedence over generic "felsefe" keyword
-    if niche_type in ("6_stoic_philosophy", "36_stoic_cyberpunk") or any(
-        k in title.lower() for k in ["stoa", "marcus aurelius", "seneca", "felsefe"]
-    ):
-        return _finalize_fallback_plan(_generate_stoic_scenes(clean_title, is_tr, variation_seed=variation_seed), is_tr=is_tr)
-
-    # 4. Dark Psychology & Body Language
-    if niche_type in ("7_dark_psychology", "38_dark_psych_parkour") or any(k in title.lower() for k in ["karanlık psikoloji", "manipülasyon", "beden dili"]):
-        return _finalize_fallback_plan(_generate_dark_psychology_scenes(clean_title, is_tr), is_tr=is_tr)
-
-    # 5. Astrology & daily horoscope
-    if niche_type == "18_astrology_horoscope" or any(
-        k in combined for k in ["burç", "burcu", "astroloji", "horoskop", "zodyak", "zodiac", "horoscope"]
-    ):
-        return _finalize_fallback_plan(
-            _generate_astrology_horoscope_scenes(clean_title, is_tr, variation_seed=variation_seed),
-            is_tr=is_tr,
-        )
-
-    # 6. Crypto / live trading / forex market
-    if _topic_is_crypto_market(title, raw_body, niche_type=niche_type):
+    if nid == "8_crypto_market" or family == "crypto":
         return _finalize_fallback_plan(
             _generate_crypto_market_scenes(clean_title, is_tr, variation_seed=variation_seed),
             is_tr=is_tr,
         )
-
-    # Standard general fallback (14 scenes, dynamic English keywords)
-    primary_kw = matched_en[0] if matched_en else "cinematic nature discovery"
-    second_kw = matched_en[1] if len(matched_en) > 1 else "science technology innovation"
-
-    topics_tr = [
-        f"Bugün sizlere {clean_title} hakkında bilinmeyen büyüleyici detayları aktarıyoruz.",
-        "İlk olarak, çoğu insanın farkında bile olmadığı şaşırtıcı bir gerçekle başlayalım.",
-        "Araştırmacılar ve bilim insanları bu durumun ardındaki sırrı uzun süredir çözmeye çalışıyor.",
-        "Olayın derinine indiğimizde karşımıza çıkan ilk ipucu tüm dengeleri tamamen değiştiriyor.",
-        "Gözden kaçan en kritik nokta, bu durumun günlük hayatımız üzerindeki doğrudan etkisidir.",
-        "Şimdiye kadar bildiğiniz tüm kalıpları yıkacak olan bu detay gerçekten inanılmaz.",
-        "Uzmanların yaptığı son analizler, beklenenden çok daha derin bir tablo ortaya koyuyor.",
-        "Gelişmeler devam ettikçe ortaya çıkan yeni kanıtlar izleyenleri hayrete düşürüyor.",
-        "Verileri birleştirdiğimizde gerçeğin bambaşka bir boyutta olduğunu görüyoruz.",
-        "Tarihsel kanıtlar ve modern araştırmalar aynı noktayı işaret ediyor.",
-        "Bu keşif, yakın gelecekte tüm alışkanlıklarımızı yeniden şekillendirebilir.",
-        "Gözlerinizi açıp baktığınızda işaretleri her yerde görebilirsiniz.",
-        "Gerçekler çoğu zaman çıplak gözle görülemeyecek kadar derinde saklıdır.",
-        "Peki siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım ve takip etmeyi unutmayın!"
-    ]
-
-    topics_en = [
-        f"Today we explore the fascinating, untold reality behind {clean_title}.",
-        "To begin with, let us look at an astonishing fact that most people are completely unaware of.",
-        "Leading researchers and scientists have spent years attempting to unravel the secret behind this phenomenon.",
-        "When we dive deeper beneath the surface, the first piece of evidence completely alters our understanding.",
-        "The most critical takeaway is the direct and profound impact this has on our everyday lives.",
-        "This surprising revelation challenges traditional assumptions and offers a fresh perspective.",
-        "Recent analytical data and breakthroughs present a far more intricate and compelling picture.",
-        "As ongoing investigations progress, new evidence continues to astonish observers worldwide.",
-        "Connecting the data points reveals that the reality exists on an entirely different scale.",
-        "Both historical archives and modern scientific research consistently point toward the exact same conclusion.",
-        "This discovery has the potential to reshape our habits and perspectives in the near future.",
-        "Once you know what to look for, you begin noticing the subtle signs everywhere around you.",
-        "Truth is often concealed beneath layers that cannot be perceived with a casual glance.",
-        "What are your thoughts on this discovery? Join the conversation in the comments and subscribe for more!"
-    ]
-    topics = topics_tr if is_tr else topics_en
-
-    visuals = [
-        ("Cinematic aerial drone shot over majestic landscapes with golden sunlight", [f"{primary_kw} aerial drone", "cinematic landscape sunset", "epic 4k nature"]),
-        ("Mystery dark atmosphere with dramatic shadow revealing discovery", ["mystery dark atmosphere", "dramatic lighting shadow", "deep investigation reveal"]),
-        ("Science laboratory research with futuristic glowing blue holographic data", ["science laboratory research", "data technology abstract", "futuristic concept blue"]),
-        ("Deep discovery investigation aerial drone flight over mountain summit", ["deep discovery investigation", "aerial drone mountain", "ancient mystery ruins"]),
-        ("Modern civilization city lights and human psychology abstract blur", ["modern civilization city lights", "human mind psychology", "abstract motion blur"]),
-        ("Shocking discovery revelation with explosion of warm golden light rays", ["shocking discovery revelation", "explosion of light golden", "epic cinematic drone view"]),
-        ("Detailed analysis research with magnifying glass inspection and cyber stream", ["detailed analysis research", "magnifying glass inspection", "digital data stream cyber"]),
-        ("Unbelievable truth concept with deep cosmic space galaxy and ocean blue", ["unbelievable truth concept", "space galaxy universe stars", "deep ocean mystery blue"]),
-        ("Connecting puzzle elements under light rays cinematic landscape", ["connecting elements puzzle", "light rays cinematic rays", "epic sunset drone landscape"]),
-        ("Historical archive document being analyzed under vintage desk lamp", ["historical archive document", "vintage desk research", "ancient mystery scroll"]),
-        ("Futuristic technology interface glowing in clean high-tech lab", ["futuristic high tech laboratory", "clean modern science room", "advanced technology screen"]),
-        ("Fast dynamic drone swoop over majestic canyon and river", ["canyon river drone swoop", "extreme nature landscape", "dramatic outdoor panorama"]),
-        ("Thoughtful silhouette looking towards golden sunrise horizon", ["silhouette sunrise horizon", "inspirational future view", "sunrise mountain contemplation"]),
-        ("Social media engagement card with like subscribe bell icon", ["social media engagement bell", "like subscribe follow icon", "cinematic ending landscape"])
-    ]
-
-    scenes = []
-    for i in range(14):
-        desc, queries = visuals[i]
-        scenes.append({
-            "scene_number": i + 1,
-            "narration": topics[i],
-            "scene_description": desc,
-            "search_queries": queries,
-            "duration": 3.0,
-            "mood": "epic" if i in (0, 5, 8, 12) else "mysterious" if i in (1, 3, 7, 9) else "energetic"
-        })
-
-    return _finalize_fallback_plan({
-        "title": clean_title,
-        "visual_theme": "cinematic documentary dark and bright highlights",
-        "full_narration": " ".join(topics),
-        "scenes": scenes
-    }, is_tr=is_tr)
+    if nid in ("2_reddit_confessions",) or family == "reddit":
+        return _finalize_fallback_plan(_generate_reddit_confession_scenes(clean_title, combined, is_tr), is_tr=is_tr)
+    if nid in ("20_whatsapp_chat_story", "3_split_gameplay") or family == "whatsapp":
+        return _finalize_fallback_plan(_generate_reddit_confession_scenes(clean_title, combined, is_tr), is_tr=is_tr)
+    if nid in ("1_news_flash",) or family == "news":
+        return _finalize_fallback_plan(_generate_news_flash_scenes(clean_title, is_tr), is_tr=is_tr)
+    if nid in ("6_stoic_philosophy",) or family == "stoic":
+        return _finalize_fallback_plan(_generate_stoic_scenes(clean_title, is_tr, variation_seed=variation_seed), is_tr=is_tr)
+    if nid == "7_dark_psychology" or family == "dark":
+        return _finalize_fallback_plan(_generate_dark_psychology_scenes(clean_title, is_tr), is_tr=is_tr)
+    if nid == "18_astrology_horoscope" or family == "astrology":
+        return _finalize_fallback_plan(
+            _generate_astrology_horoscope_scenes(clean_title, is_tr, variation_seed=variation_seed),
+            is_tr=is_tr,
+        )
+    return _finalize_fallback_plan(_generate_pack_fallback_scenes(pack, clean_title, is_tr), is_tr=is_tr)

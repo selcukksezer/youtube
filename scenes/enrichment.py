@@ -235,23 +235,70 @@ def enrich_continuous_motion_hints(scenes: List[Dict[str, Any]]) -> List[Dict[st
     return scenes
 
 
-def enrich_audio_visual_contrast_scenes(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _must_exclude_tokens(niche_id: str = "", must_exclude=None) -> List[str]:
+    raw: List[str] = list(must_exclude or [])
+    if not raw and niche_id:
+        try:
+            from director.visual_intent import get_motif_bank
+            raw = list(get_motif_bank(niche_id).get("must_exclude") or [])
+        except Exception:
+            raw = []
+    tokens: List[str] = []
+    for ex in raw:
+        low = str(ex).lower().strip()
+        if not low:
+            continue
+        tokens.append(low)
+        tokens.extend(t for t in low.split() if len(t) >= 4)
+    seen: List[str] = []
+    for tok in tokens:
+        if tok not in seen:
+            seen.append(tok)
+    return seen
+
+
+def _shock_queries_allowed(must_exclude_tokens: List[str]) -> List[str]:
+    """Keep Item 273 shock bank only when every query survives niche must_exclude."""
+    if not must_exclude_tokens:
+        return list(_SHOCK_VISUAL_QUERIES)
+    from director.visual_intent import text_contains_excluded
+    allowed = [q for q in _SHOCK_VISUAL_QUERIES if not text_contains_excluded(q, must_exclude_tokens)]
+    if len(allowed) < len(_SHOCK_VISUAL_QUERIES):
+        return []
+    return allowed
+
+
+def enrich_audio_visual_contrast_scenes(
+    scenes: List[Dict[str, Any]],
+    niche_id: str = "",
+    must_exclude=None,
+) -> List[Dict[str, Any]]:
     """
     Item 273: Ses ve Görselin Ters Uyumu — sakin anlatım + şok edici görsel (climax fazı).
+    Skip shock/horror query injection when the niche already excludes those tokens.
     """
     if len(scenes) < 4:
         return scenes
+    shock_pool = _shock_queries_allowed(_must_exclude_tokens(niche_id, must_exclude))
+    if niche_id:
+        try:
+            from niche_templates import get_scenario_pack
+            if not get_scenario_pack(niche_id).get("allow_shock_queries"):
+                shock_pool = []
+        except Exception:
+            pass
     climax_idx = max(1, (len(scenes) * 2) // 3)
     for i, sc in enumerate(scenes):
         if i != climax_idx and sc.get("beat_type") != "climax":
             continue
         sc["audio_visual_contrast"] = True
         sc["impact_shake"] = True
-        queries = list(sc.get("search_queries") or [])
-        shock = random.choice(_SHOCK_VISUAL_QUERIES)
-        if shock.split()[0] not in " ".join(queries).lower():
-            queries.insert(0, shock)
-        sc["search_queries"] = queries[:4]
+        if shock_pool:
+            queries = list(sc.get("search_queries") or [])
+            shock = random.choice(shock_pool)
+            if shock.split()[0] not in " ".join(queries).lower():
+                queries.insert(0, shock)
+            sc["search_queries"] = queries[:4]
         narr = (sc.get("narration") or "").strip()
         if narr and not narr.endswith("..."):
             sc["narration"] = narr.rstrip(".!?") + "..."
@@ -356,7 +403,7 @@ def apply_alternate_topic_angle(plan: Dict[str, Any], topic: str, lang: str = "t
     return merged
 
 
-def enrich_plan_scenes(plan: Dict[str, Any], lang: str = "tr") -> Dict[str, Any]:
+def enrich_plan_scenes(plan: Dict[str, Any], lang: str = "tr", niche_id: str = "") -> Dict[str, Any]:
     """
     Apply all scene-level enrichment passes for render path (UI-supplied plans included).
     Wires Items 226, 241, 247, 271, 273, 96 (fair use) and retention visual hints.
@@ -364,6 +411,7 @@ def enrich_plan_scenes(plan: Dict[str, Any], lang: str = "tr") -> Dict[str, Any]
     scenes = plan.get("scenes") or []
     if not scenes:
         return plan
+    nid = niche_id or str(plan.get("niche_id") or plan.get("niche") or "")
     try:
         from copyright_risk import scenes_need_fair_use_enforcement
         if scenes_need_fair_use_enforcement(scenes):
@@ -375,7 +423,7 @@ def enrich_plan_scenes(plan: Dict[str, Any], lang: str = "tr") -> Dict[str, Any]
     scenes = enrich_numbered_rule_narration(scenes, lang=lang)
     scenes = avoid_consecutive_face_visuals(scenes)
     scenes = enrich_continuous_motion_hints(scenes)
-    scenes = enrich_audio_visual_contrast_scenes(scenes)
+    scenes = enrich_audio_visual_contrast_scenes(scenes, niche_id=nid)
     plan["scenes"] = scenes
     return plan
 

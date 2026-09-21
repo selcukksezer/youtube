@@ -4,6 +4,28 @@ System prompts and prompt rotation strategies for Shorts script generation.
 
 from typing import Optional
 
+# Thin shared envelope — JSON schema + duration/word caps. Niche packs supply content rules.
+SHARED_ENVELOPE_TR = """ORTAK ŞEMA (tüm nişler aynı; içerik kuralları niş paketinden gelir):
+- SADECE geçerli JSON döndür.
+- 8-16 sahne (konuya göre; tam 14 zorunlu değil).
+- Toplam süre 38-60 saniye (hedef 48, tavan 60 — Madde 494).
+- Her narration: en az 10 kelimelik TAM cümle, . ! ? ile bit. 6 kelimelik stub YASAK.
+- scene_description: gerçek İngilizce görsel cümle; (SCENE_DESCRIPTION) / tbd / n/a YASAK.
+- search_queries: 3 İngilizce stok terim; niş must_exclude listesine aykırı görsel YASAK.
+- Her sahne: beat_type (hook/conflict/climax/resolution/shock) ve mood.
+JSON iskeleti:
+{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":3.5,"mood":"epic","beat_type":"hook"}]}"""
+
+SHARED_ENVELOPE_EN = """SHARED SCHEMA (all niches; content rules come from the niche pack):
+- Return valid JSON only.
+- 8-16 scenes (topic decides; exactly 14 is not required).
+- Total duration 38-60 seconds (target 48, cap 60 — Item 494).
+- Each narration: at least 10 complete words ending with . ! ?
+- scene_description: real English visual sentence; placeholders forbidden.
+- search_queries: 3 English stock terms; never violate niche must_exclude.
+JSON skeleton:
+{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":3.5,"mood":"epic","beat_type":"hook"}]}"""
+
 PROMPT_TR = """Sen profesyonel bir YouTube Shorts senaristi ve seslendirme yazarısın.
 Verilen başlık için:
 
@@ -52,7 +74,7 @@ ONLY JSON:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"epic"}]}"""
 
 PROMPT_VARIANTS_TR = [
-    PROMPT_TR,
+    SHARED_ENVELOPE_TR + "\n" + PROMPT_TR,
     """Sen viral YouTube Shorts içerik uzmanısın.
 Hedef: İzleyiciyi ilk 3 saniyede yakalayan ve sonuna kadar tutan sürükleyici bir video senaryosu hazırlamak.
 Kurallar:
@@ -104,8 +126,8 @@ def advance_prompt_rotation(steps: int = 1) -> None:
 
 def get_rotated_system_prompt(base_lang: str = "tr", *, force_variant: Optional[int] = None) -> str:
     """
-    Rotates system prompt template periodically to eliminate structural AI fingerprint
-    (Item 104: Prompt Template Rotation).
+    Item 104: rotate the *envelope* wording only. Niche content rules are not here —
+    call get_niche_prompt / get_scenario_pack for tone, forbidden visuals, fallback family.
     """
     global _ROTATION_INDEX
     if base_lang == "tr":

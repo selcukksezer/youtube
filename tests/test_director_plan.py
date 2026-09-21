@@ -115,6 +115,35 @@ class TestDirectorPlan(unittest.TestCase):
         clocks = [e for e in plan.audio_events if e.sound == "clock_tick"]
         self.assertGreaterEqual(len(clocks), 1)
 
+    def test_placeholder_scene_description_replaced(self):
+        scenes = [
+            ScenePlan(
+                index=0,
+                narration="Bitcoin grafigi su an tum piyasayi belirliyor dikkatli olun buradayiz.",
+                duration=3.0,
+                scene_description="(SCENE_DESCRIPTION)",
+                search_queries=["bitcoin chart screen"],
+            )
+        ]
+        out = apply_visual_intents(scenes, "8_crypto_market", title="Bitcoin şu an nerede")
+        desc = (out[0].scene_description or "")
+        self.assertNotIn("SCENE_DESCRIPTION", desc.upper())
+        self.assertGreaterEqual(len(desc), 12)
+
+    def test_crypto_strips_horror_search_queries(self):
+        scenes = [
+            ScenePlan(
+                index=0,
+                narration="Bitcoin grafigi su an tum piyasayi belirliyor dikkatli olun buradayiz.",
+                duration=3.0,
+                scene_description="Live crypto trading desk with glowing charts",
+                search_queries=["horror reveal dramatic lightning strike", "bitcoin chart"],
+            )
+        ]
+        out = apply_visual_intents(scenes, "8_crypto_market", title="Bitcoin")
+        joined = " ".join(out[0].search_queries).lower()
+        self.assertNotIn("horror", joined)
+
     def test_semantic_exclude(self):
         intent = VisualIntent(must_exclude=["skull", "ufo"])
         self.assertTrue(text_contains_excluded("creepy skull on table", intent.must_exclude))

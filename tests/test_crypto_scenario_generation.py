@@ -51,6 +51,30 @@ def _stub_ai_plan(topic: str = BITCOIN_TOPIC, n: int = 14):
 
 
 class TestCryptoScenarioGeneration(unittest.TestCase):
+    def test_sanitize_keeps_turkish_letters(self):
+        """Python Unicode \\w keeps ş; JS sanitizer must use \\p{L} (see static/app.js)."""
+        clean = sanitize_topic_title(BITCOIN_TOPIC)
+        self.assertIn("şu", clean)
+        self.assertIn("geçerse", clean)
+        js_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "app.js")
+        with open(js_path, encoding="utf-8") as fh:
+            js = fh.read()
+        self.assertIn(r"[^\p{L}\p{N}\s\-&]", js)
+        self.assertNotIn("keyword: apiTopic", js)
+
+    def test_crypto_does_not_steal_other_niche(self):
+        self.assertFalse(_topic_is_crypto_market(BITCOIN_TOPIC, niche_type="18_astrology_horoscope"))
+        self.assertFalse(_topic_is_crypto_market(BITCOIN_TOPIC, niche_type="35_animal_kingdom_stories"))
+
+    def test_crypto_fallback_duration_in_38_60(self):
+        plan = _generate_procedural_fallback_scenes(
+            BITCOIN_TOPIC, niche_type="8_crypto_market", language="tr"
+        )
+        total = sum(float(s.get("duration") or 0) for s in plan["scenes"])
+        self.assertGreaterEqual(total, 38.0)
+        self.assertLessEqual(total, 60.0)
+        self.assertGreater(total, 42.5)
+
     def test_sanitize_topic_strips_noise(self):
         clean = sanitize_topic_title(LIVE_TOPIC)
         self.assertNotIn("#", clean)

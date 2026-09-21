@@ -993,19 +993,47 @@ NICHES: Dict[str, Dict[str, Any]] = {
 }
 
 
-# P1-01: competitor-format scene structures keyed by niche family
+# P1-01: competitor-format scene structures keyed by niche family (all 35)
 NICHE_FAMILY_MAP: Dict[str, str] = {
     "1_news_flash": "news",
     "2_reddit_confessions": "reddit",
+    "3_split_gameplay": "whatsapp",
+    "4_would_you_rather": "quiz",
+    "5_guess_flag_country": "quiz",
     "6_stoic_philosophy": "stoic",
-    "7_dark_psychology": "stoic",
-    "8_crypto_market": "news",
+    "7_dark_psychology": "dark",
+    "8_crypto_market": "crypto",
+    "9_five_facts": "quiz",
+    "10_religious_quotes": "stoic",
+    "11_language_learning": "quiz",
+    "12_amazon_affiliate": "product",
+    "13_mystery_paranormal": "mystery",
+    "14_movie_summaries": "entertainment",
     "15_football_transfers": "news",
     "16_wealth_entrepreneurship": "stoic",
+    "17_before_after_evolution": "entertainment",
+    "18_astrology_horoscope": "astrology",
+    "19_historical_battles": "stoic",
     "20_whatsapp_chat_story": "whatsapp",
+    "21_ai_tools_hacks": "product",
+    "22_emoji_guess_game": "quiz",
+    "23_fitness_nutrition_hacks": "product",
     "24_sigma_character_study": "stoic",
-    "3_split_gameplay": "whatsapp",
+    "25_celebrity_net_worth": "entertainment",
+    "26_dangerous_places": "mystery",
+    "27_common_myths_busted": "quiz",
+    "28_dream_meanings": "astrology",
+    "29_optical_illusions_iq": "quiz",
+    "30_poetry_quotes": "stoic",
+    "31_supercars_automotive": "product",
+    "32_legal_consumer_hacks": "product",
+    "33_parenting_child_hacks": "product",
+    "34_gaming_easter_eggs": "entertainment",
+    "35_animal_kingdom_stories": "entertainment",
 }
+
+# Item 273 shock/horror queries only for these families
+SHOCK_QUERY_FAMILIES = frozenset({"mystery", "dark"})
 
 SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
     "whatsapp": {
@@ -1091,11 +1119,124 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
             "Tone: urgent, factual, dramatic. No chat story or confession format."
         ),
     },
+    "crypto": {
+        "tr": (
+            "KRİPTO / PİYASA ANALİZ YAPISI:\n"
+            "- Sahne 1: fiyat/seviye kancası (Bitcoin, altın, endeks — konuya özel).\n"
+            "- Orta sahneler: destek/direnç, hacim, makro, risk.\n"
+            "- Son sahne: long/short sorusu + döngü.\n"
+            "YASAK görseller: horror, skull, ghost, lightning-strike şok. Bu bir finans videosu, korku klibi değil.\n"
+            "YASAK format: burç yorumu, itiraf, chat balonu."
+        ),
+        "en": (
+            "CRYPTO / MARKET STRUCTURE:\n"
+            "- Scene 1: price/level hook.\n"
+            "- Middle: support, volume, macro, risk.\n"
+            "- Last: long/short question + loop.\n"
+            "FORBIDDEN visuals: horror, skull, ghost, shock lightning. This is finance, not horror."
+        ),
+    },
+    "mystery": {
+        "tr": (
+            "GİZEM / PARANORMAL YAPISI:\n"
+            "- Sahne 1: ürpertici açıklanamayan olay kancası.\n"
+            "- Orta: ipucu, tanık, resmi açıklama vs boşluk.\n"
+            "- Son: izleyici teorisi sorusu. Şok görsel (Item 273) bu nişte serbest."
+        ),
+        "en": (
+            "MYSTERY / PARANORMAL STRUCTURE:\n"
+            "- Scene 1: unexplained chilling hook.\n"
+            "- Middle: clues vs official silence.\n"
+            "- Last: audience theory. Shock visuals (Item 273) allowed."
+        ),
+    },
+    "dark": {
+        "tr": (
+            "KARANLIK PSİKOLOJİ YAPISI:\n"
+            "- Sahne 1: beden dili / manipülasyon uyarısı.\n"
+            "- Orta: 3 işaret, gizli niyet, savunma.\n"
+            "- Son: 'bunu yapan birine güvenir misin?' Şok görsel bu nişte serbest; çocuk/cartoon YASAK."
+        ),
+        "en": (
+            "DARK PSYCHOLOGY STRUCTURE:\n"
+            "- Scene 1: body-language warning hook.\n"
+            "- Middle: three tells, hidden intent, defense.\n"
+            "- Last: trust question. Shock visuals allowed; kids/cartoon forbidden."
+        ),
+    },
+    "astrology": {
+        "tr": (
+            "ASTROLOJİ / BURÇ YAPISI:\n"
+            "- Sahne 1: bu hafta şanslı/kritik burç kancası.\n"
+            "- Orta: aşk, para, kariyer sıralaması.\n"
+            "- Son: 'burcunu yoruma yaz'. YASAK: borsa grafiği, horror skull."
+        ),
+        "en": (
+            "ASTROLOGY / ZODIAC STRUCTURE:\n"
+            "- Scene 1: lucky/critical sign hook.\n"
+            "- Middle: love, money, career ranking.\n"
+            "- Last: comment your sign. FORBIDDEN: trading charts, horror skull."
+        ),
+    },
+    "quiz": {
+        "tr": (
+            "QUIZ / LİSTE YAPISI:\n"
+            "- Sahne 1: sayı+iddia kancası (5 gerçek / tercih / mit).\n"
+            "- Orta: maddeler, her sahne ayrı olgu.\n"
+            "- Son: skor veya 'hangisi şaşırttı?' YASAK: kripto mum grafiği, horror."
+        ),
+        "en": (
+            "QUIZ / LIST STRUCTURE:\n"
+            "- Scene 1: numbered claim hook.\n"
+            "- Middle: one fact per scene.\n"
+            "- Last: score / which surprised you? FORBIDDEN: crypto candles, horror."
+        ),
+    },
+    "product": {
+        "tr": (
+            "ÜRÜN / HACK YAPISI:\n"
+            "- Sahne 1: problem+çözüm kancası.\n"
+            "- Orta: nasıl çalışır, kim kullanır, dikkat.\n"
+            "- Son: kaydet/yorum. YASAK: horror, skull, unrelated finance charts."
+        ),
+        "en": (
+            "PRODUCT / HACK STRUCTURE:\n"
+            "- Scene 1: problem+fix hook.\n"
+            "- Middle: how it works, who it's for.\n"
+            "- Last: save/comment. FORBIDDEN: horror, unrelated charts."
+        ),
+    },
+    "entertainment": {
+        "tr": (
+            "EĞLENCE / BELGESEL YAPISI:\n"
+            "- Sahne 1: meraklı kanca (hayvan, film, ünlü, oyun).\n"
+            "- Orta: 3 çarpıcı detay, konu nişine kilitli görsel.\n"
+            "- Son: yorum sorusu. YASAK: Bitcoin grafiği, horror (gizem nişi değilse)."
+        ),
+        "en": (
+            "ENTERTAINMENT / DOCU STRUCTURE:\n"
+            "- Scene 1: curiosity hook.\n"
+            "- Middle: three on-niche details.\n"
+            "- Last: comment ask. FORBIDDEN: Bitcoin charts, horror unless mystery family."
+        ),
+    },
+    "general": {
+        "tr": (
+            "GENEL SHORTS YAPISI:\n"
+            "- 8-16 sahne, kanca → kanıt → sonuç → soru.\n"
+            "Konu hangi nişse o görsel bankayı kullan; başka nişin şablonunu kopyalama."
+        ),
+        "en": (
+            "GENERAL SHORTS STRUCTURE:\n"
+            "- 8-16 scenes, hook → proof → close → question.\n"
+            "Stay inside this niche's visual bank; do not clone another niche's template."
+        ),
+    },
 }
 
 
 def get_niche_family(niche_key: str) -> str:
-    """Returns panel/format family for a niche (news, reddit, whatsapp, stoic, general)."""
+    """Returns panel/format family for a niche (news, reddit, whatsapp, stoic, crypto, ...)."""
     return NICHE_FAMILY_MAP.get(niche_key, "general")
 
 
@@ -1109,132 +1250,113 @@ def get_niche_scene_structure(niche_key: str, language: str = "tr") -> str:
     return templates.get(lang, templates.get("tr", ""))
 
 
+def get_scenario_pack(niche_key: str, language: str = "tr") -> Dict[str, Any]:
+    """
+    Per-niche scenario pack: tone, forbidden visuals, shock policy, fallback family.
+    Shared envelope (JSON / 8-16 / 38-60 / min 10 words) is NOT stored here.
+    """
+    key = niche_key if niche_key in NICHES else "1_news_flash"
+    niche = NICHES[key]
+    family = get_niche_family(key)
+    try:
+        from director.visual_intent import get_motif_bank
+        bank = get_motif_bank(key)
+    except Exception:
+        bank = {}
+    exclude = list(bank.get("must_exclude") or [])
+    include = list(bank.get("must_include") or [])
+    subjects = list(bank.get("subjects") or [])
+    return {
+        "id": key,
+        "name": niche["name"],
+        "name_en": niche.get("name_en", niche["name"]),
+        "category": niche["category"],
+        "tone": niche["tone"],
+        "hook_style": niche["hook_style"],
+        "system_instruction": niche["system_instruction"],
+        "default_music": niche.get("default_music", "dramatic"),
+        "family": family,
+        "must_exclude": exclude,
+        "must_include": include,
+        "subjects": subjects,
+        "allow_shock_queries": family in SHOCK_QUERY_FAMILIES,
+        "min_words": 10,
+        "min_scenes": 8,
+        "max_scenes": 16,
+        "min_duration": 38.0,
+        "max_duration": 60.0,
+        "target_duration": 48.0,
+        "scene_structure": get_niche_scene_structure(key, language),
+    }
+
+
 def get_niche_prompt(niche_key: str, topic: str, language: str = "tr") -> str:
     """
-    Constructs a highly optimized prompt embedding:
-    - Niche specialized instructions
-    - Item 37: 3-second Viral Hook rules
-    - Item 81: Seamless Loop structure
-    - Item 82: Controversial question / discussion trigger
-    - Item 93: Text density bounds (max 3-4 words per flash)
-    - Item 96: Call to Action (CTA) question closing
+    Compose envelope (schema/duration) + this niche's pack (tone, forbidden visuals, structure).
+    One shared PROMPT_TR is never enough — each niche gets its own content rules.
     """
-    niche = NICHES.get(niche_key, NICHES["1_news_flash"])
+    from scenes.prompts import SHARED_ENVELOPE_TR, SHARED_ENVELOPE_EN
+
+    pack = get_scenario_pack(niche_key, language=language)
     is_tr = (language == "tr")
-    scene_structure = get_niche_scene_structure(niche_key, language)
+    envelope = SHARED_ENVELOPE_TR if is_tr else SHARED_ENVELOPE_EN
+    forbidden = ", ".join(pack["must_exclude"]) if pack["must_exclude"] else ("yok" if is_tr else "none")
+    shock = (
+        "Item 273 şok/horror query bu nişte SERBEST."
+        if pack["allow_shock_queries"]
+        else "Item 273 şok/horror query bu nişte YASAK — must_exclude ile çelişmesin."
+    )
+    shock_en = (
+        "Item 273 shock/horror queries ALLOWED for this niche."
+        if pack["allow_shock_queries"]
+        else "Item 273 shock/horror queries FORBIDDEN for this niche."
+    )
+    structure = pack["scene_structure"]
+    struct_block = f"\nRAKİP FORMAT SAHNE YAPISI:\n{structure}\n" if structure and is_tr else (
+        f"\nCOMPETITOR FORMAT SCENE STRUCTURE:\n{structure}\n" if structure else ""
+    )
 
     if is_tr:
-        prompt = f"""Sen profesyonel bir YouTube Shorts algoritma uzmanı ve viral senaristsin.
+        return f"""{envelope}
+
+Sen profesyonel bir YouTube Shorts algoritma uzmanı ve viral senaristsin.
 KONU: "{topic}"
-NİŞ KATEGORİSİ: "{niche['name']}" ({niche['category']})
-ANLATIM TONU: {niche['tone']}
-
-ZORUNLU ALGORİTMA VE SAHNE KURALLARI:
-1. CADENCE 14 VE SÜRE KURALI (Madde 88 & 494):
-   TAM OLARAK 14 SAHNE ÜRET (scenes dizisinde tam 14 eleman olmalı).
-   Her sahnenin "duration" değerini SEN belirle (2.0–4.5 sn arası, doğal tempo).
-   Toplam video süresi 38-48 saniye olmalıdır. 3.2 sn sabit kural YOK — AI pacing karar verir.
-   Her sahneye "beat_type" ata: hook / conflict / climax / resolution / shock.
-   "mood" etiketi kullan: URGENT, DRAMATIC, EPIC, CALM, MYSTERIOUS vb.
-
-2. TAM VE AKICI CÜMLE KURALI (KRİTİK):
-   Her sahnenin 'narration' alanı 1-2 TAM, dilbilgisel olarak EKSİKSİZ Türkçe cümle olmalıdır.
-   Drama/itiraf nişlerinde sahne başına en az 8-12 kelime; diğer nişlerde en az 6 kelime.
-   Cümleleri ASLA yarım bırakma! Fiil ortasında ASLA kesme!
-   YASAK bitişler: "ilan.", "et.", "de.", "ki.", "ve.", "için.", "olarak." — bunlar bir sonraki sahneye taşınmamalı.
-   YASAK başlangıçlar: "Etti", "Ediyor", "Oldu" gibi devam fiili — her sahne kendi başına anlamlı olmalı.
-   14 sahne baştan sona tam ve sürükleyici bir çatışma/olay akışı sunmalıdır.
-   Her sahneye izleyicinin dikkatini canlı tutacak 1-2 adet ilgili EMOJİ ekle.
-
-3. İLK 3 SANİYE KANCASI (VIRAL HOOK - Sahne 1):
-   İlk sahne doğrudan konuya giren, merak uyandırıcı şok edici bir kanca cümlesi olmalı.
-   Örnek Hook tarzı: "{niche['hook_style']}"
-
-4. SONSUZ DÖNGÜ, TARTIŞMA VE CTA (SEAMLESS LOOP - Sahne 14):
-   14. sahnenin son cümlesi, 1. sahnenin başına kesintisiz bağlanan bir döngü ve izleyicileri yoruma davet eden bir soru içermelidir!
-
-5. STOK VİDEO VE GÖRSEL BAĞLAMI:
-   - "scene_description": Sahne için İngilizce net görsel tasviri (Pexels video araması için).
-   - "search_queries": 3 adet İngilizce stok video arama terimi [spesifik, orta, genel]. Asla Türkçe kelime koyma!
+NİŞ PAKETİ: "{pack['name']}" ({pack['category']}) id={pack['id']} family={pack['family']}
+ANLATIM TONU: {pack['tone']}
+YASAK GÖRSELLER (must_exclude): {forbidden}
+{shock}
 
 NİŞ ÖZEL TALİMATI:
-{niche['system_instruction']}
-{f'''
-RAKİP FORMAT SAHNE YAPISI:
-{scene_structure}
-''' if scene_structure else ''}
-SADECE VE SADECE GEÇERLİ JSON DÖNDÜR (Tam 14 sahne içermelidir):
-{{
-  "niche_id": "{niche['id']}",
-  "title": "Çarpıcı YouTube Shorts Başlığı (#Shorts dahil)",
-  "viral_hook": "İlk 3 saniye kancası",
-  "seamless_loop_ending": "İlk cümleye bağlanan son cümle",
-  "discussion_trigger": "Yorum yaptırma sorusu",
-  "full_narration": "Tüm konuşma metni",
-  "scenes": [
-    {{
-      "scene_number": 1,
-      "narration": "İlk sahne kancası ve emojiler...",
-      "scene_description": "Clear visual description in English",
-      "search_queries": ["specific english query", "medium query", "general query"],
-      "duration": 3.0,
-      "mood": "{niche['default_music']}"
-    }}
-  ]
-}}"""
-    else:
-        prompt = f"""You are a professional YouTube Shorts algorithm expert and viral scriptwriter.
+{pack['system_instruction']}
+{struct_block}
+3. İLK 3 SANİYE KANCASI (VIRAL HOOK - Sahne 1):
+   Örnek Hook tarzı: "{pack['hook_style']}"
+
+4. SONSUZ DÖNGÜ, TARTIŞMA VE CTA (SEAMLESS LOOP - son sahne):
+   Son sahne 1. sahneye bağlanan döngü + yorum sorusu içermeli.
+
+Başka nişin şablonunu (kripto grafiği, burç listesi, itiraf, haber bülteni) bu pakete kopyalama.
+"""
+    return f"""{envelope}
+
+You are a professional YouTube Shorts algorithm expert and viral scriptwriter.
 TOPIC: "{topic}"
-NICHE CATEGORY: "{niche['name_en']}" ({niche['category']})
-TONE OF VOICE: {niche['tone']}
-
-MANDATORY ALGORITHM & SCENE RULES:
-1. CADENCE 14 & DURATION RULE:
-   Generate EXACTLY 14 SCENES (array of exactly 14 scene objects).
-   YOU assign each scene "duration" (2.0–4.5s, natural pacing). Total 38-48 seconds.
-   Assign "beat_type" (hook/conflict/climax/resolution/shock) and "mood" per scene.
-
-2. COMPLETE SENTENCES (CRITICAL):
-   Each scene "narration" must be 1-2 complete, self-contained grammatically sound sentences (8-16 words for drama).
-   NEVER end mid-verb or start with a continuation fragment ("Etti", "Ediyor").
-   Embed 1-2 relevant emojis naturally in each scene.
-
-3. FIRST 3-SECOND VIRAL HOOK (Scene 1):
-   Hook the viewer immediately. Reference: "{niche['hook_style']}"
-
-4. SEAMLESS LOOP & CTA (Scene 14):
-   Last scene must flow seamlessly back into Scene 1 and ask a debate question.
-
-5. STOCK VIDEO QUERIES:
-   - "scene_description": Precise visual depiction in English.
-   - "search_queries": 3 concise English search keywords [specific, medium, general].
+NICHE PACK: "{pack['name_en']}" ({pack['category']}) id={pack['id']} family={pack['family']}
+TONE OF VOICE: {pack['tone']}
+FORBIDDEN VISUALS (must_exclude): {forbidden}
+{shock_en}
 
 NICHE SPECIFIC INSTRUCTION:
-{niche['system_instruction']}
-{f'''
-COMPETITOR FORMAT SCENE STRUCTURE:
-{scene_structure}
-''' if scene_structure else ''}
-RETURN ONLY VALID JSON (with exactly 14 scenes):
-{{
-  "niche_id": "{niche['id']}",
-  "title": "Viral YouTube Shorts Title (#Shorts included)",
-  "viral_hook": "First 3s hook",
-  "seamless_loop_ending": "Ending connecting to start",
-  "discussion_trigger": "Comment trigger question",
-  "full_narration": "Full narration text",
-  "scenes": [
-    {{
-      "scene_number": 1,
-      "narration": "Scene narration with emojis...",
-      "scene_description": "Clear visual description in English",
-      "search_queries": ["query1", "query2", "query3"],
-      "duration": 3.0,
-      "mood": "{niche['default_music']}"
-    }}
-  ]
-}}"""
-    return prompt
+{pack['system_instruction']}
+{struct_block}
+3. FIRST 3-SECOND VIRAL HOOK (Scene 1):
+   Reference: "{pack['hook_style']}"
+
+4. SEAMLESS LOOP & CTA (last scene):
+   Last scene must flow back into Scene 1 and ask a debate question.
+
+Do not clone another niche's template (crypto charts, horoscope list, confession, news bulletin) into this pack.
+"""
 
 
 def list_all_niches() -> List[Dict[str, Any]]:

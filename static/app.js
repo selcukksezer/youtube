@@ -18,10 +18,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!t) return '';
         t = t.replace(/[\u{10000}-\u{10FFFF}]/gu, '');
         t = t.replace(/[\u2600-\u27BF\uFE00-\uFE0F]/g, '');
-        t = t.replace(/#[\w]+/g, ' ');
-        t = t.replace(/[^\w\s\-&]/g, ' ');
+        t = t.replace(/#[\p{L}\p{N}_]+/gu, ' ');
+        t = t.replace(/[^\p{L}\p{N}\s\-&]/gu, ' ');
         t = t.replace(/\s+/g, ' ').trim();
         return t || (title || '').trim();
+    }
+
+    function sceneDescriptionUsable(text) {
+        const raw = (text || '').trim();
+        if (!raw || raw.length < 12) return false;
+        if (/^(?:\(?\s*scene[_\s-]?description\s*\)?|\.\.\.|tbd|n\/a|placeholder|desc(?:ription)?)\s*$/i.test(raw)) return false;
+        const lower = raw.toLowerCase();
+        if (lower.includes('scene_description') && raw.length < 40) return false;
+        if (['description', 'visual', 'n/a', 'tbd', '...'].includes(lower)) return false;
+        return true;
     }
 
     function planHasBrokenNarration(plan) {
@@ -38,7 +48,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 .replace(/\s+/g, ' ')
                 .trim();
             const words = norm.split(/\s+/).filter(Boolean);
-            if (words.length < 5) return true;
+            if (words.length < 10) return true;
+            if (!sceneDescriptionUsable(sc.scene_description || '')) return true;
             return norm.slice(-1) !== '.' && norm.slice(-1) !== '!' && norm.slice(-1) !== '?';
         });
     }
@@ -213,9 +224,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const uniqueClips = new Set(queries).size;
         const dupes = queries.length - uniqueClips;
 
-        setSqpPill('sqp-cadence', `Cadence: ${scenes.length}/14`, scenes.length >= 14 ? 'ok' : (scenes.length >= 10 ? 'warn' : 'fail'));
+        const cadenceOk = scenes.length >= 8 && scenes.length <= 16;
+        setSqpPill('sqp-cadence', `Cadence: ${scenes.length} sahne`, cadenceOk ? 'ok' : (scenes.length >= 6 ? 'warn' : 'fail'));
         setSqpPill('sqp-words', `Kelime: ${totalWords}`, totalWords >= 70 ? 'ok' : (totalWords >= 50 ? 'warn' : 'fail'));
-        setSqpPill('sqp-duration', `Sure: ${totalSec.toFixed(1)}sn`, totalSec >= 38 && totalSec <= 48 ? 'ok' : 'warn');
+        setSqpPill('sqp-duration', `Sure: ${totalSec.toFixed(1)}sn`, totalSec >= 38 && totalSec <= 60 ? 'ok' : 'warn');
         setSqpPill('sqp-clips', `Klip: ${uniqueClips}/${scenes.length}`, dupes === 0 ? 'ok' : 'warn');
 
         badge.className = 'sqp-status-badge warn';
@@ -400,8 +412,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const narr = normalizeNarrationForValidation(raw);
             const words = narr.split(/\s+/).filter(Boolean);
-            if (words.length < 5) {
-                hard.push(`Sahne ${i + 1}: cok kisa (${words.length} kelime, min 5)`);
+            if (words.length < 10) {
+                hard.push(`Sahne ${i + 1}: cok kisa (${words.length} kelime, min 10)`);
             }
             if (!/[.!?]$/.test(narr)) {
                 hard.push(`Sahne ${i + 1}: cumle noktalama ile bitmiyor`);
@@ -563,11 +575,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const timedScenes = scenes.filter(s => sceneDurationSec(s) !== null);
         if (!timedScenes.length) return { hard: [], soft: [] };
         const totalSec = timedScenes.reduce((acc, s) => acc + sceneDurationSec(s), 0);
-        if (totalSec < 38 || totalSec > 48) {
-            soft.push(`Sure bandi: ${totalSec.toFixed(1)}sn (hedef 38-48)`);
+        if (totalSec < 38 || totalSec > 60) {
+            soft.push(`Sure bandi: ${totalSec.toFixed(1)}sn (izin 38-60, hedef 48)`);
         }
-        if (scenes.length < 14) {
-            soft.push(`Cadence: ${scenes.length}/14 sahne`);
+        if (scenes.length < 8 || scenes.length > 16) {
+            soft.push(`Cadence: ${scenes.length} sahne (izin 8-16)`);
         }
         const longCuts = timedScenes.filter(s => sceneDurationSec(s) > 3.2).length;
         if (longCuts > 3) {
@@ -683,7 +695,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chipCad) {
             chipCad.className = 'compliance-chip';
             const t = document.getElementById('chip-cadence-text');
-            if (t) t.textContent = 'Cadence: 0/14';
+            if (t) t.textContent = 'Cadence: —';
         }
         if (chip32) {
             chip32.className = 'compliance-chip status-ok';
@@ -1917,7 +1929,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-new-topic')?.addEventListener('click', clearCurrentScenario);
 
     async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
-        if (!forceRegenerate && hasExistingPlan()) {
+        if (!forceRegenerate && hasExistingPlan() && !planHasBrokenNarration(currentPlan)) {
             navigateToScenario();
             return;
         }
@@ -1927,9 +1939,8 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Lütfen bir video konusu girin!');
             return;
         }
-        const apiTopic = sanitizeTopicTitleForDisplay(topic) || topic;
 
-        if (forceRegenerate) {
+        if (forceRegenerate || (hasExistingPlan() && planHasBrokenNarration(currentPlan))) {
             currentPlan = null;
             timelineReviewed = false;
             qualityPanelGreen = false;
@@ -1949,7 +1960,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    keyword: apiTopic,
+                    keyword: topic,
                     language: selectLanguage.value,
                     niche: selectNiche.value,
                     reddit_post: selectedRedditPost,
@@ -2055,22 +2066,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const chipDurText = document.getElementById('chip-duration-text');
         chipDurText.textContent = `Süre: ${totalSec.toFixed(1)}sn`;
         chipDur.className = 'compliance-chip';
-        if (totalSec >= 38 && totalSec <= 48) {
+        if (totalSec >= 38 && totalSec <= 60) {
             chipDur.classList.add('status-ok');
-        } else if (totalSec > 48 && totalSec <= 60) {
+        } else if (totalSec > 60 && totalSec <= 65) {
             chipDur.classList.add('status-warn');
         } else {
             chipDur.classList.add('status-danger');
         }
 
-        // Cadence — Madde 88
+        // Cadence — Madde 88 helper; 8-16 sahne izin, 14 kutsal değil
         const chipCad = document.getElementById('chip-cadence');
         const chipCadText = document.getElementById('chip-cadence-text');
-        chipCadText.textContent = `Cadence: ${scenes.length}/14`;
+        chipCadText.textContent = `Cadence: ${scenes.length} sahne`;
         chipCad.className = 'compliance-chip';
-        if (scenes.length >= 14) {
+        if (scenes.length >= 8 && scenes.length <= 16) {
             chipCad.classList.add('status-ok');
-        } else if (scenes.length >= 10) {
+        } else if (scenes.length >= 6) {
             chipCad.classList.add('status-warn');
         } else {
             chipCad.classList.add('status-danger');
@@ -2181,7 +2192,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Word count class
             let wcClass = 'count-ok';
-            if (wc < 5) wcClass = 'count-danger';
+            if (wc < 10) wcClass = 'count-danger';
             else if (wc > 20) wcClass = 'count-warn';
 
             // Build CSS classes
@@ -2535,12 +2546,11 @@ document.addEventListener('DOMContentLoaded', () => {
         collectTimelineEdits();
         const scenes = currentPlan.scenes;
         const totalSec = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
-        const targetTotal = 45; // Ideal center of 38-48
-
-        if (totalSec >= 38 && totalSec <= 48) return showToast('✅ Süre zaten ideal bantta (38-48sn)');
+        const targetTotal = 48;
+        if (totalSec >= 38 && totalSec <= 60) return showToast('Sure izin bandinda (38-60sn, hedef 48)');
 
         const ratio = targetTotal / totalSec;
-        const maxPerScene = scenes.length >= 14 ? 3.0 : 6.0;
+        const maxPerScene = 7.5;
         scenes.forEach(s => {
             s.duration = Math.max(1.5, Math.min(maxPerScene, Math.round((parseFloat(s.duration) || 3) * ratio * 4) / 4));
         });

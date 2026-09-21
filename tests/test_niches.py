@@ -72,12 +72,20 @@ class TestNiches(unittest.TestCase):
         self.assertIn("FLAŞ HABER", prompt)
         self.assertIn("SON DAKİKA", prompt)
 
+    def test_scenario_pack_shock_policy_by_family(self):
+        from niche_templates import get_scenario_pack
+        self.assertFalse(get_scenario_pack("8_crypto_market")["allow_shock_queries"])
+        self.assertTrue(get_scenario_pack("13_mystery_paranormal")["allow_shock_queries"])
+        self.assertEqual(get_niche_family("8_crypto_market"), "crypto")
+        self.assertEqual(get_niche_family("18_astrology_horoscope"), "astrology")
+
+
     def test_niche_family_mapping(self):
         self.assertEqual(get_niche_family("6_stoic_philosophy"), "stoic")
         self.assertEqual(get_niche_family("20_whatsapp_chat_story"), "whatsapp")
         self.assertEqual(get_niche_family("2_reddit_confessions"), "reddit")
         self.assertEqual(get_niche_family("1_news_flash"), "news")
-        self.assertEqual(get_niche_family("9_five_facts"), "general")
+        self.assertEqual(get_niche_family("9_five_facts"), "quiz")
 
     def test_list_all_niches_includes_family(self):
         for n in list_all_niches():

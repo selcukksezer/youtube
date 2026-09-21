@@ -158,21 +158,21 @@ def generate_scenes(
 
     if variation_attempt > 0:
         advance_prompt_rotation(steps=variation_attempt)
-    if niche_type:
-        try:
-            from niche_templates import get_niche_prompt
-            prompt = get_niche_prompt(niche_type, title, language=lang)
-            if variation_attempt > 0:
-                prompt = (
-                    prompt
-                    + f"\n\nVARYASYON #{variation_attempt + 1}: '{title}' konusuna özgü benzersiz "
-                    "anlatım yaz; önceki videolardaki kalıp cümleleri tekrarlama."
-                )
-        except Exception:
-            prompt = get_rotated_system_prompt(
-                base_lang=lang, force_variant=variation_attempt % 3
+    try:
+        from director.visual_intent import resolve_niche_from_topic
+        locked_niche = resolve_niche_from_topic(title, niche_type or "1_news_flash")
+    except Exception:
+        locked_niche = niche_type or "1_news_flash"
+    try:
+        from niche_templates import get_niche_prompt
+        prompt = get_niche_prompt(locked_niche, title, language=lang)
+        if variation_attempt > 0:
+            prompt = (
+                prompt
+                + f"\n\nVARYASYON #{variation_attempt + 1}: '{title}' konusuna özgü benzersiz "
+                "anlatım yaz; önceki videolardaki kalıp cümleleri tekrarlama."
             )
-    else:
+    except Exception:
         prompt = get_rotated_system_prompt(
             base_lang=lang, force_variant=variation_attempt % 3
         )
@@ -184,7 +184,7 @@ def generate_scenes(
     try:
         from director.visual_intent import resolve_topic_intelligence
         from hybrid_niches import build_hybrid_prompt_block
-        intel = resolve_topic_intelligence(title, niche_type or "1_news_flash")
+        intel = resolve_topic_intelligence(title, locked_niche)
         if intel.get("hybrid_niche"):
             prompt = prompt + build_hybrid_prompt_block(intel["hybrid_niche"], lang=lang)
     except Exception:
@@ -293,7 +293,7 @@ def generate_scenes(
         )
         data = _generate_procedural_fallback_scenes(
             title,
-            niche_type=niche_type,
+            niche_type=locked_niche or niche_type,
             language=lang,
             variation_seed=variation_attempt,
         )
@@ -399,8 +399,8 @@ def generate_scenes(
     # Item 271: Statik kare riski — uzun sahnelerde handheld motion ipuçları
     data["scenes"] = enrich_continuous_motion_hints(data["scenes"])
 
-    # Item 273: Sakin ses + şok görsel (climax sahnesi)
-    data["scenes"] = enrich_audio_visual_contrast_scenes(data["scenes"])
+    # Item 273: Sakin ses + şok görsel (climax sahnesi) — skip if niche excludes those tokens
+    data["scenes"] = enrich_audio_visual_contrast_scenes(data["scenes"], niche_id=locked_niche or niche_type or "")
 
     # Item 241: Numaralandırılmış kural hiyerarşisi
     data["scenes"] = enrich_numbered_rule_narration(data["scenes"], lang=lang)
@@ -423,7 +423,7 @@ def generate_scenes(
         )
         data = _generate_procedural_fallback_scenes(
             title,
-            niche_type=niche_type,
+            niche_type=locked_niche or niche_type,
             language=lang,
             variation_seed=variation_attempt,
         )
@@ -438,7 +438,7 @@ def generate_scenes(
         print("  [SceneGenerator] Post-hook plan hâlâ zayıf — prosedürel fallback.")
         data = _generate_procedural_fallback_scenes(
             title,
-            niche_type=niche_type,
+            niche_type=locked_niche or niche_type,
             language=lang,
             variation_seed=variation_attempt,
         )

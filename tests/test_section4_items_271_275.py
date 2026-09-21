@@ -39,7 +39,38 @@ class TestSection4Items271275(unittest.TestCase):
         self.assertTrue(climax.get("audio_visual_contrast"))
         self.assertTrue(climax.get("impact_shake"))
         self.assertTrue(climax.get("tts_calm_pace"))
+        self.assertTrue(
+            any(
+                any(tok in q for tok in ("shock", "explosion", "horror", "disaster"))
+                for q in climax["search_queries"]
+            )
+        )
+
+    def test_item_273_skips_shock_for_crypto_pack(self):
+        scenes = [
+            {"duration": 3.0, "search_queries": ["bitcoin chart"], "narration": "Sakin analiz devam eder.", "beat_type": "conflict"}
+            for _ in range(6)
+        ]
+        scenes[4]["beat_type"] = "climax"
+        out = enrich_audio_visual_contrast_scenes(scenes, niche_id="8_crypto_market")
+        climax = next(s for s in out if s.get("audio_visual_contrast"))
+        joined = " ".join(climax.get("search_queries") or []).lower()
+        self.assertNotIn("horror", joined)
+        self.assertNotIn("lightning strike", joined)
+        self.assertTrue(climax.get("audio_visual_contrast"))
+
+    def test_item_273_allows_shock_for_mystery_pack(self):
+        scenes = [
+            {"duration": 3.0, "search_queries": ["foggy forest"], "narration": "Sakin bir arşiv gecesi.", "beat_type": "conflict"}
+            for _ in range(6)
+        ]
+        scenes[4]["beat_type"] = "climax"
+        out = enrich_audio_visual_contrast_scenes(scenes, niche_id="13_mystery_paranormal")
+        climax = next(s for s in out if s.get("audio_visual_contrast"))
+        joined = " ".join(climax.get("search_queries") or []).lower()
         self.assertTrue(any("shock" in q or "explosion" in q or "horror" in q for q in climax["search_queries"]))
+        self.assertTrue("horror" in joined or "shock" in joined or "explosion" in joined)
+
 
     def test_item_274_story_arc_breakdown(self):
         arc = ViralRetentionEngine.build_shorts_story_arc_breakdown(45.0)

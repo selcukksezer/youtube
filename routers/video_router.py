@@ -250,7 +250,7 @@ def _plan_gate_result(
     if plan_in.get("scenes"):
         try:
             from scenes.enrichment import enrich_plan_scenes
-            plan_in = enrich_plan_scenes(plan_in, lang=language)
+            plan_in = enrich_plan_scenes(plan_in, lang=language, niche_id=niche)
         except Exception:
             pass
 

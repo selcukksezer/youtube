@@ -106,7 +106,107 @@ _DEFAULT_MOTIF = {
         "abstract light particles",
     ],
     "must_include": ["cinematic"],
-    "must_exclude": [],
+    "must_exclude": ["horror", "skull", "ghost"],
+}
+
+# Family banks — every niche family has a visual policy; per-id NICHE_MOTIFS wins.
+FAMILY_MOTIFS: Dict[str, Dict[str, Any]] = {
+    "news": {
+        "motif": "breaking_news",
+        "era": "contemporary",
+        "mood": "urgent cinematic",
+        "subjects": [
+            "city skyline night timelapse",
+            "newsroom desk papers",
+            "crowd street protest aerial",
+            "breaking news studio lights",
+        ],
+        "must_include": ["city", "news", "crowd"],
+        "must_exclude": ["horror", "skull", "ghost", "ufo"],
+    },
+    "crypto": NICHE_MOTIFS["8_crypto_market"],
+    "stoic": NICHE_MOTIFS["6_stoic_philosophy"],
+    "mystery": NICHE_MOTIFS["13_mystery_paranormal"],
+    "dark": NICHE_MOTIFS["7_dark_psychology"],
+    "reddit": {
+        "motif": "confession_story",
+        "era": "contemporary",
+        "mood": "tense emotional",
+        "subjects": [
+            "person typing laptop night",
+            "anonymous hoodie silhouette",
+            "apartment window rain",
+            "phone screen closeup",
+        ],
+        "must_include": ["person", "room", "phone"],
+        "must_exclude": ["horror", "skull", "ghost", "trading chart"],
+    },
+    "whatsapp": {
+        "motif": "chat_ui",
+        "era": "contemporary",
+        "mood": "intimate tense",
+        "subjects": [
+            "smartphone chat green bubbles",
+            "typing indicator phone screen",
+            "hands holding phone night",
+            "message notification closeup",
+        ],
+        "must_include": ["phone", "chat", "message"],
+        "must_exclude": ["horror", "skull", "ghost", "bitcoin chart"],
+    },
+    "astrology": {
+        "motif": "zodiac_night",
+        "era": "celestial",
+        "mood": "mystical",
+        "subjects": [
+            "zodiac constellation night sky",
+            "tarot cards candle light",
+            "galaxy purple nebula",
+            "moon over calm ocean",
+        ],
+        "must_include": ["stars", "moon", "zodiac"],
+        "must_exclude": ["horror", "skull", "ghost", "candlestick chart"],
+    },
+    "quiz": {
+        "motif": "fact_cards",
+        "era": "contemporary",
+        "mood": "energetic curious",
+        "subjects": [
+            "bold infographic motion background",
+            "library books research desk",
+            "question mark neon light",
+            "chalkboard facts list",
+        ],
+        "must_include": ["text space", "facts", "curious"],
+        "must_exclude": ["horror", "skull", "ghost", "bitcoin"],
+    },
+    "product": {
+        "motif": "lifestyle_product",
+        "era": "contemporary",
+        "mood": "clean energetic",
+        "subjects": [
+            "product closeup tabletop",
+            "hands using gadget",
+            "kitchen lifestyle hack",
+            "unboxing desk natural light",
+        ],
+        "must_include": ["product", "hands", "lifestyle"],
+        "must_exclude": ["horror", "skull", "ghost", "candlestick"],
+    },
+    "entertainment": {
+        "motif": "story_world",
+        "era": "contemporary",
+        "mood": "cinematic curious",
+        "subjects": [
+            "wildlife animal closeup nature",
+            "cinema film reel projector",
+            "stadium crowd night lights",
+            "gameplay screen neon",
+        ],
+        "must_include": ["cinematic", "story"],
+        "must_exclude": ["horror", "skull", "ghost", "bitcoin chart"],
+    },
+    "general": _DEFAULT_MOTIF,
 }
 
 # Topic keyword → forced niche motif override (topic beats wrong UI niche)
@@ -330,7 +430,14 @@ def resolve_niche_from_topic(title: str, niche_id: str) -> str:
 
 
 def get_motif_bank(niche_id: str) -> Dict[str, Any]:
-    return NICHE_MOTIFS.get(niche_id, _DEFAULT_MOTIF)
+    if niche_id in NICHE_MOTIFS:
+        return NICHE_MOTIFS[niche_id]
+    try:
+        from niche_templates import get_niche_family
+        family = get_niche_family(niche_id)
+    except Exception:
+        family = "general"
+    return FAMILY_MOTIFS.get(family, _DEFAULT_MOTIF)
 
 
 def _tokenize(text: str) -> set:
@@ -415,6 +522,8 @@ def _fork_distinct_from_previous(
 
 
 def apply_visual_intents(scenes: List[ScenePlan], niche_id: str, title: str = "") -> List[ScenePlan]:
+    from scenes.narration_validate import scene_description_usable
+
     locked = resolve_niche_from_topic(title, niche_id)
     bank = get_motif_bank(locked)
     for i, scene in enumerate(scenes):
@@ -424,16 +533,17 @@ def apply_visual_intents(scenes: List[ScenePlan], niche_id: str, title: str = ""
                 intent, scene, bank, i, scenes[i - 1].visual_intent
             )
         scene.visual_intent = intent
-        if scene.search_queries and any((scene.narration or "").strip() for _ in [1]):
-            # Keep AI/fallback queries when narration exists; only fill gaps
-            merged = list(scene.search_queries)
+        exclude = list(intent.must_exclude or [])
+        if scene.search_queries and (scene.narration or "").strip():
+            # Keep AI/fallback queries when narration exists; drop excluded tokens
+            merged = [q for q in scene.search_queries if not text_contains_excluded(q, exclude)]
             for q in intent.search_queries:
-                if q not in merged:
+                if q not in merged and not text_contains_excluded(q, exclude):
                     merged.append(q)
-            scene.search_queries = merged[:4]
+            scene.search_queries = (merged[:4] or list(intent.search_queries))
         else:
             scene.search_queries = intent.search_queries
-        if not scene.scene_description:
+        if not scene_description_usable(scene.scene_description or ""):
             scene.scene_description = f"{intent.subject} — {intent.mood}"
         palette = bank.get("mood_palette") or []
         scene.mood = palette[i % len(palette)] if palette else intent.mood

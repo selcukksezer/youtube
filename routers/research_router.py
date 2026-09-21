@@ -127,7 +127,7 @@ def api_generate_script(req: ScriptGenerateRequest):
             # P2-03: auto-repair first — quality gate helps, never blocks normal scripts
             plan_in = dict(plan)
             if plan_in.get("scenes"):
-                plan_in = enrich_plan_scenes(plan_in, lang=req.language or config.LANGUAGE)
+                plan_in = enrich_plan_scenes(plan_in, lang=req.language or config.LANGUAGE, niche_id=locked_niche)
             fixes: list = []
             repaired = False
             if plan_in.get("scenes"):
