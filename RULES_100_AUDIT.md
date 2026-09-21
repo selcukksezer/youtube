@@ -10,9 +10,9 @@
 
 | Durum | Sayı | % |
 |-------|------|---|
-| Implemented | 64 | 64% |
-| Partial | 33 | 33% |
-| Missing | 3 | 3% |
+| Implemented | 77 | 77% |
+| Partial | 23 | 23% |
+| Missing | 0 | 0% |
 | N/A-obsolete | 0 | 0% |
 
 **Toplam:** 100
