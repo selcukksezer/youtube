@@ -5,7 +5,11 @@ services:
     container_name: youtubeoto-app
     ports:
       - "${APP_PORT:-8000}:8000"
+    # .env is excluded from the image (.dockerignore) — inject keys at runtime
+    env_file:
+      - .env
     environment:
+      SHORTS_DB_PATH: /app/data/shorts.db
       RENDER_SAFE_MODE: "false"
       ENABLE_FFMPEG_GRAPH: "true"
       ENABLE_DB_BACKUP: "${ENABLE_DB_BACKUP:-false}"

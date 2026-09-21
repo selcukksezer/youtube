@@ -471,14 +471,7 @@
                                         <small>Sahnelerde sinematik yaklaşma</small>
                                     </div>
                                 </label>
-                                <label class="switch-item" title="Render bittiğinde videoyu YouTube hesabınıza otomatik yükler">
-                                    <input type="checkbox" id="chk-auto-publish">
-                                    <span class="switch-slider"></span>
-                                    <div class="switch-label">
-                                        <strong>YouTube Otomatik Yükle</strong>
-                                        <small>Render bitince kanala aktar</small>
-                                    </div>
-                                </label>
+                                <!-- Otomatik YouTube yükleme kapsam dışı (manuel Studio). Anahtar kaldırıldı; app.js null-safe. -->
                             </div>
                         </div>
 
@@ -656,7 +649,7 @@
 
                     <!-- Compliance Dashboard — Madde 76, 88, 247, 274, 494 -->
                     <div class="compliance-dashboard" id="compliance-dashboard">
-                        <div class="compliance-chip" id="chip-duration-band" title="Madde 494: izin 38-60s, hedef 48s">
+                        <div class="compliance-chip" id="chip-duration-band" title="Madde 494: izin 38-60s, tavan 60s">
                             <i class="fa-solid fa-stopwatch"></i>
                             <span id="chip-duration-text">Süre: —</span>
                         </div>
@@ -682,10 +675,10 @@
                         <div class="arc-segment loop" id="arc-loop" style="width: 24%"></div>
                     </div>
                     <div class="story-arc-labels">
-                        <span>🎬 Giriş (0-3sn)</span>
-                        <span>⚔️ Çatışma (4-20sn)</span>
-                        <span>🔥 Doruk (21-35sn)</span>
-                        <span>🔄 Döngü (36-45sn)</span>
+                        <span id="arc-label-intro">🎬 Giriş (0-4sn)</span>
+                        <span id="arc-label-conflict">⚔️ Çatışma (4-27sn)</span>
+                        <span id="arc-label-climax">🔥 Doruk (27-45sn)</span>
+                        <span id="arc-label-loop">🔄 Döngü (45-60sn)</span>
                     </div>
 
                     <!-- Smart Action Buttons — Madde 88, 89, 90, 130, 443, 494 -->
@@ -699,7 +692,7 @@
                         <button class="btn-smart accent-green" id="btn-enrich-queries" title="Madde 89: Arama terimlerine sinematik sıfatlar ekle">
                             <i class="fa-solid fa-wand-sparkles"></i> Arama Terimi Zenginleştir
                         </button>
-                        <button class="btn-smart accent-amber" id="btn-balance-durations" title="Madde 494: Süreleri 38-60sn bandına çek (hedef 48)">
+                        <button class="btn-smart accent-amber" id="btn-balance-durations" title="Madde 494: Süreleri 38-60sn bandına çek (tavan 60)">
                             <i class="fa-solid fa-scale-balanced"></i> Süreleri Dengele
                         </button>
                         <button class="btn-smart" id="btn-hallucination-check" title="Madde 90: Tarih/isim halüsinasyon kontrolü">

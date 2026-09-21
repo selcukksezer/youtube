@@ -111,14 +111,34 @@ def _configure_windows_asyncio():
         pass
 
 
+def _resolve_port(default: int = 8000) -> int:
+    """--port N / PORT env override (lets a second instance run beside the default one)."""
+    for i, arg in enumerate(sys.argv):
+        if arg == "--port" and i + 1 < len(sys.argv):
+            try:
+                return int(sys.argv[i + 1])
+            except ValueError:
+                break
+        if arg.startswith("--port="):
+            try:
+                return int(arg.split("=", 1)[1])
+            except ValueError:
+                break
+    try:
+        return int(os.getenv("PORT", str(default)) or default)
+    except ValueError:
+        return default
+
+
 def launch_web():
     """Starts the FastAPI Web Dashboard."""
     _configure_windows_asyncio()
-    url = "http://127.0.0.1:8000"
+    port = _resolve_port()
+    url = f"http://127.0.0.1:{port}"
     os_name = "macOS" if platform.system() == "Darwin" else "Windows" if platform.system() == "Windows" else platform.system()
     
-    # Ensure port 8000 is clean and free
-    free_port_if_occupied(8000)
+    # Ensure the port is clean and free
+    free_port_if_occupied(port)
 
     print("=" * 60)
     print(f"  YouTube Shorts Ultimate — Web Studio ({os_name})")
@@ -131,7 +151,7 @@ def launch_web():
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("server:app", host="127.0.0.1", port=port, reload=False)
 
 
 def launch_cli():

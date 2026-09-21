@@ -59,6 +59,12 @@ def broadcast_event(event_type: str, data: Any):
 class SSELogStreamer:
     """Redirects print statements to SSE queue."""
     def __init__(self, original_stdout):
+        # Never nest: if a render starts while sys.stdout is already wrapped
+        # (batch thread + direct render, or a previous run that failed to
+        # restore), unwrap to the real stream. A nested wrapper broadcast each
+        # line twice to the SSE log panel.
+        while isinstance(original_stdout, SSELogStreamer):
+            original_stdout = original_stdout.original_stdout
         self.original_stdout = original_stdout
 
     def write(self, buf):
@@ -69,3 +75,7 @@ class SSELogStreamer:
 
     def flush(self):
         self.original_stdout.flush()
+
+    def __getattr__(self, name):
+        # encoding / isatty / fileno etc. — libraries poke at sys.stdout
+        return getattr(self.original_stdout, name)

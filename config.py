@@ -178,7 +178,7 @@ def _sanitize_startup_voice(raw_voice: str, lang: str, gender: str) -> str:
 _env_tts_voice = os.getenv("TTS_VOICE", "")
 TTS_VOICE = _sanitize_startup_voice(_env_tts_voice, LANGUAGE, TTS_GENDER) if _env_tts_voice else resolve_voice(LANGUAGE, gender=TTS_GENDER, prefer_native=True)
 TTS_RATE = os.getenv("TTS_RATE", "+18%")
-TTS_PITCH = "+0Hz"
+TTS_PITCH = os.getenv("TTS_PITCH", "+0Hz") or "+0Hz"
 
 # ══════════════════════════════════════════════════════════════
 #  DIRECTORIES
@@ -222,15 +222,31 @@ def get_channel_output_dir(channel_id: Optional[str] = None) -> str:
 # ══════════════════════════════════════════════════════════════
 #  SUBTITLE & AUDIO STYLING DEFAULTS
 # ══════════════════════════════════════════════════════════════
-SUBTITLE_FONT_SIZE = 54
-SUBTITLE_COLOR = "white"
-SUBTITLE_HIGHLIGHT_COLOR = "#FFD700"
+# Dashboard (settings_service) persists these to .env — read them back on startup
+# so a restart does not silently reset the operator's choices.
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(float(os.getenv(name, str(default)) or default))
+    except (TypeError, ValueError):
+        return default
+
+
+SUBTITLE_FONT_SIZE = _env_int("SUBTITLE_FONT_SIZE", 54)
+SUBTITLE_COLOR = os.getenv("SUBTITLE_COLOR", "white") or "white"
+SUBTITLE_HIGHLIGHT_COLOR = os.getenv("SUBTITLE_HIGHLIGHT_COLOR", "#FFD700") or "#FFD700"
 SUBTITLE_STROKE_COLOR = "black"
 SUBTITLE_STROKE_WIDTH = 3
-SUBTITLE_Y_POSITION = 0.8
-ENABLE_BGM = True
-BGM_VOLUME = 0.12
-DEFAULT_BGM_TRACK = ""
+SUBTITLE_Y_POSITION = _env_float("SUBTITLE_Y_POSITION", 0.8)
+ENABLE_BGM = os.getenv("ENABLE_BGM", "true").lower() in ("true", "1", "yes")
+BGM_VOLUME = _env_float("BGM_VOLUME", 0.12)
+DEFAULT_BGM_TRACK = os.getenv("DEFAULT_BGM_TRACK", "")
 
 # Ses katmanları (Madde 154-155, 199 — yol haritasına uygun varsayılanlar)
 ENABLE_SFX = os.getenv("ENABLE_SFX", "true").lower() in ("true", "1", "yes")

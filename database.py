@@ -11,7 +11,8 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import config
 
-DB_PATH = os.path.join(config.BASE_DIR, "shorts.db")
+# SHORTS_DB_PATH lets Docker keep the DB on the persisted ./data volume
+DB_PATH = os.getenv("SHORTS_DB_PATH") or os.path.join(config.BASE_DIR, "shorts.db")
 BACKUP_DIR = os.path.join(config.BASE_DIR, "data", "backups")
 
 def get_connection():
@@ -507,24 +508,25 @@ def encrypted_db_backup(
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     plain_copy = os.path.join(out_dir, f"shorts_{stamp}.db")
     enc_path = os.path.join(out_dir, f"shorts_{stamp}.db.enc")
-    shutil.copy2(DB_PATH, plain_copy)
+    # WAL mode: a raw file copy can miss pages still in shorts.db-wal.
+    # sqlite3's online backup API produces a consistent snapshot.
+    src_conn = sqlite3.connect(DB_PATH, timeout=15.0)
+    try:
+        dst_conn = sqlite3.connect(plain_copy)
+        try:
+            src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+    finally:
+        src_conn.close()
     salt = os.urandom(16)
-    key = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, 480_000, dklen=32)
     with open(plain_copy, "rb") as src:
         payload = src.read()
-    block = key
-    encrypted = bytearray(len(payload))
-    pos = 0
-    while pos < len(payload):
-        block = hashlib.sha256(block).digest()
-        take = min(len(block), len(payload) - pos)
-        for i in range(take):
-            encrypted[pos + i] = payload[pos + i] ^ block[i]
-        pos += take
+    encrypted = _xor_stream(payload, secret, salt)
     with open(enc_path, "wb") as out:
-        out.write(b"YTDBKP1\x00")
+        out.write(_BACKUP_MAGIC)
         out.write(salt)
-        out.write(bytes(encrypted))
+        out.write(encrypted)
     try:
         os.remove(plain_copy)
     except OSError:
@@ -540,6 +542,49 @@ def encrypted_db_backup(
             pass
     print(f"[DB Backup] Encrypted backup written: {enc_path}")
     return enc_path
+
+
+_BACKUP_MAGIC = b"YTDBKP1\x00"
+
+
+def _xor_stream(payload: bytes, secret: str, salt: bytes) -> bytes:
+    """Symmetric PBKDF2-derived SHA-256 keystream (same for encrypt/decrypt)."""
+    key = hashlib.pbkdf2_hmac("sha256", secret.encode("utf-8"), salt, 480_000, dklen=32)
+    block = key
+    out = bytearray(len(payload))
+    pos = 0
+    while pos < len(payload):
+        block = hashlib.sha256(block).digest()
+        take = min(len(block), len(payload) - pos)
+        for i in range(take):
+            out[pos + i] = payload[pos + i] ^ block[i]
+        pos += take
+    return bytes(out)
+
+
+def decrypt_db_backup(enc_path: str, out_path: str, passphrase: Optional[str] = None) -> str:
+    """
+    Restore counterpart of encrypted_db_backup(): writes a plain SQLite file to out_path.
+    Raises ValueError on bad magic / wrong passphrase (result is not a SQLite file).
+    """
+    secret = (
+        passphrase
+        or os.getenv("DB_BACKUP_PASSPHRASE")
+        or os.getenv("ENV_VAULT_PASSPHRASE")
+        or "youtubeoto-local-backup"
+    )
+    with open(enc_path, "rb") as fh:
+        blob = fh.read()
+    if not blob.startswith(_BACKUP_MAGIC):
+        raise ValueError("Not a youtubeoto encrypted DB backup (bad magic header)")
+    salt = blob[len(_BACKUP_MAGIC):len(_BACKUP_MAGIC) + 16]
+    plain = _xor_stream(blob[len(_BACKUP_MAGIC) + 16:], secret, salt)
+    if not plain.startswith(b"SQLite format 3\x00"):
+        raise ValueError("Decryption produced a non-SQLite file — wrong passphrase?")
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
+    with open(out_path, "wb") as out:
+        out.write(plain)
+    return out_path
 
 
 def maybe_schedule_encrypted_db_backup() -> Optional[str]:
@@ -574,6 +619,17 @@ except Exception:
     pass
 
 if __name__ == "__main__":
-    print(f"Database initialized and verified at {DB_PATH}")
+    import sys as _sys
+
+    # python database.py backup            -> write encrypted backup now
+    # python database.py restore X.db.enc Y.db  -> decrypt backup to Y.db
+    _args = _sys.argv[1:]
+    if _args[:1] == ["backup"]:
+        print(encrypted_db_backup() or "no database file to back up")
+    elif _args[:1] == ["restore"] and len(_args) >= 3:
+        print(decrypt_db_backup(_args[1], _args[2]))
+    else:
+        print(f"Database initialized and verified at {DB_PATH}")
+        print("Usage: python database.py [backup | restore <file.db.enc> <out.db>]")
 
 

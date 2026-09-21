@@ -5,7 +5,7 @@ echo "========================================================"
 echo "  YouTube Shorts Ultimate — Web Dashboard (macOS)"
 echo "========================================================"
 echo ""
-echo "Web arayüzü başlatılıyor: http://127.0.0.1:8000"
+echo "Web arayüzü başlatılıyor: http://127.0.0.1:${PORT:-8000}  (PORT env veya --port N ile değiştirilebilir)"
 echo ""
 
 # venv varsa doğrudan kullan; yoksa sistem python3
