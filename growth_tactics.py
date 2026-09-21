@@ -367,7 +367,8 @@ def export_growth_operator_pack(
         "poll_winner_brief": plan_shorts_from_poll_winner(topic, generate_community_poll(topic)["options"][0]),
         "related_video_bridge": generate_related_video_bridge(
             clean_title,
-            related_video_url or "https://youtube.com/watch?v=PLACEHOLDER",
+            # Manual Studio only — never emit a fake watch URL into the operator pack.
+            related_video_url or "",
             long_form_title or f"Full {topic} Documentary",
         ),
         "series_format": generate_episodic_series_hook(
