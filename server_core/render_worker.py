@@ -412,6 +412,25 @@ def process_video_task(req: VideoRenderRequest):
             # (covers UI-supplied plans that skipped generate_scenes)
             from scenes.retention_hooks import ensure_retention_hooks_on_plan
 
+            # Human-craft BEFORE hooks so mute hook / POV / shot holds survive into Director
+            try:
+                from craft import apply_human_craft
+                plan = apply_human_craft(
+                    plan,
+                    title=keyword,
+                    niche_id=locked_niche,
+                    language=target_lang,
+                    variation=orig_attempt,
+                )
+                db = (plan.get("human_craft") or {}).get("discovery_beast") or {}
+                _log(
+                    f"[HumanCraft] POV={(plan.get('human_craft') or {}).get('pov_angle')} "
+                    f"discovery={db.get('score')} pass={db.get('pass')}",
+                    15,
+                )
+            except Exception as hc_err:
+                _log(f"[HumanCraft] skip: {hc_err}")
+
             plan = ensure_retention_hooks_on_plan(
                 plan,
                 keyword,
@@ -421,7 +440,7 @@ def process_video_task(req: VideoRenderRequest):
             )
             try:
                 from scenes.enrichment import enrich_plan_scenes
-                plan = enrich_plan_scenes(plan, lang=target_lang)
+                plan = enrich_plan_scenes(plan, lang=target_lang, niche_id=locked_niche)
             except Exception:
                 pass
             meta = plan.get("retention_metadata") or {}
@@ -514,6 +533,29 @@ def process_video_task(req: VideoRenderRequest):
                 if i.startswith("fragment") or i.startswith("low_words")
                 or i.startswith("empty_narration") or i.startswith("no_terminal")
             ]
+            if semantic_block:
+                # Second-chance repair after recompile/enrich drift vs /api/script/generate
+                plan_dict = director.to_legacy_plan()
+                repaired_plan, narr_fixes2, _ = apply_auto_repair_if_needed(plan_dict)
+                if narr_fixes2:
+                    _log(
+                        f"[QualityGate] Pre-gate ikinci onarım: {len(narr_fixes2)} fix",
+                        25,
+                    )
+                    director = compile_director_plan(
+                        repaired_plan,
+                        title=keyword,
+                        niche_id=locked_niche,
+                        language=target_lang,
+                        reddit_post=getattr(req, "reddit_post", None),
+                    )
+                    plan = director.to_legacy_plan()
+                    pre = pre_render_score(director)
+                    semantic_block = [
+                        i for i in pre.get("issues", [])
+                        if i.startswith("fragment") or i.startswith("low_words")
+                        or i.startswith("empty_narration") or i.startswith("no_terminal")
+                    ]
             if semantic_block:
                 msg = f"Pre-render narration gate blocked: {', '.join(semantic_block)}"
                 _log(f"[QualityGate] {msg}", 25)
@@ -903,6 +945,21 @@ def process_video_task(req: VideoRenderRequest):
         if req.subtitle_y_position is not None:
             sub_opts["y_position"] = req.subtitle_y_position
 
+        # Human-craft karaoke mid-frame overrides (Discover: captions readable on mute)
+        human_craft = (plan or {}).get("human_craft") if isinstance(plan, dict) else None
+        try:
+            from craft import subtitle_opts_from_craft
+            craft_subs = subtitle_opts_from_craft(human_craft)
+            if craft_subs:
+                # Keep user color overrides; force mid y + chunk size from craft
+                for k, v in craft_subs.items():
+                    if k in ("y_position", "max_words_per_line", "human_craft") or k not in sub_opts:
+                        sub_opts[k] = v
+                if req.subtitle_y_position is None:
+                    sub_opts["y_position"] = craft_subs.get("y_position", 0.52)
+        except Exception:
+            pass
+
         def on_compose_progress(pct, step_text="", *args, **kwargs):
             msg = step_text or kwargs.get("message") or kwargs.get("step") or ""
             state.broadcast_event("progress", {"percent": pct, "step": str(msg)})
@@ -932,6 +989,7 @@ def process_video_task(req: VideoRenderRequest):
             retention_metadata=(plan or {}).get("retention_metadata") if isinstance(plan, dict) else None,
             hybrid_niche=(plan or {}).get("hybrid_niche", "") if isinstance(plan, dict) else "",
             hybrid_render_overlay=(plan or {}).get("hybrid_render_overlay") if isinstance(plan, dict) else None,
+            human_craft=human_craft,
         )
 
         from render.ffmpeg_graph import compose_via_director
