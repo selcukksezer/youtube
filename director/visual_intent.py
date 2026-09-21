@@ -286,7 +286,8 @@ TOPIC_NICHE_LOCK: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"split.?screen|gameplay|minecraft|parkour|subway.?surfers", re.I), "3_split_gameplay"),
     (re.compile(r"zengin|milyoner|girişimci|pasif gelir|billionaire", re.I), "16_wealth_entrepreneurship"),
     (re.compile(r"chatgpt|yapay zeka|ai araç|midjourney|prompt", re.I), "21_ai_tools_hacks"),
-    (re.compile(r"burç|astroloji|horoskop|zodyak", re.I), "18_astrology_horoscope"),
+    (re.compile(r"burç|burcu|\bburc\b|astroloji|horoskop|zodyak|koç burcu|akrep|yengeç|başak|terazi|yay burcu|oğlak|kova|balık burcu|merkür|retrograd", re.I), "18_astrology_horoscope"),
+    # Prefer astrology lock before AI-tools fuzzy traps on words like "güç" / "etki"
     (re.compile(r"film özeti|netflix|sinema|spoiler", re.I), "14_movie_summaries"),
     (re.compile(r"rüya tabiri|rüyada|dream meaning", re.I), "28_dream_meanings"),
     (re.compile(r"süper araba|lamborghini|ferrari|hypercar", re.I), "31_supercars_automotive"),
