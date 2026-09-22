@@ -96,6 +96,28 @@ def get_content_gap_examples(niche_id: str) -> List[str]:
     return seeds or [profile["name"]]
 
 
+def _parse_view_count(raw: str) -> int:
+    """YouTube TR uses '1,2 Mn' and '12 B'; stripping digits turns those into 12."""
+    text = (raw or "").casefold().replace("\xa0", " ")
+    match = re.search(r"(\d+(?:[.,]\d+)*)", text)
+    if not match:
+        return 0
+    token = match.group(1)
+    if "," in token and "." not in token:
+        value = float(token.replace(",", "."))
+    elif token.count(".") == 1 and len(token.split(".")[-1]) != 3:
+        value = float(token)
+    else:
+        value = float(re.sub(r"[.,]", "", token) or 0)
+    if re.search(r"\b(mn|milyon|million)\b", text) or re.search(r"\d\s*m\b", text):
+        value *= 1_000_000
+    elif re.search(r"\b(mr|milyar|billion)\b", text):
+        value *= 1_000_000_000
+    elif re.search(r"\b(bin|thousand)\b", text) or re.search(r"\d\s*[bk]\b", text):
+        value *= 1_000
+    return int(value)
+
+
 def filter_trends_for_family(trends: List[Dict[str, Any]], niche_id: str) -> List[Dict[str, Any]]:
     family = get_niche_family(niche_id)
     if family != "stoic":
@@ -154,13 +176,7 @@ def fetch_public_youtube_trends(query: str, region: str = "TR", max_results: int
                 vid = vr.get("videoId", "")
                 channel = vr.get("ownerText", {}).get("runs", [{}])[0].get("text", "")
                 raw_views = vr.get("viewCountText", {}).get("simpleText", "")
-                view_count = 0
-                digits = re.sub(r"[^\d]", "", raw_views or "")
-                if digits:
-                    try:
-                        view_count = int(digits)
-                    except Exception:
-                        pass
+                view_count = _parse_view_count(raw_views)
                 if title and vid:
                     trends.append(
                         {
@@ -211,10 +227,11 @@ def generate_synthetic_trend_signals(niche_id: str) -> List[Dict[str, Any]]:
     except Exception:
         suggestions = []
 
+    stoic = get_niche_family(niche_id) == "stoic"
     titles: List[str] = []
     for item in suggestions:
         title = (item.get("title") or "").strip()
-        if not title or is_stoic_banned_title(title):
+        if not title or (stoic and is_stoic_banned_title(title)):
             continue
         if title not in titles:
             titles.append(title)
@@ -223,7 +240,7 @@ def generate_synthetic_trend_signals(niche_id: str) -> List[Dict[str, Any]]:
         for title in _family_fallback_titles(niche_id):
             if len(titles) >= MAX_TREND_CARDS:
                 break
-            if title not in titles and not is_stoic_banned_title(title):
+            if title not in titles and not (stoic and is_stoic_banned_title(title)):
                 titles.append(title)
 
     curated: List[Dict[str, Any]] = []

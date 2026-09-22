@@ -16,7 +16,7 @@ MIN_WORDS_AI_TARGET = 10
 
 SHORTS_MIN_DURATION = 38.0
 SHORTS_MAX_DURATION = 60.0
-MIN_SCENE_COUNT = 8
+MIN_SCENE_COUNT = 6
 MAX_SCENE_COUNT = 16
 
 _PLACEHOLDER_DESC_RE = re.compile(
@@ -50,6 +50,12 @@ _TAIL_COMPLETIONS = {
     "senin": "tavrını belirler.",
     "ve": "devam eder.",
     "ama": "gerçek budur.",
+    "ilan": "etti.",
+    "terk": "etti.",
+    "fark": "etti.",
+    "kabul": "etti.",
+    "yardım": "etti.",
+    "teslim": "oldu.",
 }
 
 _FRAGMENT_ENDING_RE = re.compile(

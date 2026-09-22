@@ -35,6 +35,41 @@ def _probe_has_audio(path: str) -> bool:
         return False
 
 
+def cheap_pan_filter(width: int, height: int, duration: float, scene_index: int = 0) -> str:
+    """
+    Slow push via overscale + moving crop.
+    Replaces zoompan. zoompan resamples every pixel on one thread.
+    """
+    dur = max(float(duration), 0.1)
+    sw = max(width + 2, (int(width * 1.08) // 2) * 2)
+    sh = max(height + 2, (int(height * 1.08) // 2) * 2)
+    direction = scene_index % 4
+    if direction == 0:
+        xexpr = f"(in_w-out_w)*t/{dur:.3f}"
+        yexpr = "(in_h-out_h)/2"
+    elif direction == 1:
+        xexpr = f"(in_w-out_w)*(1-t/{dur:.3f})"
+        yexpr = "(in_h-out_h)/2"
+    elif direction == 2:
+        xexpr = "(in_w-out_w)/2"
+        yexpr = f"(in_h-out_h)*t/{dur:.3f}"
+    else:
+        xexpr = "(in_w-out_w)/2"
+        yexpr = f"(in_h-out_h)*(1-t/{dur:.3f})"
+    return f"scale={sw}:{sh},crop={width}:{height}:x='{xexpr}':y='{yexpr}'"
+
+
+def zoompan_filter(width: int, height: int, duration: float) -> str:
+    """Opt-in slow zoom. Much slower than cheap_pan_filter."""
+    fps = float(getattr(config, "FPS", 30) or 30)
+    frames = max(1, int(max(float(duration), 0.1) * fps))
+    return (
+        f"zoompan=z='min(zoom+0.0008,1.04)':"
+        f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d={frames}:s={width}x{height}:fps={fps:.2f}"
+    )
+
+
 def build_scene_filter_chain(
     input_index: int,
     duration: float,
@@ -42,51 +77,49 @@ def build_scene_filter_chain(
     height: int,
     scene_index: int,
     enable_ken_burns: bool = True,
+    enable_zoompan: bool = False,
+    split_screen: bool = False,
+    gameplay_index: Optional[int] = None,
+    gameplay_label: Optional[str] = None,
 ) -> str:
     """
-    Per-input video chain: trim → fps → scale/crop cover → optional zoompan micro Ken Burns.
+    Per-input video chain: trim, fps, scale/crop cover, optional crop-pan.
+    Split: top 58% scene, bottom 42% looped gameplay (soap / satisfying).
     """
-    # Cover crop to 9:16
-    # scale to fill then crop center
+    split = bool(split_screen and (gameplay_label or gameplay_index is not None))
+    out_h = (int(height * 0.58) // 2) * 2 if split else height
+    fps = getattr(config, "FPS", 30)
+    # Cover crop to 9:16 (or the top panel when split)
     base = (
         f"[{input_index}:v]"
         f"trim=duration={duration:.3f},setpts=PTS-STARTPTS,"
-        f"fps={getattr(config, 'FPS', 30)},"
-        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-        f"crop={width}:{height}"
+        f"fps={fps},"
+        f"scale={width}:{out_h}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{out_h}"
     )
     try:
         from effects.filters import get_scene_brightness_alternation_filter
         base += f",{get_scene_brightness_alternation_filter(scene_index)}"
     except Exception:
         pass
-    if enable_ken_burns:
-        # Subtle zoom 1.00 → 1.04 over scene (Item 73) via zoompan
-        frames = max(1, int(duration * float(getattr(config, "FPS", 30))))
-        # Alternating pan direction (Item 132) approximated by zoompan x/y
-        direction = scene_index % 4
-        if direction == 0:
-            zexpr = "min(zoom+0.0008,1.04)"
-            xexpr = "iw/2-(iw/zoom/2)"
-            yexpr = "ih/2-(ih/zoom/2)"
-        elif direction == 1:
-            zexpr = "min(zoom+0.0008,1.04)"
-            xexpr = "iw/2-(iw/zoom/2)+((on/{0})*20)".format(max(1, frames))
-            yexpr = "ih/2-(ih/zoom/2)"
-        elif direction == 2:
-            zexpr = "min(zoom+0.0008,1.04)"
-            xexpr = "iw/2-(iw/zoom/2)"
-            yexpr = "ih/2-(ih/zoom/2)+((on/{0})*16)".format(max(1, frames))
-        else:
-            zexpr = "min(zoom+0.0008,1.04)"
-            xexpr = "iw/2-(iw/zoom/2)-((on/{0})*20)".format(max(1, frames))
-            yexpr = "ih/2-(ih/zoom/2)"
-        base += (
-            f",zoompan=z='{zexpr}':x='{xexpr}':y='{yexpr}'"
-            f":d={frames}:s={width}x{height}:fps={getattr(config, 'FPS', 30)}"
-        )
-    base += f"[v{scene_index}]"
-    return base
+    if enable_zoompan:
+        base += "," + zoompan_filter(width, out_h, duration)
+    elif enable_ken_burns:
+        base += "," + cheap_pan_filter(width, out_h, duration, scene_index)
+    if not split:
+        base += f"[v{scene_index}]"
+        return base
+    bot_h = height - out_h
+    base += f"[top{scene_index}]"
+    gp_src = gameplay_label or f"[{gameplay_index}:v]"
+    gameplay = (
+        f"{gp_src}trim=duration={duration:.3f},setpts=PTS-STARTPTS,"
+        f"fps={fps},"
+        f"scale={width}:{bot_h}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{bot_h}[bot{scene_index}]"
+    )
+    stack = f"[top{scene_index}][bot{scene_index}]vstack=inputs=2[v{scene_index}]"
+    return base + ";" + gameplay + ";" + stack
 
 
 def get_look_filters(width: int, height: int, anti_duplicate: bool = True) -> str:
@@ -118,7 +151,9 @@ def render_with_ffmpeg_graph(
     cancel_check: Optional[Callable] = None,
     anti_duplicate: bool = True,
     enable_ken_burns: bool = True,
+    enable_zoompan: bool = False,
     ass_path: Optional[str] = None,
+    gameplay_path: Optional[str] = None,
 ) -> str:
     """
     Item 418: Single filter_complex concat + look + optional ASS + audio mux + NVENC/libx264.
@@ -160,16 +195,30 @@ def render_with_ffmpeg_graph(
     from system_resilience import get_ffmpeg_loglevel
     cmd: List[str] = [ffmpeg, "-y", "-hide_banner", "-loglevel", get_ffmpeg_loglevel()]
     filter_parts: List[str] = []
+    gp_ok = bool(gameplay_path and os.path.exists(gameplay_path))
     for i, clip in enumerate(valid):
         if cancel_check and cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
         cmd.extend(["-i", clip["path"]])
         dur = float(clip.get("duration", 3.0))
         filter_parts.append(
-            build_scene_filter_chain(i, dur, W, H, i, enable_ken_burns=enable_ken_burns)
+            build_scene_filter_chain(
+                i, dur, W, H, i,
+                enable_ken_burns=enable_ken_burns,
+                enable_zoompan=enable_zoompan,
+                split_screen=gp_ok,
+                gameplay_index=len(valid) if gp_ok else None,
+                gameplay_label=(f"[{len(valid)}:v]" if gp_ok and len(valid) == 1 else f"[gp{i}]") if gp_ok else None,
+            )
         )
 
     n = len(valid)
+    if gp_ok:
+        cmd.extend(["-stream_loop", "-1", "-i", gameplay_path])
+        print(f"  [FFmpegGraph] Split-screen alt panel: {os.path.basename(gameplay_path)}", flush=True)
+        if n > 1:
+            arms = "".join(f"[gp{i}]" for i in range(n))
+            filter_parts.insert(0, f"[{n}:v]split={n}{arms}")
     concat_in = "".join(f"[v{i}]" for i in range(n))
     filter_parts.append(f"{concat_in}concat=n={n}:v=1:a=0[vcat]")
 
@@ -188,8 +237,8 @@ def render_with_ffmpeg_graph(
         filter_parts.append("[vlook]null[vout]")
         vlabel = "[vout]"
 
-    # Audio input index
-    audio_idx = n
+    # Audio input index. Gameplay, when present, sits between scenes and audio.
+    audio_idx = n + (1 if gp_ok else 0)
     cmd.extend(["-i", audio_path])
 
     filter_complex = ";".join(filter_parts)
@@ -224,6 +273,8 @@ def render_with_ffmpeg_graph(
         output_path,
     ])
 
+    if enable_zoompan:
+        print("  [FFmpegGraph] zoompan AÇIK — bu geçiş render süresini uzatır", flush=True)
     print(f"  [FFmpegGraph] Export: {W}x{H} @ {fps:.2f} | {mode} | {n} scenes | Madde 418", flush=True)
     if progress_callback:
         progress_callback(80, f"[FFmpegGraph] Kodlama başlıyor ({mode})...")
@@ -257,12 +308,12 @@ def render_with_ffmpeg_graph(
             progress_callback(95, "[FFmpegGraph] Tamamlandı")
         print(f"  [FFmpegGraph] OK → {output_path} ({os.path.getsize(output_path)//1024} KB)")
 
-        # P2-02: post-render anti-detect humanization (metadata + file aging)
+        # Post-render packaging: truthful metadata cleanup only.
         try:
             from anti_detect.post_render import apply_post_render_humanization
             post = apply_post_render_humanization(output_path, title=title or "")
             if post.get("metadata_applied"):
-                print("  [FFmpegGraph] [PostRender] NLE metadata + hash humanization applied.")
+                print("  [FFmpegGraph] [PostRender] metadata cleaned and title recorded.")
         except Exception as pr_err:
             print(f"  [FFmpegGraph] PostRender note: {pr_err}")
 
@@ -282,22 +333,17 @@ def render_with_ffmpeg_graph(
 
 def _needs_moviepy_composer(kwargs: Dict[str, Any]) -> bool:
     """
-    FFmpeg graph covers concat + look + ASS only (Item 418 baseline).
-    Section-2 retention overlays (Items 75–246, B5 hybrid) require MoviePy compose_video.
-    RENDER_SAFE_MODE skips those overlays → stay on the fast FFmpeg path.
+    FFmpeg graph covers concat + look + ASS + NVENC in one pass.
+    MoviePy only when a second picture must be composited (split / hybrid UI).
+    Section-2 per-frame overlays made 60s exports take many minutes: each
+    frame is drawn in Python while NVENC waits.
     """
-    if getattr(config, "RENDER_SAFE_MODE", False):
-        # Safe/test path: always prefer FFmpeg graph (skip Section-2 overlays).
-        return False
-    if kwargs.get("split_screen"):
-        return True
-    if kwargs.get("retention_metadata"):
+    # Split + gameplay is a vstack inside the FFmpeg graph. MoviePy stays
+    # for hybrid UI overlays that the graph cannot draw.
+    overlay = kwargs.get("hybrid_render_overlay") or {}
+    if isinstance(overlay, dict) and (overlay.get("ui_type") or overlay.get("overlay")):
         return True
     if kwargs.get("hybrid_niche"):
-        return True
-    if kwargs.get("gameplay_path"):
-        return True
-    if kwargs.get("enable_section2_filters", True):
         return True
     return False
 
@@ -334,6 +380,8 @@ def compose_via_director(
             cancel_check=kwargs.get("cancel_check"),
             anti_duplicate=kwargs.get("anti_duplicate", True),
             enable_ken_burns=kwargs.get("enable_ken_burns", True),
+            enable_zoompan=bool(kwargs.get("enable_zoompan", False)),
+            gameplay_path=kwargs.get("gameplay_path") if kwargs.get("split_screen") or kwargs.get("gameplay_path") else None,
         )
         if result:
             return result

@@ -8,6 +8,7 @@ from .research_router import router as research_router
 from .channel_router import router as channel_router
 from .system_router import router as system_router
 from .google_ai_router import router as google_ai_router
+from .kids_song_router import router as kids_song_router
 
 __all__ = [
     "config_router",
@@ -17,4 +18,5 @@ __all__ = [
     "channel_router",
     "system_router",
     "google_ai_router",
+    "kids_song_router",
 ]

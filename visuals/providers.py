@@ -58,7 +58,30 @@ class Candidate:
     thumbnail: str = ""
     contributor: str = ""
     license: LicenseInfo = None     # type: ignore
+    # Kept directly after `license` for positional compatibility with the
+    # original Candidate(source, id, ..., license, extra) constructor.
     extra: Dict = field(default_factory=dict)
+    # `url` is the downloadable media URL.  `source_url` is the human-facing
+    # landing page used for license verification and credits.  Keeping both
+    # prevents a CDN URL from being mistaken for provenance.
+    source_url: str = ""
+    license_url: str = ""
+    attribution: str = ""
+    # Filled by the registry scorer.  This is deliberately structured data so
+    # the production manifest can explain why a clip matched a shot.
+    semantic_evidence: Dict[str, object] = field(default_factory=dict)
+    topic_match_score: float = 0.0
+    visual_verification_score: float = 0.0
+    matched_terms: List[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.license:
+            self.source_url = self.source_url or self.license.source_url
+            self.license_url = self.license_url or self.license.license_url
+            if self.attribution:
+                self.license.attribution = self.attribution
+            elif self.license.attribution:
+                self.attribution = self.license.attribution
 
     @property
     def uid(self) -> str:
@@ -75,6 +98,10 @@ class Candidate:
     def to_dict(self) -> Dict:
         d = asdict(self)
         d["license"] = self.license.to_dict() if self.license else None
+        if self.license:
+            d["source_url"] = self.source_url or self.license.source_url
+            d["license_url"] = self.license_url or self.license.license_url
+            d["attribution"] = self.attribution or self.license.to_dict().get("attribution", "")
         d["uid"] = self.uid
         return d
 
@@ -100,7 +127,9 @@ def search_pexels(query: str, per_page: int = 12) -> List[Candidate]:
     r = _session.get(
         "https://api.pexels.com/videos/search",
         headers={"Authorization": key},
-        params={"query": query, "per_page": per_page, "orientation": "portrait", "size": "medium"},
+        # No orientation lock. Real subject footage is usually 16:9.
+        # visuals.fetch crops it to 9:16, the same reframe ViewMade does.
+        params={"query": query, "per_page": min(max(per_page, 1), 15), "size": "medium"},
         timeout=TIMEOUT,
     )
     r.raise_for_status()
@@ -364,7 +393,9 @@ def search_archive_org(query: str, per_page: int = 6) -> List[Candidate]:
         if not ident:
             continue
         lic_url = str(d.get("licenseurl") or "")
-        lic = parse_cc_license(lic_url) if lic_url else License.PUBLIC_DOMAIN  # Prelinger/NASA collections are PD
+        # Collection membership is not a license. Some archive items in these
+        # collections retain rights or carry incomplete metadata.
+        lic = parse_cc_license(lic_url) if lic_url else License.UNKNOWN
         if lic not in (License.PUBLIC_DOMAIN, License.CC0):
             continue
         try:
@@ -387,7 +418,7 @@ def search_archive_org(query: str, per_page: int = 6) -> List[Candidate]:
             width=int(mp4.get("width") or 640), height=int(mp4.get("height") or 480), duration=float(mp4.get("length") or 600),
             title=title, tags=[], thumbnail=f"https://archive.org/services/img/{ident}", contributor=f"archive:{str(creator).lower()}",
             license=LicenseInfo(lic, "archive_org", title=title, author=str(creator), source_url=f"https://archive.org/details/{ident}",
-                                license_url=lic_url, raw=lic_url or "public domain collection"),
+                                license_url=lic_url, raw=lic_url),
             extra={"remote_slice": True},
         ))
     return out

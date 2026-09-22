@@ -1,0 +1,18 @@
+COCUK SARKI MV STUDYO — PAYLASIM PAKETI
+========================================
+
+1) Bu klasorde PowerShell acin.
+2) Asagidakileri sirayla calistirin:
+
+   npm install
+   copy .env.example .env
+   npm run db:migrate
+   npx playwright install chromium
+   npm run dev
+
+3) Tarayici: http://localhost:3210
+4) Ayarlar'dan KENDI OpenAI (ve istege bagli Suno) anahtarinizi girin.
+5) Detayli anlatim: KULLANIM_KILAVUZU.md
+
+BU PAKETTE API ANAHTARI YOKTUR.
+.env, chrome-profile, projects ve veritabani bilerek dahil edilmemistir.

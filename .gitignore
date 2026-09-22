@@ -29,6 +29,10 @@ reddit_debug*.html
 # Cursor local
 .cursor/
 
+# Caveman local install and runtime
+.caveman-tools/
+.caveman-home/
+
 # Generated Output & Media (Large binary files)
 output/*
 !output/.gitkeep

@@ -12,12 +12,17 @@ from effects.overlays import apply_neon_countdown_overlay, generate_neon_countdo
 
 class TestSection4Items211212(unittest.TestCase):
     def test_item_211_censored_blur_bait(self):
-        clip = ColorClip(size=(720, 1280), color=(80, 120, 200), duration=4.0)
-        baited = apply_censored_blur_bait(clip, reveal_after=3.0)
-        self.assertEqual(baited.size, (720, 1280))
-        frame_blurred = baited.get_frame(0.5)
-        frame_revealed = baited.get_frame(3.5)
-        self.assertFalse(np.array_equal(frame_blurred, frame_revealed))
+        prev = getattr(config, "RENDER_SAFE_MODE", True)
+        config.RENDER_SAFE_MODE = False
+        try:
+            clip = ColorClip(size=(720, 1280), color=(80, 120, 200), duration=4.0)
+            baited = apply_censored_blur_bait(clip, reveal_after=3.0)
+            self.assertEqual(baited.size, (720, 1280))
+            frame_blurred = baited.get_frame(0.5)
+            frame_revealed = baited.get_frame(3.5)
+            self.assertFalse(np.array_equal(frame_blurred, frame_revealed))
+        finally:
+            config.RENDER_SAFE_MODE = prev
 
     def test_item_212_neon_countdown_overlay(self):
         overlay = generate_neon_countdown_overlay(1080, 1920, duration=3.0, fps=30.0)

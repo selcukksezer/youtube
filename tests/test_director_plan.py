@@ -201,7 +201,9 @@ class TestDirectorPlan(unittest.TestCase):
         plan = compile_director_plan(raw, title=raw["title"], niche_id="6_stoic_philosophy")
         qt = plan.quality_thresholds
         wc = len(plan.full_narration.split())
-        budget = int(qt.max_duration * 2.5 * qt.max_audio_speed) + 2
+        from director.schema import shorts_word_budget
+
+        budget = shorts_word_budget(qt.max_duration, qt.max_audio_speed)
         self.assertLessEqual(wc, budget)
         issues = check_narration_integrity(plan)
         self.assertFalse(any(i.startswith("fragment") for i in issues), msg=issues)
@@ -240,7 +242,9 @@ class TestDirectorPlan(unittest.TestCase):
         plan = compile_director_plan(raw, title=raw["title"], niche_id="6_stoic_philosophy")
         qt = plan.quality_thresholds
         wc = len(plan.full_narration.split())
-        budget = int(qt.max_duration * 2.5 * qt.max_audio_speed) + 2
+        from director.schema import shorts_word_budget
+
+        budget = shorts_word_budget(qt.max_duration, qt.max_audio_speed)
         self.assertLessEqual(wc, budget)
 
     def test_fit_tts_hard_fail_when_too_long(self):
@@ -536,6 +540,11 @@ class TestFFmpegGraphHelpers(unittest.TestCase):
         chain = build_scene_filter_chain(0, 3.0, 1080, 1920, 0, enable_ken_burns=True)
         self.assertIn("trim=duration=3.000", chain)
         self.assertIn("[v0]", chain)
+        self.assertNotIn("zoompan", chain)
+        zoom = build_scene_filter_chain(
+            0, 3.0, 1080, 1920, 0, enable_ken_burns=False, enable_zoompan=True,
+        )
+        self.assertIn("zoompan=", zoom)
         look = get_look_filters(1080, 1920, anti_duplicate=True)
         self.assertIn("unsharp", look)
         self.assertIn("eq=", look)

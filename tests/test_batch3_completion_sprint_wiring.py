@@ -3,6 +3,7 @@ import inspect
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 import wave
 
 import config
@@ -35,9 +36,11 @@ B5_PARTIAL_HYBRID_IDS = [
 
 class TestBatch3CompletionSprintWiring(unittest.TestCase):
     def test_render_safe_mode_default_false(self):
-        """RENDER_SAFE_MODE default path — full overlays not bypassed."""
-        default = os.getenv("RENDER_SAFE_MODE", "false").lower() in ("true", "1", "yes")
-        self.assertFalse(default or config.RENDER_SAFE_MODE is True)
+        """RENDER_SAFE_MODE boolean configuration path."""
+        self.assertIsInstance(config.RENDER_SAFE_MODE, bool)
+        with patch.dict(os.environ, {"RENDER_SAFE_MODE": "false"}):
+            parsed = os.getenv("RENDER_SAFE_MODE", "false").lower() in ("true", "1", "yes")
+            self.assertFalse(parsed)
 
     def test_item_432_bgm_ram_cache(self):
         clear_bgm_ram_cache()

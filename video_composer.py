@@ -218,22 +218,27 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         with wave.open(mastered_audio, "rb") as w:
             audio_dur = w.getnframes() / float(w.getframerate())
     except Exception:
-        ffprobe = shutil.which("ffprobe")
-        if ffprobe:
-            try:
-                probe_out = subprocess.check_output(
-                    [
-                        ffprobe, "-v", "error", "-show_entries", "format=duration",
-                        "-of", "default=noprint_wrappers=1:nokey=1", mastered_audio,
-                    ],
-                    text=True,
-                    timeout=15,
-                ).strip()
-                audio_dur = float(probe_out)
-            except Exception as e:
-                print(f"    Audio duration read error: {e}")
+        # Director already measured/fitted premastered audio. Do not emit a
+        # misleading ffprobe warning when only refit path would use duration.
+        if audio_premastered:
+            audio_dur = 0.0
         else:
-            print("    Audio duration read error: ffprobe not found")
+            ffprobe = shutil.which("ffprobe")
+            if ffprobe:
+                try:
+                    probe_out = subprocess.check_output(
+                        [
+                            ffprobe, "-v", "error", "-show_entries", "format=duration",
+                            "-of", "default=noprint_wrappers=1:nokey=1", mastered_audio,
+                        ],
+                        text=True,
+                        timeout=15,
+                    ).strip()
+                    audio_dur = float(probe_out)
+                except Exception as e:
+                    print(f"    Audio duration read error: {e}")
+            else:
+                print("    Audio duration read error: ffprobe not found")
 
     # When premastered, Director already fitted timeline — skip composer re-fit
     total_scene_dur = sum(sc.get("duration", 7) for sc in scene_clips)
@@ -924,21 +929,10 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             if synced_output == sync_path and os.path.exists(sync_path):
                 os.replace(sync_path, output_path)
 
-            # P2-02: unified post-render humanization (Rules 29/30 + Items 127/128/429)
-            try:
-                from anti_detect.post_render import apply_post_render_humanization
-                post = apply_post_render_humanization(
-                    output_path,
-                    title=title or os.path.splitext(os.path.basename(output_path))[0],
-                )
-                if post.get("size_delta_kb"):
-                    print(f"  [Composer] [Kural 30] Dosya Boyutu Varyasyonu: +{post['size_delta_kb']} KB.")
-                if post.get("aged_minutes"):
-                    print(f"  [Composer] [Kural 29] Dosya {post['aged_minutes']} dk geçmişe yaşlandırıldı.")
-                if post.get("metadata_applied"):
-                    print("  [Composer] [Items 127+128] NLE metadata imzası uygulandı.")
-            except Exception as se:
-                print(f"  [Composer] PostRender uyarısı: {se}")
+            # File bytes and timestamps are preserved.  Anti-detect transforms,
+            # fake NLE signatures, ctime spoofing, and synthetic file noise are
+            # not part of a compliant production pipeline.
+            print("  [Composer] Compliance: media bytes/timestamps preserved; anti-detect transforms disabled.")
 
             # Item 124: Mikro çözünürlük manipülasyonu (post-merge FFmpeg crop)
             if not getattr(config, "RENDER_SAFE_MODE", True):
@@ -998,9 +992,18 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                     "channel_health": proof_archiver.build_actionable_channel_health_checklist(
                         total_videos=total_renders, lang="tr"
                     ),
-                    "rule_80_altered_synthetic": "HAYIR (Yüz klonlama veya manipülasyon yoksa etiket seçilmemeli)",
+                    "rule_80_altered_synthetic": "MANUEL KARAR (gerçekçi sentetik/ değiştirilmiş içerik varsa YES)",
                     "rule_83_source_reference": "Açıklamaya araştırma ve kaynak referansı eklendi.",
-                    "anti_detect_ready": True,
+                    "anti_detect_ready": False,
+                    "automatic_upload": False,
+                    "manual_upload_required": True,
+                    "manual_upload_checklist": [
+                        "Görsel, ses ve müzik lisanslarını doğrula.",
+                        "Kaynak manifesti ve kredileri incele.",
+                        "AI/değiştirilmiş içerik sorusunu gerçek medya içeriğine göre yanıtla.",
+                        "YouTube Studio'ya yalnızca insan incelemesinden sonra manuel yükle.",
+                        "Görüntüleme, beğeni, yorum veya abonelik otomasyonu kullanma.",
+                    ],
                     "size_mb": round(os.path.getsize(output_path) / 1048576, 2),
                 }
                 info_json = output_path.rsplit(".", 1)[0] + "_manual_upload_info.json"
@@ -1056,15 +1059,38 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         f"📌 STUDIO KANAL ANAHTAR KELİMELERİ (Item 358):\n"
                         f"{', '.join(manual_pkg.get('channel_master_keywords', []))}\n\n"
                         f"⚠️ YOUTUBE STUDIO ETİKET AYARI (Kural 80):\n"
-                        f"- 'Yapay zeka / Değiştirilmiş içerik mi?' sorusuna 'HAYIR' yanıtını verin.\n"
-                        f"  (Kural 80: Yüz klonlama veya haber manipülasyonu olmadığı sürece etiket işaretlenmemelidir;\n"
-                        f"   aksi halde algoritma videoyu daha dar bir test kitlesine hapseder.)\n\n"
+                        f"- Gerçekçi sentetik veya değiştirilmiş gerçek olay/kişi varsa YES; yoksa NO seçimini içeriğe göre yapın.\n"
+                        f"- Bu çıktı otomatik yüklenmez; insan incelemesi sonrası manuel Studio yüklemesi gerekir.\n\n"
                         f"🛡️ DOSYA GÜVENLİK BİLGİSİ:\n"
-                        f"- Dosya boyutu Kural 30 gereği MP4 'free' atomuyla benzersizleştirildi.\n"
-                        f"- Dosya tarihi Kural 29 gereği geçmişe yaşlandırıldı.\n"
-                        f"- pHash gürültüsü, renk jitter'ı, unsharp ve statik gren (Kural 84 & 86) videoya işlendi.\n"
+                        f"- Dosya byte'ları ve oluşturulma zamanı değiştirilmedi.\n"
+                        f"- Anti-detect, sahte etkileşim ve metadata spoofing kullanılmadı.\n"
                     )
                 print(f"  [Composer] [OK] Manuel yükleme rehberi hazırlandı: {os.path.basename(info_txt)}")
+                # Canonical file-only delivery contract.  The composer may not
+                # know provider/license metadata for legacy clip dictionaries;
+                # preserve that uncertainty instead of inventing credits.
+                try:
+                    from compliance import export_output_package, ai_disclosure_block
+                    package_dir = output_path.rsplit(".", 1)[0] + "_package"
+                    export_output_package(
+                        package_dir,
+                        video_path=output_path,
+                        title=manual_pkg.get("title", clean_title),
+                        description=manual_pkg.get("description", ""),
+                        tags=manual_pkg.get("tags", []),
+                        source_manifest={
+                            "version": 1,
+                            "clips": [],
+                            "notes": ["Clip provider/license metadata must be reviewed before upload."],
+                        },
+                        compliance={"ai_disclosure": ai_disclosure_block(lang=str(getattr(config, "LANGUAGE", "tr") or "tr"))},
+                        ai_disclosure=ai_disclosure_block(lang=str(getattr(config, "LANGUAGE", "tr") or "tr")),
+                        thumbnail_path=thumb_path,
+                        language=str(getattr(config, "LANGUAGE", "tr") or "tr"),
+                    )
+                    print(f"  [Composer] [OK] Canonical output package hazırlandı: {os.path.basename(package_dir)}")
+                except Exception as package_err:
+                    print(f"  [Composer] Canonical output package uyarısı: {package_err}")
             except Exception as mie:
                 print(f"  [Composer] Manuel yükleme paketi uyarısı: {mie}")
 

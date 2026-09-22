@@ -1,172 +1,62 @@
-"""
-YouTube Data API v3 Advanced Uploader & Channel Manager (Items 51-58, 85, 95)
-Supports:
-- Multi-channel management via dedicated token files (Item 55)
-- Automatic pinned comment & heart creation (Item 58)
-- Scheduled publishing / privacy status (Items 52, 53)
-- Warm-up safety checks (Item 85)
-"""
+"""YouTube metadata helpers; automatic upload and engagement automation disabled."""
+from __future__ import annotations
 import os
-from typing import Optional, List, Dict, Any
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from notifications import notify_upload_success
+from typing import Any, Dict, List, Optional
 
-SCOPES = [
-    'https://www.googleapis.com/auth/youtube.upload',
-    'https://www.googleapis.com/auth/youtube.force-ssl'
-]
-
+SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"]
 TOKENS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tokens")
-os.makedirs(TOKENS_DIR, exist_ok=True)
 
 def get_channel_token_path(channel_id: str = "default") -> str:
     return os.path.join(TOKENS_DIR, f"token_{channel_id}.json")
 
-def evaluate_synthetic_content_policy(has_realistic_human_clone: bool = False, is_news_manipulation: bool = False) -> Dict[str, Any]:
-    """
-    Item 80: Yapay Zeka Etiketi Politikası (Altered/Synthetic Media Policy).
-    Gerçekçi bir insanı taklit etmiyorsanız ve haber manipülasyonu yapmıyorsanız etiketi gereksiz yere işaretlemeyin;
-    algoritma etiketli içeriklerin dağıtımını bazı kategorilerde daha dar kitleyle test eder.
-    """
-    should_label = bool(has_realistic_human_clone or is_news_manipulation)
+def evaluate_synthetic_content_policy(
+    has_realistic_human_clone: bool = False,
+    is_news_manipulation: bool = False,
+    uses_photoreal_ai: bool = False,
+    uses_altered_real_event: bool = False,
+    uses_synthetic_persona: bool = False,
+) -> Dict[str, Any]:
+    from compliance import ai_disclosure_block
+    disclosure = ai_disclosure_block(
+        uses_photoreal_ai=uses_photoreal_ai,
+        uses_altered_real_event=is_news_manipulation or uses_altered_real_event,
+        uses_real_person_synthetic=has_realistic_human_clone,
+        uses_synthetic_persona=uses_synthetic_persona,
+    )
     return {
-        "apply_synthetic_label": should_label,
-        "self_declared_altered": should_label,
-        "reason": (
-            "Gerçekçi yüz/ses klonlama veya haber manipülasyonu tespit edildiği için zorunlu olarak etiketlendi."
-            if should_label else
-            "Yüz klonlama veya haber manipülasyonu içermediğinden algoritmanın dar kitle testine takılmaması için etiket kapalı bırakıldı."
-        )
+        "apply_synthetic_label": disclosure["disclosure_required"],
+        "self_declared_altered": disclosure["studio_ai_survey"] == "yes",
+        "studio_ai_survey": disclosure["studio_ai_survey"],
+        "reasons": disclosure["reasons"],
+        "reason": ("Studio altered/synthetic content answer YES olmalı: " + ", ".join(disclosure["reasons"])
+                   if disclosure["reasons"] else "Gerçekçi sentetik veya değiştirilmiş gerçek olay yok; etiket kapalı (NO) tutulmalı."),
     }
 
 def upload_video_to_youtube(
-    video_path: str,
-    title: str,
-    description: str,
-    tags: List[str],
-    category_id: str = "22",
-    privacy_status: str = "private",
-    channel_id: str = "default",
-    client_secret_path: str = "client_secret.json",
-    pinned_comment: Optional[str] = None,
-    scheduled_publish_at: Optional[str] = None,
-    has_realistic_human_clone: bool = False,
-    is_news_manipulation: bool = False,
-    niche_id: str = "",
-    made_for_kids: Optional[bool] = None,
+    video_path: str, title: str, description: str, tags: List[str], category_id: str = "22",
+    privacy_status: str = "private", channel_id: str = "default", client_secret_path: str = "client_secret.json",
+    pinned_comment: Optional[str] = None, scheduled_publish_at: Optional[str] = None,
+    has_realistic_human_clone: bool = False, is_news_manipulation: bool = False, niche_id: str = "",
+    made_for_kids: Optional[bool] = None, publishing_package: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Uploads a video to YouTube with advanced SEO metadata, scheduling, pinned comments
-    and Item 80 altered/synthetic content policy check.
-    Kids niches force selfDeclaredMadeForKids=True + disclosure (COPPA).
-    """
-    token_path = get_channel_token_path(channel_id)
-    creds = None
-
-    # Hard-code Made for Kids disclosure / no data-collection metadata
-    try:
-        from compliance.kids_disclosure import apply_kids_upload_fields
-        kids_meta = apply_kids_upload_fields(
-            niche_id=niche_id or "",
-            description=description or "",
-            tags=list(tags or []),
-            force=made_for_kids,
-        )
-        description = kids_meta["description"]
-        tags = kids_meta["tags"]
-        mfk = bool(kids_meta["selfDeclaredMadeForKids"])
-        if kids_meta.get("suppress_pinned_comment"):
-            pinned_comment = None
-    except Exception:
-        mfk = bool(made_for_kids) if made_for_kids is not None else False
-
-    if os.path.exists(token_path):
-        creds = Credentials.from_authorized_user_file(token_path, SCOPES)
-    elif os.path.exists('token.json'): # backwards compatibility
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists(client_secret_path):
-                msg = "client_secret.json bulunamadı. YouTube API yüklemesi için Google Cloud OAuth dosyası gereklidir."
-                print(f"    [YouTube Uploader] UYARI: {msg}")
-                return {"success": False, "error": msg}
-            flow = InstalledAppFlow.from_client_secrets_file(client_secret_path, SCOPES)
-            creds = flow.run_local_server(port=0)
-
-        with open(token_path, 'w') as token:
-            token.write(creds.to_json())
-
-    try:
-        youtube = build('youtube', 'v3', credentials=creds)
-
-        status_body: Dict[str, Any] = {
-            'privacyStatus': privacy_status,
-            'selfDeclaredMadeForKids': bool(mfk),
-        }
-
-        # Item 53: Scheduled publish (must be private before scheduled time)
-        if scheduled_publish_at:
-            status_body['privacyStatus'] = 'private'
-            status_body['publishAt'] = scheduled_publish_at
-
-        # Ensure tags is a list of strings
-        if isinstance(tags, str):
-            tags = [t.strip().lstrip('#') for t in tags.split(",") if t.strip()]
-
-        body = {
-            'snippet': {
-                'title': title[:100],
-                'description': description,
-                'tags': tags[:30],
-                'categoryId': category_id
-            },
-            'status': status_body
-        }
-
-        insert_request = youtube.videos().insert(
-            part=','.join(body.keys()),
-            body=body,
-            media_body=MediaFileUpload(video_path, chunksize=-1, resumable=True)
-        )
-
-        response = insert_request.execute()
-        video_id = response.get('id')
-        print(f"    [YouTube Uploader] Video başarıyla yüklendi! Video ID: {video_id}")
-
-        # Item 58: Auto pinned comment
-        if video_id and pinned_comment:
-            try:
-                comment_body = {
-                    "snippet": {
-                        "videoId": video_id,
-                        "topLevelComment": {
-                            "snippet": {
-                                "textOriginal": pinned_comment
-                            }
-                        }
-                    }
-                }
-                youtube.commentThreads().insert(
-                    part="snippet",
-                    body=comment_body
-                ).execute()
-                print("    [YouTube Uploader] İlk yorum otomatik yazıldı ve sabitlendi (Item 58).")
-            except Exception as ce:
-                print(f"    [YouTube Uploader] Yorum sabitleme uyarısı: {ce}")
-
-        # Send notifications
-        notify_upload_success(title, video_id)
-
-        return {"success": True, "video_id": video_id}
-
-    except Exception as e:
-        err_msg = str(e)
-        print(f"    [YouTube Uploader] Hata oluştu: {err_msg}")
-        return {"success": False, "error": err_msg}
+    """Return a manual-upload instruction without contacting YouTube."""
+    if not os.path.isfile(video_path):
+        return {"success": False, "uploaded": False, "action": "DROP", "error": f"Video dosyası bulunamadı: {video_path}"}
+    decision = (publishing_package or {}).get("publication_decision") or {}
+    if decision.get("action") == "DROP":
+        return {"success": False, "uploaded": False, "action": "DROP", "error": decision.get("reason", "policy gate")}
+    synth = evaluate_synthetic_content_policy(
+        has_realistic_human_clone=has_realistic_human_clone,
+        is_news_manipulation=is_news_manipulation,
+        uses_photoreal_ai=bool((publishing_package or {}).get("uses_photoreal_ai")),
+    )
+    from compliance import manual_upload_checklist
+    return {
+        "success": False, "uploaded": False, "action": "MANUAL_UPLOAD_REQUIRED",
+        "reason": "Automatic YouTube upload is disabled; review and upload the package in YouTube Studio.",
+        "video_path": os.path.abspath(video_path), "title": title[:100], "description": description,
+        "tags": [str(tag).lstrip("#") for tag in (tags or [])][:30], "privacy_status": privacy_status,
+        "channel_id": channel_id, "ai_disclosure": synth,
+        "manual_upload_checklist": manual_upload_checklist(ai_disclosure={"disclosure_required": synth["apply_synthetic_label"]}),
+        "automatic_upload_disabled": True,
+    }

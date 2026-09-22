@@ -18,6 +18,8 @@ def get_config():
 def update_config(data: ConfigUpdateModel):
     try:
         apply_dashboard_config(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     saved = []

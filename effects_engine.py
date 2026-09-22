@@ -98,6 +98,7 @@ from effects import (
     apply_eq_bar_overlay,
     apply_split_choice_overlay,
     apply_subtitle_bar_overlay,
+    apply_interactive_quiz_overlay,
     apply_hybrid_render_overlay,
     # pipeline
     apply_anti_duplicate,

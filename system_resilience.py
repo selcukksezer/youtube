@@ -40,7 +40,9 @@ def get_hardware_accelerated_encoder() -> Tuple[str, List[str]]:
         gpu = get_system_hardware_specs().get("gpu", {})
         if gpu.get("has_videotoolbox"):
             return ("h264_videotoolbox", ["-b:v", "14M", "-allow_sw", "1"])
-        if gpu.get("has_nvenc"):
+        # NVENC requires explicit operator opt-in. Auto-selecting a hardware
+        # encoder can produce non-portable output and hide driver failures.
+        if gpu.get("has_nvenc") and os.environ.get("GPU_CODEC", "").strip() == "h264_nvenc":
             return ("h264_nvenc", ["-preset", "p4", "-b:v", "0", "-cq", "20"])
     except Exception:
         pass
@@ -109,7 +111,9 @@ def get_ffmpeg_vcodec_args(use_gpu: Optional[bool] = None, gpu_codec: Optional[s
     """FFmpeg -c:v argument list and mode label."""
     codec, preset, extra, label = get_export_codec_settings(use_gpu, gpu_codec)
     if codec == "h264_nvenc":
-        args = ["-c:v", "h264_nvenc", "-preset", preset or "p4", *extra[:3]]
+        # Full pairs. extra[:3] left "-b:v" without "0", so ffmpeg ate "-r"
+        # and treated the fps number (30.00) as the output filename.
+        args = ["-c:v", "h264_nvenc", "-preset", preset or "p4", *extra]
     elif codec == "h264_videotoolbox":
         args = ["-c:v", "h264_videotoolbox", *extra]
     else:

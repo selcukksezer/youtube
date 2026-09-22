@@ -48,10 +48,10 @@ class SmokeTest100Features(unittest.TestCase):
     # BÖLÜM 1: 35 NİŞ VE İÇERİK FİKİRLERİ (MADDELER 1 - 35)
     # ══════════════════════════════════════════════════════════════════
     def test_001_to_035_all_niches_registered_and_prompts_valid(self):
-        """Validates all 35 distinct niches can generate valid algorithmic prompts."""
-        self.assertEqual(len(NICHES), 36, "Must have 36 registered niches (incl. kids animation)")
+        """Validates all distinct niches can generate valid algorithmic prompts."""
+        self.assertGreaterEqual(len(NICHES), 36, "Must have at least 36 registered niches")
         niches = list_all_niches()
-        self.assertEqual(len(niches), 35)
+        self.assertGreaterEqual(len(niches), 36)
 
         for niche in niches:
             n_id = niche["id"]

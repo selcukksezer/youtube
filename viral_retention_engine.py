@@ -433,44 +433,13 @@ class ViralRetentionEngine:
     @classmethod
     def inject_trigger_name_hook(cls, hook: str, topic: str = "", lang: str = "tr") -> str:
         """
-        Item 240: Tetikleyici İsimler Kullanma.
-        İlk cümlede algoritma-dostu isim yoksa rastgele trigger name ekler.
-        Sacred / prophetic topics keep the hook untouched.
+        Keep the written hook.
+
+        A random celebrity prefix ("Marcus Aurelius'ın {başlık} hakkında söylediği")
+        is a false quote and splices the title into itself. Sacred topics and
+        ordinary topics both stay as written.
         """
-        hook = (hook or "").strip()
-        lower = hook.lower()
-        topic_l = (topic or "").lower()
-        # Sacred / Islamic topics must never get celebrity name-drop prefixes
-        # (e.g. "Napoleon'ın … dua … hakkında söylediği").
-        _sacred = (
-            "peygamber",
-            "hz.",
-            "hz ",
-            "allah",
-            "kuran",
-            "quran",
-            "dua",
-            "amin",
-            "hadis",
-            "ayet",
-            "namaz",
-            "islam",
-            "mosque",
-            "cami",
-            "sahabe",
-            "sünnet",
-            "sunnah",
-        )
-        if any(tok in topic_l or tok in lower for tok in _sacred):
-            return hook
-        if any(n.lower() in lower for n in cls.TRIGGER_NAMES):
-            return hook
-        name = random.choice(cls.TRIGGER_NAMES)
-        if lang == "en":
-            prefix = f"{name} once said about {topic}: " if topic else f"{name} once revealed: "
-        else:
-            prefix = f"{name}'ın {topic} hakkında söylediği söz şok edici: " if topic else f"{name}'ın gizli kuralı şok edici: "
-        return prefix + hook if hook else prefix.rstrip(": ")
+        return (hook or "").strip()
 
     @classmethod
     def generate_pinned_comment_bait(cls, topic: str, lang: str = "tr") -> Dict[str, str]:

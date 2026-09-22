@@ -18,6 +18,10 @@ _FAREWELL_RE = re.compile(
 )
 
 
+def _word_count(text: str) -> int:
+    return len((text or "").split())
+
+
 def _strip_farewell_closing(text: str) -> str:
     """Item 198: drop generic veda/kapanış — loop bridge replaces it."""
     cleaned = _FAREWELL_RE.sub("", text or "").strip()
@@ -65,17 +69,32 @@ def apply_retention_hooks_to_plan(
     formula = ViralRetentionEngine.get_loop_formula(formula_id)
     strategy, opening_hook = _pick_opening_hook(title, lang, variation_attempt)
 
-    # Item 202/203/244/248: first-scene hook (preserve body after first sentence when possible)
+    # Five facts already speak the facts. Do not paste a second hook,
+    # a fake quote, or "3. kural" on top of them.
+    niche_key = str(niche_type or plan.get("niche_id") or "")
+    if niche_key.startswith("9_five"):
+        plan["retention_metadata"] = {
+            "hook_strategy": "five_facts",
+            "loop_formula_id": formula_id,
+            "opening_hook": (scenes[0].get("narration") or "")[:160],
+            "ending_bridge": "",
+            "dopamin_split_screen": False,
+        }
+        return plan
+
+    # A finished sentence stays. A stub (under 8 words) still gets one hook.
+    # Pasting the title onto a real fact is what made the voice nonsense.
     first = dict(scenes[0])
     body = (first.get("narration") or "").strip()
-    if body and strategy != "zeigarnik":
-        tail_parts = re.split(r"(?<=[.!?])\s+", body, maxsplit=1)
-        if len(tail_parts) > 1 and tail_parts[1].strip():
-            first["narration"] = f"{opening_hook} {tail_parts[1].strip()}"
+    if _word_count(body) < 8:
+        if body and strategy != "zeigarnik":
+            tail_parts = re.split(r"(?<=[.!?])\s+", body, maxsplit=1)
+            if len(tail_parts) > 1 and tail_parts[1].strip():
+                first["narration"] = f"{opening_hook} {tail_parts[1].strip()}"
+            else:
+                first["narration"] = opening_hook
         else:
-            first["narration"] = opening_hook
-    else:
-        first["narration"] = f"{opening_hook} {body}".strip() if body else opening_hook
+            first["narration"] = f"{opening_hook} {body}".strip() if body else opening_hook
     scenes[0] = first
 
     # Item 204/198: loop ending bridge on final scene (no generic farewell)
@@ -83,24 +102,34 @@ def apply_retention_hooks_to_plan(
     last = dict(scenes[-1])
     closing = _strip_farewell_closing(last.get("narration") or "")
 
-    if variation_attempt % 3 == 2:
-        twist = ViralRetentionEngine.generate_plot_twist_closing(title, lang=lang)
-        closing = f"{closing} {twist}".strip() if closing else twist
-
-    # Item 345: perfect seamless loop bridge (closing flows into opening)
+    # Twist and loop lines stay in metadata. They replace speech only
+    # when the last scene is a stub. A finished sentence is the ending.
     perfect_loop = None
-    if variation_attempt % 4 == 3:
+    if _word_count(closing) < 8:
+        if variation_attempt % 3 == 2:
+            twist = ViralRetentionEngine.generate_plot_twist_closing(title, lang=lang)
+            closing = f"{closing} {twist}".strip() if closing else twist
+        if variation_attempt % 4 == 3:
+            try:
+                from hybrid_niches import generate_perfect_seamless_loop_bridge
+                perfect_loop = generate_perfect_seamless_loop_bridge(
+                    opening_hook, video_index=variation_attempt, lang=lang,
+                )
+                loop_close = (perfect_loop.get("closing_line") or "").strip()
+                if loop_close:
+                    closing = loop_close
+            except ImportError:
+                perfect_loop = None
+        elif bridge:
+            closing = f"{closing} {bridge}".strip() if closing else bridge
+    elif variation_attempt % 4 == 3:
         try:
             from hybrid_niches import generate_perfect_seamless_loop_bridge
-            perfect_loop = generate_perfect_seamless_loop_bridge(opening_hook, video_index=variation_attempt, lang=lang)
-            loop_close = (perfect_loop.get("closing_line") or "").strip()
-            if loop_close:
-                closing = loop_close
+            perfect_loop = generate_perfect_seamless_loop_bridge(
+                opening_hook, video_index=variation_attempt, lang=lang,
+            )
         except ImportError:
             perfect_loop = None
-
-    if bridge and not perfect_loop:
-        closing = f"{closing} {bridge}".strip() if closing else bridge
 
     last["narration"] = closing.strip()
     scenes[-1] = last
@@ -157,6 +186,9 @@ def ensure_retention_hooks_on_plan(
 
     meta = plan.get("retention_metadata") or {}
     if not force and meta.get("hook_strategy") and meta.get("opening_hook"):
+        # Hooks may already exist while a caller changed scene narration. Keep
+        # the aggregate narration contract synchronized on idempotent calls.
+        _rebuild_full_narration(plan)
         return plan
 
     plan = apply_retention_hooks_to_plan(

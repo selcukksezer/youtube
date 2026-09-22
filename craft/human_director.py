@@ -59,17 +59,17 @@ _POV_BANK: Dict[str, Tuple[str, ...]] = {
 }
 
 _HOOK_OPENERS: Dict[str, Tuple[str, ...]] = {
-    "itiraf": ("Kimse bunu söylemez:", "Dürüst olayım:", "İtiraf ediyorum:"),
-    "uyarı": ("Sakın atlama:", "Bunu duyunca dur:", "Uyarı:"),
-    "sayı": ("Bir sayı yeter:", "Sadece üç şey:", "Tek rakam:"),
-    "paradoks": ("Mantığa aykırı ama:", "Tersine düşün:", "Herkes yanılıyor:"),
-    "gizli": ("Gizli kalan taraf:", "Kimsenin bakmadığı yer:", "Asıl detay:"),
-    "soru": ("Hiç sordun mu:", "Peki ya:", "Neden kimse demez:"),
-    "kanıt": ("Kanıt burada:", "İz bırakmadılar ama:", "Veri net:"),
-    "yasak": ("Yasak gibi durur ama:", "Kimse öğretmez:", "Kuralı kır:"),
-    "oyun": ("Hadi bir oyun:", "Tahmin et:", "Bak ne olacak:"),
-    "merak": ("Merak etme zamanı:", "Şuna bak:", "İçeride ne var:"),
-    "kahraman": ("Küçük kahraman:", "Bugünün yıldızı:", "Cesur bir adım:"),
+    "itiraf": ("Kimse açıkça söylemez ama", "Dürüst olmak gerekirse", "İtiraf etmek gerekirse"),
+    "uyarı": ("Sakın bunu gözden kaçırma:", "Bunu fark ettiğin an dur:", "Dikkatli bakarsan görürsün:"),
+    "sayı": ("Rakamlar yalan söylemez:", "Tek bir detay yeter:", "Her şeyi özetleyen tek şey:"),
+    "paradoks": ("Tamamen mantığa aykırı ama", "Herkesin bildiğinin tam aksine", "Olay göründüğü gibi değil:"),
+    "gizli": ("İşin perde arkasındaki gerçek şu:", "Kimsenin fark etmediği detay:", "Görünmeyen tarafta şu var:"),
+    "soru": ("Hiç merak ettin mi,", "Peki ya bildiğin her şey yanlışsa?", "Neden kimse bundan bahsetmiyor?"),
+    "kanıt": ("Kanıtlar çok net:", "Ortada tesadüf yok:", "Gerçekler tam önümüzde duruyor:"),
+    "yasak": ("Bunu kimse sana öğretmez ama", "Kuralları yıkan gerçek şu:", "Sır gibi saklanan detay:"),
+    "oyun": ("Tahmin etmesi neredeyse imkansız:", "Şimdi dikkatle izle:", "Bak şimdi ne oluyor:"),
+    "merak": ("Görünüşe aldanma,", "İşin aslına baktığında:", "Perde arkasında bambaşka bir şey var:"),
+    "kahraman": ("Cesur bir adım her şeyi değiştirdi:", "Beklenmedik bir hamleyle:", "Sessizce dengeleri değiştiren şey:"),
 }
 
 _GENERIC_FILLER = re.compile(
@@ -155,34 +155,47 @@ def _inject_specificity(narr: str, angle: str, title: str, lang: str) -> str:
     has_digit = bool(re.search(r"\d", t))
     has_contrast = bool(re.search(r"\b(ama|ancak|oysa|aslında|çünkü|ama)\b", t, re.I))
     has_you = bool(re.search(r"\b(sen|siz|senin|sizin|dün|bugün)\b", t, re.I))
-    if has_digit or (has_contrast and has_you) or len(t.split()) >= 14:
+    if has_digit or (has_contrast and has_you) or len(t.split()) >= 8:
         return t
     # Angle-specific spice (Turkish)
     spice = {
-        "itiraf": " — ve çoğu kişi bunu atlıyor.",
-        "uyarı": " Sakın bu videonun sonunu görmeden kaydırma.",
-        "sayı": " Tek bir ayrıntı yeter.",
-        "paradoks": " Mantığın tersine işliyor.",
-        "gizli": " Asıl nokta görünmüyor.",
-        "soru": " Cevabı beklediğin yerde değil.",
-        "kanıt": " İz var, tesadüf yok.",
-        "yasak": " Kimse açıkça söylemez.",
-        "oyun": " Bir turda öğrenirsin.",
-        "merak": " İçerisi dışarıdan farklı.",
-        "kahraman": " Küçük bir cesaret yeter.",
-    }.get(angle, " Bundan sonra bakışın değişir.")
+        "itiraf": " — ve çoğu kişi bu ayrıntıyı tamamen atlıyor.",
+        "uyarı": " — bu noktada son derece dikkatli olmak gerek.",
+        "sayı": " — bütün tabloyu değiştiren asıl detay burada saklı.",
+        "paradoks": " — ilk bakışta çelişkili gelse de gerçek tam olarak bu.",
+        "gizli": " — asıl belirleyici olan da bu görünmeyen detay.",
+        "soru": " — aradığın cevap aslında hiç beklemediğin yerde saklı.",
+        "kanıt": " — tesadüf olmadığını gösteren en somut işaret de bu.",
+        "yasak": " — kimsenin yüksek sesle konuşmaya cesaret edemediği nokta.",
+        "oyun": " — dikkatli bakan biri bu kurguyu hemen fark eder.",
+        "merak": " — dışarıdan bakınca asla anlaşılamayan derin bir tarafı var.",
+        "kahraman": " — sessizce atılan en cesur adım tam da buydu.",
+    }.get(angle, " — bundan sonra olaylara bakışın tamamen değişecek.")
     if lang != "tr":
-        spice = " — and most people miss this."
+        spice = " — and most people completely miss this detail."
     if not t.endswith((".", "!", "?", "…")):
         t = t + "."
     return (t + spice).strip()
 
 
+def _title_already_in_narration(narr: str, title: str, span: int = 4) -> bool:
+    """True when narration already contains a long slice of the title."""
+    words = [w for w in re.findall(r"[^\W\d_]{3,}", title or "", flags=re.UNICODE)]
+    blob = (narr or "").casefold()
+    if len(words) < span:
+        return False
+    for i in range(0, len(words) - span + 1):
+        chunk = " ".join(w.casefold() for w in words[i:i + span])
+        if chunk in blob:
+            return True
+    return False
+
+
 def _rewrite_opening_scene(scene: Dict[str, Any], hook: str, angle: str, title: str, lang: str) -> None:
     narr = _inject_specificity(scene.get("narration") or "", angle, title, lang)
-    # Ensure hook claim leads the narration
-    if hook and not narr.lower().startswith(hook.split(":")[0].lower()[:8]):
-        # Prepend hook as first sentence if missing
+    # Prepending a title-slice hook onto a line that already says the title
+    # produces "…5 şok …5 şok gerçek". Keep one copy.
+    if hook and not _title_already_in_narration(narr, title) and not narr.lower().startswith(hook.split(":")[0].lower()[:8]):
         rest = narr
         if rest.lower().startswith(hook.lower()[:12]):
             scene["narration"] = rest
@@ -212,20 +225,19 @@ def scene_description_ok(text: str) -> bool:
 def _rewrite_closing_loop(scenes: List[Dict[str, Any]], hook: str, lang: str) -> None:
     if len(scenes) < 2:
         return
-    first_tokens = set(re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9]{4,}", (scenes[0].get("narration") or "").lower()))
     last = scenes[-1]
     narr = _strip_generic(last.get("narration") or "")
     # Loop line ties back to hook promise
     if lang == "tr":
-        loop = "Başa dön: vaat buydu — şimdi sen karar ver."
+        loop = "Başa dön ve ilk anı hatırla; asıl gerçek tam orada gizliydi."
         if hook:
-            short_hook = " ".join(hook.split()[:6])
-            loop = f"Başa dön — {short_hook} Cevabı gördün; kaydırma, bir kez daha bak."
+            loop = "Başa dönüp ilk cümleyle karşılaştır: Asıl yanıt tam orada duruyor."
     else:
-        loop = "Loop it: that was the promise — you decide."
-    # Keep some of original if substantive
-    if len(narr.split()) >= 8 and first_tokens & set(re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9]{4,}", narr.lower())):
-        last["narration"] = f"{narr} {loop}".strip()
+        loop = "Loop it back to the beginning — the real answer was right there."
+    # A finished last sentence is the ending. "Başa dön" on top of it
+    # is a second voice. Stubs still get the loop line.
+    if len(narr.split()) >= 8:
+        last["narration"] = narr
     else:
         last["narration"] = loop
     last["loop_closure"] = True
@@ -423,10 +435,18 @@ def apply_human_craft(
     angle = pick_pov_angle(title, niche_id, variation=variation)
     hook = mute_hook_line(title, angle, lang=lang)
 
-    _rewrite_opening_scene(scenes[0], hook, angle, title, lang)
-    if len(scenes) > 1:
-        _diversify_middles(scenes, angle, title, lang)
-        _rewrite_closing_loop(scenes, hook, lang)
+    # Five-facts speech is the facts. Other niches keep a sentence that
+    # already says something (8+ words). Only stubs get a hook or spice.
+    keep_spoken = str(niche_id).startswith("9_five")
+    if not keep_spoken:
+        opening = scenes[0]
+        if len((opening.get("narration") or "").split()) >= 8:
+            opening["mute_hook_line"] = hook
+        else:
+            _rewrite_opening_scene(opening, hook, angle, title, lang)
+        if len(scenes) > 1:
+            _diversify_middles(scenes, angle, title, lang)
+            _rewrite_closing_loop(scenes, hook, lang)
 
     # Cap static holds BEFORE scoring density (otherwise discovery always fails long shots)
     enforce_shot_holds(scenes, max_hold=3.5, min_hold=2.0)

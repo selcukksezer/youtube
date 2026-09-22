@@ -265,7 +265,8 @@ def build_kinetic_clip(
         f"drawbox=x=(w-420)/2:y=(h/2)+90:w=420:h=6:color={_rgb(accent)}@0.85:t=fill"
     )
 
-    zoom = 0.0005 + 0.00015 * (scene_index % 3)
+    from render.ffmpeg_graph import cheap_pan_filter
+    pan = cheap_pan_filter(w, h, dur, scene_index)
     grad = (
         f"gradients=s={w}x{h}:c0={_rgb(ordered[0])}:c1={_rgb(ordered[1])}:c2={_rgb(ordered[2])}:"
         f"c3={_rgb(ordered[0])}:n=4:speed={speed:.3f}:type={gtype}:duration={dur:.3f}:rate={r}:seed={seed}"
@@ -281,7 +282,7 @@ def build_kinetic_clip(
         return (
             "[0:v]format=gbrp[bg];[1:v]format=gbrp[fx];"
             "[bg][fx]blend=all_mode=screen:all_opacity=0.55,"
-            f"zoompan=z='1+{zoom:.5f}*on':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={r},"
+            f"{pan},"
             f"{box},{dt_shadow},{dt_main}{_grain_suffix(grain)}"
         )
 

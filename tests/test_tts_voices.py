@@ -43,7 +43,7 @@ class TestTtsVoiceCatalog(unittest.TestCase):
 
     def test_config_imports_catalog(self):
         self.assertIn("tr", EDGE_TTS_VOICE_CATALOG)
-        self.assertTrue(config.TTS_VOICE.endswith("Neural"))
+        self.assertTrue(config.TTS_VOICE.endswith("Neural") or config.TTS_VOICE.startswith("elevenlabs:"))
 
 
 if __name__ == "__main__":

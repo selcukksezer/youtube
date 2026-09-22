@@ -6,12 +6,15 @@ import os
 import re
 import sys
 import asyncio
+import logging
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import config
 import database
+
+logger = logging.getLogger(__name__)
 
 # Re-exports for backwards compatibility
 from server_core import (
@@ -33,7 +36,9 @@ from routers import (
     channel_router,
     system_router,
     google_ai_router,
+    kids_song_router,
 )
+from v2_api.router import router as v2_router
 
 app = FastAPI(title="YouTube Shorts Ultimate Web Dashboard")
 
@@ -51,8 +56,14 @@ async def on_startup():
     if sys.platform == "win32":
         try:
             asyncio.get_running_loop().set_exception_handler(_windows_asyncio_exception_handler)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Windows asyncio exception handler kurulamadı: %s", exc)
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    from kids_song_bridge import stop_managed
+    stop_managed()
 
 
 app.add_middleware(
@@ -71,6 +82,8 @@ app.include_router(research_router)
 app.include_router(channel_router)
 app.include_router(system_router)
 app.include_router(google_ai_router)
+app.include_router(kids_song_router)
+app.include_router(v2_router)
 
 # Serve BGM audio files for in-browser audio playback
 if not os.path.exists(config.BGM_DIR):
@@ -131,6 +144,13 @@ def read_root():
             headers={"Cache-Control": "no-cache, must-revalidate"},
         )
     return HTMLResponse("<h2>Web Dashboard is loading...</h2>")
+
+
+@app.get("/studio-v2", include_in_schema=False)
+def read_studio_v2():
+    path = os.path.join(STATIC_DIR, "studio-v2.html")
+    with open(path, "r", encoding="utf-8") as handle:
+        return HTMLResponse(handle.read(), headers={"Cache-Control": "no-cache"})
 
 
 if __name__ == "__main__":

@@ -91,13 +91,16 @@ def _merge_scene_pair(scenes: List[Dict[str, Any]], idx: int) -> List[str]:
     dur_b = float(b.get("duration") or 3.0)
     a["duration"] = round(dur_a + dur_b, 1)
 
-    # Prefer longer search_queries list; keep distinct visuals from both if possible
+    # Keep distinct visual angles from both merged scenes.
     q_a = list(a.get("search_queries") or [])
     q_b = list(b.get("search_queries") or [])
-    if q_b and (not q_a or q_b[0].lower() != q_a[0].lower()):
-        a["search_queries"] = q_a or q_b
-    elif q_a:
-        a["search_queries"] = q_a
+    merged_queries = []
+    for query in q_a + q_b:
+        text = str(query or "").strip()
+        if text and text.casefold() not in {item.casefold() for item in merged_queries}:
+            merged_queries.append(text)
+    if merged_queries:
+        a["search_queries"] = merged_queries[:3]
 
     scenes.pop(idx + 1)
     return [f"merged_split_verb_{idx}_{idx + 1}"]

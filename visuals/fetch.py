@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import subprocess
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import imageio_ffmpeg
@@ -31,12 +32,36 @@ def get_job_manifest() -> List[Dict[str, Any]]:
 
 
 def write_job_credits(project_dir: str) -> Dict[str, str]:
-    """Write visual_credits.json + .txt for YouTube description paste."""
+    """Write the auditable source manifest and description-ready credits."""
     os.makedirs(project_dir, exist_ok=True)
+    if not _job_manifest:
+        raise ValueError("source manifest is empty")
+    uids = [str(row.get("uid") or "") for row in _job_manifest]
+    if any(not uid for uid in uids):
+        raise ValueError("source manifest contains visual without uid")
+    if len(uids) != len(set(uids)):
+        raise ValueError("source manifest contains duplicate visual assets")
+    for row in _job_manifest:
+        license_data = row.get("license") or {}
+        info = LicenseInfo.from_dict(license_data) if isinstance(license_data, dict) else None
+        if not info or not is_commercial_safe(info.license):
+            raise ValueError(f"source manifest contains unsafe license: {row.get('uid')}")
     json_path = os.path.join(project_dir, "visual_credits.json")
     txt_path = os.path.join(project_dir, "visual_credits.txt")
+    manifest_path = os.path.join(project_dir, "source_manifest.json")
     with open(json_path, "w", encoding="utf-8") as fh:
         json.dump({"clips": _job_manifest}, fh, ensure_ascii=False, indent=2)
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(
+            {
+                "version": 1,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "clips": _job_manifest,
+            },
+            fh,
+            ensure_ascii=False,
+            indent=2,
+        )
     lines = ["Görsel kaynaklar / Visual credits:"]
     for row in _job_manifest:
         lic = row.get("license") or {}
@@ -51,7 +76,12 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
     body = "\n".join(lines) + "\n"
     with open(txt_path, "w", encoding="utf-8") as fh:
         fh.write(body)
-    return {"json": json_path, "txt": txt_path, "description_block": body}
+    return {
+        "json": json_path,
+        "txt": txt_path,
+        "manifest": manifest_path,
+        "description_block": body,
+    }
 
 
 def _download(url: str, path: str, timeout: int = 45) -> bool:
@@ -90,17 +120,15 @@ def _normalize_clip(
     height: int = 1920,
     fps: int = 30,
 ) -> Optional[str]:
-    """Crop/scale to 9:16; images get Ken Burns zoompan."""
+    """Crop/scale to 9:16. Stills get a cheap crop-pan, not zoompan."""
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     dur = max(1.2, float(duration))
     if kind == "image":
-        # Ken Burns slow push
-        z = 1.08
+        from render.ffmpeg_graph import cheap_pan_filter
         vf = (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},"
-            f"zoompan=z='min(zoom+0.0004,{z})':d={int(dur * fps)}:"
-            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps={fps},"
+            f"crop={width}:{height},fps={fps},"
+            f"{cheap_pan_filter(width, height, dur, 0)},"
             "format=yuv420p"
         )
         cmd = [
@@ -199,11 +227,22 @@ def fetch_open_visual(
             "uid": cand.uid,
             "source": cand.source,
             "id": cand.id,
+            "url": cand.url,
+            "asset_url": cand.url,
             "title": cand.title,
             "query": query,
             "kind": cand.kind,
             "score": round(sc, 1),
             "sha1": _file_hash(norm),
+            "downloaded_at": datetime.now(timezone.utc).isoformat(),
+            "source_url": (cand.source_url or (cand.license.source_url if cand.license else "")),
+            "license_url": (cand.license_url or (cand.license.license_url if cand.license else "")),
+            "attribution": (cand.attribution or (cand.license.attribution if cand.license else "")),
+            "contributor": cand.contributor,
+            "semantic_evidence": cand.semantic_evidence,
+            "topic_match_score": cand.topic_match_score,
+            "visual_verification_score": cand.visual_verification_score,
+            "matched_terms": cand.matched_terms,
             "license": cand.license.to_dict(),
             "family": family_for_niche(niche_id),
         }
@@ -252,7 +291,8 @@ def fetch_open_visual(
     except Exception as exc:
         print(f"    [visuals:kinetic] {exc}")
 
-    # Last resort: abstract cinematic (still no placeholder text)
+    # Last resort: abstract cinematic (still no placeholder text). A plain
+    # color card is deliberately not a publishable visual fallback.
     try:
         from render.procedural_visuals import build_procedural_clip, resolve_motif
         path = os.path.join(project_dir, f"s{scene_index:03d}_procedural_fallback.mp4")
@@ -273,26 +313,6 @@ def fetch_open_visual(
             return out
     except Exception as exc:
         print(f"    [visuals:abstract] {exc}")
-    try:
-        from .motion_graphics import build_solid_color_clip
-        path = os.path.join(project_dir, f"s{scene_index:03d}_solid_fallback.mp4")
-        out = build_solid_color_clip(
-            path, target_duration, niche_id=niche_id, scene_index=scene_index,
-        )
-        if out:
-            _job_manifest.append({
-                "scene_index": scene_index,
-                "path": out,
-                "uid": f"procedural_solid:{scene_index}",
-                "source": "procedural_solid",
-                "id": f"sol_{scene_index}",
-                "title": "procedural color card",
-                "kind": "procedural",
-                "license": {"license": "cc0", "source": "procedural", "safe": True},
-                "family": family_for_niche(niche_id),
-            })
-            print(f"    [OK] [visuals:solid] color card scene={scene_index}")
-            return out
-    except Exception as exc:
-        print(f"    [visuals:solid] {exc}")
+    # No "visual not found" cards: the caller must regenerate the shot or
+    # stop the render when no subject-specific visual can be produced.
     return None

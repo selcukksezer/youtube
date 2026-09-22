@@ -7,66 +7,71 @@ from typing import Optional
 # Thin shared envelope — JSON schema + duration/word caps. Niche packs supply content rules.
 SHARED_ENVELOPE_TR = """ORTAK ŞEMA (tüm nişler aynı; içerik kuralları niş paketinden gelir):
 - SADECE geçerli JSON döndür.
-- 8-16 sahne (konuya göre; tam 14 zorunlu değil).
-- Toplam süre 38-60 saniye; konu ne kadar istiyorsa o kadar, 60'ı aşma. 48 mıknatıs YASAK.
+- 8-16 sahne (konuya göre; sabit sahne sayısı yok).
+- Toplam süre 38-60 saniye; konu ne kadar istiyorsa o kadar, 60'ı aşma.
 - Her narration: en az 10 kelimelik TAM cümle, . ! ? ile bit. 6 kelimelik stub YASAK.
 - scene_description: gerçek İngilizce görsel cümle; (SCENE_DESCRIPTION) / tbd / n/a YASAK.
-- search_queries: 3 İngilizce stok terim; niş must_exclude listesine aykırı görsel YASAK.
+- search_queries: cümledeki çekilebilir adın 3 açısı. Üçüncü sorgu genel b-roll olamaz. Niş must_exclude görseli YASAK.
+- visual_intent.subject: kameranın çekebileceği ad (gökdelen, köprü, roket). Soyut duygu yasak.
+- duration: 4-8 saniye. Toplam 38-60.
 - Her sahne: beat_type (hook/conflict/climax/resolution/shock) ve mood.
 JSON iskeleti:
-{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":3.5,"mood":"epic","beat_type":"hook"}]}"""
+{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"Skyscraper glass facade flexing in wind","search_queries":["skyscraper glass facade","skyscraper construction crane","skyscraper aerial"],"duration":6,"mood":"epic","beat_type":"hook","visual_intent":{"subject":"skyscraper tower","action":"sway","setting":"city","lighting":"day","visual_priority":"subject","must_exclude":[]}}]}"""
 
 SHARED_ENVELOPE_EN = """SHARED SCHEMA (all niches; content rules come from the niche pack):
 - Return valid JSON only.
-- 8-16 scenes (topic decides; exactly 14 is not required).
-- Total duration 38-60 seconds; as long as the topic needs, never past 60. 48 is not a magnet.
+- 8-16 scenes (topic decides; no fixed scene count).
+- Total duration 38-60 seconds; as long as the topic needs, never past 60.
 - Each narration: at least 10 complete words ending with . ! ?
 - scene_description: real English visual sentence; placeholders forbidden.
-- search_queries: 3 English stock terms; never violate niche must_exclude.
+- search_queries: 3 angles of the sentence's filmable noun. The third query cannot be generic b-roll. Never violate niche must_exclude.
+- visual_intent.subject: a noun a camera can film (skyscraper, bridge, rocket). Abstract mood is forbidden.
+- duration: 4-8 seconds. Total 45-60.
 JSON skeleton:
-{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":3.5,"mood":"epic","beat_type":"hook"}]}"""
+{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"Skyscraper glass facade flexing in wind","search_queries":["skyscraper glass facade","skyscraper construction crane","skyscraper aerial"],"duration":6,"mood":"epic","beat_type":"hook","visual_intent":{"subject":"skyscraper tower","action":"sway","setting":"city","lighting":"day","visual_priority":"subject","must_exclude":[]}}]}"""
 
-PROMPT_TR = """Sen profesyonel bir YouTube Shorts senaristi ve seslendirme yazarısın.
-Verilen başlık için:
+PROMPT_TR = """Sen profesyonel bir belgeselci, hikaye anlatıcısı ve usta bir YouTube Shorts senaristisin.
+Yazdığın senaryolar ASLA yapay zeka tarafından yazılmış gibi kokmamalı; gerçek bir insanın, tutkuyla anlattığı sürükleyici bir video gibi hissettirmeli.
 
-1. Türkçe anlatım metni yaz (120-170 KELİME, 38-60 SANİYE Shorts süresi — konu ne kadar istiyorsa, 60'ı aşma).
+TEMEL YAZARLIK İLKELERİ:
+1. İNSAN SESİ VE DOĞAL ANLATIM:
+   - Sanki bir arkadaşına nefes kesici bir gerçeği fısıldıyormuşsun gibi samimi, merak uyandırıcı ve akıcı bir dil kullan.
+   - KESİNLİKLE YASAK OLAN YAPAY ZEKA KLİŞELERİ: "Bu videoda...", "Gelin birlikte bakalım...", "İşte bilmeniz gerekenler...", "Sonuç olarak...", "Gelin yakından inceleyelim", "Şimdi düşünün...", "Başa dön: vaat buydu", "Yorumlarda buluşalım".
+   - Cümle uzunluklarını çeşitlendir: Kısa, çarpıcı bir iddiayı takip eden akıcı ve ritmik bir açıklama cümlesi kur.
 
-2. 8-16 sahne oluştur (konuya göre sen karar ver). TOPLAM 38-60 SANİYE. Sen duration belirle (2.5-5 sn, doğal tempo).
-   Her sahne:
-   - "narration": 1-2 TAM Türkçe cümle (sahne başına en az 12 kelime, ideal 15-25). ASLA yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). **1-2 EMOJİ ekle.**
-   - "scene_description": Bu sahnede İZLEYİCİNİN GÖRMESİ GEREKEN görsel, İngilizce, 1 cümle
-   - "search_queries": 3 İngilizce stok video arama terimi [spesifik, orta, genel]
-   - "duration": AI belirler (2.0-4.5)
-   - "beat_type": hook/conflict/climax/resolution/shock
-   - "mood": URGENT/DRAMATIC/epic/calm/mysterious/energetic/dark/bright
+2. SENARYO YAPISI (45-60 SANİYE, 120-170 KELİME):
+   - KANCA (Sahne 1, İlk 3 Saniye): Soğuk açılış (cold open). Konuyu doğrudan şaşırtıcı bir zıtlık, paradoks veya yüksek merak unsuruyla aç.
+   - GELİŞME & GERİLİM (Sahne 2-5): Yüzeysel genellemeler yerine canlı, somut detaylar ve görsel uyandıran kelimeler ver.
+   - DORUK NOKTASI / AYDINLANMA (Climax): Kancanın vaat ettiği asıl gerçeği veya şok edici detayı ortaya koy.
+   - DÜŞÜNDÜRÜCÜ FİNAL (Resolution): İzleyicinin zihninde yankılanacak, videoyu tekrar izletme arzusu uyandıran güçlü bir son cümleyle bitir. Mekanik çağrılar (abone ol, yorum yaz) yapma.
 
-3. search_queries kuralları:
-   İYİ: "ocean waves aerial", "mountain fog drone", "city skyline night", "stars night sky"
-   KÖTÜ: fantastik isimler, 4+ kelime, metin/grafik içeren terimler
-   HER SAHNE FARKLI arama terimleri kullanmalı. TEKRAR YASAK.
+3. SAHNE VE GÖRSEL KURALLARI:
+   - 6-12 sahne (konuya göre dinamik). Sahne süreleri 4-8 saniye arası dengeli.
+   - "narration": 1-2 TAM Türkçe cümle (sahne başına en az 12 kelime, ideal 15-25). ASLA yarım fiil veya bağlaçla bitme.
+   - "scene_description": Bu sahnede kameranın çekeceği SOMUT sinematik sahne (İngilizce). Asla "outro banner", "subscribe", "cinematic atmosphere" gibi soyut şeyler yazma.
+   - "search_queries": Stok video kütüphanelerinden (Pexels vb.) doğrudan bulunabilecek 3 somut, sinematik İngilizce arama terimi.
 
-4. scene_description çok önemli – video seçici buna bakarak en uygun videoyu seçecek.
-
-SADECE JSON:
-{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"epic"}]}"""
+SADECE JSON FORMATINDA DÖNDÜR:
+{"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"epic","beat_type":"hook"}]}"""
 
 PROMPT_EN = """You are a professional YouTube Shorts scriptwriter.
 For the given title:
 
-1. Write English narration (120-170 WORDS, 38-60 SECOND Shorts length — as long as the topic needs, never past 60).
+1. Write English narration (120-170 WORDS, 45-60 SECOND Shorts length — as long as the topic needs, never past 60).
 
-2. Create 8-16 scenes (~3-5s each). TOTAL 38-60 SECONDS.
+2. Create 6-12 scenes. TOTAL 45-60 SECONDS. Vary scene duration for the argument and visual; never use a fixed three-second template.
    Each scene:
-   - "narration": 1-2 complete English sentences (at least 12 words per scene, ideally 15-25). **Also include 1-2 highly relevant EMOJIS naturally in or at the end of the narration to boost engagement.**
-   - "scene_description": What the VIEWER SHOULD SEE, 1 sentence in English (e.g., "Aerial view of a massive ocean wave crashing against rocky cliffs at sunset")
-   - "search_queries": 3 English stock video search terms [specific, medium, general] — ON-TOPIC only
-   - "duration": 2.5-3.5
+   - "narration": 1-2 complete English sentences (at least 12 words per scene, ideally 15-25). Do not add emojis, slogans, or mechanical engagement bait.
+   - "scene_description": What the VIEWER SHOULD SEE, 1 English sentence. The noun is something a camera can film in that sentence (e.g. "Skyscraper glass facade flexing in wind").
+   - "search_queries": 3 angles of that same noun. No generic third query.
+   - "duration": 4-8 seconds. Never a fixed 3-second cut.
+   - "visual_intent.subject": the filmable noun, e.g. "skyscraper tower".
    - "mood": epic/calm/dramatic/mysterious/energetic/dark/bright
 
 3. search_queries rules:
-   GOOD: "ocean waves aerial", "mountain fog drone", "city skyline night", "stars night sky"
-   BAD: fantasy names, 4+ words, text/graphic terms
-   EVERY scene MUST have DIFFERENT search terms. NO REPEATS.
+   GOOD for a skyscraper sentence: "skyscraper glass facade", "skyscraper construction crane", "skyscraper aerial"
+   BAD: "ocean waves aerial", "mountain fog drone", "stars night sky", "cinematic atmosphere" unless the sentence is about that thing
+   EVERY scene uses a different angle. The subject stays the thing the sentence names. NO REPEATS.
 
 4. scene_description is critical – the video selector uses it to find the best matching footage.
 
@@ -78,16 +83,16 @@ PROMPT_VARIANTS_TR = [
     """Sen viral YouTube Shorts içerik uzmanısın.
 Hedef: İzleyiciyi ilk 3 saniyede yakalayan ve sonuna kadar tutan sürükleyici bir video senaryosu hazırlamak.
 Kurallar:
-- Dil: Türkçe, akıcı, merak uyandırıcı, doğal tonlama ve uygun emojiler.
-- Sahne Sayısı: 8-16 sahne, her biri ~3-5 saniye (toplam 38-60 sn, Madde 494).
-- Her sahnede narration (en az 12 kelime, tam cümle), scene_description (İngilizce, gerçek görsel), 3 farklı search_queries ve mood bulunmalı.
+- Dil: Türkçe, akıcı, merak uyandırıcı, doğal seslendirme ritmi; emoji ve slogan yok.
+- Sahne Sayısı: 6-12 değişken uzunluklu sahne (toplam 45-60 sn).
+- Her sahnede narration (en az 12 kelime, tam cümle), scene_description (İngilizce, çekilebilir özne), o öznenin 3 açısı search_queries, duration 4-8 sn ve mood bulunmalı. Genel okyanus/dağ/yıldız yedeği yasak.
 SADECE JSON formatında çıktı ver:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"dramatic"}]}""",
     """Sen YouTube Shorts için sinematik belgesel ve hikaye anlatıcısısın.
-Hedef: Verilen başlığı derinlikli, bilimsel veya tarihi kanıtlarla zenginleştirerek açıklayan 38-60 saniyelik video senaryosu oluşturmak (konu ne kadar istiyorsa o kadar, 60'ı aşma).
+Hedef: Verilen başlığı derinlikli, bilimsel veya tarihi kanıtlarla zenginleştirerek açıklayan 45-60 saniyelik video senaryosu oluşturmak (konu ne kadar istiyorsa o kadar, 60'ı aşma).
 Kurallar:
-- 8-16 sahne, güçlü kancalar ve organik emojiler, ~120-160 kelime.
-- Her sahnede İngilizce görsel sahne tarifi ve sinematik arama terimleri.
+- 6-12 sahne, hook → açıklama → karşıtlık → payoff → loop yapısı, 120-170 kelime.
+- Her sahnede İngilizce görsel sahne tarifi ve o cümlenin çekilebilir öznesinin 3 açısı. Genel b-roll ve "cinematic atmosphere" yasak. Süre 4-8 sn.
 SADECE JSON döndür:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"mysterious"}]}"""
 ]

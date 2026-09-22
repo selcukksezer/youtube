@@ -23,6 +23,12 @@ class TestSection7SystemResilience(unittest.TestCase):
         self.assertIn(encoder, ["h264_videotoolbox", "h264_nvenc", "libx264"])
         self.assertIsInstance(args, list)
 
+    def test_nvenc_bitrate_flag_keeps_its_value(self):
+        from system_resilience import get_ffmpeg_vcodec_args
+        args, _label = get_ffmpeg_vcodec_args(use_gpu=True, gpu_codec="h264_nvenc")
+        self.assertEqual(args[args.index("-b:v") + 1], "0")
+        self.assertEqual(args[args.index("-cq") + 1], "20")
+
     def test_item_416_circuit_breaker(self):
         cb = CircuitBreaker(failure_threshold=3, recovery_timeout=0.2)
         service = "test_gemini"

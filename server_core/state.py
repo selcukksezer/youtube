@@ -5,11 +5,15 @@ import json
 import time
 import asyncio
 import threading
+import logging
 from typing import List, Any
+
+logger = logging.getLogger(__name__)
 
 # Concurrency lock to prevent multiple heavy ffmpeg/moviepy renders simultaneously
 render_lock = threading.Lock()
 is_rendering_active = False
+active_render_job_id = None
 
 # Global queue for SSE event streaming
 event_queues: List[asyncio.Queue] = []
@@ -48,12 +52,33 @@ def broadcast_event(event_type: str, data: Any):
         current_render_state["is_rendering"] = False
         current_render_state["error"] = str(data)
 
+    # The legacy worker emits global events. Mirror them to the durable V2 job
+    # selected by the V2 router so refreshes no longer lose render progress.
+    job_id = active_render_job_id
+    if job_id:
+        try:
+            import database
+            if event_type == "progress" and isinstance(data, dict):
+                database.update_render_job(
+                    job_id, status="rendering", percent=int(data.get("percent", 0)),
+                    step=str(data.get("step", "Render ediliyor")),
+                )
+            elif event_type == "complete":
+                url = data.get("url") if isinstance(data, dict) else None
+                database.update_render_job(job_id, status="completed", percent=100,
+                                           step="Tamamlandı", output_url=url or "")
+            elif event_type == "error":
+                database.update_render_job(job_id, status="failed", step="Başarısız",
+                                           error_message=str(data))
+        except Exception as exc:
+            logger.warning("Render job state güncellenemedi (%s): %s", job_id, exc)
+
     payload = json.dumps({"type": event_type, "data": data, "timestamp": time.time()})
     for q in list(event_queues):
         try:
             q.put_nowait(payload)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("SSE kuyruğuna olay yazılamadı: %s", exc)
 
 
 class SSELogStreamer:

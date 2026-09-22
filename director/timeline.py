@@ -12,6 +12,7 @@ from .schema import (
     DirectorPlan,
     ScenePlan,
     QualityThresholds,
+    TTS_EMERGENCY_MAX_SPEED,
     natural_target_duration,
     shorts_word_budget,
 )
@@ -436,7 +437,7 @@ def fit_tts_to_timeline(
     # Hard ceiling keeps videos inside Shorts band even when TTS overruns
     budget_ceiling = min(max(qt.max_duration, 60.0), 60.0)
     out = output_path or audio_path
-    emergency_max_speed = 1.35
+    emergency_max_speed = TTS_EMERGENCY_MAX_SPEED
 
     try:
         with wave.open(audio_path, "rb") as w:
@@ -474,7 +475,7 @@ def fit_tts_to_timeline(
             raise RuntimeError(
                 f"Madde 494 hard-fail: TTS {audio_dur:.1f}s — even ×{emergency_max_speed} "
                 f"yields ~{min_possible:.1f}s > {budget_ceiling:.0f}s. "
-                f"Condense narration (≤~{int(budget_ceiling * 2.6)} words) and re-render."
+                f"Condense narration (≤~{shorts_word_budget(qt.max_duration, qt.max_audio_speed)} words) and re-render."
             )
 
         # Pass 1: preferred pace (Item 175-aligned ceiling)

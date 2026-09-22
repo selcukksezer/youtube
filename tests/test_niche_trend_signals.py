@@ -22,6 +22,19 @@ NEWS_TEMPLATE_WORDS = (
 
 
 class TestNicheTrendSignals(unittest.TestCase):
+    def test_view_count_keeps_mn_and_bin_scale(self):
+        from services.niche_trend_signals import _parse_view_count
+
+        self.assertEqual(_parse_view_count("1,2 Mn görüntüleme"), 1_200_000)
+        self.assertEqual(_parse_view_count("12 B görüntüleme"), 12_000)
+        self.assertEqual(_parse_view_count("1.234 görüntüleme"), 1234)
+
+    def test_news_synthetic_keeps_flash_titles(self):
+        trends = generate_synthetic_trend_signals("1_news_flash")
+        blob = " ".join(t["title"] for t in trends).casefold()
+        self.assertTrue(trends)
+        self.assertTrue("dakika" in blob or "flaş" in blob or "haber" in blob)
+
     def test_stoic_banned_detector(self):
         self.assertTrue(is_stoic_banned_title("24 Saat İçinde Viral Olan Stoacılık Skandalı"))
         self.assertFalse(is_stoic_banned_title("Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı"))

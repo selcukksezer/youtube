@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -175,6 +179,10 @@ def ai_disclosure_block(
     uses_tts: bool = True,
     uses_ai_script: bool = True,
     uses_photoreal_ai: bool = False,
+    uses_altered_real_event: bool = False,
+    uses_real_person_synthetic: bool = False,
+    uses_synthetic_persona: bool = False,
+    uses_ai_visual: bool = False,
     lang: str = "tr",
 ) -> Dict[str, Any]:
     """
@@ -182,26 +190,53 @@ def ai_disclosure_block(
     Realistic photoreal → recommend Studio AI survey = Yes.
     TTS + stock + original script → usually No, but we still disclose production assist.
     """
-    studio_ai_survey = "yes" if uses_photoreal_ai else "no"
+    reasons = []
+    if uses_photoreal_ai:
+        reasons.append("photorealistic_ai_visual")
+    if uses_altered_real_event:
+        reasons.append("altered_real_event_or_place")
+    if uses_real_person_synthetic:
+        reasons.append("synthetic_real_person")
+    if uses_synthetic_persona:
+        reasons.append("synthetic_persona")
+    required = bool(reasons)
+    studio_ai_survey = "yes" if required else "no"
     if lang == "tr":
         desc = (
             "🤖 Üretim notu: Bu Short'ta senaryo/kurgu yapay zekâ destekli hazırlanmış; "
-            "anlatım sentez ses (TTS) kullanabilir. Gerçek bir kişinin yapmadığı bir eylemi "
-            "veya gerçekçi sahte olay gösterilmez. Şeffaflık için bakınız: "
+            "anlatım sentez ses (TTS) kullanabilir. Şeffaflık için bakınız: "
             "YouTube GenAI disclosure politikası."
         )
-        if uses_photoreal_ai:
-            desc += " Studio'da 'AI use' = Evet seçilmelidir (gerçekçi sentetik görüntü)."
+        if not required:
+            desc += " Gerçekçi sentetik veya değiştirilmiş gerçek olay/kişi gösterilmez."
+        if required:
+            desc += " Studio'da 'AI use' = Evet seçilmelidir: " + ", ".join(reasons) + "."
     else:
         desc = (
             "🤖 Production note: Script/editing may be AI-assisted; narration may use TTS. "
-            "No realistic depiction of a real person doing something they did not do. "
             "See YouTube GenAI disclosure policy."
         )
+        if not required:
+            desc += " No realistic depiction of a real person doing something they did not do."
+        if required:
+            desc += " Studio AI use = Yes: " + ", ".join(reasons) + "."
     return {
         "studio_ai_survey": studio_ai_survey,
+        "disclosure_required": required,
+        "required": required,
+        "ai_disclosure_required": required,
+        "reasons": reasons,
         "description_paragraph": desc,
         "required_if_photoreal": uses_photoreal_ai,
+        "inputs": {
+            "uses_tts": bool(uses_tts),
+            "uses_ai_script": bool(uses_ai_script),
+            "uses_photoreal_ai": bool(uses_photoreal_ai),
+            "uses_altered_real_event": bool(uses_altered_real_event),
+            "uses_real_person_synthetic": bool(uses_real_person_synthetic),
+            "uses_synthetic_persona": bool(uses_synthetic_persona),
+            "uses_ai_visual": bool(uses_ai_visual),
+        },
         "policy_url": "https://support.google.com/youtube/answer/14328491",
     }
 
@@ -263,10 +298,16 @@ def evaluate_plan_compliance(plan: Dict[str, Any]) -> Dict[str, Any]:
     """One-shot gate for generate/render pipelines."""
     risk = inauthentic_risk_score(plan)
     gate = niche_gate(plan.get("niche_id") or "", plan.get("full_narration") or "")
+    research = plan.get("research_brief") or {}
+    research_gate = research_quality_gate(research)
     disclosure = ai_disclosure_block(
         uses_tts=True,
         uses_ai_script=True,
         uses_photoreal_ai=bool(plan.get("uses_photoreal_ai")),
+        uses_altered_real_event=bool(plan.get("uses_altered_real_event")),
+        uses_real_person_synthetic=bool(plan.get("uses_real_person_synthetic")),
+        uses_synthetic_persona=bool(plan.get("uses_synthetic_persona")),
+        uses_ai_visual=bool(plan.get("uses_ai_visual")),
         lang=plan.get("language") or "tr",
     )
     # Human-craft / discovery-beast (AI slop ≠ Discover)
@@ -293,11 +334,32 @@ def evaluate_plan_compliance(plan: Dict[str, Any]) -> Dict[str, Any]:
     except Exception:
         pass
 
-    hard = (
-        risk["hard_fail"]
-        or gate["action"] == "DROP"
-        or craft_reject
+    # Keep publication hard-fails separate from render blockers. A missing
+    # research contract prevents auto-publish, but it does not mean the
+    # rendered asset is unsafe to inspect or revise.
+    hard_reasons: List[str] = []
+    if risk["hard_fail"]:
+        hard_reasons.extend(risk.get("reasons") or ["inauthentic_policy_risk"])
+    if gate["action"] == "DROP":
+        hard_reasons.append(f"niche_gate:{gate.get('reason') or 'drop'}")
+    if craft_reject:
+        hard_reasons.append(f"human_craft:{craft_reason or 'rejected'}")
+    if research_gate["action"] in ("DROP", "GATE"):
+        hard_reasons.append(f"research_gate:{research_gate.get('reason') or research_gate['action'].lower()}")
+    hard = bool(hard_reasons)
+    render_blocking = bool(
+        risk["hard_fail"] or gate["action"] == "DROP" or craft_reject
     )
+    # Render blocker and diagnostic must never disagree. Older callers used
+    # the boolean only and showed the useless fallback text "policy risk".
+    if render_blocking and not hard_reasons:
+        if risk.get("hard_fail"):
+            hard_reasons.append("inauthentic_policy_risk")
+        elif gate.get("action") == "DROP":
+            hard_reasons.append(f"niche_gate:{gate.get('reason') or 'drop'}")
+        elif craft_reject:
+            hard_reasons.append(f"human_craft:{craft_reason or 'rejected'}")
+        hard = True
     # Discovery fail always marks ok=False for UI; hard_fail for spam-level risk
     if craft_reject and float(risk.get("risk") or 0) >= 55:
         hard = True
@@ -305,13 +367,206 @@ def evaluate_plan_compliance(plan: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "ok": not hard and not craft_reject,
         "hard_fail": hard,
+        "hard_fail_reasons": hard_reasons,
+        "render_blocking": render_blocking,
+        "diagnosis": {
+            "primary": hard_reasons[0] if hard_reasons else "ok",
+            "message": (
+                "İçerik render edildi; otomatik yayın için araştırma kanıtı gerekiyor."
+                if not render_blocking and hard_reasons
+                else "Politika riski yok."
+                if not hard_reasons
+                else "İçerik politika güvenlik kapısından geçmedi."
+            ),
+            "next_step": (
+                "İki bağımsız kaynak ekleyip yayınlama kapısını yeniden değerlendir."
+                if research_gate["action"] in ("DROP", "GATE")
+                else "Metni yeniden üret ve tekrar değerlendir."
+                if render_blocking else ""
+            ),
+        },
         "inauthentic": risk,
         "niche_gate": gate,
         "ai_disclosure": disclosure,
         "discovery_beast": discovery,
         "human_craft_reject": craft_reject,
         "human_craft_reason": craft_reason,
+        "research": research_gate,
         "fingerprint": hashlib.sha1(
             (plan.get("full_narration") or "")[:2000].encode("utf-8", "ignore")
         ).hexdigest()[:16],
     }
+
+
+def research_quality_gate(brief: Dict[str, Any]) -> Dict[str, Any]:
+    """Block factual publishing when the evidence contract is incomplete."""
+    if not brief:
+        return {"action": "GATE", "reason": "research_brief_missing", "ready": False}
+    from production.evidence import evaluate_evidence
+    result = evaluate_evidence(brief)
+    # Preserve the legacy DROP outcome for incomplete contracts. This is an
+    # internal publication hold, not a claim that YouTube forbids the topic.
+    if not result["ready"]:
+        result["action"] = "DROP"
+    return result
+
+
+def publication_decision(
+    plan: Dict[str, Any],
+    compliance: Dict[str, Any],
+    viewer_score: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return a render/review/drop decision; automatic YouTube publishing is disabled."""
+    if compliance.get("hard_fail"):
+        return {"action": "DROP", "reason": "compliance_hard_fail", "auto_publish": False}
+    if (compliance.get("research") or {}).get("action") != "ALLOW":
+        return {"action": "HUMAN_REVIEW", "reason": "research_not_ready", "auto_publish": False}
+    if (compliance.get("niche_gate") or {}).get("action") != "OK":
+        return {"action": "HUMAN_REVIEW", "reason": "risk_sensitive_niche", "auto_publish": False}
+    score = float((viewer_score or {}).get("score") or 0)
+    if score < 70:
+        return {"action": "HUMAN_REVIEW", "reason": "viewer_score_below_70", "auto_publish": False, "score": score}
+    if (compliance.get("ai_disclosure") or {}).get("disclosure_required") or any(
+        plan.get(key) for key in ("uses_photoreal_ai", "uses_altered_real_event", "uses_real_person_synthetic", "uses_synthetic_persona")
+    ):
+        return {"action": "HUMAN_REVIEW", "reason": "synthetic_media_disclosure", "auto_publish": False, "score": score}
+    return {"action": "RENDER_ALLOWED", "reason": "quality_gates_passed_manual_upload_only", "auto_publish": False, "score": score}
+
+
+def _jsonable(value: Any) -> Any:
+    """Convert pydantic/dataclass-like values into JSON-safe structures."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if hasattr(value, "dict") and callable(value.dict):
+        return value.dict()
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def manual_upload_checklist(*, ai_disclosure: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Checklist for a human Studio upload; no engagement automation is included."""
+    disclosure = ai_disclosure or {}
+    return [
+        {"id": "rights", "label": "Verify every visual/audio license and attribution", "required": True},
+        {"id": "sources", "label": "Confirm source_manifest and credits are complete", "required": True},
+        {"id": "research", "label": "Review claims, quotes, and policy snapshot", "required": True},
+        {"id": "title_description", "label": "Review title, description, and hashtags for accuracy", "required": True},
+        {"id": "ai_disclosure", "label": "Set Studio altered/synthetic content answer", "required": True,
+         "answer": "YES" if disclosure.get("disclosure_required") else "NO"},
+        {"id": "audience", "label": "Set audience and made-for-kids setting manually", "required": True},
+        {"id": "upload", "label": "Upload in YouTube Studio and inspect the preview", "required": True},
+        {"id": "engagement", "label": "Do not automate views, likes, comments, hearts, or subscriptions", "required": True},
+    ]
+
+
+def export_output_package(
+    output_dir: str,
+    *,
+    video_path: str,
+    title: str,
+    description: str = "",
+    tags: Optional[Sequence[str]] = None,
+    research_brief: Optional[Dict[str, Any]] = None,
+    source_manifest: Any = None,
+    compliance: Optional[Dict[str, Any]] = None,
+    viewer_score: Optional[Dict[str, Any]] = None,
+    ai_disclosure: Optional[Dict[str, Any]] = None,
+    thumbnail_path: Optional[str] = None,
+    language: str = "tr",
+) -> Dict[str, Any]:
+    """Write an auditable manual-upload package next to a rendered video."""
+    video = Path(video_path)
+    if not video.is_file():
+        raise FileNotFoundError(f"Rendered video not found: {video_path}")
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    disclosure = ai_disclosure or (compliance or {}).get("ai_disclosure") or ai_disclosure_block(lang=language)
+    manifest = _jsonable(source_manifest or {"version": 1, "clips": []})
+    if not isinstance(manifest, dict):
+        manifest = {"version": 1, "clips": manifest}
+    manifest.setdefault("version", 1)
+    manifest.setdefault("generated_at", datetime.now(timezone.utc).isoformat())
+    manifest.setdefault("clips", [])
+
+    credits = []
+    for clip in manifest.get("clips") or []:
+        license_data = clip.get("license") or {}
+        credits.append({
+            "asset_id": clip.get("asset_id") or clip.get("uid"),
+            "provider": clip.get("source"),
+            "title": clip.get("title", ""),
+            "contributor": clip.get("contributor", "") or license_data.get("author", ""),
+            "source_url": clip.get("url") or license_data.get("source_url", ""),
+            "license": license_data.get("license", ""),
+            "license_url": license_data.get("license_url", ""),
+            "attribution_required": bool(license_data.get("needs_attribution")),
+        })
+
+    policy_snapshot = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "youtube": {
+            "ypp": "https://support.google.com/youtube/answer/1311392",
+            "synthetic_media": disclosure.get("policy_url", "https://support.google.com/youtube/answer/14328491"),
+            "community_guidelines": "https://www.youtube.com/howyoutubeworks/policies/community-guidelines/",
+        },
+        "automatic_upload": False,
+        "ai_disclosure": disclosure,
+    }
+    package = {
+        "package_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "video": {
+            "path": os.path.relpath(video, root),
+            "filename": video.name,
+            "sha256": _sha256_file(video),
+        },
+        "thumbnail": {"path": os.path.relpath(thumbnail_path, root) if thumbnail_path and os.path.exists(thumbnail_path) else None},
+        "title": title[:100],
+        "description": sanitize_seo_description(description),
+        "tags": [str(tag).lstrip("#") for tag in (tags or [])][:30],
+        "language": language,
+        "automatic_upload": False,
+        "manual_upload_required": True,
+        "ai_disclosure": disclosure,
+        "compliance": _jsonable(compliance or {}),
+        "viewer_score": _jsonable(viewer_score or {}),
+    }
+    files = {
+        "source_manifest": root / "source_manifest.json",
+        "visual_credits": root / "visual_credits.json",
+        "policy_snapshot": root / "policy_snapshot.json",
+        "ai_disclosure": root / "ai_disclosure.json",
+        "manual_upload_checklist": root / "manual_upload_checklist.json",
+        "package_manifest": root / "package_manifest.json",
+    }
+    files["source_manifest"].write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    files["visual_credits"].write_text(json.dumps({"credits": credits}, ensure_ascii=False, indent=2), encoding="utf-8")
+    files["policy_snapshot"].write_text(json.dumps(policy_snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    files["ai_disclosure"].write_text(json.dumps(disclosure, ensure_ascii=False, indent=2), encoding="utf-8")
+    checklist = manual_upload_checklist(ai_disclosure=disclosure)
+    files["manual_upload_checklist"].write_text(json.dumps({"items": checklist}, ensure_ascii=False, indent=2), encoding="utf-8")
+    package["files"] = {name: str(path) for name, path in files.items()}
+    files["package_manifest"].write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
+    credit_lines = ["Visual/audio credits"] + [
+        f"- {c['title'] or c['asset_id']} — {c['provider']} — {c['license']} — {c['source_url']}"
+        for c in credits
+    ]
+    (root / "visual_credits.txt").write_text("\n".join(credit_lines) + "\n", encoding="utf-8")
+    (root / "manual_upload_checklist.txt").write_text(
+        "\n".join(f"[ ] {item['label']}" + (f" ({item['answer']})" if item.get("answer") else "") for item in checklist) + "\n",
+        encoding="utf-8",
+    )
+    package["files"].update({"visual_credits_txt": str(root / "visual_credits.txt"), "manual_upload_checklist_txt": str(root / "manual_upload_checklist.txt")})
+    files["package_manifest"].write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
+    return package

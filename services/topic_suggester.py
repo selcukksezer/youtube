@@ -6,6 +6,7 @@ feeds, topic intelligence validation, and deduplication against recent assets.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from collections import Counter
@@ -17,6 +18,8 @@ from director.visual_intent import resolve_topic_intelligence
 from niche_templates import NICHES, get_niche_production_profile
 from research_service import extract_format_fingerprint_from_title
 from trending_scanner import scan_youtube_shorts_trends
+
+logger = logging.getLogger(__name__)
 
 SOURCE_YOUTUBE = "youtube"
 SOURCE_AI = "ai"
@@ -80,8 +83,8 @@ def _collect_used_topics() -> Set[str]:
             if kw:
                 used.add(_slugify_topic(kw))
                 used.add(kw.casefold())
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("recent topic list unavailable: %s", exc)
     return used
 
 
@@ -252,8 +255,8 @@ def _generate_ai_candidates(
                     for t in titles
                     if isinstance(t, str) and 8 <= len(t.strip()) <= 160
                 ]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("topic AI fallback to templates: %s", exc)
     return _template_fallback_candidates(niche_id)
 
 

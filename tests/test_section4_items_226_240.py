@@ -86,8 +86,10 @@ class TestSection4Items226240(unittest.TestCase):
         self.assertTrue("sürpriz" in twist.lower() or "ters" in twist.lower())
 
     def test_item_240_trigger_name_injection(self):
-        hook = ViralRetentionEngine.inject_trigger_name_hook("Zihnini kontrol et.", topic="Disiplin", lang="tr")
-        self.assertTrue(any(n in hook for n in ViralRetentionEngine.TRIGGER_NAMES))
+        hook = "Zihnini kontrol et."
+        out = ViralRetentionEngine.inject_trigger_name_hook(hook, topic="Disiplin", lang="tr")
+        self.assertEqual(out, hook)
+        self.assertNotIn("hakkında söylediği", out)
 
     def test_item_240_skips_religious_topics(self):
         hook = "Hz Peygamberin duası kalpleri yumuşatır."

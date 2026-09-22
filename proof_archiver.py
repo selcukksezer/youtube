@@ -227,7 +227,7 @@ Notice how my projects are NOT automated compilations:
 
 ---
 
-### [3:45 - 5:00] HUMAN TRANSFORMATION & FINAL APPEAL
+### [3:45 - 5:00] HUMAN TRANSFORMATION, FAIR USE & VALUE TO THE COMMUNITY
 (Switch back to talking head camera)
 "As you can see, every video on {channel_name} represents significant human creative effort, transformative storytelling, and rigorous video engineering.
 We strictly follow YouTube Community Guidelines and Fair Use principles.

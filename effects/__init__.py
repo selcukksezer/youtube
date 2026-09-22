@@ -92,6 +92,7 @@ from .overlays import (
     apply_split_choice_overlay,
     apply_subtitle_bar_overlay,
     apply_hybrid_render_overlay,
+    apply_interactive_quiz_overlay,
 )
 from .pipeline import (
     apply_anti_duplicate,
@@ -195,6 +196,7 @@ __all__ = [
     "apply_split_choice_overlay",
     "apply_subtitle_bar_overlay",
     "apply_hybrid_render_overlay",
+    "apply_interactive_quiz_overlay",
     # pipeline
     "apply_anti_duplicate",
     "apply_mirror_and_pitch",

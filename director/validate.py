@@ -39,9 +39,10 @@ def validate_director_plan(plan: DirectorPlan) -> Dict[str, Any]:
     if not (plan.full_narration or "").strip():
         errors.append("full_narration boş")
 
+    from .schema import shorts_word_budget
+
     word_count = len((plan.full_narration or "").split())
-    # Intelligibility: ~2.45 wps; warn only if words exceed the 60s cap (~172).
-    cap_words = int(qt.max_duration * 2.5 * qt.max_audio_speed)
+    cap_words = shorts_word_budget(qt.max_duration, qt.max_audio_speed)
     if word_count > int(cap_words * 1.05):
         warnings.append(
             f"Narration {word_count} kelime; ~{cap_words} tavan (60s) — TTS 60s'i aşabilir"

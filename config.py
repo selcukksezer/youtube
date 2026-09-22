@@ -154,8 +154,8 @@ PIXABAY_API_KEY = os.getenv("PIXABAY_API_KEY", "")
 # ══════════════════════════════════════════════════════════════
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
-MIN_DURATION = 60
-MAX_DURATION = 120
+MIN_DURATION = 45
+MAX_DURATION = 60
 SCENE_CLIP_MIN = 5
 SCENE_CLIP_MAX = 10
 FPS = 30

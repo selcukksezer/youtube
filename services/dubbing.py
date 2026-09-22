@@ -6,8 +6,11 @@ Auto YouTube upload remains out of scope — this produces a render-ready langua
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # Minimal offline glossary for TR→EN smoke paths when LLM unavailable
 _TR_EN_GLOSS = {
@@ -54,8 +57,8 @@ def translate_text(text: str, source_lang: str = "tr", target_lang: str = "en") 
             ok, out = generate_text(prompt)
             if ok and out and isinstance(out, str) and len(out.strip()) > 2:
                 return out.strip().strip('"')
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("dubbing translate fallback to glossary: %s", exc)
     return _simple_glossary_translate(plain, tgt)
 
 

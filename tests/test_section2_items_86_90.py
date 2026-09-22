@@ -52,18 +52,17 @@ class TestSection2Items86To90(unittest.TestCase):
         self.assertAlmostEqual(total_adj, 48.0, delta=0.5)
 
     def test_item_89_cinematic_search_adjectives(self):
-        """Item 89 (2026): shot grammar — strip cinematic/4k soup, keep light cues."""
+        """Item 89: strip cinematic/4k soup. Do not invent light or a generic fallback."""
         generic_queries = ["man walking in street", "ocean waves", "city traffic"]
         enriched = enrich_cinematic_search_queries(generic_queries, mood="epic")
+        self.assertEqual(enriched, generic_queries)
         for q in enriched:
             low = q.lower()
             self.assertNotIn("cinematic", low)
             self.assertNotIn("4k", low)
             self.assertNotIn("atmospheric", low)
-            has_shot_cue = any(
-                w in low for w in ["light", "aerial", "macro", "dawn", "dusk", "night", "close"]
-            )
-            self.assertTrue(has_shot_cue, f"Query '{q}' should keep concrete shot cue")
+        self.assertEqual(enrich_cinematic_search_queries(["cinematic 4k atmospheric"]), [])
+        self.assertEqual(enrich_cinematic_search_queries([]), [])
 
     def test_item_90_hallucination_control(self):
         """Item 90: Detects impossible future dates and blatant chronological contradictions."""

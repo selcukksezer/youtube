@@ -127,6 +127,21 @@ NICHE_MOTIFS: Dict[str, Dict[str, Any]] = {
             "prophet face", "muhammad face", "face of prophet",
         ],
     },
+    "9_five_facts": {
+        "motif": "classroom_science",
+        "era": "contemporary",
+        "mood": "curious clear",
+        "subjects": [
+            "open textbook classroom desk",
+            "frozen lake iceberg winter",
+            "classroom skeleton model",
+            "honey jar close up",
+            "ocean waves surface",
+            "storm lightning strike",
+        ],
+        "must_include": ["classroom", "science", "nature"],
+        "must_exclude": ["horror", "skull", "ghost", "bitcoin", "infographic"],
+    },
 }
 
 _DEFAULT_MOTIF = {
@@ -300,6 +315,7 @@ TOPIC_NICHE_LOCK: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"emoji quiz|emoji oyunu|guess the movie emoji", re.I), "22_emoji_guess_game"),
     (re.compile(r"ünlü serveti|net worth|zengin ünlü|celebrity fortune", re.I), "25_celebrity_net_worth"),
     (re.compile(r"tehlikeli yerler|yasak bölge|forbidden places|ölümcül ada", re.I), "26_dangerous_places"),
+    (re.compile(r"canlı quiz|interaktif quiz|quiz shorts|3 saniyede bil", re.I), "37_interactive_quiz"),
     (re.compile(r"optik illüzyon|zeka testi|optical illusion|iq test", re.I), "29_optical_illusions_iq"),
     (re.compile(r"nazım hikmet|cemal süreya|aşk şiiri|şiir dinle", re.I), "30_poetry_quotes"),
     (re.compile(r"tüketici hakları|iade hakkı|hukuki hak|vatandaş hakkı", re.I), "32_legal_consumer_hacks"),
@@ -532,6 +548,7 @@ def _intent_for_subject(
     bank: Dict[str, Any],
     subject: str,
     scene_index: int,
+    locked: bool = False,
 ) -> VisualIntent:
     existing_q = scene.search_queries or []
     exclude = [e.lower() for e in bank.get("must_exclude", [])]
@@ -545,11 +562,20 @@ def _intent_for_subject(
     palette = bank.get("mood_palette") or []
     scene_mood = palette[scene_index % len(palette)] if palette else str(bank.get("mood", "cinematic"))
 
-    queries = [
-        f"{subject} cinematic 4k",
-        f"{subject} {scene_mood} atmospheric",
-        f"{bank.get('era', '')} {subject}".strip(),
-    ]
+    # Shot grammar only. "cinematic 4k" and "atmospheric" are stock-search
+    # noise: they return pretty unrelated clips and get stripped later.
+    if locked:
+        queries = [
+            subject,
+            f"{subject} close up",
+            f"{subject} wide shot",
+        ]
+    else:
+        queries = [
+            subject,
+            f"{subject} {scene_mood}",
+            f"{bank.get('era', '')} {subject}".strip(),
+        ]
     for q in clean_existing[:2]:
         if q not in queries:
             queries.append(q)
@@ -574,6 +600,18 @@ def build_visual_intent_for_scene(
     scene_index: int = 0,
 ) -> VisualIntent:
     bank = get_motif_bank(niche_id)
+    # The sentence wins. The title fills a sentence that names nothing filmable.
+    # Niche motif (ocean, marble, fog) is only the fallback.
+    from visuals.subject_lock import match_shot
+
+    shot = match_shot(scene.narration or "")
+    if shot is None:
+        shot = match_shot(scene.scene_description or "")
+    if shot is None and title:
+        shot = match_shot(title)
+    if shot is not None:
+        return _intent_for_subject(scene, bank, shot.primary, scene_index, locked=True)
+
     subjects: List[str] = list(bank.get("subjects") or _DEFAULT_MOTIF["subjects"])
     subject = subjects[scene_index % len(subjects)]
 
@@ -583,7 +621,7 @@ def build_visual_intent_for_scene(
             subject = cand
             break
 
-    return _intent_for_subject(scene, bank, subject, scene_index)
+    return _intent_for_subject(scene, bank, subject, scene_index, locked=False)
 
 
 def _fork_distinct_from_previous(
@@ -596,6 +634,11 @@ def _fork_distinct_from_previous(
     """Rotate motif when split siblings would share subject + queries (P0-06)."""
     if intent.subject != prev.subject or intent.search_queries != prev.search_queries:
         return intent
+    # Same real subject on a split: change the angle, not the object.
+    from visuals.subject_lock import next_variant
+    alt_shot = next_variant(intent.subject, scene_index)
+    if alt_shot and alt_shot != prev.subject:
+        return _intent_for_subject(scene, bank, alt_shot, scene_index, locked=True)
     subjects: List[str] = list(bank.get("subjects") or _DEFAULT_MOTIF["subjects"])
     for offset in range(1, len(subjects)):
         alt = subjects[(scene_index + offset) % len(subjects)]
@@ -617,12 +660,20 @@ def apply_visual_intents(scenes: List[ScenePlan], niche_id: str, title: str = ""
             )
         scene.visual_intent = intent
         exclude = list(intent.must_exclude or [])
+        from visuals.subject_lock import family_of_phrase, query_matches_clip
+        locked_family = family_of_phrase(intent.subject)
         if scene.search_queries and (scene.narration or "").strip():
-            # Keep AI/fallback queries when narration exists; drop excluded tokens
             merged = [q for q in scene.search_queries if not text_contains_excluded(q, exclude)]
             for q in intent.search_queries:
                 if q not in merged and not text_contains_excluded(q, exclude):
                     merged.append(q)
+            if locked_family is not None:
+                on_subject = [
+                    q for q in merged
+                    if query_matches_clip(intent.subject, q) or query_matches_clip(q, intent.subject)
+                ]
+                if on_subject:
+                    merged = on_subject
             scene.search_queries = (merged[:4] or list(intent.search_queries))
         else:
             scene.search_queries = intent.search_queries

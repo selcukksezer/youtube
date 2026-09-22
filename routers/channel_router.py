@@ -3,7 +3,7 @@ Channel onboarding, anti-detect warmup, and Studio UI automation router.
 """
 from typing import Optional, List
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import database
 from channel_onboarding_bot import channel_bot
 from server_core import broadcast_event
@@ -30,7 +30,7 @@ class ChannelStudioUploadRequest(BaseModel):
     video_path: str
     title: str
     description: Optional[str] = ""
-    tags: Optional[List[str]] = []
+    tags: Optional[List[str]] = Field(default_factory=list)
     scheduled_hour: Optional[int] = 18
 
 
@@ -82,7 +82,7 @@ def run_studio_upload_endpoint(req: ChannelStudioUploadRequest):
         title=req.title,
         description=req.description or "",
         tags=req.tags or [],
-        scheduled_hour=req.scheduled_hour or 18,
+        scheduled_hour=req.scheduled_hour if req.scheduled_hour is not None else 18,
         log_callback=log_handler
     )
     return result

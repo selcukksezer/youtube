@@ -1031,11 +1031,46 @@ NICHES: Dict[str, Dict[str, Any]] = {
             "real child face", "photoreal kid", "violence", "horror",
             "jump scare", "dark psychology", "sexualization", "weapons"
         ],
+    },
+    "37_interactive_quiz": {
+        "id": "37_interactive_quiz",
+        "name": "İnteraktif Canlı Quiz & Zeka Testi (Madde 97)",
+        "name_en": "Interactive Quiz & Brain Challenge",
+        "category": "Oyun & Zeka",
+        "tone": "challenging, energetic, fast, ticking",
+        "hook_style": "İnsanların %95'i bu soruda eleniyor! 3 saniyen var, doğru cevabı bil!",
+        "system_instruction": (
+            "İnteraktif bir canlı yarışma sunucusu gibi konuş. Soru sor, izleyiciye 3 saniye süre ver "
+            "('3, 2, 1...'), ardından şaşırtıcı doğru cevabı ve nedenini açıkla. "
+            "Kapanışta izleyiciden kaç doğru yaptığını yoruma yazmasını iste. Yüksek etkileşim ve tam tamamlama hedefle."
+        ),
+        "default_music": "energetic",
+        "has_split_screen": True,
+        "icon": "fa-circle-question",
+        "color_palette": "neon_quiz",
+        "rpm_tier": "$5-10",
+        "viral_score": 95,
+        "avg_retention_pct": 88,
+        "competition_level": "medium",
+        "best_posting_time": "17:00-21:00 TRT",
+        "cta_type": "comment",
+        "tier1_compatible": True,
+        "episodic_capable": True,
+        "loop_formula": "score_challenge",
+        "trending_keywords": [
+            "quiz", "quiz shorts", "zeka testi", "3 saniyede bil", "challenge",
+            "doğru mu yanlış mı", "tahmin et", "brain teaser"
+        ],
+        "ab_test_hook_variants": [
+            "İnsanların %95'i bu soruda eleniyor! 3 saniyen var, doğru cevabı bil!",
+            "Beynini test etmeye hazır mısın? Sadece dahiler 3'te 3 yapabiliyor!",
+            "Bu soruyu Google'lamadan bilebilecek misin? Süren başladı!"
+        ],
     }
 }
 
 
-# P1-01: competitor-format scene structures keyed by niche family (all 35)
+# P1-01: competitor-format scene structures keyed by niche family (all 37)
 NICHE_FAMILY_MAP: Dict[str, str] = {
     "1_news_flash": "news",
     "2_reddit_confessions": "reddit",
@@ -1073,6 +1108,7 @@ NICHE_FAMILY_MAP: Dict[str, str] = {
     "34_gaming_easter_eggs": "entertainment",
     "35_animal_kingdom_stories": "entertainment",
     "36_kids_animation": "kids",
+    "37_interactive_quiz": "quiz",
 }
 
 # Item 273 shock/horror queries only for these families
@@ -1388,7 +1424,9 @@ def get_scenario_pack(niche_key: str, language: str = "tr") -> Dict[str, Any]:
     try:
         from director.visual_intent import get_motif_bank
         bank = get_motif_bank(key)
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("motif bank unavailable for %s: %s", key, exc)
         bank = {}
     exclude = list(bank.get("must_exclude") or [])
     include = list(bank.get("must_include") or [])
@@ -1456,8 +1494,14 @@ YASAK GÖRSELLER (must_exclude): {forbidden}
 NİŞ ÖZEL TALİMATI:
 {pack['system_instruction']}
 {struct_block}
+ANLAM KURALLARI (zorunlu):
+- Konu yalnızca şu: "{topic}". Başka bir videonun başlığını, örnek kancayı veya hazır şablonu anlatım yapma.
+- Her sahne yeni bir bilgi söyler. Başlığın tamamını sahnenin içine yapıştırma. Aynı 4 kelimeyi bir sahnede iki kez yazma.
+- Konuda adı geçmeyen kişiye söz atfetme. "X'ın {topic} hakkında söylediği söz" kalıbı yasak.
+- "İddia şu: [başlığın tamamı]" ve "İlk kontrol: [başlık] iddiasını ders kitabı ile karşılaştır" kalıpları yasak. İzleyiciye o konunun kendisini anlat.
+
 3. İLK 3 SANİYE KANCASI (VIRAL HOOK - Sahne 1):
-   Örnek Hook tarzı: "{pack['hook_style']}"
+   Örnek yalnızca ritim içindir, metne kopyalama: "{pack['hook_style']}"
 
 4. SONSUZ DÖNGÜ, TARTIŞMA VE CTA (SEAMLESS LOOP - son sahne):
    Son sahne 1. sahneye bağlanan döngü + yorum sorusu içermeli.
@@ -1476,8 +1520,14 @@ FORBIDDEN VISUALS (must_exclude): {forbidden}
 NICHE SPECIFIC INSTRUCTION:
 {pack['system_instruction']}
 {struct_block}
+SENSE RULES (mandatory):
+- The only topic is "{topic}". Do not paste an example hook or another video's title into the script.
+- Each scene adds a new fact. Never paste the full title into a scene, and never repeat the same four words twice in one scene.
+- Do not attribute a quote to a person the topic does not name.
+- Forbidden patterns: "The claim is: [full title]" and "Check [full title] against a textbook". Tell the subject itself.
+
 3. FIRST 3-SECOND VIRAL HOOK (Scene 1):
-   Reference: "{pack['hook_style']}"
+   Rhythm reference only, do not copy: "{pack['hook_style']}"
 
 4. SEAMLESS LOOP & CTA (last scene):
    Last scene must flow back into Scene 1 and ask a debate question.
@@ -1524,7 +1574,7 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
     policy = overlay_policy_for_niche(niche.get("id", niche_id))
     music_terms = {
         "dramatic": "dramatic", "mysterious": "mysterious", "lofi": "lofi",
-        "energetic": "energetic", "epic": "epic"
+        "energetic": "energetic", "epic": "epic", "calm": "calm", "kids": "kids",
     }
     profile: Dict[str, Any] = {
         "id": niche["id"],
@@ -1555,6 +1605,23 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
         "overlay_policy": policy,
         "effect_manifest_overrides": dict(policy["effect_manifest_overrides"]),
     }
+    family = policy.get("family") or ""
+    # Dark/mystery keep the tension bed. Everyone else stays narration-forward.
+    if family in ("dark", "mystery"):
+        profile["effect_manifest_overrides"].update({
+            "item_108_pink_noise": True,
+            "item_112_whoosh_ding": True,
+            "item_141_breaths": True,
+            "item_157_heartbeat": True,
+        })
+    elif niche_id != "6_stoic_philosophy":
+        profile["audio_rules"] = {
+            "sparse_transitions": True,
+            "max_transition_sfx": 2,
+            "whoosh_volume": 0.07,
+            "enable_sub_impact": False,
+            "enable_tape_stop": False,
+        }
     # P0-07: stoic/calm niches — lighter audio publish profile
     if niche_id == "6_stoic_philosophy":
         profile["effect_manifest_overrides"].update(STOIC_EFFECT_MANIFEST_OVERRIDES)

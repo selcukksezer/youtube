@@ -87,15 +87,48 @@ def _pad_narration_to_min_words(text: str, min_words: int = 10, *, is_tr: bool =
     try:
         from scenes.narration_validate import normalize_narration_for_validation, scene_narration_usable
         raw = (text or "").strip()
+        # Fallbacks must remain natural narration. Strip emoji and mechanical
+        # engagement bait before timing and word-count validation.
+        raw = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27bf\ufe00-\ufe0f]", "", raw)
+        raw = re.sub(
+            r"\s*(?:yorumlarda paylaşın|yorumlara yazın|takipte kalın|abone olun|like ve subscribe|subscribe)\s*[.!?]*",
+            " ", raw, flags=re.I,
+        )
+        raw = re.sub(r"\s+", " ", raw).strip()
+        # Generic padding must never remain in final narration. It can land
+        # inside a quote after a sentence normalizer and create an open quote
+        # or a false clause boundary.
+        raw = re.sub(r"\s+B\u0075nu hafta boyunca akl\u0131nda tut\.?", ".", raw, flags=re.I)
+        raw = re.sub(r"\s+Bunu\s+hafta\s+boyunca\s+aklında\s+tut\.?", ".", raw, flags=re.I)
+        raw = re.sub(r"\s+Keep this in mind throughout the week\.?", ".", raw, flags=re.I)
+        raw = re.sub(r"\.{2,}", ".", raw)
+        if raw.count("'") % 2 == 1:
+            raw = raw + "'"
+        if raw and raw[-1] not in ".!?":
+            raw += "."
         if scene_narration_usable(raw):
             return raw
         norm = normalize_narration_for_validation(raw).rstrip(".!? ")
-        pad = "Bunu hafta boyunca aklında tut." if is_tr else "Keep this in mind throughout the week."
-        combined = f"{norm} {pad}".strip() if norm else pad
+        pad = (
+            "Bu iddianın kaynağını kontrol et ve bağlamını oku."
+            if is_tr else
+            "Check the source of this claim and read its full context."
+        )
+        # Keep complete source sentences intact. The old generic padding was
+        # appended after a closing quote, producing broken lines such as
+        # `Seneca: '...' Bunu hafta boyunca aklında tut.`
+        if norm and re.search(r"[.!?]$", norm):
+            extra = (
+                "Bu, sessiz kalmanın gücünü hatırlatır."
+                if is_tr else "That is the power of deliberate silence."
+            )
+            combined = f"{norm} {extra}".strip()
+        else:
+            combined = f"{norm} {pad}".strip() if norm else pad
         if combined[-1] not in ".!?":
             combined += "."
         if len(normalize_narration_for_validation(combined).split()) < min_words:
-            extra = "Detayları kaçırmamak için takipte kal." if is_tr else "Stay tuned so you do not miss the details."
+            extra = "Bu ayrıntı, anlatının geri kalanını anlamak için gerekli." if is_tr else "That detail is necessary to understand the rest of the story."
             combined = f"{combined.rstrip('.!? ')} {extra}."
         return combined
     except Exception:
@@ -106,6 +139,29 @@ def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
     scenes = plan.get("scenes") or []
     for sc in scenes:
         sc["narration"] = _pad_narration_to_min_words(sc.get("narration") or "", is_tr=is_tr)
+        # Final invariant: no mechanical padding token in published narration.
+        sc["narration"] = re.sub(
+            r"\s+Bunu\s+hafta\s+boyunca\s+aklında\s+tut\.?", ".",
+            sc["narration"], flags=re.I,
+        )
+        if sc["narration"].count("'") % 2 == 1:
+            sc["narration"] += "'"
+        sc["narration"] = sc["narration"].replace(".' .", ".'").replace(".'.", ".'")
+        if sc["narration"] and sc["narration"][-1] not in ".!?":
+            sc["narration"] += "."
+        vi = sc.get("visual_intent") if isinstance(sc.get("visual_intent"), dict) else {}
+        description = str(sc.get("scene_description") or "").strip()
+        sc["visual_intent"] = {
+            **vi,
+            "subject": vi.get("subject") or description[:80],
+            "action": vi.get("action") or "move or change visibly",
+            "setting": vi.get("setting") or "real world location",
+            "lighting": vi.get("lighting") or sc.get("mood") or "natural light",
+            "visual_priority": vi.get("visual_priority") or "subject",
+            "must_exclude": list(vi.get("must_exclude") or []),
+        }
+        sc.setdefault("claim_ids", [])
+        sc.setdefault("evidence_required", False)
     n = len(scenes)
     if n:
         try:
@@ -227,7 +283,7 @@ def _generate_reddit_confession_scenes(clean_title: str, combined_text: str, is_
             ("Embarrassed person covering face in pure humiliation and shock", ["embarrassed person facepalm", "humiliated face laptop", "regret panic sitting desk"]),
             ("Finger slamming laptop screen shut abruptly in dark room", ["closing laptop screen sudden", "shutting laptop lid panic", "walking away computer desk"]),
             ("Smartphone vibrating continuously with flurry of incoming messages", ["phone buzzing with notifications", "text messages blowing up", "office drama smartphone"]),
-            ("Engaging video outro inviting debate and audience comments", ["youtube shorts interaction ending", "like comment subscribe banner", "dramatic sunset silhouette"])
+            ("Engaging video outro inviting debate and audience reflection", ["dramatic reflective city dusk", "thoughtful person looking at skyline silhouette", "cinematic closing shot window light"])
         ]
 
     # 2. Wedding & Secret Debt Theme
@@ -332,7 +388,7 @@ def _generate_reddit_confession_scenes(clean_title: str, combined_text: str, is_
             ("Silhouette standing in cool night breeze feeling liberated", ["standing in night breeze", "freedom relief smile", "city night skyline view"]),
             ("Finger tapping 'Block Contact' on smartphone screen", ["blocking phone contact", "deleting social connection", "digital boundary firm"]),
             ("Walking forward alone under bright warm city streetlights", ["walking forward city lights", "confident stride night", "peaceful solitary path"]),
-            ("Direct camera gaze asking viewer verdict and call to action", ["direct camera engagement", "youtube shorts ending card", "like comment subscribe"])
+            ("Direct camera gaze asking viewer verdict and call to action", ["confident solitary person walking into city night", "cinematic dusk highway lights", "reflective quiet street lamppost"])
         ]
 
     # 5. General viral confession
@@ -351,7 +407,7 @@ def _generate_reddit_confession_scenes(clean_title: str, combined_text: str, is_
             "İhaneti affetmek zayıflık, arkana bakmadan yürüyüp gitmek ise gerçek güçtür.",
             "Yalnız kalmaktan korkmadım ve kendi hayatımın kontrolünü elime aldım.",
             "Şimdi hayatımın en huzurlu dönemindeyim ve doğru olanı yaptığımı biliyorum.",
-            "Siz olsaydınız bu durumda ne yapardınız? Yorumlarda buluşalım ve abone olmayı unutmayın!"
+            "Siz olsaydınız bu durumda ne yapardınız? İnsan bazen en büyük kararları sessizce almak zorunda kalıyor."
         ]
         visuals = [
             ("Moody cinematic portrait in dark room with mysterious rim light", ["cinematic portrait moody dark", "mysterious person silhouette", "shadow dramatic face"]),
@@ -441,7 +497,7 @@ def _generate_news_flash_scenes(clean_title: str, is_tr: bool):
         ("Police investigation line and security detail perimeter cordons", ["investigation security perimeter", "official investigation team", "forensic inspection scene"]),
         ("Live television broadcasting satellite van on location", ["broadcast satellite truck", "live reporting camera van", "media journalists crowd"]),
         ("Dramatic sunset horizon casting long shadows over modern city", ["dramatic sunset horizon city", "urban skyline sunset golden", "cinematic future horizon"]),
-        ("YouTube shorts ending screen with subscribe button and debate call", ["news channel outro banner", "subscribe bell follow icon", "breaking news closing"])
+        ("YouTube shorts ending screen with reflective conclusion", ["broadcast television control room monitors dimming", "journalists leaving busy newsroom dusk", "cinematic evening cityscape news tower"])
     ]
     scenes = []
     for i in range(14):
@@ -478,136 +534,136 @@ def _build_stoic_narrations(clean_title: str, is_tr: bool, variation_seed: int =
     if is_tr:
         variants = [
             [
-                f"'{topic}' dediğinde çoğu kişi motivasyon arar; Stoacılar ise zihinsel disiplin arar.",
-                f"Marcus Aurelius Meditations'ta şunu yazar: '{topic}' gibi dış olaylar seni değil, verdiğin tepki tanımlar.",
-                "Kontrol edemediğin haberler, yorumlar ve başkalarının hüsranı senin huzurunu çalmak için gelmez.",
-                f"Seneca der ki acının çoğu gerçekte değil, '{topic}' hakkında kurduğun senaryolarda başlar.",
-                "Öfkeyi bir silah sanırsın ama o elinde tuttuğun kor ateştir; önce seni yakarsın.",
-                f"Bugün '{topic}' seni sarsarsa, nefes al — tepki vermeden önce üç saniye bekle.",
-                "Epiktetos: 'Seni inciten olay değil, o olaya yüklediğin anlamdır.'",
-                f"2000 yıllık felsefe şunu öğretir: {topic} senin kontrol alanın değil; tutumun kontrol alanındır.",
-                "Sabah aynaya bakıp şunu söyle: Bugün zor insanlar, gürültü ve belirsizlik göreceğim.",
-                "Onların davranışı senin karakterini değil; senin sabrını test eden antrenmandır.",
-                "Disiplin, iyi hissettiğinde değil; en çok dağılmak istediğinde doğru olanı seçmektir.",
-                f"'{topic}' kriz anında panik yerine prosedür seç: ne biliyorum, ne yapabilirim, neyi bırakmalıyım?",
-                "Zihnini eğitmezsen, algoritma ve kaos zihnini senin yerine yönetir.",
-                f"Peki '{topic}' karşısında bugün hangi stoacı cevabı seçeceksin? Yorumlarda yaz.",
+                f"{topic} konusu gündeme geldiğinde çoğu kişi anlık motivasyon arar; oysa Stoacılar zihinsel bir disiplin inşa eder.",
+                "Marcus Aurelius Meditations'ta şunu yazar: Karşılaştığın dış olaylar seni belirlemez, onlara verdiğin tepki belirler.",
+                "Kontrol edemediğin haberler, gürültü ve başkalarının öfkesi senin huzurunu çalmak zorunda değil.",
+                "Seneca'nın dediği gibi: Bizler gerçek hayattan çok, zihnimizde kurduğumuz felaket senaryolarında acı çekeriz.",
+                "Öfkeyi bir silah sanırsın ama o elinde tuttuğun kor ateştir; önce senin elini yakar.",
+                "Bugün seni sarsan bir gerilim olduğunda nefes al; tepki vermeden önce üç saniye dur.",
+                "Epiktetos şunu hatırlatır: 'Seni inciten olayların kendisi değil, o olaylara yüklediğin anlamdır.'",
+                f"İki bin yıllık felsefe şunu öğretir: {topic} senin kontrol alanın olmayabilir; fakat duruşun tamamen senin elindedir.",
+                "Güne başlarken şunu hatırla: Bugün zor insanlar, belirsizlik ve kaosla karşılaşabilirsin.",
+                "Onların davranışı senin değerini değil; senin sabrını test eden bir zihinsel antrenmandır.",
+                "Gerçek disiplin, iyi hissettiğinde değil; en çok dağılmak istediğinde doğru olanı seçmektir.",
+                "Kriz anında panik yerine prosedür seç: Ne biliyorum, neyi değiştirebilirim, neyi serbest bırakmalıyım?",
+                "Zihnini eğitmezsen, algoritmalar ve kaos senin yerine karar vermeye başlar.",
+                f"Zihnini korumayı seçtiğinde, dışarıdaki hiçbir fırtına senin merkezini sarsamaz.",
             ],
             [
-                f"Çoğu insan '{topic}' duyunca hemen çözüm ister; bilge insan önce sınırını çizer.",
-                "Marcus Aurelius: 'Gününü başkalarının hatasıyla zehirleme.'",
-                f"'{topic}' seni endişelendiriyorsa, liste yap: kontrol edebilirim / edemem.",
-                "Kontrol edemediklerin için harcadığın her dakika, hayatından çalınmış bir dakikadır.",
-                "Seneca: 'Mutluluk, dışarıda aranan bir şey değil; içeride inşa edilen bir alışkanlıktır.'",
-                f"Stres anında '{topic}' kelimesini tekrarlama; nefesini ve omuzlarını gevşet.",
-                "Epiktetos'un Dichotomy of Control'ü: ya eyleme geç ya da bırak.",
-                f"Antik Roma'da imparator bile '{topic}' karşısında sakin kalmayı antrenman sayardı.",
-                "Gürültülü dünyada sessizlik bir lüks değil; bilinçli bir savunma hattıdır.",
-                f"'{topic}' hakkındaki korkunu büyüten şey, kanıt değil — varsayımlarındır.",
-                "Disiplin spor salonu gibidir: her tekrar zihnini bir sonraki fırtınaya hazırlar.",
-                "Zorluk seni kırmak için gelmez; hangi değerlerin gerçek olduğunu göstermek için gelir.",
-                "Kendi sözleşmeni yaz: Bugün panik yok, sadece net adımlar.",
-                f"'{topic}' seni bugün yener mi, yoksa sen mi eğitirsin? Yorumlarda buluşalım.",
+                f"Çoğu insan {topic} karşısında hemen bir mucize bekler; bilge insan ise önce sınırını çizer.",
+                "Marcus Aurelius: 'Gününün huzurunu, başkalarının hatasıyla zehirleme.'",
+                "Seni endişelendiren şeyleri ikiye ayır: Kontrol edebildiklerim ve kontrolüm dışındakiler.",
+                "Kontrol edemediklerin için harcadığın her dakika, kendi hayatından çaldığın bir andır.",
+                "Seneca: 'Mutluluk dışarıda aranan bir ödül değil; içeride inşa edilen sessiz bir alışkanlıktır.'",
+                "Stres ve baskı anında nefesini yavaşlat, omuzlarını gevşet ve zihnini ana sabitle.",
+                "Epiktetos'un temel kuralı çok net: Ya eyleme geç ve çöz, ya da kabul edip serbest bırak.",
+                "Antik Roma'da imparatorlar bile en büyük krizlerde önce sükûneti korumayı antrenman sayardı.",
+                "Gürültülü bir dünyada sessizlik bir lüks değil; zihinsel bir savunma hattıdır.",
+                "Korkularını büyüten şey gerçekler değil, zihninin ürettiği abartılı varsayımlardır.",
+                "Disiplin zihnin kası gibidir: Her sakin kaldığın an, seni bir sonraki fırtınaya hazırlar.",
+                "Zorluklar seni yıkmak için gelmez; ne kadar sağlam durabildiğini sana göstermek için gelir.",
+                "Bugün kendine bir söz ver: Panik ve acele yok, sadece net ve soğukkanlı adımlar var.",
+                "Unutma: Dünya senin kontrolünde değil, ama duruşun tamamen senin elinde.",
             ],
             [
-                f"'{topic}' konusu viral olabilir; stoacı zihin ise kalıcı olmayı seçer.",
-                "Marcus Aurelius sabah günlüğünde kendine sorardı: Bugün hangi zayıf tepkilerim var?",
-                f"'{topic}' seni kızdırdığında, önce bedenini dinle: çene, omuz, kalp hızı.",
-                "Dış dünya değişmez; değişen tek şey olaylara verdiğin anlamdır.",
-                "Seneca: 'Bazen iyileşmek için konuşmayı bırakmak gerekir.'",
-                f"'{topic}' tartışmasına girmek zorunda değilsin; susmak da stratejidir.",
-                "Epiktetos: 'İnsanları değiştirmeye çalışma; kendi tepkini eğit.'",
-                f"2000 yıllık bilgelik '{topic}' için sihirli cevap vermez; sihirli alışkanlık verir.",
-                "Her sabah iki dakika: bugün neyi kabul ediyorum, neyi reddediyorum?",
-                "Başkalarının kaosu senin acil durumun değildir; sınır çizmek saygıdır.",
-                "Disiplin, duyguyu bastırmak değil; duyguyu yönetmek için pratik yapmaktır.",
-                f"'{topic}' geçer; senin bugün seçtiğin karakter kalır.",
-                "Zihnini koru — çünkü orası hayatının gerçek komuta merkezidir.",
-                "Bugün hangi stoacı alışkanlığı deneyeceksin? Yorumlarda paylaş.",
+                f"{topic} konusu etrafta bir fırtına koparabilir; fakat stoacı bir zihin kalıcı olanı seçer.",
+                "Marcus Aurelius sabahları kendine sorardı: Bugün hangi zayıf tepkilerimi dizginlemeliyim?",
+                "Öfke ve sabırsızlık hissettiğinde önce bedenini dinle: Çenen, nefesin ve kalp atışın.",
+                "Dış dünya aniden değişmez; değişebilecek tek şey senin olaylara verdiğin anlamdır.",
+                "Seneca der ki: 'Bazen ruhunu iyileştirmek için tartışmayı bırakıp sessizce uzaklaşmak gerekir.'",
+                "Her kavgaya girmek zorunda değilsin; susup odağını korumak da stratejik bir güçtür.",
+                "Epiktetos: 'İnsanları değiştirmeye çalışma; sadece kendi zihnini ve tepkilerini eğit.'",
+                "Kadim bilgelik sihirli reçeteler sunmaz; sadece sarsılmaz bir irade ve alışkanlık kazandırır.",
+                "Her gün kendine birkaç dakika ayır: Neyi kabul ediyorum, neye sınır çiziyorum?",
+                "Başkalarının yarattığı kaos senin acil durumun olmak zorunda değildir.",
+                "Duygularını bastırmak değil, onları bilinçle yönetip sakin bir güce dönüştürmek gerekir.",
+                "Günün krizleri gelir ve geçer; fakat sergilediğin karakter hayat boyu seninle kalır.",
+                "Kendi zihnini koru — çünkü hayatının gerçek komuta merkezi orasıdır.",
+                "Fırtına dindiğinde geriye kalan, en çok sabır ve disiplin gösteren insan olacaktır.",
             ],
             [
-                f"'{topic}' gibi konular beynini tehdit moduna sokar; stoacılık güven modunu inşa eder.",
-                "Marcus Aurelius: 'Engel yolun kendisidir.'",
-                f"'{topic}' seni gece uyutuyorsa, yarın sabah ilk işin kontrol listesi olsun.",
-                "Endişe, çözülmemiş problemlerin hayalidir; eylem, endişenin panzehiridir.",
-                "Seneca: 'Zamanımız dar; israf edersek hayat kısa gelir.'",
-                f"'{topic}' için harcadığın enerjiyi, yapabileceğin tek küçük adıma kaydır.",
-                "Epiktetos: 'Özgürlük, dış koşullara değil; iç kararlarına bağlıdır.'",
-                f"Antik felsefe '{topic}' sorusuna cevap değil; cevap verme biçimi öğretir.",
-                "Sabah rutini: telefon yok, üç derin nefes, bir net niyet cümlesi.",
-                "Başkalarının beklentisi senin görevin değil; kendi ahlaki pusulan görevindir.",
-                "Disiplin, motivasyon bittiğinde devreye giren gerçek sistemdir.",
-                f"'{topic}' fırtınası geçince ayakta kalan, en çok pratik yapan kişidir.",
-                "Zihnini eğit; yoksa gürültü senin yerine karar verir.",
-                f"'{topic}' karşısında stoacı cevabın ne? Yorumlarda tartışalım.",
+                f"{topic} gibi belirsizlikler zihnini tehdit moduna sokabilir; Stoacılık ise güvenli bir kale inşa eder.",
+                "Marcus Aurelius'un dediği gibi: 'Yolun önündeki engel, artık yolun kendisi olur.'",
+                "Eğer geceleri zihnini kurcalayan bir sorun varsa, ilk adım soğukkanlı bir eylem planıdır.",
+                "Endişe sadece çözümsüz varsayımların hayalidir; net bir eylem ise endişenin tek panzehiridir.",
+                "Seneca uyarır: 'Zamanımız aslında az değil; biz onu gereksiz kaygılarla israf ediyoruz.'",
+                "Tüketen kaygılara harcadığın enerjiyi, bugün atabileceğin tek bir somut adıma çevir.",
+                "Epiktetos: 'Gerçek özgürlük dış koşullara değil, kendi iç kararlarına bağlıdır.'",
+                "Felsefe sana hayatın tüm sorularının cevabını vermez; o sorular karşısında nasıl duracağını öğretir.",
+                "Sabah rutinine sadık kal: Derin bir nefes, net bir niyet ve sakin bir zihin.",
+                "Başkalarının beklentileri senin prangan olmak zorunda değil; kendi ahlaki pusulan tek rehberindir.",
+                "Motivasyon bittiğinde bile devam etmeni sağlayan tek güç sistemli disiplindir.",
+                "Fırtına dindiğinde ayakta kalanlar, kriz anında zihnine hâkim olmayı başaranlardır.",
+                "Zihnini eğit; yoksa çevrendeki gürültü senin kaderini belirler.",
+                "Bugün vereceğin soğukkanlı bir tepki, gelecekteki karakterinin temel taşıdır.",
             ],
         ]
         return variants[variant]
 
     en_variants = [
         [
-            f"When people hear '{topic}', they chase motivation — Stoics train mental discipline.",
-            f"Marcus Aurelius wrote: events like '{topic}' do not define you; your response does.",
-            "Other people's chaos is not a license to surrender your inner peace.",
-            f"Seneca warned we suffer more from stories about '{topic}' than from facts.",
-            "Anger feels like a weapon, but it is a coal that burns your hand first.",
-            f"If '{topic}' shakes you today, pause three seconds before reacting.",
-            "Epictetus: you are disturbed not by events, but by your judgment of them.",
-            f"Two thousand years of wisdom: '{topic}' is outside your control; attitude is inside.",
-            "Each morning expect noise, rude people, and uncertainty.",
-            "Their behavior tests your patience — not your identity.",
-            "Discipline is choosing the right action when you least feel like it.",
-            f"In a '{topic}' crisis, ask: what do I know, what can I do, what must I release?",
-            "Train your mind, or algorithms and chaos will train it for you.",
-            f"What Stoic response will you choose about '{topic}' today? Comment below.",
+            f"When people talk about {topic}, they often seek motivation — Stoics build quiet mental discipline.",
+            "Marcus Aurelius wrote: External events cannot touch the soul; only your reaction defines you.",
+            "Other people's chaos and anger are not an excuse to surrender your peace of mind.",
+            "Seneca warned that we suffer far more in imagination than in reality.",
+            "Anger feels like a weapon, but it is a burning coal that scorches your own hand first.",
+            "If tension rises today, pause three seconds before speaking or reacting.",
+            "Epictetus reminds us: You are disturbed not by things, but by the view you take of them.",
+            f"Two thousand years of philosophy teach this: {topic} may be beyond your control, but your attitude is yours.",
+            "Each morning expect noise, rude behavior, and unforeseen obstacles.",
+            "Their conduct tests your patience — it does not define your character.",
+            "Discipline is choosing what is right precisely when you least feel like doing it.",
+            "In moments of crisis, trade panic for clarity: What do I know, what can I change, what must I release?",
+            "Train your mind every single day, or the noise of the world will run it for you.",
+            "When you master your inner state, no storm outside can shake your center.",
         ],
         [
-            f"'{topic}' makes most people panic; the wise draw boundaries first.",
-            "Marcus Aurelius: do not poison your day with another person's fault.",
-            f"Worried about '{topic}'? Split a list: controllable vs uncontrollable.",
-            "Every minute spent on the uncontrollable is stolen from your life.",
-            "Seneca: happiness is a habit built inside, not found outside.",
-            f"When stressed about '{topic}', relax breath and shoulders before speaking.",
-            "Epictetus: act on what you control, release what you cannot.",
-            f"Even emperors practiced calm responses to shocks like '{topic}'.",
-            "Silence is not luxury — it is deliberate defense.",
-            f"Fear about '{topic}' grows from assumptions, not proof.",
-            "Discipline is repetition that prepares you for the next storm.",
-            "Hardship reveals which values are real.",
-            "Write a daily contract: no panic, only clear steps.",
-            f"Will '{topic}' defeat you today, or will you train through it? Comment.",
+            f"Most people panic when facing {topic}; the wise person draws boundaries first.",
+            "Marcus Aurelius: Do not poison your own day with someone else's mistake.",
+            "Divide everything in front of you: What you can control versus what you cannot.",
+            "Every minute wasted on things outside your power is stolen from your real life.",
+            "Seneca: Happiness is a habit cultivated within, not a trophy chased outside.",
+            "Under stress, drop your shoulders, steady your breathing, and root yourself in the present.",
+            "Epictetus: Either take purposeful action, or let it go with total peace.",
+            "Even Roman emperors treated sudden crises as training for inner poise.",
+            "In a frantic world, silence is not hesitation — it is deliberate mental defense.",
+            "Fear grows from unexamined assumptions, not from cold facts.",
+            "Discipline is steady repetition preparing you for the next inevitable storm.",
+            "Adversity does not come to destroy you; it comes to reveal what you are made of.",
+            "Make a clear pact today: No unnecessary panic, only deliberate steps forward.",
+            "The world is not in your control, but your character belongs entirely to you.",
         ],
         [
-            f"'{topic}' may trend; a Stoic mind chooses what endures.",
-            "Marcus Aurelius asked each morning: which weak reactions must I watch?",
-            f"When '{topic}' angers you, scan your body: jaw, shoulders, heartbeat.",
-            "The world may not change; your interpretation always can.",
-            "Seneca: sometimes healing begins when you stop arguing.",
-            f"You do not owe a debate about '{topic}' — silence is strategy.",
-            "Epictetus: train your response, not other people.",
-            f"Ancient wisdom offers no magic answer to '{topic}' — only habits.",
-            "Two minutes each morning: what do I accept, what do I refuse?",
-            "Someone else's chaos is not your emergency.",
-            "Discipline is practice, not suppression.",
-            f"'{topic}' will pass; today's character choice remains.",
-            "Protect your mind — it is your real command center.",
-            "Which Stoic habit will you test today? Comment below.",
+            f"Topics like {topic} may stir up storms, but a Stoic mind stays anchored in what endures.",
+            "Marcus Aurelius asked each morning: Which weak impulses must I guard against today?",
+            "When irritation surfaces, check your body: Your jaw, your breathing, your pulse.",
+            "The external world cannot be controlled on command; only your interpretation can.",
+            "Seneca: Sometimes true strength is simply refusing to participate in the drama.",
+            "You do not owe every argument your voice — silence is often the sharpest strategy.",
+            "Epictetus: Stop trying to fix everyone else; discipline your own mind first.",
+            "Ancient wisdom offers no shortcuts, only rock-solid mental habits.",
+            "Take two minutes every morning: What do I accept today, and where do I draw the line?",
+            "Another person's emergency is not your obligation to become uncentered.",
+            "Discipline is not about suppressing feelings, but directing them with purpose.",
+            "The drama of the day will fade, but the character you show stays with you.",
+            "Protect your own mind — it is the only true fortress you will ever own.",
+            "When the noise subsides, the person who kept their head will be the one still standing.",
         ],
         [
-            f"Topics like '{topic}' trigger threat mode; Stoicism builds safety through practice.",
-            "Marcus Aurelius: the obstacle is the way.",
-            f"If '{topic}' keeps you awake, tomorrow's first task is a control checklist.",
-            "Worry imagines unsolved problems; action is the antidote.",
-            "Seneca: life is short if we waste time.",
-            f"Shift energy about '{topic}' into one small executable step.",
-            "Epictetus: freedom depends on inner decisions, not outer conditions.",
-            f"Philosophy does not answer '{topic}' — it teaches how to respond.",
-            "Morning routine: no phone, three breaths, one clear intention.",
-            "Other people's expectations are not your duty.",
-            "Discipline runs when motivation stops.",
-            f"After the '{topic}' storm, whoever practiced most stays standing.",
-            "Train your mind, or noise decides for you.",
-            f"What is your Stoic answer to '{topic}'? Join the discussion.",
+            f"Uncertainty around {topic} triggers instinctual fear; Stoicism builds unwavering confidence.",
+            "Marcus Aurelius: What stands in the way becomes the way forward.",
+            "If worry keeps you restless, your immediate remedy is an actionable checklist.",
+            "Anxiety thrives on imagined problems; concrete action is its only true antidote.",
+            "Seneca reminds us: Life is not short, but we make it short by wasting our focus.",
+            "Channel the nervous energy of worry into a single constructive task.",
+            "Epictetus: Freedom belongs to those who govern their own impulses.",
+            "Philosophy does not solve all life's puzzles; it teaches you how to stand tall through them.",
+            "Ground your mornings in simple clarity: Deep breath, clear purpose, steady resolve.",
+            "Other people's demands do not define your worth; your moral compass does.",
+            "When motivation runs dry, quiet consistency is what carries you across.",
+            "Whoever practices calm in small moments will stand unshakable in great trials.",
+            "Master your thoughts today, or the noise of tomorrow will decide for you.",
+            "A single composed response today shapes the strength of your future self.",
         ],
     ]
     return en_variants[variant]
@@ -932,7 +988,7 @@ def _generate_crypto_market_scenes(clean_title: str, is_tr: bool, variation_seed
     has_banknifty = "banknifty" in topic.lower()
 
     if is_tr:
-        gold_line = "Altın ve Bitcoin aynı ekranda ayrı hikâye anlatıyor — dikkat!" if has_gold else "Bitcoin grafiği şu an tüm piyasayı belirliyor!"
+        gold_line = "Altın ve Bitcoin aynı ekranda şu an tamamen ayrı bir hikâye anlatıyor, dikkatli olun." if has_gold else "Bitcoin grafiği şu an piyasadaki tüm yönü tek başına belirliyor."
         bank_line = "Bank Nifty tarafında da volatilite tavan yaptı!" if has_banknifty else "Forex masalarında dolar endeksi tüm hesabı değiştiriyor!"
         narrations_variants = [
             [
@@ -1029,54 +1085,88 @@ def _generate_crypto_market_scenes(clean_title: str, is_tr: bool, variation_seed
     }
 
 
-def _generate_pack_fallback_scenes(pack: dict, clean_title: str, is_tr: bool):
-    """Family-generic fallback using this niche's pack — never a crypto clone."""
-    topic = (clean_title or "").strip() or pack.get("name") or "Konu"
-    name = pack.get("name") or "Shorts"
-    hook = pack.get("hook_style") or topic
-    subjects = list(pack.get("subjects") or []) or [
-        "cinematic landscape aerial",
-        "dramatic light through clouds",
-        "person walking empty street",
-        "abstract light particles",
+_SUBJECT_DROP = frozenset({
+    "ama", "ve", "ile", "için", "icin", "bir", "bu", "şu", "su", "o", "da", "de",
+    "mi", "mı", "mu", "mü", "çok", "cok", "en", "gibi", "diye", "olan", "olarak",
+    "hakkında", "hakkinda", "konusunda", "size", "sen", "siz", "sizin",
+    "öğretilmeyen", "ogretilmeyen", "bilmeniz", "gereken", "şok", "sok",
+    "gerçek", "gercek", "bilgi", "kural", "sır", "sir", "tane", "büyük", "buyuk",
+    "ilginç", "ilginc", "önemli", "onemli", "şaşırtıcı", "sasirtici", "inanılmaz",
+    "inanilmaz", "facts", "fact", "shocking", "mind", "blowing", "the", "and",
+    "you", "your", "about", "that", "this", "need", "know",
+})
+
+
+def _viewer_subject(clean_title: str) -> str:
+    """Drop format words so narration talks about the subject, not the clickbait shell."""
+    words = []
+    for raw in (clean_title or "").split():
+        token = raw.strip(".,!?'\"")
+        if not token or token.isdigit():
+            continue
+        if token.casefold() in _SUBJECT_DROP:
+            continue
+        words.append(token)
+    subject = " ".join(words[:6]).strip()
+    return subject or (clean_title or "bu konu").strip()
+
+
+def _subject_visuals(pack: dict, subject: str) -> list:
+    bank = list(pack.get("subjects") or []) or [
+        "library reading desk natural light",
+        "open book pages close up",
+        "researcher notes on a wooden desk",
+        "quiet archive shelves",
     ]
-    include = list(pack.get("must_include") or ["cinematic"])
+    visuals = []
+    for i in range(10):
+        shot = bank[i % len(bank)]
+        visuals.append((
+            f"{shot} related to {subject}",
+            [shot, f"{shot} close up", f"{shot} natural light"],
+        ))
+    return visuals
+
+
+def _topic_bound_narrations(subject: str, is_tr: bool) -> list:
+    """One subject, ten distinct beats. Natural human storytelling progression without mechanical repetitions."""
     if is_tr:
-        narrations = [
-            f"{hook} {topic} hakkında bugün net ve eksiksiz konuşuyoruz, kısa stub yok.",
-            f"{name} formatında {topic} için ilk kritik nokta tam burada başlıyor izleyici.",
-            f"Bu nişin kuralları başka şablona kaymaz; görseller {include[0]} dünyasında kalır.",
-            f"İkinci katman: {topic} iddiasını somut örnekle bağlarız ve tempo düşmez.",
-            f"Çoğu kanal burada genel belgesel kopyalar; biz {name} tonunu koruyoruz.",
-            f"Kanıt sahnesi: {topic} detayı izleyiciyi yorum yazmaya zorlayacak kadar net.",
-            f"Risk ve itiraz var ama {name} paketindeki yasak görselleri asla kullanmayız.",
-            f"Dönüş sahnesi: {topic} sonucunu tek cümlede bağla ve merakı açık bırak.",
-            f"Özet: {topic} bu nişte kanca, kanıt ve soru ile kapanır, başka niş kopyası değil.",
-            f"Peki sen {topic} konusunda ne düşünüyorsun? Yorumlara yaz, döngü başa bağlanır!",
+        return [
+            f"{subject} deyince çoğu insanın aklına tek bir kalıp geliyor; oysa perde arkasında çok daha çarpıcı bir gerçek yatıyor.",
+            "Genellikle ilk duyduğumuz bilgiler yüzeysel kalır ve asıl detayı gözden kaçırmamıza neden olur.",
+            "Burada kritik nokta sadece görünen sonuç değil, o sonuca götüren görünmez adımlardır.",
+            "Günlük hayatın akışı içinde küçük bir ayrıntı gibi dursa da, aslında bütün resmi baştan sona değiştirir.",
+            f"Birçok insan bu noktada yanılıyor; çünkü {subject} dediğimiz durum, derinlerdeki başka bir sebebin doğrudan sonucudur.",
+            "Bunu bir kez fark ettiğinizde, aynı konuya bir daha asla eski gözle bakamazsınız.",
+            "İşin özü oldukça net: Yüzeysel gürültüye kapılmak yerine, asıl farkı yaratan o kilit noktaya odaklanmak gerekir.",
+            "Bir dahaki sefere benzer bir iddia veya durumla karşılaştığınızda, hemen karar vermeden önce bu ayrımı hatırlayın.",
+            "Çünkü en doğru bakış açısı aceleyle değil, meselenin kökenini sakince kavrayarak elde edilir.",
+            "Ve işte tam bu yüzden, ilk başta basit görünen o ayrıntı, aslında tüm hikayenin en can alıcı noktasıydı.",
         ]
-    else:
-        narrations = [
-            f"{hook} Today we cover {topic} fully inside the {name} niche pack.",
-            f"First beat stays on {topic} with complete sentences, never a six-word stub.",
-            f"Visuals stay in {include[0]} territory; we do not clone another niche template.",
-            f"Second layer: a concrete example that keeps {topic} specific and paced.",
-            f"Most channels paste a generic documentary; this pack keeps {name} tone.",
-            f"Proof beat: a detail about {topic} strong enough to force a comment.",
-            f"There is tension, but forbidden visuals from this pack never appear.",
-            f"Turn: close the {topic} result in one full sentence and keep curiosity.",
-            f"Summary: {topic} ends with hook, proof, and a question — not a crypto stub.",
-            f"What do you think about {topic}? Comment below so the loop can restart!",
-        ]
-    moods = ["urgent", "dramatic", "energetic", "tense", "mysterious", "calm", "epic", "dark", "bright", "calm"]
+    return [
+        f"When people mention {subject}, they usually reduce it to a simple label, but the real story runs much deeper.",
+        "Most first impressions are incomplete, shaped by assumptions rather than what actually happened.",
+        "The real insight is not the visible outcome, but the hidden sequence of events leading up to it.",
+        "In everyday life it might look like a minor detail, yet that single element shifts the entire balance.",
+        f"This is where the common narrative fails: what is called {subject} is actually the direct effect of a much larger cause.",
+        "Once you grasp that dynamic, you can never look at this situation the same way again.",
+        "The lesson is simple: cutting through the surface noise reveals what truly drives the outcome.",
+        "Next time you encounter this claim, pause for a moment and compare it against the underlying facts.",
+        "Because true understanding is never rushed; it comes from examining the quiet mechanics beneath the surface.",
+        "And that is precisely why the detail everyone overlooked was the key all along.",
+    ]
+
+
+def _generate_pack_fallback_scenes(pack: dict, clean_title: str, is_tr: bool):
+    """Topic-aware fallback. Speak about the subject. Never describe the generator."""
+    topic = (clean_title or "").strip() or pack.get("name") or "Konu"
+    subject = _viewer_subject(topic)
+    narrations = _topic_bound_narrations(subject, is_tr)
+    visuals = _subject_visuals(pack, subject)
+    moods = ["urgent", "curious", "focused", "analytical", "mysterious", "tense", "calm", "bright", "reflective", "energetic"]
     scenes = []
     for i, narr in enumerate(narrations):
-        subject = subjects[i % len(subjects)]
-        desc = f"{subject} cinematic atmospheric"
-        queries = [
-            subject,
-            f"{subject} {include[0]}" if include else f"{subject} cinematic",
-            "cinematic 4k b-roll",
-        ]
+        desc, queries = visuals[i]
         scenes.append({
             "scene_number": i + 1,
             "narration": narr,
@@ -1087,7 +1177,7 @@ def _generate_pack_fallback_scenes(pack: dict, clean_title: str, is_tr: bool):
             "beat_type": "hook" if i == 0 else "resolution" if i == len(narrations) - 1 else "conflict",
         })
     return {
-        "title": topic if is_tr else f"{name}: {topic}",
+        "title": topic,
         "visual_theme": pack.get("family") or "cinematic",
         "full_narration": " ".join(narrations),
         "scenes": scenes,
@@ -1166,4 +1256,98 @@ def _generate_procedural_fallback_scenes(
             _generate_astrology_horoscope_scenes(clean_title, is_tr, variation_seed=variation_seed),
             is_tr=is_tr,
         )
+    facts_shell = bool(re.search(r"\b(gerçek|gercek|facts|şok|sok)\b", f"{title} {clean_title}", re.I))
+    if nid == "9_five_facts" and (niche_type == "9_five_facts" or facts_shell):
+        return _finalize_fallback_plan(_generate_five_fact_scenes(clean_title, is_tr), is_tr=is_tr)
     return _finalize_fallback_plan(_generate_pack_fallback_scenes(pack, clean_title, is_tr), is_tr=is_tr)
+
+
+def _generate_five_fact_scenes(clean_title: str, is_tr: bool) -> dict:
+    """Five spoken facts. No title paste, no scroll warning, no fake quote."""
+    topic = (clean_title or "").strip() or "5 gerçek"
+    if is_tr:
+        beats = [
+            (
+                "Beş ölçülmüş gerçek. Ders kitabı bunları çoğu zaman tek cümleyle geçirir.",
+                "open textbook classroom desk",
+                ["open textbook classroom", "library study desk", "students classroom"],
+            ),
+            (
+                "Su, dört santigrat derecede en yoğundur. Sıfırda buz genleşir ve gölün üstünde kalır. Alttaki su dört derecede kalır, balık donmaz.",
+                "frozen lake iceberg winter",
+                ["frozen lake ice", "iceberg floating water", "winter lake close up"],
+            ),
+            (
+                "Yetişkin insanda yaklaşık iki yüz altı kemik vardır. Sınıftaki iskelet modelinde bunu sayabilirsin. Bebekte sayı üç yüze yakındır, sonra bir kısmı kaynar.",
+                "classroom skeleton model",
+                ["classroom skeleton model", "human skeleton classroom", "anatomy model classroom"],
+            ),
+            (
+                "Arı balı kapalı kavanozda yıllarca bozulmaz. İçindeki su çok azdır ve asittir. Bu ortamda bakteri üreyemez.",
+                "honey jar bees flowers",
+                ["honey jar close up", "bee on flower", "honey drip spoon"],
+            ),
+            (
+                "Soluduğun oksijenin büyük kısmını okyanus planktonu üretir. Orman tek kaynak değildir. Deniz yüzeyi bu yüzden önemlidir.",
+                "ocean waves surface plankton",
+                ["ocean waves surface", "underwater deep sea", "sea surface aerial"],
+            ),
+            (
+                "Yıldırım aynı noktaya birden fazla kez düşebilir. Şimşek yüksek ve metal uçları tekrar hedefler. Bir kez düştü diye o yer güvenli sayılmaz.",
+                "storm lightning strike night",
+                ["storm lightning", "lightning strike tower", "thunder storm sky"],
+            ),
+        ]
+    else:
+        beats = [
+            (
+                "Five measured facts. A textbook usually spends one sentence on each.",
+                "open textbook classroom desk",
+                ["open textbook classroom", "library study desk", "students classroom"],
+            ),
+            (
+                "Water is densest at four degrees Celsius. Ice floats, so the fish below the lake do not freeze.",
+                "frozen lake iceberg winter",
+                ["frozen lake ice", "iceberg floating water", "winter lake close up"],
+            ),
+            (
+                "An adult has about two hundred six bones. A newborn has closer to three hundred. Some fuse as you grow.",
+                "classroom skeleton model",
+                ["classroom skeleton model", "human skeleton classroom", "anatomy model classroom"],
+            ),
+            (
+                "Sealed honey can last for years. It holds very little water and it is acidic, so bacteria cannot grow.",
+                "honey jar bees flowers",
+                ["honey jar close up", "bee on flower", "honey drip spoon"],
+            ),
+            (
+                "Most of the oxygen you breathe comes from ocean plankton. Forests are not the only source.",
+                "ocean waves surface plankton",
+                ["ocean waves surface", "underwater deep sea", "sea surface aerial"],
+            ),
+            (
+                "Lightning can strike the same spot more than once. A tall metal point stays a target.",
+                "storm lightning strike night",
+                ["storm lightning", "lightning strike tower", "thunder storm sky"],
+            ),
+        ]
+    scenes = []
+    for i, (narr, desc, queries) in enumerate(beats):
+        scenes.append({
+            "scene_number": i + 1,
+            "narration": narr,
+            "scene_description": desc,
+            "search_queries": queries,
+            "duration": 6.0 if i else 4.0,
+            "mood": "curious",
+            "beat_type": "hook" if i == 0 else "resolution" if i == len(beats) - 1 else "conflict",
+        })
+    return {
+        "title": topic,
+        "visual_theme": "classroom science facts",
+        "full_narration": " ".join(b[0] for b in beats),
+        "scenes": scenes,
+        "niche_id": "9_five_facts",
+        "procedural_fallback": True,
+        "scenario_pack_family": "quiz",
+    }

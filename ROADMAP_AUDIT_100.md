@@ -111,7 +111,7 @@
 | 72 | Hata Yönetimi ve Failover | 🟡 Partial | `system_resilience.py` + stock fallback | Provider fallback kısmi |
 | 73 | Otomatik Çeviri & Dublaj | 🟡 Partial | `hybrid_niches.py:adapt_to_tier1_market` | Tier-1 prompt; tam dublaj pipeline yok |
 | 74 | Metin Üstü Vurgu Efektleri | 🟡 Partial | `effects/overlays.py:apply_ui_element_overlay` | UI overlay helper; patlama anim kısmi |
-| 75 | Yeşil Ekran (Chroma Key) | ⏸ Stub | `render/ffmpeg_graph.py` | Chroma filter referans; render'a bağlı değil |
+| 75 | Yeşil Ekran (Chroma Key) | ✅ Done | `effects/filters.py:apply_chroma_key_ffmpeg` + `apply_chroma_key` | FFmpeg chromakey ve MoviePy maskesi |
 | 76 | Canlı Yayın (24/7 Live Stream) | 🟡 Partial | `growth_tactics.py:generate_live_stream_loop_command` | FFmpeg komut; OBS manuel |
 | 77 | Telegram / Discord Bildirim Botu | 🟡 Partial | `notifications.py` | Webhook var; env yoksa False |
 | 78 | CSV / Excel İle İçerik Yükleme | ✅ Done | `batch_processor.py:parse_csv_topics` | topic/niche/language CSV |
@@ -138,7 +138,7 @@
 | 94 | Telif Korumalı Ayna & Pitch | ✅ Done | `effects/pipeline.py:apply_mirror_and_pitch` | Horizontal flip + pitch |
 | 95 | YouTube Shorts Reklam Fonu & Shopping | ⏸ Stub | `viral_seo_agent.py` affiliate_text | Shopping tag API yok |
 | 96 | Soru ile Bitirme | ✅ Done | `niche_templates.py` cta_type=comment | Closing question CTA |
-| 97 | Canlı Quiz Odaları | ❌ Missing | `—` | Canlı quiz / Super Chat — kod yok |
+| 97 | Canlı Quiz Odaları & İnteraktif Quiz | ✅ Done | `niche_templates.py:37_interactive_quiz` + `effects/overlays.py:apply_interactive_quiz_overlay` | 3-2-1 geri sayım badge, dynamic reveal, split-screen, viral score 95 |
 | 98 | A/B Testi Başlık ve Altyazı | 🟡 Partial | `growth_tactics.py:generate_ab_test_variants` | 3 varyant; otomatik upload test yok |
 | 99 | TikTok & Instagram Reels Çapraz Paylaşım | 🟡 Partial | `growth_tactics.py:format_cross_platform_metadata` | Metadata format; upload API yok |
 | 100 | Otomasyon İzleme (Dashboard Analytics) | 🟡 Partial | `database.py:videos` + server /api routes | SQLite tablo; gelir/abone dashboard kısmi |

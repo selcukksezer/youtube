@@ -34,6 +34,11 @@ from .narration_validate import (
     repair_post_hook_word_budget,
 )
 from .plan_linter import lint_plan_diversity
+from director.schema import shorts_word_budget
+
+
+def _tts_word_cap() -> int:
+    return shorts_word_budget(SHORTS_MAX_DURATION, 1.15)
 
 
 def _gemini_script_circuit_open() -> bool:
@@ -55,10 +60,11 @@ def _record_gemini_script_outcome(provider_name: str, model_name: str, err=None)
             return
         msg = str(err)
         if any(tok in msg for tok in ("429", "quota", "Quota", "rate limit", "RESOURCE_EXHAUSTED")):
-            circuit_breaker.recovery_timeout = 1800.0
+            # Trip this service now. Do not rewrite the shared breaker timeout;
+            # that held every other service open for 30 minutes.
             s = circuit_breaker._get_service("gemini_script")
-            s["failure_count"] = circuit_breaker.failure_threshold
-            s["state"] = circuit_breaker.STATE_OPEN
+            if s["failure_count"] < circuit_breaker.failure_threshold:
+                s["failure_count"] = circuit_breaker.failure_threshold - 1
             print("  [CircuitBreaker] gemini_script AÇILDI (429/kota) — sonraki sağlayıcıya geç")
         circuit_breaker.record_failure("gemini_script", msg)
     except Exception:
@@ -72,7 +78,10 @@ def _call(client, params, *, provider_name: str = "", model_name: str = ""):
         return resp
     except Exception as e:
         _record_gemini_script_outcome(provider_name, model_name, e)
-        if "response_format" in params:
+        # A 429/quota error is provider-wide. Retrying same request without
+        # response_format only spends another quota unit and cannot recover.
+        quota_error = any(tok in str(e) for tok in ("429", "quota", "Quota", "rate limit", "RESOURCE_EXHAUSTED"))
+        if "response_format" in params and not quota_error:
             del params["response_format"]
             return client.chat.completions.create(**params)
         raise e
@@ -121,7 +130,7 @@ def _build_competitor_fingerprint_block(fp: dict, lang: str = "tr") -> str:
     if not fp:
         return ""
     scene_count = int(fp.get("scene_count") or 12)
-    scene_count = max(MIN_SCENE_COUNT, min(16, scene_count))
+    scene_count = max(MIN_SCENE_COUNT, min(12, scene_count))
     hook_style = fp.get("hook_style") or "Gizem / Merak Kancası"
     avg_dur = float(fp.get("avg_scene_duration") or 4.0)
     if lang == "en":
@@ -212,7 +221,7 @@ def generate_scenes(
             f"KRİTİK: Her sahnenin 'narration' alanı en az 12 kelimelik TAM Türkçe cümle(ler) olmalı; "
             f"sadece mood etiketi, nokta veya emoji placeholder YASAK. "
             f"scene_description gerçek İngilizce görsel cümle olmalı — placeholder YASAK. "
-            f"8-16 sahne, toplam 38-60 saniye; konu ne kadar istiyorsa o kadar, 60'ı aşma."
+            f"6-12 sahne, toplam 45-60 saniye; 120-170 kelime, konu ne kadar istiyorsa o kadar, 60'ı aşma."
         )
 
     # Build fallback provider chain
@@ -353,15 +362,17 @@ def generate_scenes(
 
     for s in data.get("scenes", []):
         if "search_query" in s and "search_queries" not in s:
-            q = s.pop("search_query")
-            w = q.split()
-            s["search_queries"] = [q, " ".join(w[:2]) if len(w) > 2 else q, w[0] if w else "nature"]
+            q = str(s.pop("search_query") or "").strip()
+            s["search_queries"] = [q] if q else []
         if not scene_description_usable(s.get("scene_description") or ""):
             s["scene_description"] = synthesize_scene_description(s)
 
-        # Enrich search queries with cinematic adjectives (Item 89)
-        if "search_queries" in s:
-            s["search_queries"] = enrich_cinematic_search_queries(s["search_queries"], mood=s.get("mood", "epic"))
+        from visuals.subject_lock import lock_scene_queries
+        lock_scene_queries(s)
+        if s.get("search_queries"):
+            cleaned = enrich_cinematic_search_queries(s["search_queries"], mood=s.get("mood", "epic"))
+            if cleaned:
+                s["search_queries"] = cleaned
 
     # Preserve AI-assigned pacing; scale total to 38-60s Shorts band (Madde 494)
     scenes_list = data["scenes"]
@@ -385,12 +396,9 @@ def generate_scenes(
     except Exception:
         pass
 
-    if variation_attempt >= 1:
-        try:
-            from .enrichment import apply_alternate_topic_angle
-            data = apply_alternate_topic_angle(data, clean_title, lang=lang)
-        except Exception:
-            pass
+    # variation>=1 used to swap the whole plan for a generic
+    # "Herkes {başlık} konusunda yanılıyor" dialectic. That is what
+    # the listener heard. A new seed already happened above.
 
     # Pad thin plans toward minimum cadence only when very short (Madde 88, flexible 8-16)
     if len(data["scenes"]) < MIN_SCENE_COUNT:
@@ -419,7 +427,7 @@ def generate_scenes(
     )
 
     # Batch D — soft word budget before Director hard condense (~60s Shorts headroom)
-    data = repair_post_hook_word_budget(data, max_words=172)
+    data = repair_post_hook_word_budget(data, max_words=_tts_word_cap())
 
     # Batch E — mood/query diversity linter (regenerate weak AI plans)
     diversity = lint_plan_diversity(data)
@@ -439,7 +447,7 @@ def generate_scenes(
         data = ensure_retention_hooks_on_plan(
             data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
         )
-        data = repair_post_hook_word_budget(data, max_words=172)
+        data = repair_post_hook_word_budget(data, max_words=_tts_word_cap())
 
     # Final quality gate — regenerate if hooks/budget left stub narrations
     if not plan_quality_usable(data.get("scenes") or []) and not data.get("procedural_fallback"):
@@ -454,7 +462,7 @@ def generate_scenes(
         data = ensure_retention_hooks_on_plan(
             data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
         )
-        data = repair_post_hook_word_budget(data, max_words=172)
+        data = repair_post_hook_word_budget(data, max_words=_tts_word_cap())
 
     # Final soft normalization — preserve relative pacing within 38-60s
     total = sum(float(s.get("duration") or 3.5) for s in data["scenes"])
@@ -480,7 +488,7 @@ def generate_scenes(
 
     try:
         from hybrid_niches import enrich_plan_with_hybrid
-        data = enrich_plan_with_hybrid(data, title, niche_type or "")
+        data = enrich_plan_with_hybrid(data, title, locked_niche or niche_type or "")
     except Exception:
         pass
 
@@ -498,6 +506,13 @@ def generate_scenes(
         total = sum(float(s.get("duration") or 3.5) for s in data.get("scenes") or [])
     except Exception as craft_exc:
         print(f"  [SceneGenerator] human_craft skip: {craft_exc}")
+
+    try:
+        from .narration_sense import repair_nonsensical_narration
+        data = repair_nonsensical_narration(data, topic=clean_title or title)
+        total = sum(float(s.get("duration") or 3.5) for s in data.get("scenes") or [])
+    except Exception as sense_exc:
+        print(f"  [SceneGenerator] narration sense skip: {sense_exc}")
 
     print(f"  [SceneGenerator] Sahne Sayısı: {len(data['scenes'])}, Toplam Süre: {total}s | Tema: {data.get('visual_theme', '-')}")
     if data.get("human_craft"):

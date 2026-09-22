@@ -21,9 +21,12 @@ DEFAULT_LIMITS = {
         "name": "Google Gemini Flash",
         "tier": "Google AI Studio (Ücretsiz Tier)",
         "rpm_limit": 15,
-        "rpd_limit": 1500,
+        # Free-tier generate_content quota is model/project dependent. The
+        # configured Gemini key returned HTTP 429 at 20 daily requests; show
+        # conservative observed limit instead of claiming 1,500 requests.
+        "rpd_limit": 20,
         "cost_per_video": "0.00 TL",
-        "description": "Dakikada 15 istek, günde 1.500 istek ücretsiz."
+        "description": "Dakikada 15 istek; ücretsiz model kotası proje/model bazlıdır (gözlenen limit: 20/gün)."
     },
     "Edge-TTS": {
         "name": "Microsoft Edge Neural TTS",

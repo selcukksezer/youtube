@@ -96,10 +96,19 @@ def extract_frame0_thumbnail(video_path: str, output_thumb_path: str) -> bool:
     if not os.path.exists(video_path):
         return False
     try:
+        import shutil
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if not ffmpeg_bin:
+            try:
+                import imageio_ffmpeg
+                ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+            except Exception:
+                ffmpeg_bin = "ffmpeg"
+
         best_t, score = select_best_thumbnail_timestamp(video_path)
         ss = max(0.0, float(best_t))
         cmd = [
-            "ffmpeg", "-y", "-ss", f"{ss:.3f}", "-i", video_path,
+            ffmpeg_bin, "-y", "-ss", f"{ss:.3f}", "-i", video_path,
             "-frames:v", "1", "-q:v", "2", output_thumb_path
         ]
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -113,7 +122,7 @@ def extract_frame0_thumbnail(video_path: str, output_thumb_path: str) -> bool:
             return True
         # Legacy fallback
         cmd = [
-            "ffmpeg", "-y", "-ss", "00:00:01", "-i", video_path,
+            ffmpeg_bin, "-y", "-ss", "00:00:01", "-i", video_path,
             "-frames:v", "1", "-q:v", "2", output_thumb_path
         ]
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1632,12 +1641,92 @@ def apply_subtitle_bar_overlay(base_clip, header: str = "Dizi", body: str = "Kel
     return out
 
 
+def apply_interactive_quiz_overlay(
+    base_clip: VideoFileClip,
+    question: str = "Hangisi Doğru?",
+    options: Optional[list] = None,
+    correct_index: int = 0,
+    countdown_sec: float = 3.0,
+) -> VideoFileClip:
+    """
+    R10 #97: İnteraktif Canlı Quiz & Geri Sayım Kartı.
+    Generates dynamic 3-second countdown quiz overlay:
+    - Phase 1 (0 to countdown_sec): Question card + neutral A/B/C options + ticking countdown timer.
+    - Phase 2 (countdown_sec to end): Correct answer option lights up in emerald green with checkmark!
+    """
+    if options is None or not options:
+        options = ["A) Seçenek 1", "B) Seçenek 2", "C) Seçenek 3"]
+    w, h = base_clip.size
+    dur = base_clip.duration or 5.0
+
+    def make_frame(t):
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        try:
+            font_q = ImageFont.truetype("arial.ttf", int(w * 0.045))
+            font_opt = ImageFont.truetype("arial.ttf", int(w * 0.038))
+            font_timer = ImageFont.truetype("arial.ttf", int(w * 0.065))
+        except Exception:
+            font_q = font_opt = font_timer = ImageFont.load_default()
+
+        box_y1 = int(h * 0.22)
+        box_y2 = int(h * 0.36)
+        margin = int(w * 0.06)
+        draw.rounded_rectangle([(margin, box_y1), (w - margin, box_y2)], radius=16, fill=(15, 23, 42, 235), outline=(168, 85, 247, 255), width=3)
+        draw.text((w // 2, (box_y1 + box_y2) // 2), question[:70], fill=(255, 255, 255, 255), font=font_q, anchor="mm")
+
+        is_revealed = t >= countdown_sec
+        remaining = max(1, int(math.ceil(countdown_sec - t))) if not is_revealed else 0
+        timer_text = f"⏱️ {remaining}" if not is_revealed else "✅ DOĞRU!"
+        timer_color = (245, 158, 11, 255) if not is_revealed else (16, 185, 129, 255)
+        draw.text((w // 2, box_y2 + int(h * 0.035)), timer_text, fill=timer_color, font=font_timer, anchor="mm")
+
+        start_opt_y = int(h * 0.45)
+        opt_h = int(h * 0.08)
+        gap = int(h * 0.02)
+
+        for idx, opt_text in enumerate(options[:3]):
+            y1 = start_opt_y + idx * (opt_h + gap)
+            y2 = y1 + opt_h
+            if is_revealed and idx == correct_index:
+                fill_color = (6, 78, 59, 245)
+                border_color = (16, 185, 129, 255)
+                text_color = (255, 255, 255, 255)
+                badge = " ✔"
+            else:
+                fill_color = (30, 41, 59, 220)
+                border_color = (255, 255, 255, 60)
+                text_color = (226, 232, 240, 255)
+                badge = ""
+
+            draw.rounded_rectangle([(margin, y1), (w - margin, y2)], radius=12, fill=fill_color, outline=border_color, width=2)
+            draw.text((margin + 20, (y1 + y2) // 2), f"{opt_text}{badge}", fill=text_color, font=font_opt, anchor="lm")
+
+        return np.array(img)
+
+    try:
+        mask_clip = VideoClip(make_frame, duration=dur).set_duration(dur)
+        return CompositeVideoClip([base_clip, mask_clip], size=base_clip.size)
+    except Exception as e:
+        print(f"    [InteractiveQuiz] Overlay error: {e}")
+        return base_clip
+
+
 def apply_hybrid_render_overlay(base_clip, overlay_spec: dict):
     """Dispatch B5 hybrid overlay spec → concrete MoviePy overlay."""
     if not overlay_spec:
         return base_clip
     kind = overlay_spec.get("overlay")
     ui_type = overlay_spec.get("ui_type")
+    if ui_type == "interactive_quiz" or kind == "interactive_quiz":
+        return apply_interactive_quiz_overlay(
+            base_clip,
+            question=overlay_spec.get("question", "Hangisi Doğru?"),
+            options=overlay_spec.get("options"),
+            correct_index=overlay_spec.get("correct_index", 0),
+            countdown_sec=float(overlay_spec.get("countdown_sec", 3.0)),
+        )
     if ui_type == "split_choice":
         return apply_split_choice_overlay(
             base_clip,

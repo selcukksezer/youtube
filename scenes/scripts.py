@@ -30,7 +30,7 @@ def generate_counter_argument_script(topic: str, lang: str = "tr") -> Dict[str, 
             "Derine indiğinizde, bu yaklaşımın insan psikolojisi üzerinde nasıl bir tahribat yarattığını görüyorsunuz.",
             "Asıl kazananlar, herkesin koştuğu bu yöne değil, tam zıddına odaklananlardır.",
             "Unutmayın, kalabalıkları takip etmek sizi sadece ortalama yapar.",
-            "Peki sizce bu iddia doğru mu? Fikrinizi yorumlarda paylaşın ve takipte kalın!"
+            "Peki bu iddianın hangi kısmı sana hâlâ mantıklı geliyor? Cevabı başa döndüğünde daha net göreceksin."
         ]
     else:
         narrations = [
@@ -40,7 +40,7 @@ def generate_counter_argument_script(topic: str, lang: str = "tr") -> Dict[str, 
             "Looking closer reveals the subtle psychological trap hidden underneath.",
             "The top performers never follow this mainstream advice; they inverse it completely.",
             "Remember: following the herd guarantees nothing more than average results.",
-            "Do you agree or disagree? Drop your thoughts in the comments and subscribe!"
+            "Which part of this claim still feels convincing? Rewatch the opening and compare it with the evidence."
         ]
 
     scenes = []
@@ -118,5 +118,10 @@ def generate_reddit_rewrite_script(source: Union[str, Dict[str, Any]], lang: str
         pass
 
     # Intelligent procedural fallback
-    plan = _generate_procedural_fallback_scenes(title or "Bilinmeyen İtiraf", niche_type="2_reddit_confessions", raw_body=body)
+    plan = _generate_procedural_fallback_scenes(
+        title or "Bilinmeyen İtiraf",
+        niche_type="2_reddit_confessions",
+        raw_body=body,
+        language=lang,
+    )
     return plan

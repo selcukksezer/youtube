@@ -34,6 +34,12 @@ _TR_EN: Dict[str, str] = {
     "tarih": "ancient manuscript archive", "savaş": "historical battlefield fog",
     "fitness": "gym workout silhouette", "koşu": "runner sunrise road",
     "haber": "news studio desk", "acil": "breaking news red light",
+    "gökdelen": "skyscraper tower city skyline", "gokdelen": "skyscraper tower city skyline",
+    "bina": "modern building architecture", "mimari": "architecture facade detail",
+    "köprü": "bridge structure over water", "kopru": "bridge structure over water",
+    "metro": "subway train underground station", "tren": "train railway motion",
+    "okyanus": "ocean waves coastline", "deniz": "ocean waves coastline",
+    "orman": "forest trees winding path", "çöl": "desert dunes wind", "col": "desert dunes wind",
 }
 
 # Short seeds for keyless providers (Openverse / Wikimedia) — long cinematic
@@ -167,6 +173,29 @@ def build_shot_queries(
     """Return ranked EN shot queries: specific → generic → niche b-roll."""
     family = family_for_niche(niche_id)
     intent = visual_intent if isinstance(visual_intent, dict) else {}
+    blob_for_lock = " ".join([
+        narration or "",
+        scene_description or "",
+        str(intent.get("subject") or ""),
+    ])
+    from .subject_lock import match_shot, shot_queries
+    locked = match_shot(blob_for_lock)
+    if locked is not None:
+        locked_out: List[str] = []
+        seen_locked = set()
+        for raw in shot_queries(locked, limit=max_queries):
+            cq = _clean(raw)
+            if len(cq) < 4:
+                continue
+            key = cq.lower()
+            if key in seen_locked:
+                continue
+            if family == "religious" and _RELIGIOUS_BAN.search(cq):
+                continue
+            seen_locked.add(key)
+            locked_out.append(cq)
+        if locked_out:
+            return locked_out[:max_queries]
     subject = str(intent.get("subject") or "").strip()
     action = str(intent.get("action") or intent.get("motion") or "").strip()
     setting = str(intent.get("setting") or intent.get("location") or "").strip()
@@ -194,9 +223,9 @@ def build_shot_queries(
     if concepts:
         ladder.append(_clean(concepts))
 
-    # 4) Niche b-roll ladder
-    for b in _FAMILY_BROLL.get(family, _FAMILY_BROLL["general"]):
-        ladder.append(b)
+    # Deliberately do not append a niche b-roll ladder here.  Once a scene has
+    # a concrete subject, unrelated family cutaways are a semantic fallback,
+    # not coverage.  Missing subject queries must stop for regeneration/review.
 
     # Dedup + bans
     out: List[str] = []
@@ -216,7 +245,11 @@ def build_shot_queries(
         out.append(q)
         if len(out) >= max_queries:
             break
-    return out or list(_FAMILY_BROLL.get(family, _FAMILY_BROLL["general"])[:3])
+    # An empty/ambiguous scene must stop for regeneration or human review.
+    # Returning generic ``nature``/``sunrise`` b-roll makes a skyscraper (or
+    # any factual subject) look like an unrelated slideshow and hides the
+    # failed semantic match from the audit trail.
+    return out
 
 
 def validate_query_list(queries: Sequence[str], niche_id: str = "") -> List[str]:
@@ -270,8 +303,7 @@ def keyless_seed_queries(
         if len(seeds) >= max_seeds:
             return seeds
 
-    for seed in _FAMILY_KEYLESS_SEEDS.get(family, _FAMILY_KEYLESS_SEEDS["general"]):
-        _push(seed)
-        if len(seeds) >= max_seeds:
-            break
-    return seeds or list(_FAMILY_KEYLESS_SEEDS.get(family, _FAMILY_KEYLESS_SEEDS["general"])[:3])
+    # Do not invent a subject when the scene supplied no query.  The caller
+    # should regenerate the scene or send it to review instead of silently
+    # fetching generic nature footage.
+    return seeds

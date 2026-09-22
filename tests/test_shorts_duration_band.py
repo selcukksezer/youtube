@@ -21,8 +21,21 @@ class TestShortsDurationBand(unittest.TestCase):
         self.assertEqual(natural_target_duration(80), 38.0)
         self.assertEqual(natural_target_duration(200), 60.0)
 
-    def test_word_budget_allows_60s(self):
-        self.assertGreaterEqual(shorts_word_budget(60.0, 1.15), 172)
+    def test_word_budget_fits_emergency_speed(self):
+        from director.schema import TTS_BUDGET_WPS_ELEVEN, TTS_EMERGENCY_MAX_SPEED, TTS_WORDS_PER_SEC
+        from unittest import mock
+        from tts_voices import ELEVENLABS_FREE_VOICES
+
+        cap_edge = int(60.0 * TTS_EMERGENCY_MAX_SPEED * TTS_WORDS_PER_SEC)
+        self.assertGreaterEqual(cap_edge, 170)
+
+        cap_eleven = int(60.0 * TTS_EMERGENCY_MAX_SPEED * TTS_BUDGET_WPS_ELEVEN)
+        # 170 words @ ~2.0 wps ElevenLabs ≈ 85s raw — must be rejected by cap
+        self.assertLess(cap_eleven, 170)
+
+        el_id = ELEVENLABS_FREE_VOICES[0]["id"]
+        with mock.patch("config.TTS_VOICE", el_id):
+            self.assertEqual(shorts_word_budget(60.0, 1.15), cap_eleven)
 
     def test_compiled_150_word_plan_not_shrunk_to_48(self):
         scenes = []

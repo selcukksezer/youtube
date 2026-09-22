@@ -96,7 +96,8 @@ def build_procedural_clip(
     gtypes = ["linear", "radial", "spiral"]
     gtype = gtypes[(gtypes.index(gtype) + scene_index) % len(gtypes)] if gtype in gtypes else gtype
     seed = 1000 + scene_index * 7919
-    zoom_rate = 0.0006 + 0.0002 * (scene_index % 3)
+    from render.ffmpeg_graph import cheap_pan_filter
+    pan = cheap_pan_filter(w, h, dur, scene_index)
     speed = 0.03 + 0.01 * (scene_index % 4)
 
     grad = (
@@ -111,7 +112,7 @@ def build_procedural_clip(
     graph = (
         "[0:v]format=gbrp[bg];[1:v]format=gbrp[fx];"
         "[bg][fx]blend=all_mode=screen:all_opacity=0.65,"
-        f"zoompan=z='1+{zoom_rate:.5f}*on':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps={r},"
+        f"{pan},"
         "vignette=PI/4.6,noise=alls=6:allf=t,format=yuv420p"
     )
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()

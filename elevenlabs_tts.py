@@ -17,9 +17,15 @@ DEFAULT_MODEL_ID = "eleven_multilingual_v2"
 _last_quota: Dict[str, Any] = {}
 
 
+def is_valid_api_key(value: Any) -> bool:
+    """Treat non-empty configured value as candidate; API validates key."""
+    key = str(value or "").strip()
+    return bool(key)
+
+
 def is_configured() -> bool:
     import config as cfg
-    return bool(getattr(cfg, "ELEVENLABS_API_KEY", ""))
+    return is_valid_api_key(getattr(cfg, "ELEVENLABS_API_KEY", ""))
 
 
 def parse_voice_id(voice_id: str) -> str:

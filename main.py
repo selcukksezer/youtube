@@ -47,12 +47,12 @@ def process(keyword, index):
     # 2) Download videos — 5 sources, scene_description for matching
     active = ["Pexels"]
     if config.PIXABAY_API_KEY: active.append("Pixabay")
-    active += ["Coverr", "Mixkit", "Videvo"]
+    active += ["Coverr", "Openverse", "Wikimedia", "NASA"]
     print(f"\n[2/4] Videos ({' + '.join(active)})...")
 
     clips = []
     for i, scene in enumerate(plan["scenes"]):
-        q = scene.get("search_queries", [scene.get("search_query", "nature")])
+        q = scene.get("search_queries") or ([scene.get("search_query")] if scene.get("search_query") else [])
         d = scene["duration"]
         desc = scene.get("scene_description", "")
 
@@ -86,25 +86,11 @@ def process(keyword, index):
     if result and os.path.exists(result):
         print(f"\n  [OK] DONE: {result}")
 
-        # 5) Auto Publish with Viral SEO Agent
+        # YouTube upload is intentionally manual. The composer writes a
+        # reviewable package (sources, credits, policy snapshot, disclosure,
+        # and checklist) next to the rendered MP4.
         if getattr(config, "YOUTUBE_AUTO_PUBLISH", False):
-            print(f"\n[5/5] YouTube yuklemesi ve Viral SEO optimizasyonu baslatiliyor...")
-            try:
-                from viral_seo_agent import generate_viral_seo_metadata
-                seo_data = generate_viral_seo_metadata(keyword)
-
-                from youtube_uploader import upload_video_to_youtube
-                upload_video_to_youtube(
-                    result,
-                    title=seo_data.get("seo_title", f"{keyword} #shorts")[:100],
-                    description=seo_data.get("seo_description", f"{keyword} hakkında video. #shorts"),
-                    tags=seo_data.get("tags", [safe, "shorts", "bilgi"]),
-                    privacy_status=getattr(config, "YOUTUBE_PRIVACY", "private")
-                )
-            except ImportError:
-                print("  ERROR: Youtube yayinlama modulu veya SEO ajani bulunamadi/bagimliliklar eksik.")
-            except Exception as e:
-                print(f"  ERROR (YouTube): {e}")
+            print("  [Policy] Otomatik YouTube yüklemesi devre dışı; manuel Studio paketi üretildi.")
 
         return result
     return None
@@ -117,7 +103,7 @@ def main():
     lang = "Türkçe" if config.LANGUAGE == "tr" else "English"
     src = ["Pexels"]
     if config.PIXABAY_API_KEY: src.append("Pixabay")
-    src += ["Coverr", "Mixkit", "Videvo"]
+    src += ["Coverr", "Openverse", "Wikimedia", "NASA"]
 
     print(f"""
 ╔══════════════════════════════════════════════════════════╗

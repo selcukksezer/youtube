@@ -311,19 +311,28 @@ def generate_fluid_gradient_background(width: int, height: int, duration: float,
     cx = [width * (i + 0.5) / num_points for i in range(num_points)]
     cy = [height * 0.5] * num_points
 
-    yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
+    # MoviePy calls make_frame once per output frame. Full-resolution Gaussian
+    # fields here made the non-safe MoviePy path effectively unusable (seconds
+    # per frame). Build a small cyclic cache, then resize on frame access.
+    cache_fps = max(1, min(30, int(round(fps))))
+    scale = min(1.0, 480.0 / max(width, height))
+    cache_w = max(64, int(round(width * scale)))
+    cache_h = max(64, int(round(height * scale)))
+    yy, xx = np.mgrid[0:cache_h, 0:cache_w].astype(np.float32)
+    cache = []
 
-    def make_frame(t):
-        frame = np.zeros((height, width, 3), dtype=np.float32)
-        total_weight = np.zeros((height, width), dtype=np.float32)
+    for frame_index in range(cache_fps):
+        t = frame_index / float(cache_fps)
+        frame = np.zeros((cache_h, cache_w, 3), dtype=np.float32)
+        total_weight = np.zeros((cache_h, cache_w), dtype=np.float32)
 
         for i, (r, g, b) in enumerate(colors):
-            px = cx[i] + math.sin(t * 0.3 + i * 1.2) * width * 0.15
-            py = cy[i] + math.cos(t * 0.25 + i * 0.8) * height * 0.12
+            px = (cx[i] * scale) + math.sin(t * 0.3 + i * 1.2) * cache_w * 0.15
+            py = (cy[i] * scale) + math.cos(t * 0.25 + i * 0.8) * cache_h * 0.12
 
             dx = xx - px
             dy = yy - py
-            sigma = max(width, height) * 0.45
+            sigma = max(cache_w, cache_h) * 0.45
             w = np.exp(-(dx**2 + dy**2) / (2 * sigma**2))
 
             frame[:,:,0] += w * r
@@ -333,7 +342,18 @@ def generate_fluid_gradient_background(width: int, height: int, duration: float,
 
         total_weight = np.maximum(total_weight, 1e-8)
         frame /= total_weight[:,:,np.newaxis]
-        return np.clip(frame, 0, 255).astype(np.uint8)
+        cache.append(np.clip(frame, 0, 255).astype(np.uint8))
+
+    def make_frame(t):
+        frame = cache[int(max(0.0, t) * cache_fps) % cache_fps]
+        if (cache_w, cache_h) == (width, height):
+            return frame
+        try:
+            import cv2
+            return cv2.resize(frame, (width, height), interpolation=cv2.INTER_LINEAR)
+        except Exception:
+            from PIL import Image
+            return np.asarray(Image.fromarray(frame).resize((width, height), Image.Resampling.BILINEAR))
 
     clip = VideoClip(make_frame, duration=duration).set_fps(fps)
     print(f"    [Item 123] Fluid gradient: {color_scheme}, {duration:.1f}s")

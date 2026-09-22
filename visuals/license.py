@@ -14,7 +14,7 @@ class License(str, Enum):
     PEXELS = "pexels"            # platform license, commercial OK, no attribution required
     PIXABAY = "pixabay"          # platform license, commercial OK
     COVERR = "coverr"            # platform license, commercial OK
-    MIXKIT = "mixkit"            # platform license, commercial OK
+    MIXKIT = "mixkit"            # legacy provider; not accepted for publishable visuals
     AI_GENERATED = "ai_generated"  # provider ToS; disclose in description
     CC_BY_SA = "cc_by_sa"        # share-alike: NOT used (derivative must be SA)
     CC_NC = "cc_nc"              # non-commercial: NOT used
@@ -29,7 +29,6 @@ COMMERCIAL_SAFE = {
     License.PEXELS,
     License.PIXABAY,
     License.COVERR,
-    License.MIXKIT,
     License.AI_GENERATED,
 }
 
@@ -45,6 +44,17 @@ class LicenseInfo:
     source_url: str = ""
     license_url: str = ""
     raw: str = ""                    # provider's raw license string for audit
+    attribution: str = ""             # provider-required credit, if any
+
+    def __post_init__(self) -> None:
+        # Provider adapters sometimes deserialize JSON directly into this
+        # dataclass.  Normalize that boundary so an unknown string can never
+        # accidentally compare equal to a commercial-safe enum member.
+        if not isinstance(self.license, License):
+            try:
+                self.license = License(str(self.license))
+            except ValueError:
+                self.license = License.UNKNOWN
 
     @property
     def safe(self) -> bool:
@@ -59,6 +69,9 @@ class LicenseInfo:
         d["license"] = self.license.value
         d["safe"] = self.safe
         d["needs_attribution"] = self.needs_attribution
+        # Keep the exact credit that will be copied into the publishing package.
+        # Generate a best-effort line for legacy records that predate this field.
+        d["attribution"] = self.attribution or (attribution_line(self) or "")
         return d
 
     @classmethod
@@ -76,6 +89,7 @@ class LicenseInfo:
             source_url=str(d.get("source_url", "")),
             license_url=str(d.get("license_url", "")),
             raw=str(d.get("raw", "")),
+            attribution=str(d.get("attribution", "")),
         )
 
 

@@ -8,14 +8,26 @@ from research_service import extract_format_fingerprint_from_title
 
 CATEGORIES = {
     "all": "",
-    "science": "bilim teknoloji uzay",
-    "history": "tarih gizem sır",
-    "psychology": "insan psikolojisi zihin",
-    "success": "zenginlik başarı motivasyon",
-    "facts": "inanılmaz bilgiler gerçekler"
+    "kids": "çocuk şarkıları bebek eğitici animasyon",
+    "science": "bilim teknoloji uzay evren",
+    "tech_ai": "yapay zeka gelecek teknoloji robot",
+    "history": "tarih gizem sır antik",
+    "psychology": "insan psikolojisi zihin manipülasyon",
+    "crypto": "kripto para bitcoin altcoin borsa",
+    "success": "zenginlik başarı motivasyon stoacılık",
+    "facts": "inanılmaz bilgiler ilginç gerçekler",
+    "mystery": "gizemli olaylar açıklanamayan sırlar",
 }
 
-def scan_youtube_shorts_trends(topic: str, time_filter: str = "week", sort_by: str = "views", category: str = "all") -> List[Dict[str, Any]]:
+REGION_HEADERS = {
+    "TR": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+    "US": "en-US,en;q=0.9",
+    "UK": "en-GB,en;q=0.9,en-US;q=0.8",
+    "DE": "de-DE,de;q=0.9,en;q=0.8",
+    "GLOBAL": "en-US,en;q=0.9,tr;q=0.5",
+}
+
+def scan_youtube_shorts_trends(topic: str, time_filter: str = "week", sort_by: str = "views", category: str = "all", region: str = "TR") -> List[Dict[str, Any]]:
     """
     Advanced Youtube Shorts Scanner:
     Parses real-time YouTube Shorts results with custom filters, channel metadata, view counts, 
@@ -37,11 +49,13 @@ def scan_youtube_shorts_trends(topic: str, time_filter: str = "week", sort_by: s
     elif time_filter == "month":
         sp_param = "EgQIACAB"
 
-    search_url = f"https://www.youtube.com/results?search_query={encoded_query}&sp={sp_param}"
+    gl_param = f"&gl={region.upper()}" if region and region.upper() in ("TR", "US", "UK", "DE") else ""
+    search_url = f"https://www.youtube.com/results?search_query={encoded_query}&sp={sp_param}{gl_param}"
 
+    accept_lang = REGION_HEADERS.get(region.upper(), REGION_HEADERS["TR"])
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept-Language": accept_lang
     }
 
     try:

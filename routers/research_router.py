@@ -2,7 +2,9 @@
 Research, script generation, trending scanner, Reddit and RSS news router.
 """
 import re
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 import requests
 import config
 from trending_scanner import scan_youtube_shorts_trends
@@ -14,6 +16,7 @@ from research_service import (
     aggregate_format_fingerprint,
     build_content_gap_fingerprint,
     extract_format_fingerprint_from_title,
+    build_topic_research_brief,
 )
 from director import resolve_niche_from_topic, compile_director_plan, pre_render_score
 from director.visual_intent import resolve_topic_intelligence
@@ -21,7 +24,9 @@ from scene_generator import generate_scenes, generate_reddit_rewrite_script
 from scenes.narration_validate import apply_auto_repair_if_needed, sanitize_plan_scene_descriptions
 from viral_seo_agent import append_research_source_reference
 from reddit_client import fetch_public_posts
-from rss_scanner import DEFAULT_RSS_FEEDS, get_breaking_news_topics
+from rss_scanner import DEFAULT_RSS_FEEDS, get_breaking_news_topics, transform_rss_item_to_shorts_idea
+from production.profiles import channel_profile
+from production.quality import validate_script_quality
 
 router = APIRouter(tags=["Research"])
 
@@ -46,13 +51,14 @@ def api_suggest_topics(req: TopicSuggestRequest):
 
 
 @router.get("/api/trending/scan")
-def api_scan_trending(topic: str = "Uzay", time_filter: str = "week", sort_by: str = "views", category: str = "all"):
+def api_scan_trending(topic: str = "Uzay", time_filter: str = "week", sort_by: str = "views", category: str = "all", region: str = "TR"):
     try:
-        trends = scan_youtube_shorts_trends(topic, time_filter=time_filter, sort_by=sort_by, category=category)
+        trends = scan_youtube_shorts_trends(topic, time_filter=time_filter, sort_by=sort_by, category=category, region=region)
         fps = [t.get("format_fingerprint") for t in trends if t.get("format_fingerprint")]
         return {
             "status": "ok",
             "topic": topic,
+            "region": region,
             "trends": trends,
             "format_fingerprint": aggregate_format_fingerprint(fps),
         }
@@ -77,8 +83,8 @@ def analyze_content_gaps(req: ContentGapResearchRequest):
 
 @router.post("/api/script/generate")
 def api_generate_script(req: ScriptGenerateRequest):
+    old_lang = config.LANGUAGE
     try:
-        old_lang = config.LANGUAGE
         if req.language:
             config.LANGUAGE = req.language
         topic_intel = resolve_topic_intelligence(req.keyword or "", req.niche or "1_news_flash")
@@ -102,6 +108,10 @@ def api_generate_script(req: ScriptGenerateRequest):
             plan["format_fingerprint"] = req.format_fingerprint
         plan["niche_profile"] = get_niche_production_profile(locked_niche)
         plan["topic_intelligence"] = topic_intel
+        research_brief = build_topic_research_brief(
+            req.keyword or "", niche_id=locked_niche, lang=req.language or config.LANGUAGE
+        )
+        plan["research_brief"] = research_brief
 
         # P3-34: A/B hook variants in generate response
         hook_variants = get_niche_ab_variants(locked_niche)
@@ -145,6 +155,9 @@ def api_generate_script(req: ScriptGenerateRequest):
                 reddit_post=req.reddit_post,
             )
             plan = director.to_legacy_plan()
+            # Director compiler returns legacy shape; preserve research
+            # contract across this compatibility boundary.
+            plan["research_brief"] = research_brief
             integrity = check_narration_integrity(director)
             pre = pre_render_score(director)
             narr_block = list(integrity) + [
@@ -185,18 +198,36 @@ def api_generate_script(req: ScriptGenerateRequest):
 
         plan = sanitize_plan_scene_descriptions(plan or {})
 
+        # New production contract: generation may return a draft, but every
+        # draft carries an explicit quality decision before render/publish.
+        script_quality = validate_script_quality(
+            plan,
+            channel_profile=channel_profile(
+                getattr(req, "channel_id", None) or "default",
+                niche_id=locked_niche,
+                language=req.language or config.LANGUAGE,
+            ).to_dict(),
+        )
+        plan.setdefault("meta", {})
+        plan["meta"]["script_quality"] = script_quality
+        plan["meta"]["render_allowed"] = bool(script_quality.get("ok"))
+
         compliance = None
         viewer_score = None
         try:
-            from compliance import evaluate_plan_compliance
+            from compliance import evaluate_plan_compliance, publication_decision
             from compliance.viewer_score import compute_viewer_score
             compliance = evaluate_plan_compliance(plan)
             plan.setdefault("meta", {})
             viewer_score = compute_viewer_score(plan, compliance=compliance)
+            plan["meta"]["publication"] = publication_decision(plan, compliance, viewer_score)
             plan["meta"]["viewer_score"] = viewer_score
             plan["meta"]["compliance"] = {
                 "ok": compliance.get("ok"),
                 "hard_fail": compliance.get("hard_fail"),
+                "render_blocking": compliance.get("render_blocking"),
+                "hard_fail_reasons": compliance.get("hard_fail_reasons"),
+                "diagnosis": compliance.get("diagnosis"),
                 "inauthentic": compliance.get("inauthentic"),
                 "niche_gate": compliance.get("niche_gate"),
                 "ai_disclosure": compliance.get("ai_disclosure"),
@@ -230,9 +261,12 @@ def api_generate_script(req: ScriptGenerateRequest):
             "topic_intelligence": topic_intel,
             "viewer_score": viewer_score,
             "compliance": compliance,
+            "script_quality": script_quality,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        config.LANGUAGE = old_lang
 
 
 @router.get("/api/research/reddit")
@@ -272,3 +306,33 @@ def fetch_rss_news(source: str = "aa_guncel", limit: int = 5):
     """Fetches breaking news from RSS feed (Item 57)."""
     items = get_breaking_news_topics(source, max_items=limit)
     return {"status": "ok", "source": source, "items": items}
+
+
+class RssConvertRequest(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    source: Optional[str] = "RSS"
+    suggested_niche: Optional[str] = "1_news_flash"
+    language: Optional[str] = None
+
+
+@router.post("/api/rss/convert-to-shorts")
+def convert_rss_to_shorts_endpoint(req: RssConvertRequest):
+    """
+    Transforms RSS headline into an original high-retention curiosity/shock question (Item 122).
+    Pre-assigns niche profile and ready-to-render topic brief.
+    """
+    try:
+        target_lang = req.language or getattr(config, "LANGUAGE", "tr")
+        idea = transform_rss_item_to_shorts_idea(
+            {
+                "title": req.title,
+                "description": req.description or "",
+                "source_name": req.source or "RSS",
+                "suggested_niche": req.suggested_niche or "1_news_flash",
+            },
+            lang=target_lang,
+        )
+        return {"status": "ok", "idea": idea}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

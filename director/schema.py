@@ -18,6 +18,8 @@ class VisualIntent:
     setting: str = ""
     era: str = ""
     mood: str = "cinematic"
+    lighting: str = "natural light"
+    visual_priority: str = "subject"
     must_include: List[str] = field(default_factory=list)
     must_exclude: List[str] = field(default_factory=list)
     continuity_motif: str = "default"
@@ -35,6 +37,8 @@ class VisualIntent:
             setting=str(data.get("setting", "")),
             era=str(data.get("era", "")),
             mood=str(data.get("mood", "cinematic")),
+            lighting=str(data.get("lighting", "natural light")),
+            visual_priority=str(data.get("visual_priority", "subject")),
             must_include=list(data.get("must_include") or []),
             must_exclude=list(data.get("must_exclude") or []),
             continuity_motif=str(data.get("continuity_motif", "default")),
@@ -86,6 +90,10 @@ class ScenePlan:
     path: Optional[str] = None
     mood: str = ""
     beat_hint_ms: Optional[float] = None
+    claim_ids: List[str] = field(default_factory=list)
+    evidence_required: bool = False
+    caption_emphasis: List[str] = field(default_factory=list)
+    transition_intent: str = "cut"
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -117,12 +125,33 @@ class ScenePlan:
             path=data.get("path"),
             mood=str(data.get("mood", "")),
             beat_hint_ms=float(data["beat_hint_ms"]) if data.get("beat_hint_ms") is not None else None,
+            claim_ids=list(data.get("claim_ids") or []),
+            evidence_required=bool(data.get("evidence_required", False)),
+            caption_emphasis=list(data.get("caption_emphasis") or []),
+            transition_intent=str(data.get("transition_intent", "cut")),
         )
 
 
-# tr-TR Edge TTS ≈ 2.3–2.6 words/s. 2.45 sits in-band; 60s × 2.5 × 1.15 ≈ 172 words cap.
+# tr-TR Edge TTS ≈ 2.3–2.6 words/s. ElevenLabs TR measured ~2.0 wps (slower).
 TTS_WORDS_PER_SEC = 2.45
 TTS_BUDGET_WPS = 2.5
+# fit_tts_to_timeline emergency ceiling — raw TTS must fit max_duration after this factor.
+TTS_EMERGENCY_MAX_SPEED = 1.35
+# ElevenLabs TR ~2.0 wps; 5% safety → 60×1.35×1.92 ≈ 155 words (Item 494).
+TTS_BUDGET_WPS_ELEVEN = 1.92
+
+
+def _effective_tts_budget_wps() -> float:
+    """Conservative wps for word-cap math — slowest active TTS provider wins."""
+    try:
+        import config
+        from tts_voices import is_elevenlabs_voice
+
+        if is_elevenlabs_voice(getattr(config, "TTS_VOICE", "") or ""):
+            return TTS_BUDGET_WPS_ELEVEN
+    except Exception:
+        pass
+    return TTS_WORDS_PER_SEC
 
 
 def natural_target_duration(
@@ -137,8 +166,14 @@ def natural_target_duration(
 
 
 def shorts_word_budget(max_duration: float = 60.0, max_audio_speed: float = 1.15) -> int:
-    """Never condense narration to hit 42/45/48 — only the 60s cap."""
-    return max(172, int(float(max_duration) * TTS_BUDGET_WPS * float(max_audio_speed)))
+    """
+    Max narration words so raw TTS fits max_duration after emergency speed-up (Item 494).
+    Uses provider-aware wps — ElevenLabs TR is slower than Edge (~2.0 vs ~2.45 wps).
+    """
+    _ = max_audio_speed  # preferred pace; budget locks to TTS_EMERGENCY_MAX_SPEED
+    wps = _effective_tts_budget_wps()
+    cap = int(float(max_duration) * TTS_EMERGENCY_MAX_SPEED * wps)
+    return max(96, cap)
 
 
 @dataclass
@@ -223,6 +258,10 @@ class DirectorPlan:
                     "wipe_direction": s.wipe_direction,
                     "mood": s.mood or s.visual_intent.mood,
                     "path": s.path,
+                    "claim_ids": s.claim_ids,
+                    "evidence_required": s.evidence_required,
+                    "caption_emphasis": s.caption_emphasis,
+                    "transition_intent": s.transition_intent,
                 }
                 for s in self.scenes
             ],
@@ -262,16 +301,16 @@ class DirectorPlan:
 
 DEFAULT_EFFECT_MANIFEST = {
     "item_101_jitter": True,
-    "item_87_sonic_watermark": True,
+    "item_87_sonic_watermark": False,
     "item_103_out_of_focus": True,
-    "item_108_pink_noise": True,
-    "item_112_whoosh_ding": True,
+    "item_108_pink_noise": False,
+    "item_112_whoosh_ding": False,
     "item_138_progress_bar": True,
-    "item_141_breaths": True,
-    "item_145_room_ambience": True,
+    "item_141_breaths": False,
+    "item_145_room_ambience": False,
     "item_154_sub_bass": True,
     "item_155_riser_whoosh": True,
-    "item_157_heartbeat": True,
+    "item_157_heartbeat": False,
     "item_158_clock_tick": True,
     "item_159_typewriter": True,
     "item_166_loop_no_fade": True,
@@ -281,9 +320,9 @@ DEFAULT_EFFECT_MANIFEST = {
     "item_182_piano": True,
     "item_183_synth_bass": True,
     "item_187_stereo_pan": True,
-    "item_188_crowd_ambience": True,
-    "item_191_reverb_chamber": True,
-    "item_195_epic_trailer_voice": True,
+    "item_188_crowd_ambience": False,
+    "item_191_reverb_chamber": False,
+    "item_195_epic_trailer_voice": False,
     "item_418_ffmpeg_graph": True,
     # Visual bait — opt-in per niche family (default off)
     "item_211_blur_bait": False,

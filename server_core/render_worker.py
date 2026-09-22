@@ -58,13 +58,35 @@ def _veo_circuit_open() -> bool:
         return False
 
 
+_SCRIPT_SLOP = (
+    "sonunu görmeden kaydırma",
+    "gözlerime inanamadım",
+    "toplumun bize dayattığı",
+    "hakkında söylediği söz",
+    "konusunda tamamen yanılıyor",
+)
+
+
 def _ensure_ui_plan_narration_usable(plan, keyword: str, locked_niche: str, target_lang: str):
     """Batch C — UI-supplied plan must pass narration gate or get procedural inject."""
     if not plan or not plan.get("scenes"):
         return plan
     try:
         from scenes.narration_validate import plan_quality_usable
-        from scenes.fallback import _generate_procedural_fallback_scenes
+        from scenes.fallback import _generate_procedural_fallback_scenes, _generate_five_fact_scenes
+
+        blob = " ".join(
+            str((s or {}).get("narration") or "")
+            for s in (plan.get("scenes") or [])
+            if isinstance(s, dict)
+        ).casefold()
+        slop = any(mark in blob for mark in _SCRIPT_SLOP)
+        if slop and (locked_niche == "9_five_facts" or "gerçek" in (keyword or "").casefold() or "gercek" in (keyword or "").casefold()):
+            _log("[Director] Senaryo şablon çöp — 5 gerçek anlatımıyla değiştiriliyor", 11)
+            plan = dict(plan)
+            plan.update(_generate_five_fact_scenes(keyword, target_lang != "en"))
+            plan["niche_id"] = locked_niche or "9_five_facts"
+            return plan
 
         if plan_quality_usable(plan.get("scenes") or []):
             return plan
@@ -135,7 +157,7 @@ def _sweep_render_temp_files(job_prefix: str = "") -> None:
 
 def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None, channel_id=None):
     """Sync fetch for one scene — used from parallel executor (P1-13)."""
-    q = scene.get("search_queries", [scene.get("search_query", "nature")])
+    q = scene.get("search_queries") or ([scene.get("search_query")] if scene.get("search_query") else [])
     d = scene.get("duration", 7)
     desc = scene.get("scene_description", "")
     intent = scene.get("visual_intent") or {}
@@ -148,14 +170,18 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
     )
     p = None
     gemini_circuit_open = _gemini_image_circuit_open()
+    # Licensed stock/archive footage is the default. AI is only selected when
+    # a shot explicitly requests it or when semantic stock retrieval fails.
+    source_policy = str(scene.get("visual_source_policy") or "licensed_first").casefold()
+    prefer_ai = source_policy in {"ai", "synthetic", "ai_first"} or bool((plan or {}).get("prefer_ai_visuals"))
 
     if i == 0 and plan.get("reddit_post"):
         p = generate_reddit_post_card_clip(
             plan["reddit_post"], os.path.join(proj, "s000_reddit_source.mp4"), duration=d
         )
-    elif _veo_render_allowed() and i > 0 and (i % 4 == 1):
+    elif prefer_ai and _veo_render_allowed() and i > 0:
         p = generate_veo_scene_clip(
-            scene_description=desc or (q[0] if q else "cinematic atmosphere"),
+            scene_description=desc or (q[0] if q else (narr[:120] or "subject detail")),
             output_path=os.path.join(proj, f"s{i:03d}_veo.mp4"),
             duration=d,
         )
@@ -164,12 +190,12 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         and getattr(config, "USE_GEMINI_VIDEO_GEN", False)
         and config.GEMINI_API_KEY
         and i > 0
-        and (i % 4 == 1)
         and not getattr(config, "GEMINI_VEO_PAID_QUOTA", False)
     ):
         _log("[Visual] Veo atlandi — GEMINI_VEO_PAID_QUOTA=false (ucretli kota onayi gerekli)")
     elif (
-        not gemini_circuit_open
+        prefer_ai
+        and not gemini_circuit_open
         and getattr(config, "PREFER_GEMINI_SCENE_IMAGES", False)
         and getattr(config, "USE_GEMINI_IMAGE_GEN", False)
         and config.GEMINI_API_KEY
@@ -180,8 +206,8 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
             duration=d,
         )
     elif (
-        not gemini_circuit_open
-        and (i % 3 == 2)
+        prefer_ai
+        and not gemini_circuit_open
         and (
             getattr(config, "USE_GEMINI_IMAGE_GEN", False) and config.GEMINI_API_KEY
             or getattr(config, "FAL_API_KEY", "")
@@ -195,8 +221,8 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         )
     elif (_veo_circuit_open() or gemini_circuit_open) and (
         getattr(config, "PREFER_GEMINI_SCENE_IMAGES", False)
-        or (i % 3 == 2)
-        or (getattr(config, "USE_GEMINI_VIDEO_GEN", False) and i > 0 and (i % 4 == 1))
+        or prefer_ai
+        or (getattr(config, "USE_GEMINI_VIDEO_GEN", False) and i > 0 and prefer_ai)
     ):
         reason = "veo 429" if _veo_circuit_open() else "gemini_image 429"
         _log(f"[Visual] Sahne {i + 1}/{total_s}: {reason} devre acik — zorunlu stok regen")
@@ -216,6 +242,22 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
             niche_id=niche_id,
             channel_id=channel_id,
         )
+
+    # A configured AI provider may fill only an otherwise missing licensed
+    # shot. The provider manifest marks the result as synthetic for disclosure.
+    if not p and not prefer_ai and not gemini_circuit_open:
+        if _veo_render_allowed() and getattr(config, "USE_GEMINI_VIDEO_GEN", False):
+            p = generate_veo_scene_clip(
+                scene_description=desc or (q[0] if q else "cinematic subject footage"),
+                output_path=os.path.join(proj, f"s{i:03d}_veo_fallback.mp4"),
+                duration=d,
+            )
+        elif getattr(config, "USE_GEMINI_IMAGE_GEN", False) and config.GEMINI_API_KEY:
+            p = generate_ai_image_clip(
+                scene_description=desc or (q[0] if q else "cinematic subject footage"),
+                output_path=os.path.join(proj, f"s{i:03d}_ai_fallback.mp4"),
+                duration=d,
+            )
 
     clip_entry = {
         "path": p,
@@ -271,6 +313,12 @@ def process_video_task(req: VideoRenderRequest):
     try:
         state.current_render_state["cancel_requested"] = False
         state.current_render_state["cancel_notified"] = False
+        # Every job starts with clean terminal state. Otherwise a previous
+        # failed render remains visible while a new render is already running.
+        state.current_render_state["error"] = None
+        state.current_render_state["video_url"] = None
+        state.current_render_state["percent"] = 0
+        state.current_render_state["step"] = "Başlatılıyor"
 
         # Item 448: auto-delete rendered outputs older than 30 days (best-effort)
         try:
@@ -348,6 +396,13 @@ def process_video_task(req: VideoRenderRequest):
         proj = os.path.join(assets_root, safe)
         os.makedirs(proj, exist_ok=True)
         reset_used_videos()
+        # One render owns one visual manifest.  Reset it before parallel scene
+        # acquisition so credits never leak from a previous job.
+        try:
+            from visuals.fetch import reset_job_manifest
+            reset_job_manifest()
+        except Exception as manifest_err:
+            _log(f"[Visual] Manifest reset note: {manifest_err}", 8)
         reset_session_source_counts()
 
         # ─── 1–2) Script + DirectorPlan (Item 120: max 3 originality retries) ─
@@ -510,6 +565,30 @@ def process_video_task(req: VideoRenderRequest):
             state.broadcast_event("error", message)
             return
 
+        # Strict production contract: drafts that do not meet the intended
+        # 45-60s / 6-12 scene / 120-170 word shape must be regenerated rather
+        # than rendered as filler-heavy output.
+        try:
+            from production.quality import validate_script_quality
+            script_quality = validate_script_quality(plan or {})
+            plan.setdefault("meta", {})
+            plan["meta"]["script_quality"] = script_quality
+            if script_quality.get("hard_fail") and not getattr(req, "allow_draft_render", False):
+                reason = ", ".join(script_quality.get("issues") or [])
+                msg = f"Senaryo üretim sözleşmesi reddetti: {reason}"
+                _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
+                if db_id:
+                    database.update_video_status(db_id, "failed", error_message=msg)
+                state.broadcast_event("error", msg)
+                return
+        except Exception as script_quality_err:
+            msg = f"Senaryo kalite sözleşmesi çalıştırılamadı: {script_quality_err}"
+            _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
+            if db_id:
+                database.update_video_status(db_id, "failed", error_message=msg)
+            state.broadcast_event("error", msg)
+            return
+
         if db_id and plan.get("scenes"):
             database.save_scenes(db_id, plan["scenes"])
 
@@ -581,6 +660,66 @@ def process_video_task(req: VideoRenderRequest):
                 plan = director.to_legacy_plan()
                 _log(f"[Visual] {len(bad)} sahne intent yenilendi (must_exclude temizliği)")
 
+        # Monetization-first gate: the render path must enforce the same
+        # policy checks exposed by the script API.  Previously a plan could
+        # pass the UI audit and still be rendered by the worker.
+        try:
+            from compliance import evaluate_plan_compliance, publication_decision
+            from compliance.viewer_score import compute_viewer_score
+            from research_service import build_topic_research_brief
+
+            plan["keyword"] = keyword
+            plan["niche_id"] = locked_niche
+            plan["research_brief"] = plan.get("research_brief") or build_topic_research_brief(
+                keyword, niche_id=locked_niche, lang=target_lang
+            )
+            compliance_result = evaluate_plan_compliance(plan)
+            viewer_result = compute_viewer_score(plan, compliance=compliance_result)
+            plan.setdefault("meta", {})
+            plan["meta"]["compliance"] = compliance_result
+            plan["meta"]["viewer_score"] = viewer_result
+            plan["meta"]["publication"] = publication_decision(plan, compliance_result, viewer_result)
+            with open(os.path.join(proj, "compliance.json"), "w", encoding="utf-8") as fh:
+                json.dump(
+                    {"compliance": compliance_result, "viewer_score": viewer_result},
+                    fh, ensure_ascii=False, indent=2,
+                )
+            _log(
+                f"[Compliance] risk={(compliance_result.get('inauthentic') or {}).get('risk')} "
+                f"viewer={viewer_result.get('score')} action="
+                f"{(compliance_result.get('niche_gate') or {}).get('action')} "
+                f"research={(compliance_result.get('research') or {}).get('action')} "
+                f"render_blocking={compliance_result.get('render_blocking')} "
+                f"reason={(compliance_result.get('diagnosis') or {}).get('primary')}",
+                27,
+            )
+            render_blocking = bool(compliance_result.get("render_blocking"))
+            if render_blocking:
+                reason = ", ".join(compliance_result.get("hard_fail_reasons") or [])
+                if not reason:
+                    reason = "render_blocking_without_reason"
+                msg = f"Para kazanma kalite kapısı renderı durdurdu: {reason}"
+                _log(f"[Compliance] HARD-FAIL: {msg}", 28)
+                if db_id:
+                    database.update_video_status(db_id, "failed", error_message=msg)
+                state.broadcast_event("error", msg)
+                return
+            if compliance_result.get("hard_fail"):
+                # Research evidence is a publication gate, not a render safety
+                # gate. Keep the diagnosis visible so the UI can request sources.
+                reason = ", ".join(compliance_result.get("hard_fail_reasons") or [])
+                _log(
+                    f"[Compliance] RENDER_ALLOWED_REVIEW: {reason or 'publication review required'}",
+                    27,
+                )
+        except Exception as compliance_err:
+            msg = f"Uyumluluk kalite kapısı çalıştırılamadı: {compliance_err}"
+            _log(f"[Compliance] HARD-FAIL: {msg}", 28)
+            if db_id:
+                database.update_video_status(db_id, "failed", error_message=msg)
+            state.broadcast_event("error", msg)
+            return
+
         # ─── 3) Acquire visuals ───────────────────────────────────────────
         check_cancelled()
         scenes = plan.get("scenes", [])
@@ -599,11 +738,18 @@ def process_video_task(req: VideoRenderRequest):
             except Exception:
                 niche_profile = {}
         production_rules = (niche_profile.get("production_rules") or {}) if isinstance(niche_profile, dict) else {}
+        gp_cat = (getattr(req, "gameplay_category", None) or "auto").strip().lower()
+        # Sabun kesme / parkour picked in the UI is the split request.
+        # Niche profile used to clear the checkbox and the render went full frame.
+        if gp_cat not in ("", "auto"):
+            req.split_screen = True
+        # dopamin_split_screen stays in metadata. It does not fetch gameplay.
+        # Split is the user checkbox, a real hybrid niche, or the niche rule.
+        hybrid_split = bool(plan.get("hybrid_niche")) and bool(plan.get("hybrid_split_screen"))
         needs_split_screen = (
             getattr(req, "split_screen", False)
-            or bool(plan.get("hybrid_split_screen"))
-            or bool(retention_meta.get("dopamin_split_screen"))
-            or bool(production_rules.get("split_screen"))  # R10 #3 niche profile auto-wire
+            or hybrid_split
+            or bool(production_rules.get("split_screen"))
         )
         if needs_split_screen:
             req.split_screen = True
@@ -677,14 +823,24 @@ def process_video_task(req: VideoRenderRequest):
                     check_cancelled()
                     scene = scenes[i]
                     intent = scene.get("visual_intent") or {}
-                    q = (
-                        intent.get("search_queries")
-                        or scene.get("search_queries")
-                        or scene.get("search_query")
-                        or ["cinematic atmosphere"]
+                    from visuals.subject_lock import queries_for_scene
+                    q = queries_for_scene(
+                        narration=scene.get("narration") or "",
+                        scene_description=scene.get("scene_description") or "",
+                        subject=str(intent.get("subject") or ""),
+                        existing=(
+                            intent.get("search_queries")
+                            or scene.get("search_queries")
+                            or scene.get("search_query")
+                            or []
+                        ),
                     )
-                    if isinstance(q, str):
-                        q = [q]
+                    if not q:
+                        _log(
+                            f"[Visual] Retry pass {attempt}: scene {i + 1}/{total_s} "
+                            "has no filmable subject; left missing"
+                        )
+                        continue
                     p = fetch_scene_clip(
                         q, i, proj, target_duration=clips[i]["duration"],
                         scene_description=scene.get("scene_description", ""),
@@ -698,6 +854,7 @@ def process_video_task(req: VideoRenderRequest):
                             or ""
                         ),
                         channel_id=getattr(req, "channel_id", None),
+                        allow_procedural=False,
                     )
                     clips[i]["path"] = p
                     if p:
@@ -739,6 +896,80 @@ def process_video_task(req: VideoRenderRequest):
             if director:
                 with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
                     json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
+            if db_id:
+                database.update_video_status(db_id, "failed", error_message=msg)
+            state.broadcast_event("error", msg)
+            return
+
+        # ViewMade-style deliverable: ship an auditable source ledger with the
+        # render.  This is also the single place where the description-ready
+        # attribution block is created, after all retries have settled.
+        try:
+            from visuals.fetch import write_job_credits, get_job_manifest
+            credits = write_job_credits(proj)
+            manifest_count = len(get_job_manifest())
+            disclosure = ((plan.get("meta") or {}).get("compliance") or {}).get("ai_disclosure") or {}
+            # Persist the complete production chain before encoding so a
+            # failed render still leaves an auditable explanation.
+            artifact_payloads = {
+                "research_brief.json": plan.get("research_brief") or {},
+                "script.json": {
+                    "title": plan.get("title") or keyword,
+                    "language": target_lang,
+                    "niche_id": locked_niche,
+                    "full_narration": plan.get("full_narration") or "",
+                    "scenes": plan.get("scenes") or [],
+                    "narrative_structure": plan.get("narrative_structure") or [],
+                    "hook": plan.get("hook") or "",
+                    "payoff": plan.get("payoff") or "",
+                    "loop_line": plan.get("loop_line") or "",
+                },
+                "shot_plan.json": {
+                    "scenes": [
+                        {
+                            "scene_index": i,
+                            "visual_intent": scene.get("visual_intent") or {},
+                            "search_queries": scene.get("search_queries") or [],
+                            "clip": next(
+                                (row for row in get_job_manifest() if row.get("scene_index") == i),
+                                None,
+                            ),
+                        }
+                        for i, scene in enumerate(plan.get("scenes") or [])
+                    ]
+                },
+            }
+            for filename, payload in artifact_payloads.items():
+                with open(os.path.join(proj, filename), "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False, indent=2)
+            publishing = {
+                "title": plan.get("title") or keyword,
+                "language": target_lang,
+                "niche_id": locked_niche,
+                "research_brief": plan.get("research_brief") or {},
+                "viewer_score": ((plan.get("meta") or {}).get("viewer_score") or {}).get("score"),
+                "ai_disclosure": disclosure,
+                "description_appendix": "\n\n".join(
+                    part for part in [
+                        credits.get("description_block", "").strip(),
+                        disclosure.get("description_paragraph", "").strip(),
+                    ] if part
+                ),
+                "credits_files": credits,
+                "policy_decision": ((plan.get("meta") or {}).get("compliance") or {}).get("niche_gate") or {},
+                "research_decision": ((plan.get("meta") or {}).get("compliance") or {}).get("research") or {},
+                "publication_decision": (plan.get("meta") or {}).get("publication") or {},
+            }
+            with open(os.path.join(proj, "publishing_package.json"), "w", encoding="utf-8") as fh:
+                json.dump(publishing, fh, ensure_ascii=False, indent=2)
+            _log(
+                f"[Compliance] visual_credits hazır: {manifest_count} kaynak | "
+                f"{os.path.basename(credits['json'])} | publishing_package hazır",
+                59,
+            )
+        except Exception as credits_err:
+            msg = f"Görsel kaynak kayıt dosyası oluşturulamadı: {credits_err}"
+            _log(f"[Compliance] HARD-FAIL: {msg}", 59)
             if db_id:
                 database.update_video_status(db_id, "failed", error_message=msg)
             state.broadcast_event("error", msg)
@@ -813,7 +1044,22 @@ def process_video_task(req: VideoRenderRequest):
                 if not script_regen_494:
                     script_regen_494 = True
                     _log(f"[Timeline] {fit_err} — senaryo bir kez yeniden üretiliyor...", 69)
-                    new_plan = generate_scenes(keyword, niche_type=locked_niche, language=target_lang)
+                    new_plan = generate_scenes(
+                        keyword,
+                        niche_type=locked_niche,
+                        language=target_lang,
+                        variation_attempt=1,
+                    )
+                    # TTS retry must change the word budget, not only rotate
+                    # prose. Otherwise the same 170+ word plan fails twice.
+                    try:
+                        from director.schema import shorts_word_budget
+                        from scenes.narration_validate import repair_post_hook_word_budget
+
+                        regen_cap = max(96, shorts_word_budget() - 8)
+                        new_plan = repair_post_hook_word_budget(new_plan, max_words=regen_cap)
+                    except Exception:
+                        pass
                     new_director = compile_director_plan(
                         new_plan,
                         title=keyword,
@@ -933,14 +1179,7 @@ def process_video_task(req: VideoRenderRequest):
             print(f"  [SEO] Notice: {se}")
 
         if getattr(req, "resolution", None) in ("1080p", "720p", "540p"):
-            # 1080p is the production default; 540p/720p only with explicit test flag
             res_mode = req.resolution
-            if res_mode != "1080p" and not getattr(req, "force_test_resolution", False):
-                _log(
-                    f"[FFmpegGraph] {res_mode} test modu atlandı — yayın için 1080p kullanılıyor.",
-                    75,
-                )
-                res_mode = "1080p"
             config.RENDER_RESOLUTION_MODE = res_mode
             res_dims = config.RESOLUTIONS.get(res_mode, (1080, 1920))
             _log(f"[FFmpegGraph] Çözünürlük: {res_mode} ({res_dims[0]}x{res_dims[1]})")
@@ -1005,6 +1244,7 @@ def process_video_task(req: VideoRenderRequest):
             anti_duplicate=getattr(req, "anti_duplicate", True),
             watermark_path=getattr(req, "watermark_path", None),
             enable_ken_burns=getattr(req, "enable_ken_burns", True),
+            enable_zoompan=bool(getattr(req, "enable_zoompan", False)),
             gameplay_path=gameplay_path,
             niche_id=(director.niche_id if director else getattr(req, "niche", "")),
             retention_metadata=(plan or {}).get("retention_metadata") if isinstance(plan, dict) else None,
@@ -1053,6 +1293,21 @@ def process_video_task(req: VideoRenderRequest):
                 )
                 with open(os.path.join(proj, "quality_gate.json"), "w", encoding="utf-8") as qf:
                     json.dump({"pre": pre_result, "post": post}, qf, ensure_ascii=False, indent=2)
+                with open(os.path.join(proj, "render_verification.json"), "w", encoding="utf-8") as vf:
+                    json.dump(
+                        {
+                            "video_path": result,
+                            "audio_path": audio_path,
+                            "verified": bool(post.get("ok")),
+                            "video_duration": post.get("video_duration"),
+                            "audio_duration": post.get("audio_duration"),
+                            "av_delta": post.get("av_delta"),
+                            "issues": post.get("issues") or [],
+                        },
+                        vf,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
                 # Persist final director paths after render
                 with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
                     json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
@@ -1071,6 +1326,40 @@ def process_video_task(req: VideoRenderRequest):
 
             size_mb = round(os.path.getsize(result) / (1024 * 1024), 2)
             total_dur = sum(c["duration"] for c in clips)
+
+            # File-only delivery contract: policy snapshot, AI disclosure,
+            # quality report, manual checklist and output checksum are written
+            # before the job is marked completed.
+            try:
+                from production.package import write_delivery_package
+                from production.quality import validate_script_quality
+                package_quality = ((plan.get("meta") or {}).get("script_quality")
+                                   if isinstance(plan, dict) else None)
+                if not package_quality:
+                    package_quality = validate_script_quality(plan or {})
+                manifest_payload = None
+                manifest_path = os.path.join(proj, "source_manifest.json")
+                if os.path.isfile(manifest_path):
+                    with open(manifest_path, "r", encoding="utf-8") as mf:
+                        manifest_payload = json.load(mf)
+                package_paths = write_delivery_package(
+                    proj,
+                    plan=plan if isinstance(plan, dict) else {},
+                    output_path=result,
+                    quality_report=package_quality,
+                    source_manifest=manifest_payload,
+                )
+                _log(
+                    f"[Package] Dosya teslim paketi hazır: {', '.join(sorted(package_paths))}",
+                    98,
+                )
+            except Exception as package_err:
+                msg = f"Teslim paketi oluşturulamadı: {package_err}"
+                _log(f"[Package] HARD-FAIL: {msg}", 98)
+                if db_id:
+                    database.update_video_status(db_id, "failed", error_message=msg)
+                state.broadcast_event("error", msg)
+                return
 
             proof_filename = f"{os.path.splitext(os.path.basename(result))[0]}_proof.json"
             proof_full_path = os.path.join(config.BASE_DIR, "proofs", proof_filename)

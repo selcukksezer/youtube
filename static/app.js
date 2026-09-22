@@ -749,6 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectGameplayCategory = document.getElementById('select-gameplay-category');
     const gameplayCategoryWrap = document.getElementById('gameplay-category-wrap');
     const chkSplitScreen = document.getElementById('chk-split-screen');
+    let splitTouched = false;
     const TTS_VOICE_STORAGE_KEY = 'shortsTtsVoice';
     const STATIC_TTS_FALLBACK = {
         tr: [
@@ -792,6 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let elevenlabsConfigured = false;
     const chkAntiDuplicate = document.getElementById('chk-anti-duplicate');
     const chkKenBurns = document.getElementById('chk-ken-burns');
+    const chkZoompan = document.getElementById('chk-zoompan');
     const chkAutoPublish = document.getElementById('chk-auto-publish');
     const btnCreateScript = document.getElementById('btn-create-script');
     const btnQuickRender = document.getElementById('btn-quick-render');
@@ -829,7 +831,8 @@ document.addEventListener('DOMContentLoaded', () => {
         "channels": { title: "Kanal & Otomatik Yayın Dağıtımı", desc: "YouTube API v3 ile planlı yükleme ve TikTok/Reels çapraz paylaşım formatı." },
         "gallery": { title: "Video Galerisi & Arşiv", desc: "Tamamlanan Full HD videolarınızı izleyin, indirin veya kanala yükleyin." },
         "roadmap500": { title: "Yol Haritası", desc: "Sistem özellikleri ve teknik parametrelerin canlı durum gezgini." },
-        "settings": { title: "Sistem & API Ayarları", desc: "0 TL maliyet katmanı, kota izleyici ve API anahtarı yönetimi." }
+        "settings": { title: "Sistem & API Ayarları", desc: "0 TL maliyet katmanı, kota izleyici ve API anahtarı yönetimi." },
+        "kids-song": { title: "Çocuk Şarkı MV Stüdyosu", desc: "Master ses ve sözden Flow klipleri, sonra tek final MP4." }
     };
 
     const NAV_COLLAPSIBLE_TABS = {
@@ -886,6 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (typeof window.loadHardwareSpecs === 'function') window.loadHardwareSpecs();
         }
         if (tabId === 'audio') loadBgmList();
+        if (tabId === 'kids-song') loadKidsSong();
     }
 
     navButtons.forEach(btn => {
@@ -910,6 +914,312 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
         console.warn('Tab restore error:', e);
     }
+
+    // ══════════════════════════════════════════════════════════════
+    // ÇOCUK ŞARKI MV STÜDYOSU — BİREBİR TAM ENTEGRASYON MANTIĞI
+    // ══════════════════════════════════════════════════════════════
+    let kidsSongTimer = null;
+    let kidsSongBaseUrl = 'http://127.0.0.1:3210';
+    let currentStudioRoute = '/cocuk-sarki';
+    let isKidsStudioBooting = false;
+
+    function getStudioFullUrl(route) {
+        const cleanBase = kidsSongBaseUrl.replace(/\/$/, '');
+        const target = route || currentStudioRoute || '/cocuk-sarki';
+        const cleanRoute = target.startsWith('/') ? target : '/' + target;
+        return cleanBase + cleanRoute;
+    }
+
+    function setStudioRoute(route) {
+        currentStudioRoute = route;
+        document.querySelectorAll('.btn-studio-nav').forEach(btn => {
+            btn.classList.toggle('active', btn.getAttribute('data-studio-route') === route);
+        });
+        const frame = document.getElementById('kids-song-frame');
+        if (frame) {
+            frame.src = getStudioFullUrl(route);
+        }
+    }
+
+    async function refreshKidsSong() {
+        const badgeEl = document.getElementById('kids-song-badge');
+        const statusEl = document.getElementById('kids-song-status');
+        const offlineScreen = document.getElementById('kids-song-offline-screen');
+        const frameContainer = document.getElementById('kids-song-frame-container');
+        const frame = document.getElementById('kids-song-frame');
+        const startBtn = document.getElementById('btn-kids-song-start');
+        const stopBtn = document.getElementById('btn-kids-song-stop');
+        const placeholderTitle = document.getElementById('kids-placeholder-title');
+        const placeholderDesc = document.getElementById('kids-placeholder-desc');
+        const noteEl = document.getElementById('kids-song-note');
+
+        if (!badgeEl) return;
+
+        try {
+            const res = await fetch('/api/kids-song/status');
+            const data = await res.json();
+            if (data.url) kidsSongBaseUrl = data.url;
+
+            if (data.running) {
+                isKidsStudioBooting = false;
+                badgeEl.className = 'badge-status status-online';
+                badgeEl.textContent = '● Çevrimiçi';
+                if (statusEl) statusEl.textContent = `Stüdyo motoru aktif (Port ${data.port || 3210})`;
+                
+                if (offlineScreen) offlineScreen.style.display = 'none';
+                if (frameContainer) frameContainer.style.display = 'block';
+                if (startBtn) startBtn.style.display = 'none';
+                if (stopBtn) stopBtn.style.display = 'inline-flex';
+
+                if (frame) {
+                    const expected = getStudioFullUrl(currentStudioRoute);
+                    if (!frame.src || frame.src === 'about:blank') {
+                        frame.src = expected;
+                    }
+                }
+            } else if (isKidsStudioBooting || data.managed) {
+                badgeEl.className = 'badge-status status-starting';
+                badgeEl.textContent = '● Başlatılıyor...';
+                if (statusEl) statusEl.textContent = 'Stüdyo hazırlanıyor, Next.js derleniyor...';
+                
+                if (offlineScreen) offlineScreen.style.display = 'flex';
+                if (frameContainer) frameContainer.style.display = 'none';
+                if (placeholderTitle) placeholderTitle.textContent = 'Çocuk Şarkı Stüdyosu Başlatılıyor...';
+                if (placeholderDesc) placeholderDesc.textContent = 'Google Flow ve Suno MV motoru açılıyor. İlk açılış 20-30 saniye sürebilir.';
+                if (startBtn) startBtn.style.display = 'none';
+                if (stopBtn) stopBtn.style.display = 'inline-flex';
+            } else {
+                badgeEl.className = 'badge-status status-offline';
+                badgeEl.textContent = '● Çevrimdışı';
+                if (statusEl) statusEl.textContent = data.message || 'Stüdyo kapalı';
+
+                if (offlineScreen) offlineScreen.style.display = 'flex';
+                if (frameContainer) frameContainer.style.display = 'none';
+                if (placeholderTitle) placeholderTitle.textContent = 'Çocuk Şarkı Stüdyosu Kapalı';
+                if (placeholderDesc) placeholderDesc.textContent = 'Tek tıkla stüdyoyu başlatın; Google Flow & Suno MV motoru tam entegre çalışır.';
+                if (startBtn) startBtn.style.display = 'inline-flex';
+                if (stopBtn) stopBtn.style.display = 'none';
+            }
+
+            if (noteEl) {
+                noteEl.textContent = data.log_tail ? `Son log: ${data.log_tail}` : '';
+            }
+
+            // Sol menüdeki proje sayısını dinamik güncelle
+            try {
+                const pRes = await fetch('/api/kids-song/projects');
+                const pData = await pRes.json();
+                const navBadge = document.getElementById('badge-kids-song-count');
+                if (navBadge && pData.projects) {
+                    const count = pData.projects.length;
+                    navBadge.textContent = count;
+                    navBadge.style.display = count > 0 ? 'inline-block' : 'none';
+                }
+            } catch (e) {}
+        } catch (err) {
+            badgeEl.className = 'badge-status status-offline';
+            badgeEl.textContent = '● Bağlantı Hatası';
+            if (statusEl) statusEl.textContent = 'Arka plan durum sorgusu başarısız.';
+        }
+    }
+
+    async function triggerKidsStudioStart() {
+        isKidsStudioBooting = true;
+        refreshKidsSong();
+        try {
+            const res = await fetch('/api/kids-song/start', { method: 'POST' });
+            const data = await res.json();
+            if (data.ok && data.url) kidsSongBaseUrl = data.url;
+        } catch (err) {
+            console.error('Stüdyo başlatma hatası:', err);
+        }
+        setTimeout(refreshKidsSong, 1500);
+    }
+
+    function loadKidsSong() {
+        refreshKidsSong();
+        // Otomatik Başlatma: Kullanıcı sekmeye geldiğinde stüdyo kapalıysa kendiliğinden aç
+        fetch('/api/kids-song/status')
+            .then(res => res.json())
+            .then(data => {
+                if (!data.running && !isKidsStudioBooting && !data.managed) {
+                    triggerKidsStudioStart();
+                }
+            })
+            .catch(() => {});
+
+        if (!kidsSongTimer) {
+            kidsSongTimer = setInterval(() => {
+                const pane = document.getElementById('pane-kids-song');
+                if (pane && pane.classList.contains('active')) {
+                    refreshKidsSong();
+                }
+            }, 3000);
+        }
+    }
+
+    // Buton Event Listeners
+    document.querySelectorAll('.btn-studio-nav').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const route = btn.getAttribute('data-studio-route');
+            if (route) setStudioRoute(route);
+        });
+    });
+
+    document.getElementById('btn-kids-song-start')?.addEventListener('click', triggerKidsStudioStart);
+    document.getElementById('btn-kids-placeholder-start')?.addEventListener('click', triggerKidsStudioStart);
+
+    document.getElementById('btn-kids-song-stop')?.addEventListener('click', async () => {
+        isKidsStudioBooting = false;
+        try {
+            await fetch('/api/kids-song/stop', { method: 'POST' });
+        } catch (err) {
+            console.error(err);
+        }
+        refreshKidsSong();
+    });
+
+    document.getElementById('btn-kids-song-reload')?.addEventListener('click', () => {
+        const frame = document.getElementById('kids-song-frame');
+        if (frame) {
+            frame.src = getStudioFullUrl(currentStudioRoute);
+        }
+        refreshKidsSong();
+    });
+
+    document.getElementById('btn-kids-song-keys')?.addEventListener('click', async () => {
+        const statusEl = document.getElementById('kids-song-status');
+        if (statusEl) statusEl.textContent = 'API anahtarları aktarılıyor...';
+        try {
+            const res = await fetch('/api/kids-song/settings/transfer', { method: 'POST' });
+            const data = await res.json();
+            if (statusEl) statusEl.textContent = data.message || 'Anahtarlar stüdyoya başarıyla aktarıldı!';
+        } catch (err) {
+            if (statusEl) statusEl.textContent = 'Ayar aktarımı başarısız.';
+        }
+    });
+
+    document.getElementById('btn-kids-song-import')?.addEventListener('click', async () => {
+        const statusEl = document.getElementById('kids-song-status');
+        if (statusEl) statusEl.textContent = 'Tamamlanan video galeriye aktarılıyor...';
+        try {
+            const listRes = await fetch('/api/kids-song/projects');
+            const listData = await listRes.json();
+            const projects = (listData.projects || []);
+            const readyProject = projects.find(p => p.status === 'completed' || p.label === 'render bitti') || projects[0];
+
+            if (!readyProject) {
+                if (statusEl) statusEl.textContent = 'Aktarılacak tamamlanmış bir video bulunamadı.';
+                return;
+            }
+
+            const impRes = await fetch('/api/kids-song/projects/' + encodeURIComponent(readyProject.id) + '/import', { method: 'POST' });
+            const impData = await impRes.json();
+            if (impData.ok) {
+                if (statusEl) statusEl.textContent = `Video başarıyla galeriye aktarıldı: ${impData.filename}`;
+                if (typeof loadGalleryVideos === 'function') loadGalleryVideos();
+                if (typeof renderGallery === 'function') renderGallery();
+            } else {
+                if (statusEl) statusEl.textContent = impData.error || 'Galeriye aktarılamadı (Final video henüz hazır değil).';
+            }
+        } catch (err) {
+            if (statusEl) statusEl.textContent = 'Galeriye aktarma işlemi başarısız.';
+        }
+    });
+
+    // AI Çocuk Şarkısı Söz ve Konsept Sihirbazı
+    const wizardModal = document.getElementById('modal-kids-ai-wizard');
+    const wizardOpenBtn = document.getElementById('btn-kids-ai-wizard');
+    const wizardCloseBtn = document.getElementById('btn-close-kids-wizard');
+    const wizardRunBtn = document.getElementById('btn-run-kids-wizard');
+    const wizardCreateBtn = document.getElementById('btn-kids-wizard-create');
+    const wizardResultArea = document.getElementById('kids-ai-result-area');
+
+    wizardOpenBtn?.addEventListener('click', () => {
+        if (wizardModal) wizardModal.style.display = 'flex';
+    });
+
+    wizardCloseBtn?.addEventListener('click', () => {
+        if (wizardModal) wizardModal.style.display = 'none';
+    });
+
+    document.querySelectorAll('.badge-preset').forEach(preset => {
+        preset.addEventListener('click', () => {
+            const topicInput = document.getElementById('kids-ai-topic');
+            if (topicInput) {
+                topicInput.value = preset.getAttribute('data-preset') || '';
+                topicInput.focus();
+            }
+        });
+    });
+
+    wizardRunBtn?.addEventListener('click', async () => {
+        const topic = document.getElementById('kids-ai-topic')?.value || 'Sevimli Hayvanlar';
+        const ageGroup = document.getElementById('kids-ai-age')?.value || '3-5';
+        const mood = document.getElementById('kids-ai-mood')?.value || 'Neşeli ve Enerjik';
+        
+        wizardRunBtn.disabled = true;
+        wizardRunBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Yapay Zeka Şarkı Yazıyor...';
+
+        try {
+            const res = await fetch('/api/kids-song/generate-song-idea', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic, age_group: ageGroup, mood })
+            });
+            const data = await res.json();
+            if (data.ok && data.idea) {
+                const idea = data.idea;
+                const titleEl = document.getElementById('kids-ai-title');
+                const lyricsEl = document.getElementById('kids-ai-lyrics');
+                const sunoEl = document.getElementById('kids-ai-suno');
+
+                if (titleEl) titleEl.value = idea.title || `${topic} Şarkısı`;
+                if (lyricsEl) lyricsEl.value = idea.lyrics || '';
+                if (sunoEl) sunoEl.value = idea.suno_prompt || '';
+
+                if (wizardResultArea) wizardResultArea.style.display = 'block';
+            }
+        } catch (err) {
+            console.error('AI Şarkı üretme hatası:', err);
+        } finally {
+            wizardRunBtn.disabled = false;
+            wizardRunBtn.innerHTML = '<i class="fa-solid fa-sparkles"></i> Yeniden Üret';
+        }
+    });
+
+    wizardCreateBtn?.addEventListener('click', async () => {
+        const title = document.getElementById('kids-ai-title')?.value || 'Yeni Çocuk Şarkısı';
+        const topic = document.getElementById('kids-ai-topic')?.value || '';
+        const lyrics = document.getElementById('kids-ai-lyrics')?.value || '';
+
+        wizardCreateBtn.disabled = true;
+        wizardCreateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Proje Açılıyor...';
+
+        try {
+            const res = await fetch('/api/kids-song/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, topic, lyrics })
+            });
+            const data = await res.json();
+            if (data.ok && data.project) {
+                if (wizardModal) wizardModal.style.display = 'none';
+                const frame = document.getElementById('kids-song-frame');
+                if (frame) {
+                    frame.src = getStudioFullUrl(data.project.render_path || '/cocuk-sarki');
+                }
+                const statusEl = document.getElementById('kids-song-status');
+                if (statusEl) statusEl.textContent = `Proje başarıyla açıldı: ${title}`;
+                refreshKidsSong();
+            }
+        } catch (err) {
+            console.error('Proje açma hatası:', err);
+        } finally {
+            wizardCreateBtn.disabled = false;
+            wizardCreateBtn.innerHTML = '<i class="fa-solid fa-circle-check"></i> Bu Şarkıyla Stüdyoda Proje Başlat';
+        }
+    });
 
     // ══════════════════════════════════════════════════════════════
     // 2. 35 NİŞİ YÜKLEME VE KARTLARI BASMA (Items 1 - 35)
@@ -1437,16 +1747,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // ══════════════════════════════════════════════════════════════
     // 3. OTO-HABER & RSS BOTU (Item 1 & 57)
     // ══════════════════════════════════════════════════════════════
+    let currentRssItems = [];
+
     async function loadRssNews() {
         const list = document.getElementById('rss-news-list');
+        const badge = document.getElementById('rss-news-count-badge');
         const sourceSelect = document.getElementById('select-rss-source');
         const source = sourceSelect ? sourceSelect.value : 'aa_guncel';
         list.innerHTML = '<div class="empty-state-box"><i class="fa-solid fa-spinner fa-spin"></i><p>Haberler taranıyor...</p></div>';
 
         try {
-            const res = await fetch(`/api/rss/fetch?source=${source}&limit=6`);
+            const res = await fetch(`/api/rss/fetch?source=${source}&limit=10`);
             const data = await res.json();
             const items = data.items || [];
+            currentRssItems = items;
+
+            if (badge) badge.textContent = `${items.length} Haber`;
 
             if (items.length === 0) {
                 list.innerHTML = '<div class="empty-state-box"><p>Bu kaynaktan haber çekilemedi.</p></div>';
@@ -1458,29 +1774,89 @@ document.addEventListener('DOMContentLoaded', () => {
                 const row = document.createElement('div');
                 row.className = 'glass-box mb-3';
                 row.style.padding = '14px';
+                const nicheLabel = item.suggested_niche ? item.suggested_niche.replace(/^[0-9]+_/, '').replace(/_/g, ' ') : 'Haber';
                 row.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
-                        <div>
-                            <strong style="font-size: 13px; color: #FFF;">${item.title}</strong>
-                            <p style="font-size: 11px; color: #94A3B8; margin-top: 4px;">${item.description.slice(0, 120)}...</p>
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 240px;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                                <span class="badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; font-size: 10px; padding: 2px 6px; text-transform: uppercase;">
+                                    ${nicheLabel}
+                                </span>
+                                <span style="font-size: 10px; color: #94a3b8;">${item.published_at || 'Yeni'}</span>
+                            </div>
+                            <strong style="font-size: 13px; color: #FFF; display: block;">${escapeHtml(item.title)}</strong>
+                            <p style="font-size: 11px; color: #94A3B8; margin-top: 4px;">${escapeHtml(item.description.slice(0, 140))}...</p>
                         </div>
-                        <button class="btn btn-primary btn-sm btn-convert-rss" data-title="${encodeURIComponent(item.title)}">
-                            <i class="fa-solid fa-bolt"></i> Shorts Yap
-                        </button>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <button class="btn btn-primary btn-sm btn-convert-viral-rss" data-title="${encodeURIComponent(item.title)}" data-desc="${encodeURIComponent(item.description)}" data-niche="${encodeURIComponent(item.suggested_niche || '1_news_flash')}" title="Başlığı psikolojik merak/şok sorusuna çevirip stüdyoya aktarır">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Viral Kancaya Çevir
+                            </button>
+                            <button class="btn btn-secondary btn-sm btn-convert-rss" data-title="${encodeURIComponent(item.title)}" data-niche="${encodeURIComponent(item.suggested_niche || '1_news_flash')}" title="Başlığı olduğu gibi stüdyoya aktarır">
+                                <i class="fa-solid fa-arrow-right"></i> Stüdyo
+                            </button>
+                        </div>
                     </div>
                 `;
                 list.appendChild(row);
             });
 
+            // Normal stüdyo aktarımı
             list.querySelectorAll('.btn-convert-rss').forEach(b => {
                 b.addEventListener('click', (e) => {
                     const rawTitle = decodeURIComponent(e.currentTarget.getAttribute('data-title'));
+                    const niche = decodeURIComponent(e.currentTarget.getAttribute('data-niche') || '1_news_flash');
                     inputTopic.value = rawTitle;
-                    selectNiche.value = "1_news_flash";
-                    applyNicheProfile("1_news_flash");
+                    if (selectNiche) {
+                        selectNiche.value = niche;
+                        applyNicheProfile(niche);
+                    }
                     switchTab('studio');
                     updateFlowRail('topic');
                     showToast('Haber stüdyoya aktarıldı — Senaryoyu incele ile devam edin');
+                });
+            });
+
+            // AI Viral Soru Kancasına Çevirip Aktarma (Item 122)
+            list.querySelectorAll('.btn-convert-viral-rss').forEach(b => {
+                b.addEventListener('click', async (e) => {
+                    const rawTitle = decodeURIComponent(e.currentTarget.getAttribute('data-title'));
+                    const desc = decodeURIComponent(e.currentTarget.getAttribute('data-desc') || '');
+                    const niche = decodeURIComponent(e.currentTarget.getAttribute('data-niche') || '1_news_flash');
+                    const origBtn = e.currentTarget.innerHTML;
+                    e.currentTarget.disabled = true;
+                    e.currentTarget.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Kanca Üretiliyor...';
+
+                    try {
+                        const res = await fetch('/api/rss/convert-to-shorts', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                title: rawTitle,
+                                description: desc,
+                                suggested_niche: niche
+                            })
+                        });
+                        const resData = await res.json();
+                        const idea = resData.idea || {};
+                        const finalTitle = idea.question_title || rawTitle;
+                        const finalNiche = idea.suggested_niche || niche;
+
+                        inputTopic.value = finalTitle;
+                        if (selectNiche) {
+                            selectNiche.value = finalNiche;
+                            applyNicheProfile(finalNiche);
+                        }
+                        switchTab('studio');
+                        updateFlowRail('topic');
+                        showToast(`⚡ Viral Kanca Hazır: "${finalTitle}" (${idea.strategy || 'merak'})`);
+                    } catch (err) {
+                        inputTopic.value = rawTitle;
+                        switchTab('studio');
+                        showToast('Haber aktarıldı (fallback)');
+                    } finally {
+                        e.currentTarget.disabled = false;
+                        e.currentTarget.innerHTML = origBtn;
+                    }
                 });
             });
         } catch (err) {
@@ -1490,6 +1866,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-fetch-rss-now')?.addEventListener('click', loadRssNews);
     document.getElementById('select-rss-source')?.addEventListener('change', loadRssNews);
+
+    // Listelenen tüm haberleri toplu render kuyruğuna aktar
+    document.getElementById('btn-rss-batch-all')?.addEventListener('click', async () => {
+        if (!currentRssItems || currentRssItems.length === 0) {
+            showToast('Önce haberleri tarayın!', 'error');
+            return;
+        }
+
+        const topics = currentRssItems.map(i => i.title).join('\n');
+        const defaultNiche = currentRssItems[0]?.suggested_niche || '1_news_flash';
+
+        try {
+            const res = await fetch('/api/batch/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    text: topics,
+                    niche: defaultNiche,
+                    language: 'tr'
+                })
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+                showToast(`✅ ${data.added_count} haber toplu üretim kuyruğuna alındı!`);
+                switchTab('batch');
+                loadBatchQueue();
+            } else {
+                showToast(data.detail || 'Kuyruğa eklenemedi', 'error');
+            }
+        } catch (e) {
+            showToast(`Hata: ${e.message}`, 'error');
+        }
+    });
 
     // ══════════════════════════════════════════════════════════════
     // 4. TOPLU ÜRETİM (BATCH) KUYRUĞU (Items 70 & 78)
@@ -2823,7 +3232,8 @@ document.addEventListener('DOMContentLoaded', () => {
             reddit_post: selectedRedditPost,
             split_screen: chkSplitScreen.checked,
             anti_duplicate: chkAntiDuplicate.checked,
-            enable_ken_burns: chkKenBurns.checked,
+            enable_ken_burns: !!(chkKenBurns && chkKenBurns.checked),
+            enable_zoompan: !!(chkZoompan && chkZoompan.checked),
             resolution: document.getElementById('select-render-resolution')?.value || '1080p',
             auto_publish: !!(chkAutoPublish && chkAutoPublish.checked)
         };
@@ -3258,43 +3668,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             grid.querySelectorAll('.btn-manual-guide').forEach(b => {
-                b.addEventListener('click', async (e) => {
+                b.addEventListener('click', (e) => {
                     const fn = e.currentTarget.getAttribute('data-filename');
-                    const baseName = fn.replace(/\.[^/.]+$/, "");
-                    try {
-                        let info = null;
-                        try {
-                            const res = await fetch(`/output/${baseName}_manual_upload_info.json`);
-                            if (res.ok) info = await res.json();
-                        } catch (_) {}
-
-                        if (!info) {
-                            info = {
-                                title: baseName,
-                                description: `${baseName} #shorts\n\n📌 Kaynak & Araştırma: Tarihsel Arşiv ve Akademik İnceleme\n⚖️ Hakkaniyet & Katma Değer (Fair Use): Bu video eğitim ve bilgilendirme amacıyla bağımsız olarak araştırılmış, özgün sesli analizle üretilmiştir.`,
-                                tags: ["shorts", "bilgi", "viral"],
-                                pinned_comment: "Sizce bu konudaki en şaşırtıcı detay neydi? Yorumlarda buluşalım! 👇",
-                                rule_80_altered_synthetic: "HAYIR (Yüz klonlama veya manipülasyon yoksa etiket seçilmemeli)"
-                            };
-                        }
-
-                        const guideText = 
-`📌 BAŞLIK:\n${info.title}\n\n` +
-`📌 AÇIKLAMA (Kural 83 Kaynaklı):\n${info.description}\n\n` +
-`📌 ETİKETLER:\n${(info.tags || []).join(', ')}\n\n` +
-`📌 SABİT YORUM:\n${info.pinned_comment}\n\n` +
-`⚠️ KRİTİK KURAL 80 UYARISI:\n` +
-`YouTube Studio'da 'Yapay zeka / Değiştirilmiş içerik mi?' sorusuna 'HAYIR' yanıtını verin.\n` +
-`(Kural 80: Yüz klonlama veya haber manipülasyonu olmadığı sürece etiket işaretlenmemelidir; aksi halde algoritma videoyu daha dar bir kitleyle test eder.)\n\n` +
-`🛡️ DOSYA GÜVENLİĞİ:\n` +
-`Bu MP4 dosyası ctime yaşlandırması (Kural 29), free atom boyutu varyasyonu (Kural 30) ve pHash gürültüsü/gren (Kural 84 & 86) ile tamamen korunmuştur.`;
-
-                        await navigator.clipboard.writeText(guideText);
-                        showToast("📋 Manuel yükleme rehberi ve SEO metinleri panoya kopyalandı!");
-                        alert("✅ Manuel Yükleme Bilgileri Panoya Kopyalandı!\n\n" + guideText);
-                    } catch (err) {
-                        alert("Kopyalama hatası: " + err.message);
-                    }
+                    const v = videos.find(x => x.filename === fn) || { filename: fn };
+                    openPublishHubModal(v);
                 });
             });
 
@@ -3302,7 +3679,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 b.addEventListener('click', () => {
                     const videoId = b.getAttribute('data-video-id');
                     const projectSlug = decodeURIComponent(b.getAttribute('data-project-slug') || '');
+                    const v = videos.find(x => String(x.id) === String(videoId)) || { id: videoId, filename: `${projectSlug}.mp4` };
                     submitShareDecision('keep', { videoId, projectSlug });
+                    openPublishHubModal(v);
                 });
             });
 
@@ -3332,6 +3711,169 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     document.getElementById('btn-refresh-gallery')?.addEventListener('click', loadGallery);
+
+    // ══════════════════════════════════════════════════════════════
+    // YOUTUBE YAYINLAMA & SEO DAĞITIM HUB'I KONTROLCÜSÜ (Maddeler 51, 52, 53, 55, 80)
+    // ══════════════════════════════════════════════════════════════
+    let currentPublishVideo = null;
+
+    async function openPublishHubModal(video) {
+        currentPublishVideo = video;
+        const modal = document.getElementById('modal-publish-hub');
+        if (!modal) return;
+
+        const vidPreview = document.getElementById('pub-video-preview');
+        const fnEl = document.getElementById('pub-video-filename');
+        const durEl = document.getElementById('pub-video-duration');
+        const sizeEl = document.getElementById('pub-video-size');
+        const chSelect = document.getElementById('pub-target-channel-select');
+        const titleField = document.getElementById('pub-title-field');
+        const descField = document.getElementById('pub-desc-field');
+        const tagsField = document.getElementById('pub-tags-field');
+        const commentField = document.getElementById('pub-comment-field');
+
+        const fn = video.filename || '';
+        const baseName = fn.replace(/\.[^/.]+$/, "");
+
+        if (vidPreview) {
+            vidPreview.src = `/output/${fn}`;
+            vidPreview.load();
+        }
+        if (fnEl) fnEl.textContent = fn;
+        if (durEl) durEl.textContent = `${(video.duration_seconds || 0).toFixed(1)}s`;
+        if (sizeEl) sizeEl.textContent = `${(video.size_mb || 0).toFixed(1)} MB`;
+
+        // Hedef kanal listesini çek
+        if (chSelect) {
+            try {
+                const res = await fetch('/api/channel/list');
+                const chData = await res.json();
+                chSelect.innerHTML = '<option value="default">Varsayılan Kanal (Studio Manuel)</option>';
+                if (chData.channels && chData.channels.length > 0) {
+                    chData.channels.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.handle;
+                        opt.textContent = `${c.handle} (Güven: %${c.health_score} | ${c.niche || 'Genel'})`;
+                        chSelect.appendChild(opt);
+                    });
+                }
+            } catch (e) {
+                console.warn('Kanallar yüklenemedi:', e);
+            }
+        }
+
+        // Varsa kayıtlı manual_upload_info.json dosyasını çek
+        let info = null;
+        try {
+            const res = await fetch(`/output/${baseName}_manual_upload_info.json`);
+            if (res.ok) info = await res.json();
+        } catch (_) {}
+
+        const titleVal = info?.title || video.keyword || video.title || baseName;
+        const descVal = info?.description || `${titleVal} #shorts\n\n📌 Kaynak & Araştırma: Bağımsız Eğitici İnceleme\n⚖️ Hakkaniyet & Katma Değer (Fair Use): Bu video eğitim ve analiz amacıyla özgün ses ve dinamik görselleştirme ile üretilmiştir.`;
+        const tagsVal = (info?.tags && info.tags.length) ? info.tags.join(', ') : 'shorts, bilgi, viral, trend';
+        const commentVal = info?.pinned_comment || 'Sizce bu konudaki en şaşırtıcı detay neydi? Yorumlarda buluşalım! 👇';
+
+        if (titleField) titleField.value = titleVal;
+        if (descField) descField.value = descVal;
+        if (tagsField) tagsField.value = tagsVal;
+        if (commentField) commentField.value = commentVal;
+
+        modal.style.display = 'flex';
+        modal.classList.remove('hidden');
+    }
+
+    function closePublishHubModal() {
+        const modal = document.getElementById('modal-publish-hub');
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.add('hidden');
+            const vidPreview = document.getElementById('pub-video-preview');
+            if (vidPreview) vidPreview.pause();
+        }
+    }
+
+    // Tekli alan kopyalama butonları
+    document.querySelectorAll('.btn-copy-field').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const targetId = e.currentTarget.getAttribute('data-target');
+            const target = document.getElementById(targetId);
+            if (target && target.value) {
+                await navigator.clipboard.writeText(target.value);
+                const originalText = e.currentTarget.innerHTML;
+                e.currentTarget.innerHTML = '<i class="fa-solid fa-check text-success"></i>';
+                setTimeout(() => { e.currentTarget.innerHTML = originalText; }, 1800);
+                showToast('Panoya kopyalandı!');
+            }
+        });
+    });
+
+    // Tüm SEO paketini kopyala
+    document.getElementById('btn-copy-all-package')?.addEventListener('click', async () => {
+        const title = document.getElementById('pub-title-field')?.value || '';
+        const desc = document.getElementById('pub-desc-field')?.value || '';
+        const tags = document.getElementById('pub-tags-field')?.value || '';
+        const comment = document.getElementById('pub-comment-field')?.value || '';
+
+        const fullPkg =
+`📌 BAŞLIK:\n${title}\n\n` +
+`📌 AÇIKLAMA (Kural 83 Kaynaklı):\n${desc}\n\n` +
+`📌 ETİKETLER:\n${tags}\n\n` +
+`📌 SABİT YORUM:\n${comment}\n\n` +
+`⚠️ KRİTİK KURAL 80 UYARISI:\nYouTube Studio'da 'Yapay zeka / Değiştirilmiş içerik mi?' sorusuna 'HAYIR' yanıtını verin.\n` +
+`🛡️ DOSYA GÜVENLİĞİ: Bu MP4 ctime yaşlandırması ve atom varyasyonu ile korunmuştur.`;
+
+        await navigator.clipboard.writeText(fullPkg);
+        showToast('📋 Tüm SEO paketi panoya kopyalandı!');
+    });
+
+    // Anti-Detect Studio UI Yükleme tetikleyici
+    document.getElementById('btn-execute-studio-safe-upload')?.addEventListener('click', async () => {
+        if (!currentPublishVideo) return;
+        const btn = document.getElementById('btn-execute-studio-safe-upload');
+        const channelSelect = document.getElementById('pub-target-channel-select');
+        const ch = channelSelect ? channelSelect.value : 'default';
+        const title = document.getElementById('pub-title-field')?.value || '';
+        const desc = document.getElementById('pub-desc-field')?.value || '';
+        const tags = (document.getElementById('pub-tags-field')?.value || '').split(',').map(t => t.trim()).filter(Boolean);
+        const schedHour = parseInt(document.getElementById('pub-schedule-hour')?.value || '18', 10);
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Yükleme Kuyruğuna Alınıyor...';
+
+        try {
+            const res = await fetch('/api/channel/studio_upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    identifier: ch,
+                    video_path: `output/${currentPublishVideo.filename}`,
+                    title: title,
+                    description: desc,
+                    tags: tags,
+                    scheduled_hour: schedHour
+                })
+            });
+            const data = await res.json();
+            if (data.success || data.action === 'MANUAL_UPLOAD_REQUIRED') {
+                showToast('✅ Studio UI Güvenli Paketleme Hazır! Terminale aktarıldı.');
+                switchTab('channels');
+                closePublishHubModal();
+            } else {
+                showToast(data.reason || data.error || 'Yükleme başlatılamadı', 'error');
+            }
+        } catch (err) {
+            showToast(`Hata: ${err.message}`, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-rocket"></i> Anti-Detect Studio UI ile Yükle';
+        }
+    });
+
+    document.getElementById('btn-close-publish-modal')?.addEventListener('click', closePublishHubModal);
+    document.getElementById('modal-publish-hub')?.addEventListener('click', (e) => {
+        if (e.target.id === 'modal-publish-hub') closePublishHubModal();
+    });
 
     // ══════════════════════════════════════════════════════════════
     // 12. AYARLAR & KOTA (Items 62 & 69)
@@ -4321,7 +4863,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const profile = data.profile;
             if (!profile) return;
             const rules = profile.production_rules || {};
-            chkSplitScreen.checked = Boolean(rules.split_screen);
+            if (!splitTouched && chkSplitScreen) {
+                chkSplitScreen.checked = Boolean(rules.split_screen);
+            }
             chkKenBurns.checked = Boolean(rules.ken_burns);
             if (rules.subtitle_preset && selectSubPreset) selectSubPreset.value = rules.subtitle_preset;
             profileBox.innerHTML = `
@@ -4740,7 +5284,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     selectLanguage?.addEventListener('change', () => populateTtsVoiceSelect(selectLanguage.value));
 
-    chkSplitScreen?.addEventListener('change', () => {
+    chkSplitScreen?.addEventListener('change', (ev) => {
+        if (ev && ev.isTrusted) {
+            splitTouched = true;
+            if (!chkSplitScreen.checked && selectGameplayCategory) {
+                selectGameplayCategory.value = 'auto';
+            }
+        }
         if (gameplayCategoryWrap) {
             gameplayCategoryWrap.style.display = chkSplitScreen.checked ? 'block' : 'none';
         }

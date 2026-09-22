@@ -347,6 +347,12 @@ def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
 
     try:
         from visuals.query_builder import build_shot_queries
+        from visuals.subject_lock import match_shot, query_matches_clip
+        shot = match_shot(
+            narration or "",
+            scene_description or "",
+            str((intent_dict or {}).get("subject") or ""),
+        )
         extended_queries = list(clean_queries)
         for fq in build_shot_queries(
             narration=narration or "",
@@ -359,9 +365,23 @@ def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
                 if exclude and any(ex.lower() in fq.lower() for ex in exclude):
                     continue
                 extended_queries.append(fq)
+        if shot is not None:
+            # Subject queries only. A leftover "ocean" query must not
+            # download a beach for a skyscraper sentence.
+            anchored = [
+                q for q in extended_queries
+                if query_matches_clip(shot.primary, q) or query_matches_clip(q, shot.primary)
+            ]
+            if anchored:
+                extended_queries = anchored
     except Exception:
         extended_queries = list(clean_queries)
-        for fallback_q in ["architectural detail soft light", "nature aerial calm", "abstract light particles dark"]:
+        from visuals.subject_lock import match_shot
+        subject_locked = match_shot(narration or "", scene_description or "", str((intent_dict or {}).get("subject") or ""))
+        generic_fallbacks = [] if subject_locked else [
+            "architectural detail soft light", "nature aerial calm", "abstract light particles dark",
+        ]
+        for fallback_q in generic_fallbacks:
             if fallback_q not in extended_queries:
                 if exclude and any(ex.lower() in fallback_q for ex in exclude):
                     continue
@@ -448,7 +468,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
                         scene_description="", preferred_source=None, cancel_check=None,
                         allow_custom=True, narration="", visual_intent=None,
                         must_exclude=None, recent_texts=None, niche_id="",
-                        channel_id=None):
+                        channel_id=None, allow_procedural=True):
     global _source_counter
 
     if isinstance(queries, str):
@@ -563,6 +583,8 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
                     return path
                 continue
             if src == VisualSource.PROCEDURAL:
+                if not allow_procedural:
+                    continue
                 fallback_path = _generate_fallback_clip(
                     scene_index, project_dir, target_duration,
                     scene_description=scene_description, visual_intent=visual_intent,
@@ -582,6 +604,9 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
     if path:
         return path
     if cancel_check and cancel_check():
+        return None
+    if not allow_procedural:
+        print(f"    [FAIL] Scene {scene_index}: stock miss, procedural skipped")
         return None
     fallback_path = _generate_fallback_clip(
         scene_index, project_dir, target_duration,
@@ -762,13 +787,11 @@ def generate_ai_image_clip(
         import imageio_ffmpeg
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
 
-        # Ken Burns: hafif zoom in (1.00x → 1.04x)
-        zoom_rate = 1.04 / duration  # toplam zoom miktarı / süre
+        from render.ffmpeg_graph import cheap_pan_filter
         vf = (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height},"
-            f"zoompan=z='min(zoom+{zoom_rate/30:.6f},1.04)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'"
-            f":d={int(duration * 30)}:s={width}x{height}:fps=30"
+            f"{cheap_pan_filter(width, height, duration, 0)}"
         )
 
         cmd = [
@@ -858,6 +881,33 @@ def _source_label_from_path(clip_path: str) -> str:
     return "unknown"
 
 
+def _record_visual_manifest(clip_path: str, scene_index: int, source: str, source_id: str = "", title: str = "") -> None:
+    """Record legacy stock clips in the auditable visual credits ledger."""
+    if not clip_path or not os.path.isfile(clip_path):
+        return
+    try:
+        from visuals.fetch import _job_manifest
+        if any(str(row.get("path")) == str(clip_path) for row in _job_manifest):
+            return
+        from visuals.license import License, LicenseInfo
+        lic = {
+            "pexels": License.PEXELS, "pixabay": License.PIXABAY,
+            "coverr": License.COVERR, "mixkit": License.MIXKIT,
+            "custom": License.CC0, "local": License.CC0,
+            "procedural": License.CC0,
+        }.get((source or "").lower(), License.UNKNOWN)
+        _job_manifest.append({
+            "scene_index": int(scene_index), "path": clip_path,
+            "uid": f"legacy:{source}:{source_id or _file_hash(clip_path)}",
+            "source": source or "legacy_stock", "id": source_id,
+            "title": title or os.path.basename(clip_path), "kind": "video",
+            "score": 0, "sha1": _file_hash(clip_path),
+            "license": LicenseInfo(lic, source or "legacy_stock", title=title or os.path.basename(clip_path)).to_dict(),
+        })
+    except Exception as exc:
+        print(f"    [VisualLedger] kayıt notu: {exc}")
+
+
 def fetch_scene_clip(
     search_queries,
     scene_index,
@@ -874,6 +924,7 @@ def fetch_scene_clip(
     preferred_source=None,
     niche_id="",
     channel_id=None,
+    allow_procedural=True,
 ):
     """
     P0-05 / Item 130 – Per-scene multi-provider stock fetch.
@@ -906,6 +957,7 @@ def fetch_scene_clip(
             allow_custom=allow_custom,
             niche_id=niche_id or "",
             channel_id=channel_id,
+            allow_procedural=allow_procedural,
         )
 
     clip_path = _try(primary)
@@ -932,6 +984,7 @@ def fetch_scene_clip(
         return None
 
     label = _source_label_from_path(clip_path)
+    _record_visual_manifest(clip_path, scene_index, label)
     if label in _SESSION_SOURCE_COUNTS:
         _SESSION_SOURCE_COUNTS[label] = _SESSION_SOURCE_COUNTS.get(label, 0) + 1
 

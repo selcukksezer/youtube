@@ -110,9 +110,17 @@ def search_provider(spec: ProviderSpec, query: str, per_page: int = 10) -> List[
                 title=row.get("title", ""), tags=row.get("tags") or [], thumbnail=row.get("thumbnail", ""),
                 contributor=row.get("contributor", ""),
                 license=LicenseInfo.from_dict(lic) if lic else None,
+                source_url=row.get("source_url", ""),
+                license_url=row.get("license_url", ""),
+                attribution=row.get("attribution", ""),
+                semantic_evidence=row.get("semantic_evidence") or {},
+                topic_match_score=float(row.get("topic_match_score") or 0.0),
+                visual_verification_score=float(row.get("visual_verification_score") or 0.0),
+                matched_terms=row.get("matched_terms") or [],
                 extra=row.get("extra") or {},
             )
-            out.append(c)
+            if c.license and is_commercial_safe(c.license.license):
+                out.append(c)
         return out
     try:
         results = spec.fn(query, per_page=per_page)
@@ -136,8 +144,14 @@ def score_candidate(
     target_duration: float = 7.0,
 ) -> float:
     if c.uid in _used_uids:
+        c.topic_match_score = c.visual_verification_score = 0.0
+        c.matched_terms = []
+        c.semantic_evidence = {"query": query, "subject_match": False, "rejected": "already_used"}
         return -1e9
     if not c.license or not c.license.safe:
+        c.topic_match_score = c.visual_verification_score = 0.0
+        c.matched_terms = []
+        c.semantic_evidence = {"query": query, "subject_match": False, "rejected": "unsafe_or_unknown_license"}
         return -1e9
     score = 50.0
     # portrait bonus
@@ -151,10 +165,48 @@ def score_candidate(
     else:
         score += 8  # images OK via Ken Burns
     # text overlap
-    blob = f"{c.text} {query}".lower()
+    blob = c.text.lower()
     tokens = set(re_tokens(query)) | set(re_tokens(narration))
-    hits = sum(1 for t in tokens if t in blob)
+    matched_tokens = sorted(t for t in tokens if t in blob)
+    hits = len(matched_tokens)
     score += min(30, hits * 4)
+
+    # A technically good clip is still the wrong clip when it does not
+    # describe the shot.  The old baseline allowed an unrelated Pixabay or
+    # Wikimedia result to win with a score of 50.  That produces the exact
+    # "skyscraper title -> random atmosphere" failure we want to prevent.
+    # Keep generic two-word cutaways usable, but require at least one concrete
+    # subject token for a specific shot.
+    # "city" inside "skyscraper tower city" must not accept a beach clip
+    # whose title happens to say "city".
+    from .subject_lock import query_matches_clip
+    subject_match = query_matches_clip(query, c.text)
+    if not subject_match:
+        c.topic_match_score = c.visual_verification_score = 0.0
+        c.matched_terms = matched_tokens
+        c.semantic_evidence = {
+            "query": query,
+            "query_tokens": sorted(tokens),
+            "matched_tokens": matched_tokens,
+            "text_overlap": round(hits / max(1, len(tokens)), 4),
+            "subject_match": False,
+            "rejected": "subject_mismatch",
+        }
+        return -1e9
+    c.semantic_evidence = {
+        "query": query,
+        "query_tokens": sorted(tokens),
+        "matched_tokens": matched_tokens,
+        "text_overlap": round(hits / max(1, len(tokens)), 4),
+        "subject_match": True,
+        "title_tags": c.text,
+        "verification": "metadata_token_match",
+    }
+    c.topic_match_score = round(hits / max(1, len(tokens)), 4)
+    c.visual_verification_score = round(
+        len(matched_tokens) / max(1, len(re_tokens(query))), 4
+    )
+    c.matched_terms = matched_tokens
     # provider prior
     spec = PROVIDERS.get(c.source) or PROVIDERS.get(c.source.replace("_img", ""))
     if spec:

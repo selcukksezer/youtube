@@ -96,6 +96,35 @@ def init_db():
             )
         """)
 
+        # V2 production workflow: durable project and render-job identity.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                niche TEXT DEFAULT '1_news_flash',
+                language TEXT DEFAULT 'tr',
+                status TEXT DEFAULT 'draft',
+                plan_json TEXT,
+                settings_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS render_jobs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                status TEXT DEFAULT 'queued',
+                percent INTEGER DEFAULT 0,
+                step TEXT DEFAULT 'Hazır',
+                output_url TEXT,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            )
+        """)
+
         # Anti-Detect & 5-Rule Compliant Managed Channels (Items 1-70, 28)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS managed_channels (
@@ -336,6 +365,79 @@ def get_recent_videos(limit: int = 50) -> List[Dict[str, Any]]:
         """, (limit,))
         rows = cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+def create_project(project_id: str, title: str, niche: str = "1_news_flash", language: str = "tr") -> Dict[str, Any]:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO projects (id, title, niche, language) VALUES (?, ?, ?, ?)",
+            (project_id, title, niche, language),
+        )
+        conn.commit()
+    return get_project(project_id) or {}
+
+
+def get_project(project_id: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_project(project_id: str, *, status: Optional[str] = None,
+                   plan_json: Optional[str] = None, settings_json: Optional[str] = None) -> bool:
+    fields, values = [], []
+    for name, value in (("status", status), ("plan_json", plan_json), ("settings_json", settings_json)):
+        if value is not None:
+            fields.append(f"{name} = ?")
+            values.append(value)
+    if not fields:
+        return bool(get_project(project_id))
+    fields.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(project_id)
+    with get_connection() as conn:
+        cur = conn.execute(f"UPDATE projects SET {', '.join(fields)} WHERE id = ?", values)
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def list_projects(limit: int = 50) -> List[Dict[str, Any]]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM projects ORDER BY updated_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def create_render_job(job_id: str, project_id: str) -> Dict[str, Any]:
+    with get_connection() as conn:
+        conn.execute("INSERT INTO render_jobs (id, project_id) VALUES (?, ?)", (job_id, project_id))
+        conn.commit()
+    return get_render_job(job_id) or {}
+
+
+def get_render_job(job_id: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM render_jobs WHERE id = ?", (job_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def update_render_job(job_id: str, *, status: Optional[str] = None, percent: Optional[int] = None,
+                      step: Optional[str] = None, output_url: Optional[str] = None,
+                      error_message: Optional[str] = None) -> bool:
+    fields, values = [], []
+    for name, value in (("status", status), ("percent", percent), ("step", step),
+                        ("output_url", output_url), ("error_message", error_message)):
+        if value is not None:
+            fields.append(f"{name} = ?")
+            values.append(value)
+    if not fields:
+        return bool(get_render_job(job_id))
+    fields.append("updated_at = CURRENT_TIMESTAMP")
+    values.append(job_id)
+    with get_connection() as conn:
+        cur = conn.execute(f"UPDATE render_jobs SET {', '.join(fields)} WHERE id = ?", values)
+        conn.commit()
+        return cur.rowcount > 0
 
 def get_video_by_id(video_id: int) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:

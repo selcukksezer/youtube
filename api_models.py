@@ -126,6 +126,7 @@ class VideoRenderRequest(BaseModel):
     anti_duplicate: Optional[bool] = False
     watermark_path: Optional[str] = None
     enable_ken_burns: Optional[bool] = False
+    enable_zoompan: Optional[bool] = False
     reddit_post: Optional[Dict[str, Any]] = None
     resolution: Optional[str] = "1080p"
     auto_publish: Optional[bool] = False

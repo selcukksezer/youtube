@@ -26,27 +26,24 @@ _SHOCK_VISUAL_QUERIES = [
 
 def enrich_cinematic_search_queries(queries: List[str], mood: str = "epic") -> List[str]:
     """
-    Item 89 (revised 2026 research): stock APIs want SHOT grammar
-    (subject + action + setting + light), NOT 'cinematic 4k atmospheric' soup.
-    Strip banned tokens; keep concrete visual nouns.
+    Strip stock-search noise. Do not append light words and do not invent
+    a generic architectural query when the list is empty. The caller uses
+    subject_lock when nothing filmable remains.
     """
+    del mood  # kept so existing callers stay valid
     ban = re.compile(
         r"\b(cinematic|4k|8k|uhd|atmospheric|epic|viral|trending|aesthetic|"
         r"beautiful|amazing|stunning|stock footage)\b",
         re.I,
     )
-    light_hints = ["soft natural light", "golden hour light", "dim practical light", "cool blue light"]
     enriched = []
-    for idx, q in enumerate(queries or []):
+    for q in queries or []:
         q_str = ban.sub(" ", str(q).strip())
         q_str = re.sub(r"\s+", " ", q_str).strip(" ,.-")
         if not q_str:
             continue
-        # Ensure a lighting/setting cue without banned tokens
-        if not re.search(r"\b(light|dawn|dusk|night|interior|exterior|close.?up|macro|aerial)\b", q_str, re.I):
-            q_str = f"{q_str} {light_hints[idx % len(light_hints)]}"
         enriched.append(q_str[:90])
-    return enriched or ["architectural detail soft natural light"]
+    return enriched
 
 
 def _split_narration_cleanly(narration: str, cutaway_counter: int):
@@ -59,18 +56,15 @@ def _split_narration_cleanly(narration: str, cutaway_counter: int):
         if len(left.split()) >= 5 and len(right.split()) >= 5:
             return left, right
 
-    # 2. Single sentence — keep narration whole; use reaction beat for visual cutaway
-    reaction_beats = [
-        "O an herkes nefesini tuttu... ⚡",
-        "Gözlerime inanamadım, kalbim duracak gibiydi! 😱",
-        "Odadaki gerilim bir anda tavan yaptı... 🔴",
-        "Böylesine bir şok dalgası kimse beklemiyordu! 💥",
-        "İçimdeki panik iliklerime kadar işledi... ❄️",
-        "Bu sessizlik bir fırtınanın habercisiydi... 🌪️",
-        "Tüm gözler üzerime kilitlenmişti... 👀"
-    ]
-    reaction = reaction_beats[cutaway_counter % len(reaction_beats)]
-    return narration, reaction
+    # Long lines split on words. Short lines stay whole on the first
+    # half; the cutaway only adds an angle mark so the spoken text is
+    # not copied and no shock filler is invented.
+    words = (narration or "").split()
+    if len(words) >= 8:
+        mid = len(words) // 2
+        return " ".join(words[:mid]), " ".join(words[mid:])
+    base = (narration or "").strip() or "Sahne"
+    return base, f"{base} Açı {cutaway_counter}."
 
 
 def _differentiate_queries(queries: List[str], cutaway_counter: int):
@@ -304,9 +298,6 @@ def enrich_audio_visual_contrast_scenes(
             if shock.split()[0] not in " ".join(queries).lower():
                 queries.insert(0, shock)
             sc["search_queries"] = queries[:4]
-        narr = (sc.get("narration") or "").strip()
-        if narr and not narr.endswith("..."):
-            sc["narration"] = narr.rstrip(".!?") + "..."
         sc["tts_calm_pace"] = True
     return scenes
 
@@ -322,7 +313,11 @@ def enrich_closing_gaze_queries(scenes: List[Dict[str, Any]]) -> List[Dict[str, 
     queries = list(last.get("search_queries") or [])
     hint = random.choice(CLOSING_GAZE_QUERY_HINTS)
     if not any(h in " ".join(queries).lower() for h in ["direct gaze", "looking at camera", "eye contact"]):
-        queries.insert(0, hint)
+        # Keep the subject query first. A face hint in slot 0 pulls a random portrait.
+        if queries:
+            queries.insert(1, hint)
+        else:
+            queries.append(hint)
     last["search_queries"] = queries[:4]
     last["closing_gaze"] = True
     scenes[-1] = last

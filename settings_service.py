@@ -121,6 +121,12 @@ def apply_dashboard_config(data: Any) -> None:
     }.items():
         value = getattr(data, field, None)
         if value is not None:
+            if target == "ELEVENLABS_API_KEY" and value.strip():
+                from elevenlabs_tts import is_valid_api_key
+                if not is_valid_api_key(value):
+                    raise ValueError(
+                        "Geçersiz ElevenLabs API anahtarı. API anahtarı sk_ veya sk- ile başlamalı; key ID kullanılamaz."
+                    )
             setattr(config, target, value)
             os.environ[target] = str(value)
             if target == "ELEVENLABS_API_KEY":

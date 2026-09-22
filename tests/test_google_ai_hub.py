@@ -52,11 +52,14 @@ class TestGoogleAiHub(unittest.TestCase):
 
     def test_active_tts_provider_default_edge(self):
         prev = config.USE_GEMINI_TTS
+        prev_v = config.TTS_VOICE
         config.USE_GEMINI_TTS = False
+        config.TTS_VOICE = "tr-TR-AhmetNeural"
         try:
             self.assertIn("Edge TTS", active_tts_provider())
         finally:
             config.USE_GEMINI_TTS = prev
+            config.TTS_VOICE = prev_v
 
     def test_estimate_word_timings(self):
         timings = _estimate_word_timings("bir iki uc", 3.0)

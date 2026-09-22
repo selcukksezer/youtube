@@ -192,12 +192,17 @@ TR_TOPICS = {
         "kids cartoon yumuşak eğitim hayvan dostları",
         "çocuklar için animasyon ahlak hikayesi",
     ],
+    "37_interactive_quiz": [
+        "canlı quiz 3 saniyede bil",
+        "interaktif quiz shorts challenge",
+        "quiz shorts doğru cevabı yaz",
+    ],
 }
 
 
 class TestNicheRoutingTr(unittest.TestCase):
     def test_all_36_niches_have_at_least_three_topics(self):
-        self.assertEqual(len(NICHES), 36)
+        self.assertEqual(len(NICHES), 37)
         self.assertEqual(set(TR_TOPICS), set(NICHES))
         for nid, topics in TR_TOPICS.items():
             self.assertGreaterEqual(len(topics), 3, nid)

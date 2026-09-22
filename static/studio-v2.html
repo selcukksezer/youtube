@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shorts Studio / Yeni Akış</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/studio-v2.css">
+</head>
+<body>
+  <main class="desk">
+    <header class="masthead"><div><span class="kicker">SHORTS / PRODUCTION DESK</span><h1>Bir konu. Bir yayınlanabilir video.</h1></div><span id="system-state" class="status">Bağlanıyor</span></header>
+    <section class="workspace">
+      <aside class="rail"><div class="rail-step active" data-step="topic"><b>01</b><span>Konu</span></div><div class="rail-step" data-step="script"><b>02</b><span>Senaryo</span></div><div class="rail-step" data-step="render"><b>03</b><span>Render</span></div><div class="rail-step" data-step="result"><b>04</b><span>Çıktı</span></div></aside>
+      <section class="panel" id="studio-panel">
+        <div class="panel-head"><div><span class="eyebrow">ÜRETİM ODAĞI</span><h2 id="stage-title">Konuyu netleştir</h2><p id="stage-copy">Kısa ve somut bir başlık yaz. Geri kalan üretim zincirini biz taşıyacağız.</p></div><span id="project-id" class="mono">Yeni proje</span></div>
+        <div id="topic-stage" class="stage"><label for="topic">Video konusu / başlığı</label><textarea id="topic" rows="3" placeholder="Örn. Sonunu tahmin edemeyeceğiniz 3 ters köşe film"></textarea><div class="form-grid"><label>Niş<select id="niche"><option value="1_news_flash">Genel bilgi / haber</option><option value="2_reddit_confessions">Reddit hikâyeleri</option><option value="film_dizi">Film & Dizi</option></select></label><label>Dil<select id="language"><option value="tr">Türkçe</option><option value="en">English</option></select></label></div><button id="start" class="cta">Senaryoyu üret <span>→</span></button></div>
+        <div id="script-stage" class="stage hidden"><div class="script-meta"><span id="script-score">Kalite kontrolü bekleniyor</span><button id="regenerate" class="quiet">Yeni senaryo</button></div><textarea id="script" rows="16"></textarea><div class="stage-actions"><button id="validate" class="cta">Senaryoyu onayla <span>→</span></button></div></div>
+        <div id="render-stage" class="stage hidden"><div class="render-summary"><div><span class="eyebrow">HAZIR</span><h3 id="render-title"></h3><p>İleri seçenekler varsayılanlarla çalışır. Gerekirse açıp değiştir.</p></div><select id="resolution"><option value="1080p">1080 × 1920 / Final</option><option value="720p">720 × 1280 / Hızlı test</option><option value="540p">540 × 960 / Önizleme</option></select></div><details><summary>İleri ayarlar</summary><div class="form-grid"><label>Ses cinsiyeti<select id="voice"><option value="male">Erkek</option><option value="female">Kadın</option><option value="auto">Otomatik</option></select></label><label><input id="split" type="checkbox"> Split-screen gameplay</label></div></details><button id="render" class="cta">Render başlat <span>→</span></button></div>
+        <div id="result-stage" class="stage hidden"><div class="result-icon">✓</div><span class="eyebrow">ÜRETİM TAMAMLANDI</span><h2>Video hazır.</h2><p id="result-copy"></p><a id="result-link" class="cta link" target="_blank">Videoyu aç <span>↗</span></a></div>
+        <div id="progress" class="progress hidden"><div class="progress-top"><span id="progress-step">Hazırlanıyor</span><b id="progress-pct">0%</b></div><div class="track"><i id="progress-bar"></i></div></div>
+      </section>
+    </section>
+  </main>
+  <script src="/static/studio-v2.js"></script>
+</body>
+</html>

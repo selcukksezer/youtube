@@ -237,11 +237,6 @@ def check_script_originality(
     for entry in entries:
         entry_kw = _normalize_text(entry.get("keyword", "") or "")
         entry_title = _normalize_text(entry.get("title", "") or "")
-        # Same topic re-render (operator retest) — skip self-match, not plagiarism
-        if norm_kw and entry_kw and norm_kw == entry_kw:
-            continue
-        if norm_title and entry_title and norm_title == entry_title:
-            continue
         raw_sim = compute_similarity(norm_new, entry.get("text", ""), method=method)
         sim = _adjust_similarity_for_topic(
             raw_sim,
