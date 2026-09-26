@@ -28,6 +28,7 @@ def _any_key_present() -> bool:
         "DEEPINFRA_TOKEN", "DEEPINFRA_API_KEY",
         "PIAPI_KEY", "PIAPI_API_KEY",
         "LOCAL_AI_VIDEO_URL",
+        "HELIOS_API_URL", "HELIOS_ENDPOINT", "HELIOS_URL",
         "RUNWAYML_API_SECRET", "RUNWAY_API_KEY", "RUNWAY_API_SECRET",
         "LUMA_API_KEY", "LUMAAI_API_KEY", "LUMA_KEY",
         "MINIMAX_API_KEY", "HAILUO_API_KEY",
@@ -42,6 +43,9 @@ def _any_key_present() -> bool:
             return True
     except Exception:
         pass
+    # 0 TL Free Provider: Pollinations (Verticalls v3 Ken Burns adaptation)
+    if os.getenv("DISABLE_POLLINATIONS", "").strip().lower() not in ("1", "true", "yes"):
+        return True
     return False
 
 

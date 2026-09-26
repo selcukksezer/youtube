@@ -336,3 +336,47 @@ def convert_rss_to_shorts_endpoint(req: RssConvertRequest):
         return {"status": "ok", "idea": idea}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class FactsGenerateRequest(BaseModel):
+    topic: str
+    language: Optional[str] = "tr"
+
+
+@router.post("/api/facts/generate")
+def api_generate_facts_script(req: FactsGenerateRequest):
+    """Generates slop-free educational/facts Shorts script adapted from ShortGPT."""
+    from services.facts_story_engine import FactsStoryEngine
+    try:
+        script = FactsStoryEngine.generate_facts_script(
+            topic=req.topic,
+            language=req.language or getattr(config, "LANGUAGE", "tr"),
+        )
+        return {"status": "ok", "script": script}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Facts senaryosu üretilemedi: {e}")
+
+
+class ViralFlowTransformRequest(BaseModel):
+    youtube_url: str
+    target_niche: Optional[str] = "12_amazon_affiliate"
+    language: Optional[str] = "tr"
+
+
+@router.post("/api/flow/transform_viral")
+def api_transform_viral_to_flow(req: ViralFlowTransformRequest):
+    """
+    Transforms any viral YouTube video into an original Google Flow / Veo storyboard
+    and ready-to-render Shorts project plan.
+    """
+    from services.google_flow_transformer import transform_youtube_url_to_flow
+    try:
+        storyboard = transform_youtube_url_to_flow(
+            youtube_url=req.youtube_url,
+            target_niche=req.target_niche or "12_amazon_affiliate",
+            language=req.language or "tr",
+        )
+        return {"status": "ok", "data": storyboard}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Viral video dönüştürülemedi: {e}")
+

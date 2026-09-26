@@ -11,6 +11,8 @@ import json
 import re
 import math
 import difflib
+import sqlite3
+import time
 from typing import Tuple, List, Optional
 import config
 
@@ -180,19 +182,72 @@ def _save_db(entries: List[dict]) -> None:
         print(f"    [Item 120] DB kayıt hatası: {e}")
 
 
-def add_script_to_db(script_text: str, keyword: str = "", title: str = "") -> None:
-    """Onaylanmış senaryoyu veritabanına ekler."""
+def add_script_to_db(
+    script_text: str,
+    keyword: str = "",
+    title: str = "",
+    video_id: Optional[int] = None,
+    render_status: str = "completed"
+) -> None:
+    """Onaylanmış ve başarıyla render edilmiş senaryoyu veritabanına ekler."""
     if not script_text or len(script_text.strip()) < 50:
         return
     entries = _load_db()
+    norm = _normalize_text(script_text)
+    if any(e.get("text") == norm for e in entries):
+        return
     entries.append({
         "keyword": keyword,
         "title": title,
-        "text": _normalize_text(script_text),
-        "length": len(script_text.split())
+        "text": norm,
+        "length": len(script_text.split()),
+        "video_id": video_id,
+        "render_status": render_status,
+        "created_at": time.time()
     })
     _save_db(entries)
-    print(f"    [Item 120] Senaryo DB'ye eklendi: '{title[:40]}' ({len(script_text.split())} kelime)")
+    print(f"    [Item 120] Senaryo DB'ye eklendi (başarılı render): '{title[:40]}' ({len(script_text.split())} kelime)")
+
+
+def _is_entry_active_and_successful(entry: dict) -> bool:
+    """
+    Yalnızca başarılı (completed) render alınmış senaryoları intihal kontrolüne dahil eder.
+    Henüz renderı bitmemiş, iptal edilmiş veya hata vermiş denemeler intihal karşılaştırmasına dahil edilmez.
+    """
+    if entry.get("render_status") and entry.get("render_status") != "completed":
+        return False
+
+    vid_id = entry.get("video_id")
+    kw = entry.get("keyword") or ""
+    ti = entry.get("title") or ""
+
+    try:
+        from database import DB_PATH
+        if os.path.exists(DB_PATH):
+            conn = sqlite3.connect(DB_PATH, timeout=5.0)
+            cur = conn.cursor()
+            if vid_id is not None:
+                cur.execute("SELECT status FROM videos WHERE id = ?", (vid_id,))
+                row = cur.fetchone()
+                conn.close()
+                if row:
+                    return row[0] == "completed"
+                return True
+
+            if kw or ti:
+                cur.execute(
+                    "SELECT status FROM videos WHERE keyword = ? OR title = ?",
+                    (kw, ti if ti else kw)
+                )
+                statuses = [r[0] for r in cur.fetchall()]
+                conn.close()
+                if statuses and not any(s == "completed" for s in statuses):
+                    # Bu başlık için denemeler yapılmış ama hepsi failed/cancelled olmuş
+                    return False
+    except Exception:
+        pass
+
+    return True
 
 
 def check_script_originality(
@@ -201,7 +256,8 @@ def check_script_originality(
     method: str = "robust",
     keyword: str = "",
     title: str = "",
-    auto_add_if_approved: bool = True
+    auto_add_if_approved: bool = False,
+    only_completed_renders: bool = True
 ) -> Tuple[bool, float, Optional[str]]:
     """
     Item 120 – Otomatik Senaryo İntihal Kontrolü.
@@ -218,10 +274,14 @@ def check_script_originality(
         print("  [Item 120] Senaryo çok kısa; kontrol atlandı.")
         return True, 0.0, None
 
-    entries = _load_db()
+    raw_entries = _load_db()
+    if only_completed_renders:
+        entries = [e for e in raw_entries if _is_entry_active_and_successful(e)]
+    else:
+        entries = raw_entries
 
     if not entries:
-        print(f"  [Item 120] DB boş; senaryo özgün kabul edildi (ilk kayıt).")
+        print(f"  [Item 120] DB boş veya başarılı render kaydı yok; senaryo özgün kabul edildi.")
         if auto_add_if_approved:
             add_script_to_db(new_script, keyword=keyword, title=title)
         return True, 0.0, None

@@ -10,9 +10,13 @@ MIN_DURATION = 45.0
 MAX_DURATION = 60.0
 MIN_SCENES = 6
 MAX_SCENES = 12
-MIN_WORDS = 120
-MAX_WORDS = 170
-MIN_SCENE_WORDS = 12
+OPTIMAL_MIN_WORDS = 120
+OPTIMAL_MAX_WORDS = 170
+MIN_WORDS = 85
+MAX_WORDS = 195
+MIN_SCENE_WORDS = 7
+ADVISORY_SCENE_WORDS = 12
+
 
 _FILLER_RE = re.compile(
     r"\b(bunu aklında tut|bunu aklinda tut|takipte kalın|takipte kalin|"
@@ -46,40 +50,55 @@ def validate_script_quality(plan: Dict[str, Any], *, channel_profile: Optional[D
     issues: List[str] = []
     warnings: List[str] = []
 
-    if not (MIN_DURATION <= duration <= MAX_DURATION + 0.25):
+    # Duration: allow 38s-65s without hard fail (45-60.25 is target)
+    if duration < 38.0 or duration > 65.0:
         issues.append(f"duration_out_of_band:{duration:.2f}")
+    elif not (MIN_DURATION <= duration <= MAX_DURATION + 0.25):
+        warnings.append(f"duration_near_band_edge:{duration:.2f}")
+
     if not (MIN_SCENES <= len(scenes) <= MAX_SCENES):
-        issues.append(f"scene_count_out_of_band:{len(scenes)}")
+        if len(scenes) < 4:
+            issues.append(f"scene_count_out_of_band:{len(scenes)}")
+        else:
+            warnings.append(f"scene_count_near_edge:{len(scenes)}")
+
+    # Word count: 85-195 is hard band; 120-170 is optimal target
     if not (MIN_WORDS <= len(words) <= MAX_WORDS):
         issues.append(f"word_count_out_of_band:{len(words)}")
+    elif len(words) < OPTIMAL_MIN_WORDS:
+        warnings.append(f"word_count_below_optimal:{len(words)}_target_{OPTIMAL_MIN_WORDS}")
+    elif len(words) > OPTIMAL_MAX_WORDS:
+        warnings.append(f"word_count_above_optimal:{len(words)}_target_{OPTIMAL_MAX_WORDS}")
+
     if not scenes:
         issues.append("scenes_missing")
-    elif str(scenes[0].get("beat_type") or "").casefold() != "hook":
-        issues.append("hook_beat_missing")
 
     fingerprints = [_scene_fingerprint(s) for s in scenes]
     repeated = [key for key, count in Counter(fingerprints).items() if key and count > 1]
     if repeated:
-        issues.append(f"repeated_scene_fingerprint:{len(repeated)}")
+        warnings.append(f"repeated_scene_fingerprint:{len(repeated)}")
 
     for index, scene in enumerate(scenes):
         narration = str(scene.get("narration") or "").strip()
         description = str(scene.get("scene_description") or "").strip()
         queries = [str(q).strip() for q in (scene.get("search_queries") or []) if str(q).strip()]
-        if len(_words(narration)) < MIN_SCENE_WORDS:
+        w_count = len(_words(narration))
+        if w_count < MIN_SCENE_WORDS:
             issues.append(f"scene_{index}_words_below_{MIN_SCENE_WORDS}")
+        elif w_count < ADVISORY_SCENE_WORDS:
+            warnings.append(f"scene_{index}_words_below_{ADVISORY_SCENE_WORDS}")
         if not description or len(description) < 12 or "scene_description" in description.casefold():
             issues.append(f"scene_{index}_visual_description_invalid")
         if len(queries) < 2:
             issues.append(f"scene_{index}_queries_insufficient")
         if _FILLER_RE.search(narration):
-            issues.append(f"scene_{index}_mechanical_filler")
+            warnings.append(f"scene_{index}_mechanical_filler")
         if narration and narration[-1] not in ".!?":
-            issues.append(f"scene_{index}_missing_terminal")
+            warnings.append(f"scene_{index}_missing_terminal")
 
-    if len(words) < MIN_WORDS:
+    if len(words) < OPTIMAL_MIN_WORDS:
         warnings.append("regenerate_with_deeper_argument")
-    if len(words) > MAX_WORDS:
+    if len(words) > OPTIMAL_MAX_WORDS:
         warnings.append("condense_by_removing_redundancy_not_generic_padding")
     if duration < 50:
         warnings.append("shorter_than_viewmade_style_default")

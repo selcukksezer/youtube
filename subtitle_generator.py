@@ -344,15 +344,16 @@ def _format_word(text, uppercase=False):
     return text.upper() if uppercase else text
 
 
-def _active_word_tags(highlight_ass, primary_ass, glow=False, word: str = ""):
-    """Item 91: karaoke highlight + micro-pulse; Item 230 neon power-word colors."""
+def _active_word_tags(highlight_ass, primary_ass, glow=False, word: str = "", bounce: bool = True):
+    """Item 91: karaoke highlight + micro-pulse; Item 230 neon power-word colors; MoneyPrinter bounce/pop."""
     glow_tags = r"\blur3\shad2\be1" if glow else ""
     word_key = (word or "").strip().lower().strip(".,!?;:")
     power_hex = POWER_WORD_HIGHLIGHTS.get(word_key)
     active_color = hex_to_ass_color(power_hex) if power_hex else highlight_ass
     if power_hex and glow:
         glow_tags = r"\blur4\shad3\be2"
-    open_tag = "{" + rf"\c{active_color}\b1\fscx106\fscy106" + glow_tags + "}"
+    bounce_tag = r"\t(0,70,\fscx115\fscy115)\t(70,140,\fscx106\fscy106)" if bounce else ""
+    open_tag = "{" + rf"\c{active_color}\b1\fscx106\fscy106" + bounce_tag + glow_tags + "}"
     close_tag = "{" + rf"\c{primary_ass}\b0\fscx100\fscy100" + "}"
     return open_tag, close_tag
 
@@ -373,6 +374,7 @@ def create_karaoke_subtitles(timings, path, max_dur=9999.0, style_opts=None):
     stroke_width = opts.get("stroke_width", getattr(config, "SUBTITLE_STROKE_WIDTH", 4))
     uppercase = opts.get("uppercase", False)
     glow = opts.get("glow", False)
+    bounce = opts.get("bounce", True)
     # Item 107: preset font_name overrides session rotation
     font_name = opts.get("font_name") or get_session_subtitle_font()
     # Item 116: Drop Shadow açı ve derinlik varyasyonu
@@ -423,7 +425,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 word = _format_word(w["text"], uppercase)
                 if wj == wi:
                     open_tag, close_tag = _active_word_tags(
-                        highlight_ass, primary_ass, glow=glow, word=w["text"]
+                        highlight_ass, primary_ass, glow=glow, word=w["text"], bounce=bounce
                     )
                     parts.append(open_tag + word + close_tag)
                 else:

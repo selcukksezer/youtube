@@ -1110,6 +1110,12 @@ input[type="password"]:focus,
     box-shadow: 0 0 12px rgba(139, 92, 246, 0.1);
 }
 .btn-smart i { font-size: 12px; }
+.btn-smart.accent-purple { border-color: rgba(168, 85, 247, 0.35); color: #c084fc; }
+.btn-smart.accent-purple:hover { border-color: #a855f7; box-shadow: 0 0 14px rgba(168, 85, 247, 0.25); }
+.btn-smart.accent-orange { border-color: rgba(249, 115, 22, 0.35); color: #fb923c; }
+.btn-smart.accent-orange:hover { border-color: #f97316; box-shadow: 0 0 14px rgba(249, 115, 22, 0.25); }
+.btn-smart.accent-blue { border-color: rgba(59, 130, 246, 0.35); color: #60a5fa; }
+.btn-smart.accent-blue:hover { border-color: #3b82f6; box-shadow: 0 0 14px rgba(59, 130, 246, 0.25); }
 .btn-smart.accent-cyan { border-color: rgba(6, 182, 212, 0.3); color: var(--secondary); }
 .btn-smart.accent-cyan:hover { border-color: var(--secondary); box-shadow: 0 0 12px rgba(6, 182, 212, 0.15); }
 .btn-smart.accent-green { border-color: rgba(16, 185, 129, 0.3); color: var(--success); }

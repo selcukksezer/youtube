@@ -40,6 +40,24 @@ _TR_EN: Dict[str, str] = {
     "metro": "subway train underground station", "tren": "train railway motion",
     "okyanus": "ocean waves coastline", "deniz": "ocean waves coastline",
     "orman": "forest trees winding path", "çöl": "desert dunes wind", "col": "desert dunes wind",
+    # Product / Affiliate / Gadget / Tech / Home concepts
+    "ürün": "smart product gadget", "urun": "smart product gadget",
+    "alet": "innovative gadget tool", "cihaz": "compact electronic device",
+    "poşet": "plastic snack bag", "poset": "plastic snack bag",
+    "kapatıcı": "handheld heat sealer gadget", "kapatici": "handheld heat sealer gadget",
+    "mutfak": "modern kitchen counter", "ev": "modern living room home",
+    "masa": "clean desk workspace", "düzenleyici": "desk organizer accessory",
+    "duzenleyici": "desk organizer accessory", "kablo": "cable organizer neat",
+    "temizlik": "cleaning tool home", "pratik": "smart daily gadget",
+    "kolaylık": "life hack lifestyle", "kolaylik": "life hack lifestyle",
+    "tasarım": "minimalist product design", "tasarim": "minimalist product design",
+    "şarj": "charging station accessory", "sarj": "charging station accessory",
+    "kulaklık": "wireless earbuds audio", "kulaklik": "wireless earbuds audio",
+    "telefon": "smartphone desk holder", "kamera": "camera lens tech",
+    "ışık": "ring light ambient led", "isik": "ring light ambient led",
+    "paket": "unboxing packaging box", "kutu": "product unboxing package",
+    "kahve": "espresso coffee maker kitchen", "bardak": "thermal tumbler mug",
+    "araba": "car interior accessory", "araç": "car gadget tech",
 }
 
 # Short seeds for keyless providers (Openverse / Wikimedia) — long cinematic

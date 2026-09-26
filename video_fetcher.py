@@ -12,10 +12,13 @@ import database
 from stock_providers import ALL_SOURCES
 
 # P1-12: published IDs persist cross-job; job-local IDs block only within one render
+import threading as _threading
 _published_ids: set = set()
 _job_used_ids: set = set()
 _used_hashes: set = set()
 _source_counter: int = 0  # Round-robin counter
+# K3: thread lock — paralel asyncio.gather fetch'lerinde race condition önlemi
+_fetch_lock = _threading.Lock()
 _USED_PERSIST_PATH = os.path.join(
     getattr(config, "BASE_DIR", os.path.dirname(os.path.abspath(__file__))),
     "data",
@@ -387,6 +390,12 @@ def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
                     continue
                 extended_queries.append(fallback_q)
 
+    try:
+        from services.stock_simplifier_fallback import build_resilient_query_ladder
+        extended_queries = build_resilient_query_ladder(extended_queries)
+    except Exception:
+        pass
+
     if preferred_source:
         source_order = [
             source for source in ALL_SOURCES
@@ -432,15 +441,22 @@ def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
             path = os.path.join(project_dir, f"s{scene_index:03d}_{v['source']}_{sid}.mp4")
             if _download(v["url"], path, cancel_check=cancel_check):
                 fh = _file_hash(path)
-                if fh in _used_hashes:
-                    os.remove(path)
-                    continue
-                if database.source_asset_was_used(f"{v['source']}:{v['id']}", fh):
-                    os.remove(path)
-                    continue
-                database.record_source_asset(f"{v['source']}:{v['id']}", v["url"], fh, v["source"])
-                _job_used_ids.add(v["id"])
-                _used_hashes.add(fh)
+                # K3: atomic check+register — lock prevents parallel workers
+                # from registering the same clip for different scenes
+                with _fetch_lock:
+                    if fh in _used_hashes:
+                        os.remove(path)
+                        continue
+                    vid_key = str(v['id'])
+                    if vid_key in _job_used_ids:
+                        os.remove(path)
+                        continue
+                    if database.source_asset_was_used(f"{v['source']}:{v['id']}", fh):
+                        os.remove(path)
+                        continue
+                    database.record_source_asset(f"{v['source']}:{v['id']}", v["url"], fh, v["source"])
+                    _job_used_ids.add(vid_key)
+                    _used_hashes.add(fh)
                 print(f"    [OK] [{v['source'].upper()}] {v['fw']}x{v['fh']} {v['duration']}s score:{sc:.0f}")
                 _promote_stock_to_archive(
                     channel_id, niche_id, path, queries or extended_queries,
@@ -563,8 +579,8 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
                     )
                     if result and result.path:
                         try:
-                            from visuals.fetch import _job_manifest
-                            _job_manifest.append(result.to_manifest(scene_index))
+                            from visuals.fetch import add_manifest_entry
+                            add_manifest_entry(result.to_manifest(scene_index))
                         except Exception:
                             pass
                         return result.path
@@ -632,6 +648,8 @@ def reset_used_videos():
 
 def _ai_image_providers_available() -> bool:
     """Item 113 — at least one AI image backend configured."""
+    if os.getenv("DISABLE_POLLINATIONS", "").strip().lower() not in ("1", "true", "yes"):
+        return True
     if getattr(config, "USE_GEMINI_IMAGE_GEN", False) and getattr(config, "GEMINI_API_KEY", ""):
         return True
     if getattr(config, "FAL_API_KEY", ""):
@@ -777,6 +795,17 @@ def generate_ai_image_clip(
         except Exception as e:
             print(f"    [Item 113] Stability AI hatası: {e}")
 
+    # ── Pollinations Free Flux AI (0 TL - Anahtarsız Ücretsiz Motor) ───────
+    if not image_path and os.getenv("DISABLE_POLLINATIONS", "").strip().lower() not in ("1", "true", "yes"):
+        try:
+            from services.pollinations_ai_visual import generate_ai_image
+            tmp_poll = tempfile.mktemp(suffix="_pollinations_ai.jpg")
+            if generate_ai_image(full_prompt, tmp_poll, width=min(width, 720), height=min(height, 1280)):
+                image_path = tmp_poll
+                print(f"    [Item 113] Pollinations 0 TL Flux görsel üretildi: {tmp_poll}")
+        except Exception as e:
+            print(f"    [Item 113] Pollinations görsel uyarısı: {e}")
+
     # ── API'ler yoksa None dön (Böylece sistem gerçek stok videoya fallback yapar) ──
     if not image_path:
         print(f"    [Item 113] AI görsel yok/kota/devre — stok videoya geçiliyor.")
@@ -790,8 +819,8 @@ def generate_ai_image_clip(
         from render.ffmpeg_graph import cheap_pan_filter
         vf = (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},"
-            f"{cheap_pan_filter(width, height, duration, 0)}"
+            f"crop={width}:{height},setsar=1,"
+            f"{cheap_pan_filter(width, height, duration, 0)},setsar=1"
         )
 
         cmd = [
@@ -874,11 +903,11 @@ def _source_label_from_path(clip_path: str) -> str:
     for label in ("pexels", "pixabay", "coverr", "mixkit", "videvo"):
         if label in basename:
             return label
-    if any(tag in basename for tag in ("ai_gen", "gemini", "veo", "_ai.")):
+    if any(tag in basename for tag in ("ai_gen", "gemini", "veo", "_ai.", "ai_video", "pollinations", "flux")):
         return "ai"
-    if "reddit" in basename or "procedural_fallback" in basename or "custom" in basename:
+    if "reddit" in basename or "procedural" in basename or "custom" in basename or "whiteboard" in basename:
         return "local"
-    return "unknown"
+    return "ai" if "ai" in basename else "local"
 
 
 def _record_visual_manifest(clip_path: str, scene_index: int, source: str, source_id: str = "", title: str = "") -> None:
@@ -886,23 +915,29 @@ def _record_visual_manifest(clip_path: str, scene_index: int, source: str, sourc
     if not clip_path or not os.path.isfile(clip_path):
         return
     try:
-        from visuals.fetch import _job_manifest
-        if any(str(row.get("path")) == str(clip_path) for row in _job_manifest):
-            return
+        from visuals.fetch import add_manifest_entry
         from visuals.license import License, LicenseInfo
-        lic = {
-            "pexels": License.PEXELS, "pixabay": License.PIXABAY,
-            "coverr": License.COVERR, "mixkit": License.MIXKIT,
-            "custom": License.CC0, "local": License.CC0,
-            "procedural": License.CC0,
-        }.get((source or "").lower(), License.UNKNOWN)
-        _job_manifest.append({
+        s_lower = (source or "").lower()
+        if "ai" in s_lower or "pollinations" in s_lower or "flux" in s_lower or "veo" in s_lower:
+            lic = License.AI_GENERATED
+            src_name = "ai_generated"
+        elif s_lower in ("custom", "local", "procedural", "whiteboard", "reddit"):
+            lic = License.CC0
+            src_name = source or "local"
+        else:
+            lic = {
+                "pexels": License.PEXELS, "pixabay": License.PIXABAY,
+                "coverr": License.COVERR, "mixkit": License.MIXKIT,
+            }.get(s_lower, License.CC0)
+            src_name = source or "stock"
+
+        add_manifest_entry({
             "scene_index": int(scene_index), "path": clip_path,
-            "uid": f"legacy:{source}:{source_id or _file_hash(clip_path)}",
-            "source": source or "legacy_stock", "id": source_id,
+            "uid": f"legacy:{src_name}:{source_id or _file_hash(clip_path)}",
+            "source": src_name, "id": source_id,
             "title": title or os.path.basename(clip_path), "kind": "video",
             "score": 0, "sha1": _file_hash(clip_path),
-            "license": LicenseInfo(lic, source or "legacy_stock", title=title or os.path.basename(clip_path)).to_dict(),
+            "license": LicenseInfo(lic, src_name, title=title or os.path.basename(clip_path)).to_dict(),
         })
     except Exception as exc:
         print(f"    [VisualLedger] kayıt notu: {exc}")

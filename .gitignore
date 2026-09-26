@@ -64,3 +64,12 @@ data/quota_usage.json
 .idea/
 .DS_Store
 Thumbs.db
+
+# Reference Repos
+reference_repos/
+reference_repos2/
+.npm-cache/
+data/ai_video_cache/
+scratch/
+scratch_*.py
+PIPELINE_AUDIT_REPORT.json

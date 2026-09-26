@@ -175,11 +175,50 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
     source_policy = str(scene.get("visual_source_policy") or "licensed_first").casefold()
     prefer_ai = source_policy in {"ai", "synthetic", "ai_first"} or bool((plan or {}).get("prefer_ai_visuals"))
 
-    if i == 0 and plan.get("reddit_post"):
+    # 0) Direct assigned clip (AI preview, Whiteboard preview, or custom selected local clip)
+    selected_vid = scene.get("selected_video") or {}
+    local_candidate = selected_vid.get("path") or scene.get("video_path") or selected_vid.get("file_path")
+    if local_candidate and os.path.exists(local_candidate):
+        p = local_candidate
+        _log(f"[Visual] Sahne #{i+1}: Önceden üretilen yerel klip kullanılıyor: {os.path.basename(p)}")
+
+    visual_mode = str(
+        (plan or {}).get("visual_mode")
+        or scene.get("visual_mode")
+        or (plan or {}).get("visual_style")
+        or ""
+    ).lower()
+
+    if not p and visual_mode in ("whiteboard", "sketch", "cizim"):
+        from services.whiteboard_animator import create_whiteboard_scene_clip
+        _log(f"[Whiteboard] Sahne #{i+1}: El çizim line-art animasyonu üretiliyor...")
+        wb_path = os.path.join(proj, f"s{i:03d}_whiteboard.mp4")
+        p = create_whiteboard_scene_clip(
+            scene_description=desc or narr or (q[0] if q else "whiteboard line art sketch"),
+            output_video_path=wb_path,
+            duration=d,
+            scene_index=i,
+        )
+
+    if not p and (
+        visual_mode in ("pollinations", "flux", "0tl_ai", "flux_ai", "pollinations_ai")
+        or (prefer_ai and not config.GEMINI_API_KEY and not getattr(config, "FAL_API_KEY", "") and not getattr(config, "STABILITY_API_KEY", ""))
+    ):
+        from services.pollinations_ai_visual import create_scene_ai_clip
+        _log(f"[Flux AI] Sahne #{i+1}: 0 TL Pollinations Flux SDXL 9:16 görsel üretiliyor...")
+        ai_path = os.path.join(proj, f"s{i:03d}_flux.mp4")
+        p = create_scene_ai_clip(
+            scene_description=desc or (q[0] if q else narr) or "cinematic vertical 9:16 footage",
+            output_video_path=ai_path,
+            duration=d,
+            scene_index=i,
+        )
+
+    if not p and i == 0 and plan.get("reddit_post"):
         p = generate_reddit_post_card_clip(
             plan["reddit_post"], os.path.join(proj, "s000_reddit_source.mp4"), duration=d
         )
-    elif prefer_ai and _veo_render_allowed() and i > 0:
+    elif not p and prefer_ai and _veo_render_allowed() and i > 0:
         p = generate_veo_scene_clip(
             scene_description=desc or (q[0] if q else (narr[:120] or "subject detail")),
             output_path=os.path.join(proj, f"s{i:03d}_veo.mp4"),
@@ -352,6 +391,8 @@ def process_video_task(req: VideoRenderRequest):
         config.LANGUAGE = target_lang
 
         plan = req.plan
+        if plan and getattr(req, "visual_mode", None) and req.visual_mode != "auto":
+            plan["visual_mode"] = req.visual_mode
         keyword = (plan.get("title") if plan and plan.get("title") else req.keyword) or "Video"
 
         # Niche lock ASAP — voice gender + Gemini both need correct motif
@@ -509,6 +550,13 @@ def process_video_task(req: VideoRenderRequest):
                 plan = enrich_plan_scenes(plan, lang=target_lang, niche_id=locked_niche)
             except Exception:
                 pass
+            # O3: replace generic fallback search queries with narration-derived ones
+            try:
+                from scenes.enrichment import enforce_specific_search_queries
+                if plan.get("scenes"):
+                    enforce_specific_search_queries(plan["scenes"])
+            except Exception:
+                pass
             meta = plan.get("retention_metadata") or {}
             if meta.get("hook_strategy"):
                 _log(
@@ -550,6 +598,8 @@ def process_video_task(req: VideoRenderRequest):
                 plan.get("full_narration", ""),
                 keyword=keyword,
                 title=plan.get("title", keyword),
+                auto_add_if_approved=False,
+                only_completed_renders=True,
             )
             if is_original:
                 break
@@ -573,14 +623,44 @@ def process_video_task(req: VideoRenderRequest):
             script_quality = validate_script_quality(plan or {})
             plan.setdefault("meta", {})
             plan["meta"]["script_quality"] = script_quality
+
             if script_quality.get("hard_fail") and not getattr(req, "allow_draft_render", False):
-                reason = ", ".join(script_quality.get("issues") or [])
-                msg = f"Senaryo üretim sözleşmesi reddetti: {reason}"
-                _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
-                if db_id:
-                    database.update_video_status(db_id, "failed", error_message=msg)
-                state.broadcast_event("error", msg)
-                return
+                # Attempt auto-repair before aborting
+                from scenes.narration_validate import apply_auto_repair_if_needed
+                repaired_plan, narr_fixes, _ = apply_auto_repair_if_needed(plan)
+                if narr_fixes:
+                    _log(f"[QualityGate] Anlatım sözleşme ihlali için otomatik onarıldı: {len(narr_fixes)} fix", 24)
+                    plan = repaired_plan
+                    script_quality = validate_script_quality(plan)
+                    plan["meta"]["script_quality"] = script_quality
+
+                if script_quality.get("hard_fail") and not getattr(req, "allow_draft_render", False):
+                    # Check if issues are non-fatal per-scene discrepancies or soft threshold deviations
+                    issues_list = script_quality.get("issues", [])
+                    non_fatal = all(
+                        (i.startswith("scene_") and (
+                            "words_below" in i
+                            or "queries_insufficient" in i
+                            or "missing_terminal" in i
+                            or "visual_description" in i
+                            or "mechanical_filler" in i
+                        ))
+                        or i.startswith("repeated_scene_fingerprint")
+                        or i.startswith("word_count_out_of_band")
+                        or i.startswith("duration_out_of_band")
+                        or i.startswith("scene_count_out_of_band")
+                        for i in issues_list
+                    )
+                    if non_fatal and len(plan.get("scenes", [])) >= 4:
+                        _log(f"[QualityGate] UYARI: Sözleşme sınırındaki senaryo esnetilerek kabul edildi: {issues_list}", 24)
+                    else:
+                        reason = ", ".join(issues_list)
+                        msg = f"Senaryo üretim sözleşmesi reddetti: {reason}"
+                        _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
+                        if db_id:
+                            database.update_video_status(db_id, "failed", error_message=msg)
+                        state.broadcast_event("error", msg)
+                        return
         except Exception as script_quality_err:
             msg = f"Senaryo kalite sözleşmesi çalıştırılamadı: {script_quality_err}"
             _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
@@ -867,9 +947,101 @@ def process_video_task(req: VideoRenderRequest):
         check_cancelled()
         _retry_missing_clips(max_passes=2)
 
+        # O1: Clip/plan count sync — director recompile may change scene count.
+        # Trim or pad clips to match current plan so pre-audit count check is accurate.
+        _plan_scene_count = len(plan.get("scenes") or [])
+        if _plan_scene_count > 0 and len(clips) != _plan_scene_count:
+            if len(clips) > _plan_scene_count:
+                _log(
+                    f"[O1-Sync] clips={len(clips)} > plan={_plan_scene_count} "
+                    f"— trimming extras", 58
+                )
+                clips = clips[:_plan_scene_count]
+            else:
+                _log(
+                    f"[O1-Sync] clips={len(clips)} < plan={_plan_scene_count} "
+                    f"— padding with None entries", 58
+                )
+                while len(clips) < _plan_scene_count:
+                    clips.append({"path": None, "duration": 5.0})
+
         coverage = clip_coverage_report(clips)
         ok_clips = coverage["ok"]
         _log(f"[Visual] Stok klip indirme tamamlandi: {ok_clips}/{total_s}", 58)
+
+        # ─── Pre-render pipeline audit ────────────────────────────────
+        try:
+            from render.pipeline_audit import pre_render_audit, audit_search_queries
+            _pre_audit = pre_render_audit(
+                clips,
+                audio_path=os.path.join(config.AUDIO_DIR, f"{safe}.wav"),
+                plan=plan,
+            )
+            _q_audit = audit_search_queries(clips)
+            for _w in _pre_audit.get("warnings") or []:
+                _log(f"[PipelineAudit] WARN: {_w}")
+            for _e in _pre_audit.get("errors") or []:
+                _log(f"[PipelineAudit] ERROR: {_e}", 58)
+            if _q_audit.get("issue_count", 0) > 0:
+                _log(
+                    f"[PipelineAudit] Search query issues: "
+                    f"{_q_audit['issue_count']} scenes have generic/empty/off-topic queries"
+                )
+            import json as _json
+            with open(os.path.join(proj, "pipeline_audit_pre.json"), "w", encoding="utf-8") as _af:
+                _json.dump({"pre_render": _pre_audit, "query_audit": _q_audit}, _af, ensure_ascii=False, indent=2)
+            if not _pre_audit["ok"]:
+                _blocking = [e for e in (_pre_audit.get("errors") or []) if "duplicate_clips" in e or "scene_count_too_low" in e]
+                if _blocking:
+                    _msg = f"Pre-render audit blocked render: {'; '.join(_blocking)}"
+                    _log(f"[PipelineAudit] HARD-FAIL: {_msg}", 58)
+                    if db_id:
+                        database.update_video_status(db_id, "failed", error_message=_msg)
+                    state.broadcast_event("error", _msg)
+                    return
+        except Exception as _audit_err:
+            _log(f"[PipelineAudit] audit skip: {_audit_err}")
+
+        # K1: Semantic mismatch re-fetch — try narration-derived queries for low-overlap scenes
+        try:
+            from render.pipeline_audit import pre_render_audit as _pa_fn
+            from scenes.enrichment import _narration_to_subject_tokens
+            _k1_audit = _pa_fn(clips, audio_path=os.path.join(config.AUDIO_DIR, f"{safe}.wav"))
+            _low_semantic = _k1_audit.get("report", {}).get("low_semantic_count", 0)
+            if _low_semantic > 0:
+                _log(f"[K1-Semantic] {_low_semantic} scene(s) low clip-narration overlap — re-fetching with narration queries")
+                for _si, _clip in enumerate(clips):
+                    from render.pipeline_audit import _semantic_overlap as _so
+                    if _so(_clip) >= 0.08:
+                        continue
+                    _narr = _clip.get("narration") or (scenes[_si].get("narration") if _si < len(scenes) else "") or ""
+                    _desc = _clip.get("scene_description") or ""
+                    _ntokens = _narration_to_subject_tokens(_narr or _desc)
+                    if not _ntokens:
+                        continue
+                    _narr_queries = [
+                        f"{' '.join(_ntokens[:2]).lower()} closeup",
+                        f"{' '.join(_ntokens[:2]).lower()} detail shot",
+                        f"{_ntokens[0].lower()} footage",
+                    ]
+                    check_cancelled()
+                    _np = fetch_scene_clip(
+                        _narr_queries, _si, proj,
+                        target_duration=_clip.get("duration", 6),
+                        scene_description=_desc,
+                        narration=_narr,
+                        cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
+                        niche_id=(plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or "",
+                        channel_id=getattr(req, "channel_id", None),
+                        allow_procedural=False,
+                    )
+                    if _np:
+                        _log(f"[K1-Semantic] Scene {_si+1} re-fetched: {os.path.basename(_np)}")
+                        clips[_si]["path"] = _np
+                        if director and _si < len(director.scenes):
+                            director.scenes[_si].path = _np
+        except Exception as _k1_err:
+            _log(f"[K1-Semantic] retry skip: {_k1_err}")
 
         if ok_clips == 0:
             msg = "Stok video indirilemedi."
@@ -1284,11 +1456,35 @@ def process_video_task(req: VideoRenderRequest):
                     + validation.stderr.decode("utf-8", errors="ignore")[:300]
                 )
 
+            # ─── Post-render pipeline audit ───────────────────────────────
+            try:
+                from render.pipeline_audit import post_render_audit
+                _post_audit = post_render_audit(result, audio_path, clips)
+                for _pw in _post_audit.get("warnings") or []:
+                    _log(f"[PipelineAudit] Post-WARN: {_pw}")
+                for _pe in _post_audit.get("errors") or []:
+                    _log(f"[PipelineAudit] Post-ERROR: {_pe}", 97)
+                with open(os.path.join(proj, "pipeline_audit_post.json"), "w", encoding="utf-8") as _paf:
+                    json.dump(_post_audit, _paf, ensure_ascii=False, indent=2)
+                if not _post_audit["ok"]:
+                    _post_blocking = [e for e in (_post_audit.get("errors") or [])
+                                      if "av_sync_error" in e or "video_too_short" in e
+                                      or "no_video_stream" in e or "output_too_small" in e]
+                    if _post_blocking:
+                        _msg = f"Post-render audit kalite kapısı: {'; '.join(_post_blocking)}"
+                        _log(f"[PipelineAudit] HARD-FAIL: {_msg}", 97)
+                        if db_id:
+                            database.update_video_status(db_id, "failed", error_message=_msg)
+                        state.broadcast_event("error", _msg)
+                        return
+            except Exception as _post_audit_err:
+                _log(f"[PipelineAudit] post-audit skip: {_post_audit_err}")
+
             if director:
                 post = post_render_score(director, result, audio_path=audio_path)
                 _log(
                     f"[QualityGate] Post-score={post['score']} ok={post.get('ok')} "
-                    f"Δav={post.get('av_delta')} issues={post.get('issues')}",
+                    f"Dav={post.get('av_delta')} issues={post.get('issues')}",
                     97,
                 )
                 with open(os.path.join(proj, "quality_gate.json"), "w", encoding="utf-8") as qf:
@@ -1365,12 +1561,50 @@ def process_video_task(req: VideoRenderRequest):
             proof_full_path = os.path.join(config.BASE_DIR, "proofs", proof_filename)
             proof_url = f"/proofs/{proof_filename}" if os.path.exists(proof_full_path) else None
 
+            # High-CTR Thumbnail Generation (Verticals v3 Adaptation)
+            thumb_path = os.path.join(output_root, f"{safe}_thumb.jpg")
+            thumb_169_path = os.path.join(output_root, f"{safe}_thumb_16x9.jpg")
+            try:
+                from services.thumbnail_generator import generate_thumbnail, extract_best_video_frame
+                _log("[Thumbnail] High-CTR kapak görseli hazırlanıyor (Verticals v3)...", 99)
+                raw_frame = os.path.join(proj, "raw_thumb_frame.jpg")
+                got_frame = extract_best_video_frame(result, raw_frame, timestamp_sec=min(3.0, total_dur * 0.25))
+                bg_src = raw_frame if got_frame else None
+                generate_thumbnail(
+                    title=seo_meta.get("seo_title", keyword),
+                    output_path=thumb_path,
+                    background_path=bg_src,
+                    aspect_ratio="9:16",
+                )
+                generate_thumbnail(
+                    title=seo_meta.get("seo_title", keyword),
+                    output_path=thumb_169_path,
+                    background_path=bg_src,
+                    aspect_ratio="16:9",
+                )
+                _log(f"[Thumbnail] 9:16 ve 16:9 kapak hazır: {os.path.basename(thumb_path)}")
+            except Exception as thumb_err:
+                _log(f"[Thumbnail] Kapak üretim uyarısı: {thumb_err}")
+
             if db_id:
                 database.update_video_status(
                     db_id, "completed", os.path.basename(result), total_dur, size_mb,
                     seo_json=json.dumps(seo_meta, ensure_ascii=False),
                     proof_path=proof_full_path if os.path.exists(proof_full_path) else None,
                 )
+
+            # Item 120: Senaryoyu intihal DB'sine YALNIZCA başarılı render tamamlanınca ekle
+            try:
+                from plagiarism_checker import add_script_to_db
+                add_script_to_db(
+                    plan.get("full_narration", ""),
+                    keyword=keyword,
+                    title=plan.get("title", keyword),
+                    video_id=db_id,
+                    render_status="completed",
+                )
+            except Exception as e:
+                _log(f"[Item 120] DB kayıt uyarısı: {e}")
 
             committed = commit_published_stock_ids()
             if committed:

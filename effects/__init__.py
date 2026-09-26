@@ -11,6 +11,25 @@ from .layout import (
     apply_corner_radius_ffmpeg,
     apply_micro_resolution_crop,
 )
+from .smart_cropper import (
+    reframe_to_vertical,
+    crop_subclip_smart,
+)
+from .xfade_transitions import (
+    concat_with_xfade_transitions,
+    AVAILABLE_TRANSITIONS,
+)
+from .kinetic_subtitle_pager import (
+    kinetic_subtitle_pager,
+    KineticSubtitlePager,
+    KineticPage,
+    KineticWord,
+)
+from .punch_in_director import (
+    punch_in_director,
+    PunchInDirector,
+    PunchInBeat,
+)
 from .motion import (
     apply_ken_burns,
     apply_horizontal_flip,
@@ -209,4 +228,15 @@ __all__ = [
     "clean_video_metadata",
     "inject_nle_signature",
     "apply_full_metadata_pipeline",
+    "reframe_to_vertical",
+    "crop_subclip_smart",
+    "concat_with_xfade_transitions",
+    "AVAILABLE_TRANSITIONS",
+    "kinetic_subtitle_pager",
+    "KineticSubtitlePager",
+    "KineticPage",
+    "KineticWord",
+    "punch_in_director",
+    "PunchInDirector",
+    "PunchInBeat",
 ]

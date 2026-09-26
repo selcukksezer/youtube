@@ -27,7 +27,8 @@ from .enrichment import (
     enforce_visual_cadence_14,
     verify_and_correct_hallucinations,
     verify_or_enrich_transformative_value,
-    enforce_fair_use_2_5s_rule
+    enforce_fair_use_2_5s_rule,
+    enforce_specific_search_queries,
 )
 
 from .scripts import (
@@ -58,6 +59,7 @@ __all__ = [
     "verify_and_correct_hallucinations",
     "verify_or_enrich_transformative_value",
     "enforce_fair_use_2_5s_rule",
+    "enforce_specific_search_queries",
     "COUNTER_ARGUMENT_PROMPT_TR",
     "COUNTER_ARGUMENT_PROMPT_EN",
     "generate_counter_argument_script",

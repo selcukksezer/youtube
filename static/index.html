@@ -259,6 +259,10 @@
                     <i class="fa-solid fa-earth-americas text-primary"></i>
                     <span>Tier-1 (ABD/İngilizce) Modu</span>
                 </button>
+                <button class="quick-action-btn" id="btn-open-afm-modal" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4);">
+                    <i class="fa-solid fa-cart-shopping text-success"></i>
+                    <span>🛒 AFM E-Ticaret Ürününden Video</span>
+                </button>
             </div>
 
             <!-- SEKME 1: HIZLI ÜRETİM STÜDYOSU -->
@@ -305,7 +309,7 @@
                             </div>
                             <div class="input-icon-box">
                                 <i class="fa-solid fa-heading"></i>
-                                <input type="text" id="input-topic" placeholder="Örn: Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı" value="Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı">
+                                <input type="text" id="input-topic" placeholder="Örn: Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı">
                             </div>
                             <div id="topic-suggest-panel" class="topic-suggest-panel hidden" aria-live="polite">
                                 <div class="topic-suggest-header">
@@ -368,6 +372,15 @@
                                     <option value="">Otomatik / yok</option>
                                 </select>
                                 <small style="color:#94a3b8;font-size:11px;">Ses &amp; Müzik sekmesi ile senkron — boş bırakırsanız VoiceLab/Pixabay otomatik seçer.</small>
+                            </div>
+                            <div class="form-field mt-2">
+                                <label for="select-visual-engine"><i class="fa-solid fa-wand-magic-sparkles text-warning"></i> Görsel / Sahne Motoru (0 TL)</label>
+                                <select id="select-visual-engine" class="select-styled" style="border-color: rgba(168, 85, 247, 0.4);">
+                                    <option value="auto">🎬 Akıllı Hibrit Stok Video (Pexels / Pixabay - 0 TL)</option>
+                                    <option value="flux">🤖 0 TL Flux SDXL AI Görsel (Pollinations 9:16 Ken Burns)</option>
+                                    <option value="whiteboard">✏️ Whiteboard Çizim Modu (El Çizim Line-Art Animasyonu)</option>
+                                </select>
+                                <small style="color:#94a3b8;font-size:11px;">Stok video derdini bitirmek için Flux AI veya Whiteboard Çizim motorunu seçin.</small>
                             </div>
                         </div>
 
@@ -507,18 +520,22 @@
                             <ul class="sqp-issues hidden" id="sqp-issues"></ul>
                         </div>
 
-                        <div class="form-actions mt-4">
-                            <button class="btn btn-secondary btn-lg" id="btn-create-script">
+                        <div class="form-actions mt-4" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button class="btn btn-secondary btn-lg" id="btn-create-script" style="flex: 1 1 200px;">
                                 <i class="fa-solid fa-code-branch"></i>
                                 <span id="btn-create-script-label">1. Senaryoyu İncele & Düzenle</span>
                             </button>
-                            <button class="btn btn-primary btn-lg" id="btn-quick-render">
+                            <button type="button" class="btn btn-outline btn-lg hidden" id="btn-regenerate-script-studio" style="flex: 1 1 180px;" title="Bu konu için AI ile yeni bir senaryo varyasyonu üret">
+                                <i class="fa-solid fa-arrows-rotate"></i>
+                                <span>Senaryoyu Yeniden Yaz</span>
+                            </button>
+                            <button class="btn btn-primary btn-lg" id="btn-quick-render" style="flex: 1 1 220px;">
                                 <i class="fa-solid fa-bolt"></i>
-                                <span>Doğrudan Full HD Render Al</span>
+                                <span id="btn-quick-render-label">Doğrudan Full HD Render Al</span>
                             </button>
                         </div>
                         <button type="button" class="btn btn-outline btn-sm w-100 hidden mt-2" id="btn-new-topic" title="Mevcut senaryoyu silip yeni konu ile başlayın">
-                            <i class="fa-solid fa-rotate-left"></i> Yeni Konu / Vazgeç
+                            <i class="fa-solid fa-rotate-left"></i> Yeni Konu Başlat / Sıfırla
                         </button>
                     </div>
 
@@ -696,8 +713,14 @@
                         <span id="arc-label-loop">🔄 Döngü (45-60sn)</span>
                     </div>
 
-                    <!-- Smart Action Buttons — Madde 88, 89, 90, 130, 443, 494 -->
+                    <!-- Smart Action Buttons — Madde 88, 89, 90, 130, 443, 494 + 0 TL Flux & Whiteboard -->
                     <div class="smart-actions-bar">
+                        <button class="btn-smart accent-purple" id="btn-batch-flux-ai" title="Tüm sahneler için 0 TL Pollinations Flux SDXL 9:16 görsel üret (Stok video derdini bitirir!)">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> 0 TL Flux AI Görselleri
+                        </button>
+                        <button class="btn-smart accent-orange" id="btn-batch-whiteboard" title="Tüm sahneleri Whiteboard el çizim line-art animasyonuna çevir">
+                            <i class="fa-solid fa-pen-nib"></i> Whiteboard Çizim Modu
+                        </button>
                         <button class="btn-smart accent-blue" id="btn-fetch-stock-clips" title="Tüm sahneler için Pexels/Pixabay'den otomatik stok videoları çek">
                             <i class="fa-solid fa-cloud-arrow-down"></i> Stok Videoları Otomatik Çek
                         </button>
@@ -717,6 +740,12 @@
 
                     <div class="timeline-actions" style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                         <button class="btn btn-secondary" id="btn-add-scene-manual"><i class="fa-solid fa-plus"></i> Sahne Ekle</button>
+                        <button type="button" class="btn btn-outline" id="btn-open-seo39" title="Videoyu tek tıkla 39 YouTube diline çevir ve YouTube Data API v3 paketi oluştur">
+                            <i class="fa-solid fa-language"></i> 39 Dilli YouTube SEO
+                        </button>
+                        <button type="button" class="btn btn-outline" id="btn-open-thumbnail-gen" title="PIL destekli yüksek CTR'lı viral kapak resmi üret">
+                            <i class="fa-solid fa-image"></i> Viral Thumbnail Üretici
+                        </button>
                         <button type="button" class="btn btn-outline hidden" id="btn-regenerate-scenario" title="Senaryoyu sıfırdan yeniden üret (önbelleği temizler)">
                             <i class="fa-solid fa-arrows-rotate"></i> Senaryoyu Yeniden Üret
                         </button>
@@ -2254,10 +2283,19 @@
                 <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-copy-all-package">
                     <i class="fa-solid fa-clipboard-check"></i> Tüm SEO Paketini Kopyala
                 </button>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn btn-sm btn-outline-info" id="btn-pub-open-seo39" title="Videoyu 39 YouTube diline çevir">
+                        <i class="fa-solid fa-language"></i> 39 Dil SEO
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-warning" id="btn-pub-open-thumbnail" title="Kapak görseli üret">
+                        <i class="fa-solid fa-image"></i> Kapak Üret
+                    </button>
                     <a href="https://studio.youtube.com" target="_blank" rel="noopener" class="btn btn-sm btn-secondary" style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
                         <i class="fa-brands fa-youtube"></i> Studio'yu Aç
                     </a>
+                    <button type="button" class="btn btn-sm btn-outline-success" id="btn-open-headless-uploader" title="Kotasız Doğrudan YouTube Studio Yükleyicisi (Selenium/Browser)">
+                        <i class="fa-solid fa-cloud-arrow-up"></i> Kotasız Yükle
+                    </button>
                     <button type="button" class="btn btn-sm btn-primary" id="btn-execute-studio-safe-upload" style="background: linear-gradient(135deg, #ef4444, #dc2626); border: none;">
                         <i class="fa-solid fa-rocket"></i> Anti-Detect Studio UI ile Yükle
                     </button>
@@ -2266,10 +2304,247 @@
         </div>
     </div>
 
+    <!-- 39 DİLLİ YOUTUBE SEO MODALI -->
+    <div class="modal-overlay hidden" id="modal-seo-39" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 9999;">
+        <div class="modal-card glass-box" style="width: 95%; max-width: 860px; max-height: 90vh; overflow-y: auto; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 16px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.85);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 14px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-language" style="font-size: 26px; color: #38bdf8;"></i>
+                    <div>
+                        <h3 style="margin: 0; font-size: 18px; color: #f8fafc;">39 Dilli YouTube SEO &amp; Lokalizasyon Çevirici</h3>
+                        <p style="margin: 0; font-size: 12px; color: #94a3b8;">Ücretsiz 0 TL motor (MyMemory + Gemini) · YouTube Data API v3 "localizations" paketi</p>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" id="btn-close-seo39" style="background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+                <div>
+                    <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Kaynak Başlık</label>
+                    <input type="text" id="seo39-src-title" class="input-styled" style="width: 100%; font-size: 13px;" placeholder="Başlık...">
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Kaynak Dil</label>
+                    <select id="seo39-src-lang" class="select-styled" style="width: 100%; font-size: 13px;">
+                        <option value="tr" selected>Türkçe (tr)</option>
+                        <option value="en">İngilizce (en)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Kaynak Açıklama</label>
+                <textarea id="seo39-src-desc" class="input-styled" rows="2" style="width: 100%; font-size: 12px; resize: vertical;" placeholder="Açıklama veya video özeti..."></textarea>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+                <button type="button" class="btn btn-primary" id="btn-execute-seo39" style="background: linear-gradient(135deg, #0284c7, #0369a1); border: none;">
+                    <i class="fa-solid fa-wand-sparkles"></i> 39 Dile Tek Tıkla Çevir (0 TL)
+                </button>
+                <button type="button" class="btn btn-outline" id="btn-copy-seo39-json" title="YouTube Data API v3 payload formatında JSON kopyala">
+                    <i class="fa-solid fa-code"></i> YouTube Data API JSON Kopyala
+                </button>
+                <div id="seo39-status-box" style="display: none; font-size: 12px; color: #38bdf8; font-weight: 600;"></div>
+            </div>
+
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px;">
+                <label style="font-size: 12px; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 8px;">Çevrilen Diller (39 Dil):</label>
+                <div id="seo39-results-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; max-height: 380px; overflow-y: auto; padding-right: 4px;">
+                    <div style="color: #64748b; font-size: 12px; grid-column: 1 / -1; padding: 20px; text-align: center;">
+                        Yukarıdaki "39 Dile Tek Tıkla Çevir" butonuna basarak tüm dilleri anında oluşturabilirsiniz.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIRAL THUMBNAIL / KAPAK ÜRETİCİ MODAL -->
+    <div class="modal-overlay hidden" id="modal-thumbnail-generator" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 9999;">
+        <div class="modal-card glass-box" style="width: 95%; max-width: 880px; max-height: 90vh; overflow-y: auto; background: #0f172a; border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 16px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.85);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 14px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-image" style="font-size: 26px; color: #f59e0b;"></i>
+                    <div>
+                        <h3 style="margin: 0; font-size: 18px; color: #f8fafc;">Viral Thumbnail &amp; Shorts Kapak Üretici</h3>
+                        <p style="margin: 0; font-size: 12px; color: #94a3b8;">PIL tabanlı 3D gölgeli, koyu gradyanlı, yüksek CTR'lı 9:16 ve 16:9 kapak oluşturucu</p>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" id="btn-close-thumbnail-modal" style="background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 320px 1fr; gap: 20px;">
+                <!-- Sol: Ayarlar -->
+                <div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Kapak Başlığı (Hook)</label>
+                        <textarea id="thumb-input-title" class="input-styled" rows="3" style="width: 100%; font-size: 13px; resize: vertical;" placeholder="Bunu neden daha önce almadım?"></textarea>
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Vurgu Kelimesi (Sarı Renk Vurgusu)</label>
+                        <input type="text" id="thumb-input-accent" class="input-styled" style="width: 100%; font-size: 12px;" placeholder="Örn: 3 ÜRÜN veya ŞOK">
+                        <small style="color: #94a3b8; font-size: 10px;">Bu kelime kapakta altın sarısı renkle parlayacaktır.</small>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <button type="button" class="btn btn-primary" id="btn-execute-gen-thumb" style="width: 100%; background: linear-gradient(135deg, #f59e0b, #d97706); border: none; font-weight: 700;">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Otomatik Kapak Üret
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Sağ: Canlı Önizleme -->
+                <div>
+                    <div style="display: flex; gap: 16px; align-items: flex-start; justify-content: center;">
+                        <!-- 9:16 Shorts Önizleme -->
+                        <div style="text-align: center;">
+                            <div style="font-size: 11px; color: #94a3b8; font-weight: 600; margin-bottom: 6px;">9:16 Shorts Kapağı</div>
+                            <div style="width: 160px; height: 284px; background: #000; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">
+                                <img id="thumb-img-916" src="/output/thumbnails/default_thumb_9x16.jpg" alt="9:16 Kapak" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='/static/icons/cover_placeholder.png'">
+                            </div>
+                            <button type="button" class="btn btn-xs btn-outline-warning mt-2" id="btn-download-thumb-916" style="width: 100%;">
+                                <i class="fa-solid fa-download"></i> 9:16 İndir
+                            </button>
+                        </div>
+
+                        <!-- 16:9 Landscape Önizleme -->
+                        <div style="text-align: center; flex: 1;">
+                            <div style="font-size: 11px; color: #94a3b8; font-weight: 600; margin-bottom: 6px;">16:9 Yatay Thumbnail</div>
+                            <div style="width: 100%; height: 180px; background: #000; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">
+                                <img id="thumb-img-169" src="/output/thumbnails/default_thumb_16x9.jpg" alt="16:9 Kapak" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='/static/icons/cover_placeholder.png'">
+                            </div>
+                            <button type="button" class="btn btn-xs btn-outline-warning mt-2" id="btn-download-thumb-169" style="width: 100%;">
+                                <i class="fa-solid fa-download"></i> 16:9 İndir
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AFM E-TİCARET ÜRÜN VİDEO MODALI (MoneyPrinterV2 Adaptation) -->
+    <div class="modal-overlay hidden" id="modal-afm-generator" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 9999;">
+        <div class="modal-card glass-box" style="width: 95%; max-width: 680px; max-height: 90vh; overflow-y: auto; background: #0f172a; border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 16px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.85);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 14px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-cart-shopping" style="font-size: 24px; color: #10b981;"></i>
+                    <div>
+                        <h3 style="margin: 0; font-size: 18px; color: #f8fafc;">AFM: E-Ticaret Ürününden Video Üretici</h3>
+                        <p style="margin: 0; font-size: 12px; color: #94a3b8;">Amazon, Trendyol, Hepsiburada linki veya ürün adından otomatik 9:16 Shorts kurgusu</p>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" id="btn-close-afm-modal" style="background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Ürün Linki veya Ürün Tanımı</label>
+                <input type="text" id="afm-product-url" class="input-styled" style="width: 100%; font-size: 13px;" placeholder="https://www.amazon.com.tr/... veya Akıllı Termos Bardak">
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+                <div>
+                    <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Viral Kanca Stili</label>
+                    <select id="afm-hook-style" class="select-styled" style="width: 100%; font-size: 13px;">
+                        <option value="life_hack" selected>Hayat Kurtaran Ürün ("Neden daha önce almadım?")</option>
+                        <option value="problem_solver">Problem Çözücü ("Sürekli bu sorunu yaşıyorsanız...")</option>
+                        <option value="honest_review">Dürüst İnceleme ("Gerçekten almaya değer mi?")</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Hedef Dil</label>
+                    <select id="afm-lang" class="select-styled" style="width: 100%; font-size: 13px;">
+                        <option value="tr" selected>Türkçe (tr)</option>
+                        <option value="en">İngilizce / Global (en)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Affiliate / Ortaklık Linki (Opsiyonel)</label>
+                <input type="text" id="afm-affiliate-url" class="input-styled" style="width: 100%; font-size: 13px;" placeholder="https://amzn.to/your-ref-id (Açıklamaya eklenir)">
+            </div>
+
+            <div style="margin-bottom: 18px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Harekete Geçirici Mesaj (CTA)</label>
+                <input type="text" id="afm-cta-text" class="input-styled" style="width: 100%; font-size: 13px;" value="İndirimli ürün linki profilimde ve ilk yorumda sabitli!">
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-primary" id="btn-execute-afm-gen" style="background: linear-gradient(135deg, #10b981, #059669); border: none; font-weight: 600;">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Ürün Senaryosunu Kurgula &amp; Sahnelere Yükle
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KOTASIZ YOUTUBE STUDIO UPLOADER MODALI (MoneyPrinterV2 Adaptation) -->
+    <div class="modal-overlay hidden" id="modal-headless-uploader" style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; z-index: 9999;">
+        <div class="modal-card glass-box" style="width: 95%; max-width: 600px; max-height: 90vh; overflow-y: auto; background: #0f172a; border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 16px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.85);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 14px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fa-solid fa-cloud-arrow-up" style="font-size: 24px; color: #ef4444;"></i>
+                    <div>
+                        <h3 style="margin: 0; font-size: 18px; color: #f8fafc;">Kotasız YouTube Studio Yükleyici</h3>
+                        <p style="margin: 0; font-size: 12px; color: #94a3b8;">API kotası harcamadan tarayıcı profili ile sınırsız yükleme</p>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" id="btn-close-headless-uploader" style="background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Video Dosya Yolu (.mp4)</label>
+                <input type="text" id="uploader-video-path" class="input-styled" style="width: 100%; font-size: 13px;" placeholder="output/video_adi.mp4">
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Video Başlığı</label>
+                <input type="text" id="uploader-title" class="input-styled" style="width: 100%; font-size: 13px;" placeholder="Başlık #Shorts">
+            </div>
+
+            <div style="margin-bottom: 14px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Açıklama</label>
+                <textarea id="uploader-desc" class="input-styled" rows="2" style="width: 100%; font-size: 12px; resize: vertical;" placeholder="Açıklama ve hashtagler..."></textarea>
+            </div>
+
+            <div style="margin-bottom: 18px;">
+                <label style="font-size: 11px; color: #cbd5e1; font-weight: 600; display: block; margin-bottom: 4px;">Görünürlük</label>
+                <select id="uploader-visibility" class="select-styled" style="width: 100%; font-size: 13px;">
+                    <option value="unlisted" selected>Liste Dışı (Önerilen - Kontrol Edip Yayınlayın)</option>
+                    <option value="public">Herkese Açık (Anında Yayınla)</option>
+                    <option value="private">Gizli</option>
+                </select>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" class="btn btn-primary" id="btn-execute-headless-upload" style="background: linear-gradient(135deg, #ef4444, #dc2626); border: none; font-weight: 600;">
+                    <i class="fa-solid fa-upload"></i> Kotasız Olarak YouTube'a Yükle
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- BİLDİRİM TOAST ALANI -->
     <div class="toast-container" id="toast-container"></div>
 
     <script src="/static/hardware_panel.js?v=5.1"></script>
+    <!-- Modular Application Engines -->
+    <script src="/static/js/state.js?v=6.0"></script>
+    <script src="/static/js/navigation.js?v=6.0"></script>
+    <script src="/static/js/niches.js?v=6.0"></script>
+    <script src="/static/js/studio.js?v=6.0"></script>
+    <script src="/static/js/timeline.js?v=6.0"></script>
+    <script src="/static/js/audio-media.js?v=6.0"></script>
+    <script src="/static/js/render-monitor.js?v=6.0"></script>
+    <script src="/static/js/gallery-channels.js?v=6.0"></script>
+    <script src="/static/js/settings-quota.js?v=6.0"></script>
+    <script src="/static/js/viral_features.js?v=1.0"></script>
     <script src="/static/app.js?v=5.7"></script>
 </body>
 </html>

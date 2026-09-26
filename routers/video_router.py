@@ -466,3 +466,201 @@ def get_database_videos():
     videos = database.get_recent_videos(100)
     stats = database.get_video_stats()
     return {"status": "ok", "videos": videos, "stats": stats}
+
+
+@router.post("/api/script/virality_audit")
+def api_audit_script_virality(payload: Dict[str, Any]):
+    """8-signal virality and slop audit adapted from Anil-matcha highlights engine."""
+    from services.virality_evaluator import evaluate_script_virality
+    narration = str(payload.get("narration") or payload.get("full_narration") or "").strip()
+    topic = str(payload.get("topic") or payload.get("title") or "").strip()
+    result = evaluate_script_virality(narration, topic=topic)
+    return {"status": "ok", "audit": result}
+
+
+@router.post("/api/clipper/analyze")
+def api_clipper_analyze(payload: Dict[str, Any]):
+    """Analyzes a YouTube URL, fetches transcript, and detects viral 9:16 highlights."""
+    url = str(payload.get("url") or "").strip()
+    num_clips = int(payload.get("num_clips") or 3)
+    if not url:
+        raise HTTPException(status_code=400, detail="YouTube URL gerekli.")
+
+    try:
+        from services.youtube_clipper import youtube_clipper
+        info = youtube_clipper.extract_youtube_info(url)
+        # Fetch subtitles or transcribe
+        subs = youtube_clipper.fetch_subtitles_or_transcribe(url, "")
+        transcript_text = " ".join(s["text"] for s in subs) if subs else info.get("description", "")
+        highlights = youtube_clipper.detect_highlights_with_llm(
+            transcript_text=transcript_text,
+            num_clips=num_clips,
+            video_duration=float(info.get("duration") or 300),
+        )
+        return {
+            "status": "ok",
+            "video_info": info,
+            "highlights_count": len(highlights),
+            "highlights": highlights,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Clipper analizi başarısız: {e}")
+
+
+@router.post("/api/clipper/render")
+def api_clipper_render(payload: Dict[str, Any]):
+    """Downloads YouTube video segment and applies OpenCV face-tracking 9:16 crop."""
+    url = str(payload.get("url") or "").strip()
+    highlight = payload.get("highlight") or {}
+    clip_index = int(payload.get("clip_index") or 1)
+
+    if not url or not highlight:
+        raise HTTPException(status_code=400, detail="URL ve highlight objesi gerekli.")
+
+    try:
+        from services.youtube_clipper import youtube_clipper
+        source_path = youtube_clipper.download_video(url)
+        out_clip_path = youtube_clipper.render_highlight_clip(
+            source_video_path=source_path,
+            highlight=highlight,
+            clip_index=clip_index,
+        )
+        return {
+            "status": "ok",
+            "message": "Viral Short başarıyla üretildi.",
+            "output_path": out_clip_path,
+            "filename": os.path.basename(out_clip_path),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Clipper render başarısız: {e}")
+
+
+@router.post("/api/helios/prompt")
+def api_helios_prompt(payload: Dict[str, Any]):
+    """Generates Helios 4-tier cinematographic prompt and inference configuration."""
+    narration = str(payload.get("narration") or "").strip()
+    scene_description = str(payload.get("scene_description") or "").strip()
+    niche_id = str(payload.get("niche_id") or "general").strip()
+    aspect = str(payload.get("aspect") or "9:16").strip()
+    index = int(payload.get("index") or 0)
+    duration = float(payload.get("duration") or 4.0)
+
+    from visuals.ai_video.helios_prompt_builder import HeliosPromptBuilder, HELIOS_NEGATIVE_PROMPT
+
+    params = HeliosPromptBuilder.create_helios_params(
+        narration=narration,
+        scene_description=scene_description,
+        niche_id=niche_id,
+        duration=duration,
+        aspect=aspect,
+        index=index,
+    )
+    return {
+        "status": "ok",
+        "prompt": params.prompt,
+        "negative_prompt": HELIOS_NEGATIVE_PROMPT,
+        "inference_params": params.to_dict(),
+    }
+
+
+@router.post("/api/helios/enhance_scenes")
+def api_helios_enhance_scenes(payload: Dict[str, Any]):
+    """Applies Helios 4-tier shot grammar and sequence pacing across all script scenes."""
+    scenes = payload.get("scenes") or []
+    niche_id = str(payload.get("niche_id") or "general").strip()
+    aspect = str(payload.get("aspect") or "9:16").strip()
+
+    if not isinstance(scenes, list) or not scenes:
+        raise HTTPException(status_code=400, detail="scenes listesi boş olamaz.")
+
+    from services.helios_visual_enhancer import helios_visual_enhancer
+    enhanced = helios_visual_enhancer.enhance_scenes_sequence(
+        scenes=scenes,
+        niche_id=niche_id,
+        aspect=aspect,
+    )
+    return {
+        "status": "ok",
+        "count": len(enhanced),
+        "scenes": enhanced,
+    }
+
+
+@router.post("/api/punch_in/curve")
+def api_punch_in_curve(payload: Dict[str, Any]):
+    """Calculates asymmetric smoothstep punch-in zoom curve and FFmpeg filter."""
+    duration = float(payload.get("duration") or 5.0)
+    fps = int(payload.get("fps") or 30)
+    emphasis_times = payload.get("emphasis_times")
+    max_zoom = float(payload.get("max_zoom") or 1.12)
+    width = int(payload.get("width") or 1080)
+    height = int(payload.get("height") or 1920)
+
+    from effects.punch_in_director import punch_in_director
+    zooms = punch_in_director.calculate_zoom_curve(
+        total_duration_sec=duration,
+        fps=fps,
+        emphasis_times=emphasis_times,
+        max_zoom=max_zoom,
+    )
+    ffmpeg_filter = punch_in_director.generate_ffmpeg_zoom_filter(
+        width=width,
+        height=height,
+        total_duration_sec=duration,
+        punch_time_sec=emphasis_times[0] if emphasis_times else 0.5,
+        max_zoom=max_zoom,
+        fps=fps,
+    )
+    return {
+        "status": "ok",
+        "frame_count": len(zooms),
+        "peak_zoom": max(zooms) if zooms else 1.0,
+        "sample_zooms": [round(z, 3) for z in zooms[:15]],
+        "ffmpeg_filter": ffmpeg_filter,
+    }
+
+
+@router.post("/api/grounding/audit")
+def api_grounding_audit(payload: Dict[str, Any]):
+    """Audits and regrounds narration vs visual scene descriptions to prevent absurd slop."""
+    scenes = payload.get("scenes") or []
+    niche_id = str(payload.get("niche_id") or "general").strip()
+
+    if not isinstance(scenes, list) or not scenes:
+        raise HTTPException(status_code=400, detail="scenes listesi boş olamaz.")
+
+    from services.hook_visual_grounding import hook_visual_grounding
+    regrounded = hook_visual_grounding.reground_plan_scenes(
+        scenes=scenes,
+        niche_id=niche_id,
+    )
+    mismatches = sum(1 for s in regrounded if not s.get("is_grounded"))
+
+    return {
+        "status": "ok",
+        "total_scenes": len(regrounded),
+        "regrounded_count": mismatches,
+        "scenes": regrounded,
+    }
+
+
+@router.post("/api/speaker/layout")
+def api_speaker_layout(payload: Dict[str, Any]):
+    """Evaluates multi-speaker dialogue turns and selects optimal vertical layout."""
+    turns = payload.get("turns") or []
+    total_duration = float(payload.get("total_duration") or 30.0)
+
+    from services.active_speaker_detector import active_speaker_detector
+    res = active_speaker_detector.evaluate_turns(
+        turns=turns,
+        total_duration_sec=total_duration,
+    )
+    return {
+        "status": "ok",
+        "layout_decision": res.layout_decision.value,
+        "is_multispeaker": res.is_multispeaker,
+        "speaker_distribution": res.speaker_distribution,
+        "explanation": res.explanation,
+    }
+
+

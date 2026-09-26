@@ -125,11 +125,22 @@ def _render_index_html() -> str:
     index_path = os.path.join(STATIC_DIR, "index.html")
     with open(index_path, "r", encoding="utf-8") as handle:
         html = handle.read()
-    for asset in ("app.js", "style.css", "hardware_panel.js", "settings-quota.css"):
+    assets = (
+        "app.js", "style.css", "hardware_panel.js", "settings-quota.css",
+        "js/state.js", "js/navigation.js", "js/niches.js", "js/studio.js",
+        "js/timeline.js", "js/audio-media.js", "js/render-monitor.js",
+        "js/gallery-channels.js", "js/settings-quota.js"
+    )
+    for asset in assets:
         version = _static_mtime_version(asset)
         html = re.sub(
             rf"(/static/{re.escape(asset)}\?v=)[^\"']+",
             rf"\g<1>{version}",
+            html,
+        )
+        html = re.sub(
+            rf"\"/static/{re.escape(asset)}\"",
+            rf'"/static/{asset}?v={version}"',
             html,
         )
     return html

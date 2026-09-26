@@ -1,0 +1,194 @@
+"""
+0 TL Free AI Image-to-Video Engine (Pollinations Flux + FFmpeg Motion)
+Adapted from Verticals v3 / Invideo concepts.
+Generates 100% topic-matched 9:16 vertical AI visual clips with NO API KEY required.
+"""
+import os
+import re
+import urllib.parse
+import urllib.request
+import subprocess
+import tempfile
+import imageio_ffmpeg
+
+_MOTION_PRESETS = [
+    # Slow cinematic push-in (zoom in)
+    "zoompan=z='min(zoom+0.0018,1.20)':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps=30",
+    # Slow pull-out (zoom out)
+    "zoompan=z='if(lte(zoom,1.0),1.20,max(1.0,zoom-0.0018))':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps=30",
+    # Slow pan right with slight zoom
+    "zoompan=z='1.12':d={frames}:x='if(lte(on,1),(iw-iw/zoom)/4,min(x+0.5,(iw-iw/zoom)*0.75))':y='ih/2-(ih/zoom/2)':s={w}x{h}:fps=30",
+]
+
+
+def clean_ai_prompt(prompt: str) -> str:
+    """Sanitize prompt for photorealistic 9:16 vertical scene generation."""
+    clean = re.sub(r"[^\w\s,.-]", " ", prompt or "")
+    clean = re.sub(r"\s+", " ", clean).strip()
+    if not clean:
+        clean = "modern high detail cinematic scene"
+    # Ensure vertical framing & photorealism enhancement
+    return f"{clean}, photorealistic, 8k resolution, vertical 9:16, masterpiece, natural lighting"
+
+
+import threading
+import time
+
+_POLLINATIONS_LOCK = threading.Lock()
+_LAST_REQUEST_TIME = 0.0
+
+
+def generate_ai_image(
+    prompt: str,
+    output_path: str,
+    width: int = 540,
+    height: int = 960,
+    model: str = "flux",
+    timeout: int = 25,
+) -> bool:
+    """
+    Fetch 100% free AI generated image from Pollinations.ai (Flux/SDXL).
+    Zero API key required. Uses concurrency lock and rate-limit backoff.
+    """
+    global _LAST_REQUEST_TIME
+    enhanced = clean_ai_prompt(prompt)
+    encoded = urllib.parse.quote(enhanced)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&model={model}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+    )
+
+    for attempt in range(2):
+        try:
+            with _POLLINATIONS_LOCK:
+                now = time.time()
+                elapsed = now - _LAST_REQUEST_TIME
+                if elapsed < 1.2:
+                    time.sleep(1.2 - elapsed)
+                _LAST_REQUEST_TIME = time.time()
+
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    if resp.status == 200:
+                        data = resp.read()
+                        if len(data) > 5000:
+                            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+                            with open(output_path, "wb") as f:
+                                f.write(data)
+                            return True
+        except Exception as e:
+            if "429" in str(e) and attempt == 0:
+                time.sleep(2.5)
+                continue
+            print(f"    [PollinationsAI] Image fetch notice: {e}")
+            break
+
+    return False
+
+
+def animate_image_to_video(
+    image_path: str,
+    output_path: str,
+    duration: float = 4.0,
+    width: int = 540,
+    height: int = 960,
+    motion_index: int = 0,
+) -> bool:
+    """
+    Convert static image into smooth, cinematic 9:16 vertical video with FFmpeg zoompan.
+    """
+    if not os.path.exists(image_path) or os.path.getsize(image_path) < 1000:
+        return False
+    try:
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        frames = max(30, int(duration * 30))
+        vf_template = _MOTION_PRESETS[motion_index % len(_MOTION_PRESETS)]
+        vf = vf_template.format(frames=frames, w=width, h=height) + ",setsar=1"
+
+        cmd = [
+            ffmpeg, "-y",
+            "-loop", "1",
+            "-i", image_path,
+            "-vf", vf,
+            "-t", f"{duration:.2f}",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-pix_fmt", "yuv420p",
+            output_path,
+        ]
+        res = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=40,
+        )
+        return res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 1000
+    except Exception as e:
+        print(f"    [PollinationsAI] Video animation notice: {e}")
+        return False
+
+
+def create_scene_ai_clip(
+    scene_description: str,
+    output_video_path: str,
+    duration: float = 4.0,
+    width: int = 540,
+    height: int = 960,
+    scene_index: int = 0,
+) -> str:
+    """
+    One-shot free AI video clip generator: Prompt -> Flux Image -> Cinematic Motion Video.
+    Returns output path on success, or empty string on failure.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_img:
+        tmp_img_path = tmp_img.name
+    try:
+        ok_img = generate_ai_image(scene_description, tmp_img_path, width=width, height=height)
+        if not ok_img:
+            return ""
+        ok_vid = animate_image_to_video(
+            tmp_img_path,
+            output_video_path,
+            duration=duration,
+            width=width,
+            height=height,
+            motion_index=scene_index,
+        )
+        if ok_vid:
+            return output_video_path
+        return ""
+    finally:
+        if os.path.exists(tmp_img_path):
+            try:
+                os.remove(tmp_img_path)
+            except OSError:
+                pass
+
+
+class PollinationsAIVisual:
+    """OOP interface for Pollinations AI visual generation."""
+
+    def __init__(self, width: int = 540, height: int = 960):
+        self.width = width
+        self.height = height
+
+    def generate_image(self, prompt: str, output_path: str) -> bool:
+        return generate_ai_image(prompt, output_path, width=self.width, height=self.height)
+
+    def create_ai_clip(
+        self,
+        prompt: str,
+        duration: float = 4.0,
+        output_path: str = "",
+        seed: int = 0,
+    ) -> str:
+        return create_scene_ai_clip(
+            scene_description=prompt,
+            output_video_path=output_path,
+            duration=duration,
+            width=self.width,
+            height=self.height,
+            scene_index=seed or 0,
+        )

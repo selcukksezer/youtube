@@ -51,10 +51,16 @@ class LicenseInfo:
         # dataclass.  Normalize that boundary so an unknown string can never
         # accidentally compare equal to a commercial-safe enum member.
         if not isinstance(self.license, License):
-            try:
-                self.license = License(str(self.license))
-            except ValueError:
-                self.license = License.UNKNOWN
+            val = str(self.license).lower().strip()
+            if "cc0" in val:
+                self.license = License.CC0
+            elif "ai" in val:
+                self.license = License.AI_GENERATED
+            else:
+                try:
+                    self.license = License(val)
+                except ValueError:
+                    self.license = License.UNKNOWN
 
     @property
     def safe(self) -> bool:

@@ -205,6 +205,25 @@ def generate_scenes(
     except Exception:
         pass
 
+    # Verticals v3 Anti-Hallucination Gate (DuckDuckGo Live Web Research)
+    try:
+        from services.web_fact_researcher import format_research_prompt_context
+        fact_context = format_research_prompt_context(title, max_snippets=4)
+        if fact_context:
+            prompt = prompt + "\n\n" + fact_context
+            print(f"  [FactResearcher] Anti-hallucination web araştırması prompta eklendi ({title[:40]})")
+    except Exception as fact_err:
+        pass
+
+    # Verticals v3 / Repo 10: Niche Guardrails (Visual avoid/prefer + Forbidden Phrases)
+    try:
+        from services.niche_guardrails import format_niche_prompt_guardrails
+        guardrail_prompt = format_niche_prompt_guardrails(locked_niche, lang=lang)
+        if guardrail_prompt:
+            prompt = prompt + guardrail_prompt
+    except Exception:
+        pass
+
     if lang == "en":
         user_msg = (
             f"Create a high-retention English YouTube Shorts video script for this topic: '{clean_title}'.\n"
@@ -231,7 +250,7 @@ def generate_scenes(
         providers.append((config.AI_PROVIDER, config.AI_API_KEY, config.AI_BASE_URL, config.AI_MODEL))
         # If Gemini, add lite and flash variants as instant fallbacks
         if config.AI_PROVIDER == "Gemini":
-            for alt_m in ["gemini-flash-lite-latest", "gemma-4-26b-a4b-it", "gemini-3.6-flash"]:
+            for alt_m in ["gemini-flash-latest", "gemini-3.8-flash", "gemini-flash-lite-latest", "gemini-3.1-flash-lite"]:
                 if alt_m != config.AI_MODEL:
                     providers.append(("Gemini (" + alt_m + ")", config.AI_API_KEY, config.AI_BASE_URL, alt_m))
 
@@ -240,6 +259,15 @@ def generate_scenes(
         for n, k, u, m in config._P:
             if k and (n != getattr(config, "AI_PROVIDER", None)):
                 providers.append((n, k, u, m))
+
+    # Ollama Local Offline Fallback (MoneyPrinterV2 adaptation)
+    try:
+        from services.ollama_provider import is_ollama_available, get_preferred_ollama_model
+        if is_ollama_available():
+            local_model = get_preferred_ollama_model() or "llama3:latest"
+            providers.append(("Ollama Local (" + local_model + ")", "ollama", "http://localhost:11434/v1", local_model))
+    except Exception:
+        pass
 
     last_error = None
     data = None
@@ -361,6 +389,14 @@ def generate_scenes(
                 print(f"  [SceneGenerator] Retry failed ({provider_name}): {e}")
 
     for s in data.get("scenes", []):
+        if "narration" in s and s["narration"]:
+            try:
+                from services.niche_guardrails import clean_forbidden_phrases
+                cleaned_narr = clean_forbidden_phrases(s["narration"], lang=lang)
+                if cleaned_narr:
+                    s["narration"] = cleaned_narr
+            except Exception:
+                pass
         if "search_query" in s and "search_queries" not in s:
             q = str(s.pop("search_query") or "").strip()
             s["search_queries"] = [q] if q else []
@@ -514,12 +550,17 @@ def generate_scenes(
     except Exception as sense_exc:
         print(f"  [SceneGenerator] narration sense skip: {sense_exc}")
 
-    print(f"  [SceneGenerator] Sahne Sayısı: {len(data['scenes'])}, Toplam Süre: {total}s | Tema: {data.get('visual_theme', '-')}")
-    if data.get("human_craft"):
-        db = (data["human_craft"].get("discovery_beast") or {})
+    try:
+        from services.virality_evaluator import evaluate_script_virality
+        audit = evaluate_script_virality(data.get("full_narration", ""), topic=title)
+        data["virality_audit"] = audit
         print(
-            f"  [HumanCraft] POV={data['human_craft'].get('pov_angle')} "
-            f"discovery={db.get('score')} pass={db.get('pass')} "
-            f"hook={(data['human_craft'].get('mute_hook_line') or '')[:48]}"
+            f"  [ViralityAudit] Skor: {audit.get('score')}/100, "
+            f"Tutarlı: {audit.get('is_coherent')}, Sinyaller: {audit.get('signals_detected')}"
         )
+        if audit.get("issues"):
+            print(f"  [ViralityAudit] Uyarılar: {audit.get('issues')}")
+    except Exception as va_exc:
+        print(f"  [ViralityAudit] skip: {va_exc}")
+
     return sanitize_plan_scene_descriptions(data)

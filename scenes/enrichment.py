@@ -424,8 +424,28 @@ def enrich_plan_scenes(plan: Dict[str, Any], lang: str = "tr", niche_id: str = "
     scenes = avoid_consecutive_face_visuals(scenes)
     scenes = enrich_continuous_motion_hints(scenes)
     scenes = enrich_audio_visual_contrast_scenes(scenes, niche_id=nid)
+    scenes = ensure_unique_scene_visual_fingerprints(scenes)
     plan["scenes"] = scenes
     return plan
+
+
+def ensure_unique_scene_visual_fingerprints(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ensure no two scenes have identical scene_description and search queries."""
+    seen_fps: Set[str] = set()
+    for idx, sc in enumerate(scenes):
+        desc = str(sc.get("scene_description") or "").strip()
+        qs = [str(q).strip() for q in (sc.get("search_queries") or []) if str(q).strip()]
+        fp = " ".join([desc.casefold(), " ".join(q.casefold() for q in qs[:2])])
+        if fp in seen_fps or not fp:
+            sc["scene_description"] = f"{desc} angle {idx+1}" if desc else f"cinematic visual angle {idx+1}"
+            if qs:
+                qs = [f"{q} cut {idx+1}" if i == 0 else q for i, q in enumerate(qs)]
+            else:
+                qs = [f"cinematic scene cut {idx+1}", "b-roll dramatic motion", "atmospheric lighting"]
+            sc["search_queries"] = qs
+            fp = " ".join([sc["scene_description"].casefold(), " ".join(q.casefold() for q in qs[:2])])
+        seen_fps.add(fp)
+    return scenes
 
 
 def enforce_fair_use_2_5s_rule(
@@ -465,3 +485,94 @@ def enforce_fair_use_2_5s_rule(
         s["scene_number"] = idx + 1
 
     return adjusted
+
+
+# ── O3: Generic query enforcement ────────────────────────────────────────────
+
+_GENERIC_QUERIES: set = {
+    "ocean waves aerial", "mountain fog drone", "stars night sky", "cinematic atmosphere",
+    "abstract background", "bokeh lights", "nature drone footage", "sky clouds timelapse",
+    "city drone shot", "generic b-roll", "landscape aerial view", "beautiful nature",
+    "peaceful nature", "water waves", "clouds sky", "sunset drone", "sunrise aerial",
+    "slow motion nature", "abstract particles", "light bokeh", "fireflies nature",
+    "rain window", "fog forest", "mountains mist", "ocean horizon", "beach waves",
+}
+
+_NARRATION_STOPWORDS: set = {
+    "ve", "ile", "bir", "bu", "de", "da", "ki", "için", "olan", "çok",
+    "the", "a", "an", "and", "of", "in", "on", "at", "to", "is", "are",
+    "was", "were", "it", "its", "from", "by", "that", "this", "with", "not",
+    "but", "are", "have", "has", "been", "will", "can", "do", "did",
+}
+
+
+def _narration_to_subject_tokens(narration: str) -> List[str]:
+    """Extract 3-5 token filmable noun candidates from narration text."""
+    text = (narration or "").strip()
+    low = text.lower()
+    try:
+        from visuals.query_builder import _TR_EN
+        translated = []
+        for tr_k, en_v in _TR_EN.items():
+            if tr_k in low:
+                translated.extend(en_v.split())
+        if translated:
+            return translated[:5]
+    except Exception:
+        pass
+
+    words = re.findall(r"[\w\u00e7\u011f\u0131\u00f6\u015f\u00fc\u00c7\u011e\u0130\u00d6\u015e\u00dc'-]+", text)
+    tokens = [
+        w for w in words
+        if len(w) >= 4
+        and w.lower() not in _NARRATION_STOPWORDS
+        and not w.isdigit()
+    ]
+    # Prefer nouns (simple heuristic: title-cased or longer words)
+    scored = sorted(tokens, key=lambda w: (len(w) >= 6, w[0].isupper(), len(w)), reverse=True)
+    return scored[:5]
+
+
+def _build_replacement_query(narration: str, scene_description: str, slot_index: int) -> str:
+    """
+    Build a narration-grounded query for a generic slot.
+    slot_index 0 = primary, 1 = angle, 2 = wide/close alternative.
+    """
+    tokens = _narration_to_subject_tokens(narration or scene_description or "")
+    if not tokens:
+        return ""
+    angles = ["closeup", "aerial view", "slow motion detail"]
+    angle = angles[slot_index % len(angles)]
+    primary = " ".join(tokens[:2]).lower()
+    return f"{primary} {angle}".strip()[:90]
+
+
+def enforce_specific_search_queries(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    O3: Replace generic/junk search_queries with narration-derived queries.
+    Only replaces individual generic slots — leaves specific ones intact.
+    Mutates in-place for efficiency; also returns the list.
+    """
+    replaced_total = 0
+    for scene in scenes:
+        queries = list(scene.get("search_queries") or [])
+        narration = str(scene.get("narration") or "")
+        description = str(scene.get("scene_description") or "")
+        new_queries = []
+        changed = False
+        for idx, q in enumerate(queries):
+            q_lower = (q or "").strip().lower()
+            if not q_lower or q_lower in _GENERIC_QUERIES:
+                replacement = _build_replacement_query(narration, description, idx)
+                if replacement and replacement.lower() not in _GENERIC_QUERIES:
+                    new_queries.append(replacement)
+                    changed = True
+                    replaced_total += 1
+                # If we can't build a replacement, skip this slot (don't add empty)
+            else:
+                new_queries.append(q)
+        if changed and new_queries:
+            scene["search_queries"] = new_queries
+    if replaced_total:
+        print(f"  [O3-QueryEnforce] {replaced_total} generic query(ies) replaced with narration-derived queries")
+    return scenes

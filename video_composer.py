@@ -108,7 +108,8 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                   split_screen=False, anti_duplicate=True, watermark_path=None,
                   enable_ken_burns=True, enable_section2_filters=True, gameplay_path=None,
                   niche_id="", audio_premastered=False, retention_metadata=None,
-                  hybrid_niche="", hybrid_render_overlay=None, human_craft=None):
+                  hybrid_niche="", hybrid_render_overlay=None, human_craft=None,
+                  enable_zoompan=False, **kwargs):
     print(f"\n  [Composer] Building video with 500-Item Optimization Pipeline (Items 71-79)...")
     W, H = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
     print(f"  [Composer] Hedef Çözünürlük: {W}x{H} (Mod: {getattr(config, 'RENDER_RESOLUTION_MODE', '1080p')})", flush=True)

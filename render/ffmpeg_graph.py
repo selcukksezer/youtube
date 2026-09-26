@@ -35,27 +35,50 @@ def _probe_has_audio(path: str) -> bool:
         return False
 
 
+def _probe_is_landscape(path: str) -> bool:
+    """Master Plan Paket 2: True if video/image is horizontal/landscape (w > h)."""
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        import re
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        r = subprocess.run(
+            [exe, "-i", path, "-hide_banner"],
+            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, timeout=10,
+        )
+        m = re.search(r"Video:.*,\s*(\d{2,5})x(\d{2,5})", r.stderr or "")
+        if m:
+            w, h = int(m.group(1)), int(m.group(2))
+            return w > h
+    except Exception:
+        pass
+    return False
+
+
 def cheap_pan_filter(width: int, height: int, duration: float, scene_index: int = 0) -> str:
     """
-    Slow push via overscale + moving crop.
-    Replaces zoompan. zoompan resamples every pixel on one thread.
+    Smooth cosine ease-in-out push via overscale + moving crop (Madde 418 / Master Plan Paket 4).
+    Replaces linear zoompan with smooth cinematic acceleration and deceleration curves.
     """
     dur = max(float(duration), 0.1)
     sw = max(width + 2, (int(width * 1.08) // 2) * 2)
     sh = max(height + 2, (int(height * 1.08) // 2) * 2)
     direction = scene_index % 4
+    # Smooth cosine ease-in-out: 0.5 * (1 - cos(PI * min(t, dur) / dur))
+    prog = f"0.5*(1-cos(PI*min(t\\,{dur:.3f})/{dur:.3f}))"
+    prog_rev = f"0.5*(1+cos(PI*min(t\\,{dur:.3f})/{dur:.3f}))"
     if direction == 0:
-        xexpr = f"(in_w-out_w)*t/{dur:.3f}"
+        xexpr = f"(in_w-out_w)*{prog}"
         yexpr = "(in_h-out_h)/2"
     elif direction == 1:
-        xexpr = f"(in_w-out_w)*(1-t/{dur:.3f})"
+        xexpr = f"(in_w-out_w)*{prog_rev}"
         yexpr = "(in_h-out_h)/2"
     elif direction == 2:
         xexpr = "(in_w-out_w)/2"
-        yexpr = f"(in_h-out_h)*t/{dur:.3f}"
+        yexpr = f"(in_h-out_h)*{prog}"
     else:
         xexpr = "(in_w-out_w)/2"
-        yexpr = f"(in_h-out_h)*(1-t/{dur:.3f})"
+        yexpr = f"(in_h-out_h)*{prog_rev}"
     return f"scale={sw}:{sh},crop={width}:{height}:x='{xexpr}':y='{yexpr}'"
 
 
@@ -81,22 +104,39 @@ def build_scene_filter_chain(
     split_screen: bool = False,
     gameplay_index: Optional[int] = None,
     gameplay_label: Optional[str] = None,
+    fit_and_fill: bool = False,
 ) -> str:
     """
     Per-input video chain: trim, fps, scale/crop cover, optional crop-pan.
     Split: top 58% scene, bottom 42% looped gameplay (soap / satisfying).
+    Fit & Fill: Blurred background + centered aspect-ratio preserved foreground (Paket 2).
     """
     split = bool(split_screen and (gameplay_label or gameplay_index is not None))
     out_h = (int(height * 0.58) // 2) * 2 if split else height
     fps = getattr(config, "FPS", 30)
-    # Cover crop to 9:16 (or the top panel when split)
-    base = (
-        f"[{input_index}:v]"
-        f"trim=duration={duration:.3f},setpts=PTS-STARTPTS,"
-        f"fps={fps},"
-        f"scale={width}:{out_h}:force_original_aspect_ratio=increase,"
-        f"crop={width}:{out_h}"
-    )
+    
+    if fit_and_fill:
+        base = (
+            f"[{input_index}:v]"
+            f"trim=duration={duration:.3f},setpts=PTS-STARTPTS,"
+            f"fps={fps},"
+            f"split[fg_raw_{scene_index}][bg_raw_{scene_index}];"
+            f"[bg_raw_{scene_index}]scale={width}:{out_h}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{out_h},boxblur=25:5[bg_blur_{scene_index}];"
+            f"[fg_raw_{scene_index}]scale={width}:{out_h}:force_original_aspect_ratio=decrease[fg_fit_{scene_index}];"
+            f"[bg_blur_{scene_index}][fg_fit_{scene_index}]overlay=(W-w)/2:(H-h)/2,"
+            f"setsar=1"
+        )
+    else:
+        # Cover crop to 9:16 (or the top panel when split)
+        base = (
+            f"[{input_index}:v]"
+            f"trim=duration={duration:.3f},setpts=PTS-STARTPTS,"
+            f"fps={fps},"
+            f"scale={width}:{out_h}:force_original_aspect_ratio=increase,"
+            f"crop={width}:{out_h},"
+            f"setsar=1"
+        )
     try:
         from effects.filters import get_scene_brightness_alternation_filter
         base += f",{get_scene_brightness_alternation_filter(scene_index)}"
@@ -107,7 +147,7 @@ def build_scene_filter_chain(
     elif enable_ken_burns:
         base += "," + cheap_pan_filter(width, out_h, duration, scene_index)
     if not split:
-        base += f"[v{scene_index}]"
+        base += f",setsar=1[v{scene_index}]"
         return base
     bot_h = height - out_h
     base += f"[top{scene_index}]"
@@ -116,9 +156,10 @@ def build_scene_filter_chain(
         f"{gp_src}trim=duration={duration:.3f},setpts=PTS-STARTPTS,"
         f"fps={fps},"
         f"scale={width}:{bot_h}:force_original_aspect_ratio=increase,"
-        f"crop={width}:{bot_h}[bot{scene_index}]"
+        f"crop={width}:{bot_h},"
+        f"setsar=1[bot{scene_index}]"
     )
-    stack = f"[top{scene_index}][bot{scene_index}]vstack=inputs=2[v{scene_index}]"
+    stack = f"[top{scene_index}][bot{scene_index}]vstack=inputs=2,setsar=1[v{scene_index}]"
     return base + ";" + gameplay + ";" + stack
 
 
@@ -201,6 +242,11 @@ def render_with_ffmpeg_graph(
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
         cmd.extend(["-i", clip["path"]])
         dur = float(clip.get("duration", 3.0))
+        use_fit_fill = clip.get("fit_and_fill")
+        if use_fit_fill is None:
+            use_fit_fill = _probe_is_landscape(clip.get("path"))
+        else:
+            use_fit_fill = bool(use_fit_fill)
         filter_parts.append(
             build_scene_filter_chain(
                 i, dur, W, H, i,
@@ -209,6 +255,7 @@ def render_with_ffmpeg_graph(
                 split_screen=gp_ok,
                 gameplay_index=len(valid) if gp_ok else None,
                 gameplay_label=(f"[{len(valid)}:v]" if gp_ok and len(valid) == 1 else f"[gp{i}]") if gp_ok else None,
+                fit_and_fill=use_fit_fill,
             )
         )
 
@@ -256,6 +303,33 @@ def render_with_ffmpeg_graph(
     else:
         fps = 30.0
 
+    # K2: Probe audio duration — use explicit -t instead of -shortest.
+    # -shortest silently cuts to the shorter stream without warning.
+    # We clamp to the SHORTER of (audio_dur, clip_total) so nothing gets truncated.
+    _clip_total = sum(float(c.get("duration", 3.0)) for c in valid)
+    _audio_dur = -1.0
+    try:
+        _ap_probe = subprocess.run(
+            [ffmpeg, "-i", audio_path, "-hide_banner"],
+            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, timeout=15,
+        )
+        import re as _re
+        _m = _re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", _ap_probe.stderr or "")
+        if _m:
+            _audio_dur = int(_m.group(1)) * 3600 + int(_m.group(2)) * 60 + float(_m.group(3))
+    except Exception:
+        pass
+    if _audio_dur > 0:
+        _t_limit = min(_audio_dur, _clip_total) + 0.5  # 0.5s buffer for rounding
+        av_clamp = ["-t", f"{_t_limit:.3f}"]
+        print(
+            f"  [FFmpegGraph] K2-AV: audio={_audio_dur:.2f}s clips={_clip_total:.2f}s "
+            f"→ encode limit={_t_limit:.2f}s",
+            flush=True,
+        )
+    else:
+        av_clamp = ["-shortest"]  # probe failed, fall back to -shortest
+
     cmd.extend([
         "-filter_complex", filter_complex,
         "-map", vlabel,
@@ -264,7 +338,7 @@ def render_with_ffmpeg_graph(
         "-r", f"{fps:.2f}",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-        "-shortest",
+        *av_clamp,
         "-movflags", "+faststart",
         "-map_metadata", "-1",
         "-metadata", f"title={title or 'Shorts'}",

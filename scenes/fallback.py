@@ -82,7 +82,7 @@ _CRYPTO_TOPIC_HINTS = (
 )
 
 
-def _pad_narration_to_min_words(text: str, min_words: int = 10, *, is_tr: bool = True) -> str:
+def _pad_narration_to_min_words(text: str, min_words: int = 12, *, is_tr: bool = True) -> str:
     """Ensure procedural fallback narrations meet TTS minimum word count."""
     try:
         from scenes.narration_validate import normalize_narration_for_validation, scene_narration_usable
@@ -671,10 +671,11 @@ def _build_stoic_narrations(clean_title: str, is_tr: bool, variation_seed: int =
 
 def _generate_stoic_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0):
     """
-    Constructs 14-scene Stoic philosophy format (Tone: deep, calm, disciplined, masculine).
+    Constructs 10-scene Stoic philosophy format (Tone: deep, calm, disciplined, masculine).
     User topic is woven through all scenes; variation_seed rotates template on retry (#104).
+    Adheres strictly to the 45-60s Shorts contract (10 scenes * 5.2s = 52.0s).
     """
-    narrations = _build_stoic_narrations(clean_title, is_tr, variation_seed)
+    all_narrations = _build_stoic_narrations(clean_title, is_tr, variation_seed)
     visuals = [
         ("Ancient marble statue of Marcus Aurelius under dramatic side lighting", ["marcus aurelius marble statue", "ancient roman bust sculpture", "stoic statue dramatic lighting"]),
         ("Ancient Roman Colosseum at sunset with dramatic sun rays", ["rome colosseum sunset drone", "ancient roman ruins colosseum", "epic golden sunset rome"]),
@@ -682,25 +683,25 @@ def _generate_stoic_scenes(clean_title: str, is_tr: bool, variation_seed: int = 
         ("Close-up of calm stoic facial expression looking outward in thought", ["calm face meditation eyes", "disciplined man looking distance", "thoughtful philosopher portrait"]),
         ("Ancient scroll and ink quill resting on heavy weathered stone table", ["ancient parchment manuscript", "quill ink stone desk", "vintage philosophical writing"]),
         ("Glowing fiery embers in darkness symbolizing burning anger", ["burning embers fire dark", "fiery sparks slow motion", "flames fireplace dramatic"]),
-        ("Sunrise breaking over rugged misty mountain peaks", ["sunrise mountain peak aerial", "misty alpine summit drone", "majestic nature sunrise"]),
         ("Solitary marble pillar standing tall amidst ancient ruined temple", ["ancient marble pillar ruins", "greek roman temple standing", "resilient stone architecture"]),
         ("Deep clear mountain lake with mirror-like undisturbed reflection", ["serene mountain lake mirror", "calm still water reflection", "peaceful nature tranquility"]),
-        ("Ancient mighty oak tree standing strong against powerful storm winds", ["oak tree weathering storm", "strong tree wind dramatic", "resilience nature storm"]),
-        ("Disciplined athlete training in cold dawn light with intense focus", ["disciplined athlete training dawn", "focused runner morning cold", "masculine discipline workout"]),
-        ("Blacksmith hammering red-hot steel on anvil with flying sparks", ["blacksmith forging steel anvil", "hammering hot iron sparks", "forging resilience metal"]),
         ("Silhouette standing on mountain cliff overlooking infinite clouds", ["silhouette cliff clouds view", "master of mind mountain", "epic panorama contemplation"]),
         ("Direct gaze to camera with thoughtful stoic nod inviting reflection", ["stoic philosopher direct gaze", "dramatic camera pull back", "subscribe follow philosophy"])
     ]
+    # Pick 10 most impactful scenes
+    selected_indices = [0, 1, 2, 3, 4, 5, 7, 8, 12, 13] if len(all_narrations) >= 14 else list(range(min(10, len(all_narrations))))
+    narrations = [all_narrations[idx] for idx in selected_indices]
+    
     scenes = []
-    for i in range(14):
-        desc, queries = visuals[i]
+    for i in range(len(narrations)):
+        desc, queries = visuals[i % len(visuals)]
         scenes.append({
             "scene_number": i + 1,
             "narration": narrations[i],
             "scene_description": desc,
             "search_queries": queries,
-            "duration": 3.0,
-            "mood": "calm" if i in (1, 3, 8) else "epic" if i in (0, 6, 12) else "dramatic"
+            "duration": 5.2,
+            "mood": "calm" if i in (1, 3, 7) else "epic" if i in (0, 8) else "dramatic"
         })
     return {
         "title": clean_title if is_tr else f"Stoic Wisdom: {clean_title}",
@@ -1112,24 +1113,85 @@ def _viewer_subject(clean_title: str) -> str:
 
 
 def _subject_visuals(pack: dict, subject: str) -> list:
-    bank = list(pack.get("subjects") or []) or [
+    base_bank = list(pack.get("subjects") or []) or [
         "library reading desk natural light",
         "open book pages close up",
         "researcher notes on a wooden desk",
         "quiet archive shelves",
+        "focused person taking notes",
+        "historical documents under desk lamp",
+        "vintage journal on dark wood table",
+        "magnifying glass analyzing text",
+        "minimalist study room ambient atmosphere",
+        "atmospheric room with dust motes in sunlight",
+        "thoughtful person looking out window",
+        "macro view of handwritten fountain pen manuscript",
     ]
+    angles = [
+        "wide establishing view",
+        "extreme close-up macro",
+        "over-the-shoulder angle",
+        "slow tracking motion",
+        "low angle perspective",
+        "high overhead top-down view",
+        "cinematic depth-of-field focus pull",
+        "dramatic side silhouette lighting",
+        "eye-level inspection shot",
+        "dynamic slow pan transition",
+        "warm atmospheric contrast angle",
+        "intense central composition framing",
+    ]
+    from visuals.query_builder import _TR_EN
+    low_subj = (subject or "").lower()
+    en_hits = []
+    for tr_k, en_v in _TR_EN.items():
+        if tr_k in low_subj and en_v not in en_hits:
+            en_hits.append(en_v)
+    en_concept = en_hits[0] if en_hits else ""
+
     visuals = []
-    for i in range(10):
-        shot = bank[i % len(bank)]
-        visuals.append((
-            f"{shot} related to {subject}",
-            [shot, f"{shot} close up", f"{shot} natural light"],
-        ))
+    for i in range(12):
+        base_shot = base_bank[i % len(base_bank)]
+        angle = angles[i % len(angles)]
+        shot_desc = f"{base_shot} {angle}"
+        queries = [
+            f"{base_shot} {angle}",
+            base_shot,
+            f"{en_concept} {angle}".strip() if en_concept else f"{base_shot} closeup",
+        ]
+        visuals.append((shot_desc, queries))
     return visuals
 
 
-def _topic_bound_narrations(subject: str, is_tr: bool) -> list:
+def _topic_bound_narrations(subject: str, is_tr: bool, family: str = "", nid: str = "") -> list:
     """One subject, ten distinct beats. Natural human storytelling progression without mechanical repetitions."""
+    if family == "product" or nid == "12_amazon_affiliate":
+        if is_tr:
+            return [
+                "Gündelik hayatınızı inanılmaz derecede kolaylaştıracak ve gördüğünüzde hemen denemek isteyeceğiniz 3 harika ürün var.",
+                "İlk ürün, evinizde veya mutfağınızda açık kalan paketleri hava almaz şekilde saniyeler içinde kapatan şarjlı mini poşet mühürleyici.",
+                "Yiyeceklerin bayatlamasını ve dökülmesini tamamen önleyerek mutfakta inanılmaz bir pratiklik sağlıyor.",
+                "İkinci ürün, masa ve tezgah üzerindeki tüm kablo ve küçük eşya karmaşasını tek hamlede toparlayan manyetik akıllı düzenleyici.",
+                "Kompakt tasarımı sayesinde hem yerden tasarruf ettiriyor hem de dağınık görüntüyü anında ortadan kaldırıyor.",
+                "Üçüncü ürün ise ergonomik yapısıyla temizlik ve bakım işlerini yarı yarıya hafifleten çok fonksiyonlu temizleme cihazı.",
+                "Ulaşılması en zor dar köşelerdeki kir ve tozları zahmetsizce temizleyerek harcanan enerjiyi sıfıra indiriyor.",
+                "Bu pratik çözümler sayesinde gün içinde zaman ve enerjinizi çok daha verimli kullanabilirsiniz.",
+                "Küçük gibi görünen bu akıllı araçlar, alışkanlıklarınızı ve yaşam konforunuzu baştan sona değiştiriyor.",
+                "Peki bu üç yenilikçi üründen sizce hangisi evinizde en çok işe yarardı? Yorumlarda buluşalım.",
+            ]
+        return [
+            "Here are three viral gadgets that solve everyday problems and instantly upgrade your daily life.",
+            "The first item is a portable handheld heat sealer that locks opened snack bags airtight in seconds.",
+            "It completely prevents food from going stale and keeps your pantry neatly organized with zero effort.",
+            "The second gadget is a magnetic smart cable organizer that clears clutter off your desk instantly.",
+            "Its sleek compact profile saves precious workspace while keeping all your charging cables within reach.",
+            "The third tool is a versatile multi-function cleaning device engineered for tight, hard-to-reach corners.",
+            "It eliminates dust and grime effortlessly without scratching delicate gadgets or home surfaces.",
+            "These three practical solutions save you hours of frustration throughout your busy routine.",
+            "Small innovations like these make a massive difference in your daily living comfort and focus.",
+            "Which of these three viral finds would you use most around your home? Let us know below.",
+        ]
+
     if is_tr:
         return [
             f"{subject} deyince çoğu insanın aklına tek bir kalıp geliyor; oysa perde arkasında çok daha çarpıcı bir gerçek yatıyor.",
@@ -1161,7 +1223,9 @@ def _generate_pack_fallback_scenes(pack: dict, clean_title: str, is_tr: bool):
     """Topic-aware fallback. Speak about the subject. Never describe the generator."""
     topic = (clean_title or "").strip() or pack.get("name") or "Konu"
     subject = _viewer_subject(topic)
-    narrations = _topic_bound_narrations(subject, is_tr)
+    family = pack.get("family", "")
+    nid = pack.get("id", "")
+    narrations = _topic_bound_narrations(subject, is_tr, family=family, nid=nid)
     visuals = _subject_visuals(pack, subject)
     moods = ["urgent", "curious", "focused", "analytical", "mysterious", "tense", "calm", "bright", "reflective", "energetic"]
     scenes = []

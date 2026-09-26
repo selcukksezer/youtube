@@ -145,60 +145,52 @@ def _format_trend_card(v_id: str, title: str, view_text: str, pub_time: str, cha
     }
 
 def _get_fallback_viral_trends(topic: str) -> List[Dict[str, Any]]:
-    """Comprehensive fallback trend insights."""
-    cards = [
-        {
-            "video_id": "trend_1",
-            "title": f"{topic} Hakkında Kimsenin Bilmediği 3 Korkunç Gerçek",
-            "view_count": "2.4M izlenme",
-            "published_at": "Son 24 saatte viral",
-            "channel": "Cosmic Curiosity",
-            "thumbnail": "https://images.pexels.com/photos/1169754/pexels-photo-1169754.jpeg?auto=compress&cs=tinysrgb&w=600",
-            "viral_score": 99,
-            "hook_analysis": "📊 Sayısal Liste Kancası (Psikolojik Tetikleyici)",
-            "url": "https://www.youtube.com/hashtag/shorts",
-            "script_prompt": f"{topic} Hakkında Kimsenin Bilmediği 3 Korkunç Gerçek"
-        },
-        {
-            "video_id": "trend_2",
-            "title": f"Bilim İnsanları {topic} İçinde Gizlenen Şok Edici Şeyi Buldu!",
-            "view_count": "1.8M izlenme",
-            "published_at": "Trendlerde #1",
-            "channel": "Science Vault",
-            "thumbnail": "https://images.pexels.com/photos/2156/sky-space-dark-galaxy.jpg?auto=compress&cs=tinysrgb&w=600",
-            "viral_score": 96,
-            "hook_analysis": "🔥 Şok Edici İddia / Gizem Kancası",
-            "url": "https://www.youtube.com/hashtag/shorts",
-            "script_prompt": f"Bilim İnsanları {topic} İçinde Gizlenen Şok Edici Şeyi Buldu"
-        },
-        {
-            "video_id": "trend_3",
-            "title": f"{topic} Konusunda Okullarda Anlatılmayan En Büyük 5 Yalan!",
-            "view_count": "950B izlenme",
-            "published_at": "Bu Hafta Trend",
-            "channel": "Mind Benders",
-            "thumbnail": "https://images.pexels.com/photos/73873/star-clusters-rosette-nebula-star-galaxies-73873.jpeg?auto=compress&cs=tinysrgb&w=600",
-            "viral_score": 92,
-            "hook_analysis": "📊 Sayısal Liste Kancası (Psikolojik Tetikleyici)",
-            "url": "https://www.youtube.com/hashtag/shorts",
-            "script_prompt": f"{topic} Konusunda Okullarda Anlatılmayan En Büyük 5 Yalan"
-        },
-        {
-            "video_id": "trend_4",
-            "title": f"Bu Bilgiyi Öğrenmeden Önce {topic} Hakkında Hiçbir Şey Bilmiyordunuz!",
-            "view_count": "720B izlenme",
-            "published_at": "Popüler Shorts",
-            "channel": "Deep Discovery",
-            "thumbnail": "https://images.pexels.com/photos/110854/pexels-photo-110854.jpeg?auto=compress&cs=tinysrgb&w=600",
-            "viral_score": 88,
-            "hook_analysis": "❓ Merak Uyandıran Soru Kancası",
-            "url": "https://www.youtube.com/hashtag/shorts",
-            "script_prompt": f"Bu Bilgiyi Öğrenmeden Önce {topic} Hakkında Hiçbir Şey Bilmiyordunuz"
-        }
+    """Comprehensive fallback trend insights using live autocomplete or natural phrasing."""
+    clean_topic = (topic or "").strip()
+    words = clean_topic.split()
+    cap_topic = " ".join(w.capitalize() for w in words) if words else "Trend"
+    
+    # Try getting real live YouTube search suggestions
+    candidate_titles: List[str] = []
+    try:
+        from research_service import fetch_youtube_autocomplete_suggestions
+        suggs = fetch_youtube_autocomplete_suggestions(clean_topic)
+        for s in suggs:
+            s_clean = s.strip()
+            if 12 <= len(s_clean) <= 90:
+                candidate_titles.append(s_clean[0].upper() + s_clean[1:])
+    except Exception:
+        pass
+
+    if not candidate_titles:
+        candidate_titles = [
+            f"{cap_topic} Hakkında Muhtemelen Bilmediğiniz 5 Şaşırtıcı Gerçek",
+            f"Kimsenin Söylemediği Gizli {cap_topic} Detayları",
+            f"{cap_topic} Konusunda En Yaygın Yapılan 3 Hata",
+            f"Bunu Öğrenene Kadar {cap_topic} Hakkında Her Şeyi Farklı Biliyordunuz",
+        ]
+
+    cards = []
+    sample_thumbs = [
+        "https://images.pexels.com/photos/1169754/pexels-photo-1169754.jpeg?auto=compress&cs=tinysrgb&w=600",
+        "https://images.pexels.com/photos/2156/sky-space-dark-galaxy.jpg?auto=compress&cs=tinysrgb&w=600",
+        "https://images.pexels.com/photos/73873/star-clusters-rosette-nebula-star-galaxies-73873.jpeg?auto=compress&cs=tinysrgb&w=600",
+        "https://images.pexels.com/photos/110854/pexels-photo-110854.jpeg?auto=compress&cs=tinysrgb&w=600",
     ]
-    for card in cards:
-        card["format_fingerprint"] = extract_format_fingerprint_from_title(
-            card["title"],
-            hook_analysis=card.get("hook_analysis", ""),
-        )
+
+    for idx, t_title in enumerate(candidate_titles[:4]):
+        hook_type = "📊 Sayısal Liste Kancası (Psikolojik Tetikleyici)" if any(c.isdigit() for c in t_title) else "🔥 Şok Edici İddia / Merak Kancası"
+        cards.append({
+            "video_id": f"trend_{idx + 1}",
+            "title": t_title,
+            "view_count": f"{1.5 + idx * 0.4:.1f}M izlenme",
+            "published_at": "Son 24 saatte viral",
+            "channel": "Viral Studio",
+            "thumbnail": sample_thumbs[idx % len(sample_thumbs)],
+            "viral_score": 95 - idx * 2,
+            "hook_analysis": hook_type,
+            "url": "https://www.youtube.com/hashtag/shorts",
+            "script_prompt": t_title,
+            "format_fingerprint": extract_format_fingerprint_from_title(t_title, hook_analysis=hook_type),
+        })
     return cards

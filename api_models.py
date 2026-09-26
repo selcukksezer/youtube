@@ -129,6 +129,7 @@ class VideoRenderRequest(BaseModel):
     enable_zoompan: Optional[bool] = False
     reddit_post: Optional[Dict[str, Any]] = None
     resolution: Optional[str] = "1080p"
+    visual_mode: Optional[str] = "auto"
     auto_publish: Optional[bool] = False
     channel_id: Optional[str] = None
 

@@ -11,9 +11,13 @@ from .luma import LumaVideoProvider
 from .minimax import MiniMaxVideoProvider
 from .openai_sora import OpenAISoraProvider
 from .higgsfield import HiggsfieldVideoProvider
+from .helios import HeliosVideoProvider
+from .pollinations import PollinationsVideoProvider
 
 ALL_PROVIDER_CLASSES = (
     LocalVideoProvider,
+    PollinationsVideoProvider,
+    HeliosVideoProvider,
     FalVideoProvider,
     HiggsfieldVideoProvider,
     RunwayVideoProvider,
@@ -30,6 +34,8 @@ ALL_PROVIDER_CLASSES = (
 __all__ = [
     "ALL_PROVIDER_CLASSES",
     "LocalVideoProvider",
+    "PollinationsVideoProvider",
+    "HeliosVideoProvider",
     "FalVideoProvider",
     "HiggsfieldVideoProvider",
     "RunwayVideoProvider",
