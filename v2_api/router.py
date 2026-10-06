@@ -151,6 +151,8 @@ def render_project(project_id: str, req: RenderRequest, background_tasks: Backgr
             bgm_track=settings.get("bgm_track", ""), bgm_volume=settings.get("bgm_volume", 0.12),
             split_screen=bool(settings.get("split_screen", False)),
             enable_ken_burns=bool(settings.get("enable_ken_burns", False)),
+            resume=bool(settings.get("resume", False)),
+            whisper_align=settings.get("whisper_align"),
         )
         database.update_project(project_id, status="rendering", settings_json=json.dumps(settings, ensure_ascii=False))
         background_tasks.add_task(_run_job, job_id, project_id, render_req)
@@ -188,13 +190,28 @@ async def job_events(job_id: str, request: Request):
     last = None
     async def stream():
         nonlocal last
+        idle_ticks = 0
         while not await request.is_disconnected():
             job = database.get_render_job(job_id)
             payload = json.dumps({"event": "render.state", "job": job}, ensure_ascii=False)
             if payload != last:
                 last = payload
+                idle_ticks = 0
                 yield f"data: {payload}\n\n"
+            else:
+                idle_ticks += 1
+                if idle_ticks >= 15:  # Send keepalive every ~10s to prevent proxy timeout
+                    idle_ticks = 0
+                    yield ": keepalive\n\n"
             if job and job["status"] in ("completed", "failed", "cancelled"):
                 break
             await asyncio.sleep(0.7)
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

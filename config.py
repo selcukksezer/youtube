@@ -92,6 +92,11 @@ PIAPI_KEY = os.getenv("PIAPI_KEY", "") or os.getenv("PIAPI_API_KEY", "")
 LOCAL_AI_VIDEO_URL = os.getenv("LOCAL_AI_VIDEO_URL", "")  # ComfyUI / self-host Wan proxy
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")  # optional paid Hailuo
 MINIMAX_GROUP_ID = os.getenv("MINIMAX_GROUP_ID", "")
+# Optional local MiniMax-H3. Unused unless the studio visual engine is set to minimax_h3.
+# ComfyUI on this PC is the real path. SGLang 30010 is used only when already up.
+MINIMAX_H3_COMFY_URL = os.getenv("MINIMAX_H3_COMFY_URL", "http://127.0.0.1:8188")
+MINIMAX_H3_LOCAL_URL = os.getenv("MINIMAX_H3_LOCAL_URL", "http://127.0.0.1:30010")
+MINIMAX_H3_MODEL = os.getenv("MINIMAX_H3_MODEL", "MiniMaxAI/MiniMax-H3")
 RUNWAYML_API_SECRET = (
     os.getenv("RUNWAYML_API_SECRET", "")
     or os.getenv("RUNWAY_API_KEY", "")
@@ -215,6 +220,7 @@ from tts_voices import (
     get_voice_catalog,
     EDGE_TTS_VOICE_CATALOG,
     is_elevenlabs_voice,
+    is_local_offline_voice,
     is_valid_voice,
 )
 
@@ -227,6 +233,8 @@ TTS_GENDER = os.getenv("TTS_GENDER", "male")
 def _sanitize_startup_voice(raw_voice: str, lang: str, gender: str) -> str:
     """Prefer locale-native Edge voice at startup (avoids stale fr-FR on Turkish content)."""
     lang = (lang or "tr").lower()
+    if raw_voice and is_local_offline_voice(raw_voice):
+        return raw_voice
     if raw_voice and is_elevenlabs_voice(raw_voice):
         return raw_voice
     if raw_voice and is_valid_voice(raw_voice, lang):
@@ -243,6 +251,9 @@ def _sanitize_startup_voice(raw_voice: str, lang: str, gender: str) -> str:
 _env_tts_voice = os.getenv("TTS_VOICE", "")
 TTS_VOICE = _sanitize_startup_voice(_env_tts_voice, LANGUAGE, TTS_GENDER) if _env_tts_voice else resolve_voice(LANGUAGE, gender=TTS_GENDER, prefer_native=True)
 TTS_RATE = os.getenv("TTS_RATE", "+18%")
+# Hadith / Kur'an sit under the default. Not faster, and not the +35% hook bump.
+SACRED_TTS_RATE = os.getenv("SACRED_TTS_RATE", "+8%")
+TTS_SACRED_CALM = False
 TTS_PITCH = os.getenv("TTS_PITCH", "+0Hz") or "+0Hz"
 
 # ══════════════════════════════════════════════════════════════

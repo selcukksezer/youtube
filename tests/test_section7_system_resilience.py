@@ -27,7 +27,8 @@ class TestSection7SystemResilience(unittest.TestCase):
         from system_resilience import get_ffmpeg_vcodec_args
         args, _label = get_ffmpeg_vcodec_args(use_gpu=True, gpu_codec="h264_nvenc")
         self.assertEqual(args[args.index("-b:v") + 1], "0")
-        self.assertEqual(args[args.index("-cq") + 1], "20")
+        self.assertEqual(args[args.index("-cq") + 1], "21")
+        self.assertIn("-spatial-aq", args)
 
     def test_item_416_circuit_breaker(self):
         cb = CircuitBreaker(failure_threshold=3, recovery_timeout=0.2)
@@ -56,6 +57,26 @@ class TestSection7SystemResilience(unittest.TestCase):
         # Success in HALF_OPEN resets to CLOSED
         cb.record_success(service)
         self.assertEqual(cb._get_service(service)["state"], CircuitBreaker.STATE_CLOSED)
+
+        # Immediate trip from HALF_OPEN upon failure
+        cb.record_failure(service)
+        cb.record_failure(service)
+        cb.record_failure(service)
+        self.assertEqual(cb._get_service(service)["state"], CircuitBreaker.STATE_OPEN)
+        time.sleep(0.25)
+        self.assertTrue(cb.can_execute(service))
+        self.assertEqual(cb._get_service(service)["state"], CircuitBreaker.STATE_HALF_OPEN)
+        cb.record_failure(service, "Temporary network blip")
+        self.assertEqual(cb._get_service(service)["state"], CircuitBreaker.STATE_OPEN)
+
+        # Custom timeout per service
+        cb.record_failure("custom_srv", "quota", custom_timeout=50.0)
+        cb.record_failure("custom_srv", "quota")
+        cb.record_failure("custom_srv", "quota")
+        status = cb.export_status()
+        self.assertIn("custom_srv", status)
+        self.assertEqual(status["custom_srv"]["state"], CircuitBreaker.STATE_OPEN)
+        self.assertGreater(status["custom_srv"]["remaining_cooldown_sec"], 40.0)
 
     def test_item_428_clean_ai_system_preamble(self):
         raw = "İşte hazırladığım senaryo:\n\nMarcus Aurelius antik Roma imparatorudur."

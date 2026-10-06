@@ -25,29 +25,66 @@ from copyright_risk import filter_safe_clips, scan_copyright_risk
 from headline_transformer import batch_convert_headlines, convert_headline_to_question
 
 
-SEO_PROMPT = """Sen profesyonel bir YouTube SEO Uzmanı ve Viral İçerik Stratejistisin.
-Verilen YouTube Shorts anahtar kelimesi/başlığı için şu bilgileri üret:
+SEO_SYSTEM_PROMPT = """Sen profesyonel bir YouTube SEO Uzmanı, Algoritma Mühendisi ve Viral İçerik Stratejistisin.
+Görevin: Verilen YouTube Shorts videosu için videonun konusuna ve SENARYOSUNA TAMAMEN ÖZEL, doğal, akıcı bir SEO açıklaması ve 15 adet gerçek YouTube arama etiketi üretmektir.
 
-1. "hook_text": İzleyiciyi ilk 3 saniyede yakalayacak çok güçlü, merak uyandıran kanca cümlesi (en fazla 15 kelime).
-2. "seo_title": Tıklama oranını (CTR) maksimize edecek, arama motorlarına uyumlu, ilgi çekici video başlığı (Item 346: 45-60 karakter, Item 347: tek bir kelime BÜYÜK harf, #Shorts dahil).
-3. "seo_description": Videonun bulunabilirliğini artıracak, anahtar kelime zengini 2-3 cümlelik akıcı doğal açıklama metni (Item 352).
-4. "tags": En çok aranan 15 yüksek hacimli etiket (dizi halinde: ["etiket1", "etiket2"]).
-5. "pinned_comment": Yorumlarda etkileşimi patlatacak, izleyiciye doğrudan soru soran sabitleme yorumu metni (Item 350).
-6. "affiliate_text": Ürün veya profil bağlantısını öneren CTA metni.
+KRİTİK KURALLAR:
+1. "seo_title": Tıklama oranını (CTR) maksimize edecek ilgi çekici Shorts başlığı.
+   - 45-60 karakter arasında olmalı (Item 346).
+   - Sadece tek bir kilit kelime BÜYÜK yazılmalı (Item 347: örn. GERÇEK, ASLA, SAKIN, GİZLİ, ŞOK).
+   - Sonunda #Shorts hashtag'i bulunmalı.
+2. "seo_description": Videoya ÖZEL, senaryodaki asıl olayı/detayları özetleyen, doğal ve akıcı YouTube açıklaması:
+   - "Tarihsel ve felsefi arka planı, uzmanların gözden kaçırdığı boyutlarıyla..." gibi robotik veya şablon ifadeler ASLA KULLANMA.
+   - Videonun senaryosunda geçen asıl sırrı veya olay akışını 2-3 akıcı cümleyle özetle.
+   - İzleyicileri yoruma teşvik eden videoya özel düşündürücü/kışkırtıcı bir soru sor.
+   - Metnin sonuna videonun nişine uygun 3 odaklı hashtag ekle (#Shorts ve 2 spesifik etiket).
+3. "tags": Videonun konusuyla birebir ilgili, insanların YouTube arama kutusuna yazdığı TAM 15 ADET yüksek hacimli arama etiketi.
+   - Dizi halinde olmalı: ["etiket1", "etiket2", ..., "etiket15"].
+   - Gerçek arama terimleri olmalı (örn. 'beden dili taktikleri', 'göz teması anlamı', 'yalan tespiti').
+   - Başlığı rastgele kelimelere bölüp ('ve', 'ile', 'için', 'nın', 'karşı', 'tarafın' gibi) anlamsız parçalar ASLA üretme!
+4. "hook_text": İlk 3 saniyede izleyiciyi ekrana kilitleyecek 10-15 kelimelik çarpıcı kanca cümlesi.
+5. "pinned_comment": Videodaki konuyla ilgili izleyicileri tartışmaya sokacak videoya özel sabitleme yorumu.
+6. "affiliate_text": Profil veya kaynak linkine yönlendiren kısa CTA.
 
-SADECE JSON FORMATINDA YANIT VER:
-{"hook_text": "...", "seo_title": "...", "seo_description": "...", "tags": ["a", "b"], "pinned_comment": "...", "affiliate_text": "..."}
+SADECE GEÇERLİ JSON DÖNDÜR:
+{
+  "hook_text": "...",
+  "seo_title": "...",
+  "seo_description": "...",
+  "tags": ["etiket1", "etiket2", ..., "etiket15"],
+  "pinned_comment": "...",
+  "affiliate_text": "..."
+}
 """
 
+SEO_PROMPT = SEO_SYSTEM_PROMPT
 _SEO_LITE_MODEL = "gemini-flash-lite-latest"
+
+
+def _seo_candidate_models() -> List[str]:
+    """Candidate models in priority order for SEO generation with graceful failover."""
+    defaults = [
+        "gemini-3.1-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-flash-latest",
+        "gemini-3.5-flash-lite",
+        "gemma-4-26b-a4b-it",
+        "gemini-3.8-flash",
+    ]
+    configured = (getattr(config, "GEMINI_MODEL", "") or "").strip()
+    candidates: List[str] = []
+    if configured and "pro" not in configured.lower() and configured not in defaults:
+        candidates.append(configured)
+    for m in defaults:
+        if m not in candidates:
+            candidates.append(m)
+    return candidates
 
 
 def _resolve_seo_model() -> str:
     """SEO metadata uses lightweight Gemini — avoid Pro-tier quota burn."""
-    configured = (getattr(config, "GEMINI_MODEL", "") or "").strip()
-    if configured and "pro" not in configured.lower():
-        return configured
-    return _SEO_LITE_MODEL
+    models = _seo_candidate_models()
+    return models[0] if models else _SEO_LITE_MODEL
 
 
 def _is_quota_error(exc: Exception) -> bool:
@@ -95,21 +132,35 @@ def finalize_seo_title(title: str, lang: str = "tr") -> str:
     return enforce_title_length_limit(title)
 
 
+_DANGLING_TAIL_WORDS = {
+    "ve", "veya", "ile", "için", "icin", "bu", "o", "şu", "en", "bir", "de", "da", "ki",
+    "ama", "fakat", "gibi", "kadar", "olan", "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with"
+}
+
+
 def enforce_title_length_limit(title: str, min_len: int = 40, max_len: int = 60) -> str:
     """
     Item 346: Başlık Uzunluğu Sınırı.
     Shorts başlıkları mobil ekranda kesilmemesi için 45-60 karakter aralığında tutulur.
+    Asla anlamsız bağlaç/edatla bitmez (örn. '... En #Shorts' önlenir).
     """
     clean = re.sub(r'\s+', ' ', title).strip()
     if len(clean) > max_len:
         # Trim words gracefully
         words = clean.split()
-        trimmed = ""
+        trimmed_words: List[str] = []
         for w in words:
-            if len(f"{trimmed} {w}".strip()) <= max_len - 8:
-                trimmed = f"{trimmed} {w}".strip()
+            candidate = " ".join(trimmed_words + [w])
+            if len(candidate) <= max_len - 8:
+                trimmed_words.append(w)
             else:
                 break
+        # Strip trailing prepositions/conjunctions/dangling modifiers
+        while trimmed_words and trimmed_words[-1].lower() in _DANGLING_TAIL_WORDS:
+            trimmed_words.pop()
+        trimmed = " ".join(trimmed_words).strip()
+        if not trimmed:
+            trimmed = clean[:max_len - 8].strip()
         if not trimmed.endswith("#shorts") and not trimmed.endswith("#Shorts"):
             trimmed = f"{trimmed} #Shorts"
         return trimmed
@@ -139,15 +190,19 @@ def inject_curiosity_words(title: str, lang: str = "tr") -> str:
     """
     Item 348: Başlıkta Merak Kelimeleri (Curiosity Multipliers).
     CTR'ı katlayan 'Gizli', 'Yasak', 'Şok Eden', 'Bilinmeyen' sıfatlarını entegre eder.
+    Eğer başlık zaten uzunsa (>= 45 karakter veya >= 6 kelime) ekleme yapmayarak bozuk kesilmeleri önler.
     """
     CURIOUS_WORDS_TR = ["Gizli", "Yasaklanan", "Bilinmeyen", "Şok Eden", "Akıl Almaz", "Gözden Kaçan"]
     CURIOUS_WORDS_EN = ["Hidden", "Forbidden", "Unknown", "Shocking", "Untold", "Mind-Bending"]
 
     words = CURIOUS_WORDS_TR if lang == "tr" else CURIOUS_WORDS_EN
+    if any(c.lower() in title.lower() for c in words):
+        return title
+    # Başlık zaten zengin/uzunsa gereksiz kelime yığmayıp anlam bütünlüğünü koru
+    if len(title.strip()) >= 45 or len(title.split()) >= 6:
+        return title
     chosen = random.choice(words)
-    if not any(c.lower() in title.lower() for c in words):
-        return f"{chosen} {title}"
-    return title
+    return f"{chosen} {title}"
 
 
 def enforce_three_hashtag_rule(title_or_desc: str, niche_tag: str, general_tag: str = "viral") -> str:
@@ -169,6 +224,10 @@ def prepend_description_engagement_question(description: str, keyword: str = "",
     """
     low = description.lower()
     if description.strip().startswith("💬") or "ne düşünüyorsunuz" in low or "what do you think" in low:
+        return description
+    # If description already has an engaging question mark in its first block, don't prepend boilerplate
+    first_block = description.strip().split("\n\n")[0]
+    if "?" in first_block:
         return description
     if lang == "en":
         question = f"💬 What do you think about {keyword or 'this topic'}? Share your take below!\n\n"
@@ -203,16 +262,34 @@ def build_natural_seo_description(
     hook_part = hook.strip() if hook else f"{keyword} hakkında bilmeniz gereken en kritik detaylar bu videoda."
     if keyword.lower() not in hook_part.lower():
         hook_part = f"{keyword} – {hook_part}"
-    desc = f"{hook_part} Tarihsel ve felsefi arka planı, uzmanların gözden kaçırdığı boyutlarıyla inceliyoruz. İzlediğiniz için teşekkürler; yeni bölümler için abone olup bildirimleri açmayı unutmayın!"
-    
+
+    niche_lower = f"{niche} {source_name} {keyword}".lower()
+    if any(k in niche_lower for k in ("psikoloji", "beden dili", "manipülasyon", "niyet", "göz teması", "zihin", "davranış", "dark_psychology")):
+        narrative = "Bilinçaltı dinamikleri ve insan davranışlarının gizli psikolojik kodlarını inceliyoruz."
+    elif any(k in niche_lower for k in ("tarih", "ancient", "roma", "imparator", "arkeoloji", "felsefe", "stoic")):
+        narrative = "Tarihsel ve felsefi arka planı, uzmanların gözden kaçırdığı boyutlarıyla inceliyoruz."
+    elif any(k in niche_lower for k in ("bilim", "uzay", "gizem", "science", "space", "myth", "beş gerçek", "five_facts")):
+        narrative = "Bilimsel veriler ve henüz açıklanamayan gizemli detayları mercek altına alıyoruz."
+    elif any(k in niche_lower for k in ("finans", "kripto", "para", "borsa", "yatırım", "crypto", "business")):
+        narrative = "Piyasa dinamikleri, finansal gerçekler ve stratejik ipuçlarını inceliyoruz."
+    elif any(k in niche_lower for k in ("reddit", "itiraf", "hikaye", "aita", "dram", "aile")):
+        narrative = "Yaşanan bu çarpıcı olayın perde arkasını ve düşündürücü detaylarını inceliyoruz."
+    elif any(k in niche_lower for k in ("ürün", "urun", "alet", "cihaz", "gadget", "temu")):
+        narrative = "Öne çıkan özellikleri, kullanım avantajlarını ve kullanıcı deneyimini değerlendiriyoruz."
+    else:
+        narrative = "Konunun en çarpıcı detaylarını ve uzmanların gözden kaçırdığı boyutlarını inceliyoruz."
+
+    desc = f"{hook_part} {narrative} İzlediğiniz için teşekkürler; yeni bölümler için abone olup bildirimleri açmayı unutmayın!"
+
     if bullet_points:
         desc += "\n\n📌 Önemli Noktalar:\n" + "\n".join([f"• {bp}" for bp in bullet_points[:3]])
-    
+
     # Item 83 & 140: Kaynak ve yasal bildirim
-    desc = append_research_source_reference(desc, keyword=keyword, source_name=source_name)
-    
+    desc = append_research_source_reference(desc, keyword=keyword, source_name=source_name or niche)
+
     # 3-hashtag rule
-    tag_block = enforce_three_hashtag_rule("", niche_tag=keyword.split()[0], general_tag="viral")
+    first_tag = re.sub(r'[^\w]', '', keyword.split()[0]) if keyword.split() else "Shorts"
+    tag_block = enforce_three_hashtag_rule("", niche_tag=first_tag, general_tag="viral")
     desc += f"\n\n{tag_block}"
     desc = prepend_description_engagement_question(desc, keyword=keyword, lang=lang)
     # Item 485: Topluluk ihtarı önleme — finans/sağlık açıklamasına yasal uyarı
@@ -290,7 +367,19 @@ def append_research_source_reference(description: str, keyword: str = "", source
     if "📌 Kaynak & Araştırma:" in description or "📌 Research & Source:" in description:
         return description
 
-    ref_name = source_name.strip() if source_name else f"Tarihsel Arşiv, Akademik Literatür & Açık Kaynak İncelemesi ({keyword.strip() or 'Genel Kültür'})"
+    kw_low = f"{source_name} {keyword}".lower()
+    if any(k in kw_low for k in ("psikoloji", "beden dili", "dark", "manipülasyon", "niyet", "göz teması", "zihin", "davranış")):
+        default_ref = f"Akademik Psikoloji Literatürü & Davranış Bilimleri İncelemesi ({keyword.strip() or 'Psikoloji'})"
+    elif any(k in kw_low for k in ("bilim", "uzay", "science", "space", "myth", "gizem", "fizik")):
+        default_ref = f"Bilimsel Literatür, Akademik Veri & Açık Kaynak İncelemesi ({keyword.strip() or 'Bilim'})"
+    elif any(k in kw_low for k in ("finans", "kripto", "para", "borsa", "yatırım", "crypto", "business")):
+        default_ref = f"Finansal Veri Tabanları, Piyasa Raporları & Açık Kaynak İncelemesi ({keyword.strip() or 'Ekonomi'})"
+    elif any(k in kw_low for k in ("reddit", "itiraf", "hikaye", "aita")):
+        default_ref = f"Topluluk Arşivleri & Açık Kaynak Sosyal İnceleme ({keyword.strip() or 'Topluluk'})"
+    else:
+        default_ref = f"Tarihsel Arşiv, Akademik Literatür & Açık Kaynak İncelemesi ({keyword.strip() or 'Genel Kültür'})"
+
+    ref_name = source_name.strip() if source_name else default_ref
     source_block = (
         f"\n\n📌 Kaynak & Araştırma: {ref_name}\n"
         f"⚖️ Yasal Bildirim (Fair Use): Tüm görseller eğitim ve adil kullanım (Fair Use) kapsamındadır. "
@@ -336,39 +425,132 @@ def enrich_seo_with_retention_metadata(seo_data: dict, retention_metadata: dict 
     return finalize_seo_compliance(seo_data, lang=lang)
 
 
-def finalize_seo_compliance(seo_data: dict, lang: str = "tr") -> dict:
-    """Strip tag stuffing, cap hashtags at 3, append AI disclosure paragraph (research §A4/A8)."""
+def generate_15_viral_tags(keyword: str, niche: str = "", lang: str = "tr") -> List[str]:
+    """Generate exactly 15 high-volume, clean, individual YouTube tags from keyword and niche."""
+    tags: List[str] = ["shorts", "keşfet", "viral", "trend"]
+
+    TURKISH_STOPWORDS = {
+        "ve", "veya", "ile", "için", "icin", "bir", "üç", "uc", "beş", "bes",
+        "en", "bu", "o", "şu", "hakkında", "gibi", "kadar", "olan", "nın",
+        "nin", "nun", "nün", "dan", "den", "tan", "ten", "karşı", "karsi",
+        "tarafın", "tarafin", "biri", "her", "daha", "cok", "çok", "nasıl",
+        "nasil", "neden", "şey", "sey"
+    }
+
+    # Extract clean individual words (skip short stop words and grammar particles)
+    raw_tokens = [
+        w.lower() for w in re.split(r"[^\w\u00e7\u011f\u0131\u00f6\u015f\u00fc\u00c7\u011e\u0130\u00d6\u015e\u00dc]+", keyword)
+        if len(w) >= 3 and w.lower() not in TURKISH_STOPWORDS
+    ]
+
+    # Combine adjacent relevant tokens as 2-word tags
+    if len(raw_tokens) >= 2:
+        for i in range(len(raw_tokens) - 1):
+            pair = f"{raw_tokens[i]} {raw_tokens[i+1]}"
+            if pair not in tags and len(tags) < 15:
+                tags.append(pair)
+
+    for tok in raw_tokens:
+        if tok not in tags and len(tags) < 15:
+            tags.append(tok)
+
+    # Combine adjacent relevant tokens as 2-word tags
+    if len(raw_tokens) >= 2:
+        for i in range(len(raw_tokens) - 1):
+            pair = f"{raw_tokens[i]} {raw_tokens[i+1]}"
+            if pair not in tags and len(tags) < 15:
+                tags.append(pair)
+
+    # Niche-specific high-performing search tags
+    niche_low = (niche or keyword).lower()
+    if any(k in niche_low for k in ("bilim", "gizem", "uzay", "science", "space", "myth")):
+        niche_pool = ["bilim", "bilimsel gerçekler", "gizemli olaylar", "açıklanamayan sırlar", "evren", "uzay", "keşif", "belgesel", "merak"]
+    elif any(k in niche_low for k in ("tarih", "history", "ancient")):
+        niche_pool = ["tarih", "tarihi olaylar", "antik sırlar", "ilginç tarih", "geçmiş", "arkeoloji", "bilinmeyen tarih"]
+    elif any(k in niche_low for k in ("para", "finans", "money", "crypto", "business")):
+        niche_pool = ["finans", "para kazanma", "ekonomi", "yatırım", "başarı", "girişimcilik", "motivasyon", "zenginlik"]
+    elif any(k in niche_low for k in ("psikoloji", "stoic", "felsefe", "mind")):
+        niche_pool = ["psikoloji", "felsefe", "stoacılık", "kişisel gelişim", "zihin", "davranış", "farkındalık"]
+    else:
+        niche_pool = ["ilginç bilgiler", "şaşırtıcı gerçekler", "bunu biliyor muydunuz", "öğren", "bilgi", "gündem", "popüler"]
+
+    for n_tag in niche_pool:
+        if n_tag not in tags and len(tags) < 15:
+            tags.append(n_tag)
+
+    # Universal high-volume tags
+    universal_fill = ["youtube shorts", "türkiye", "faydalı bilgiler", "kısa video", "izle", "merak edilenler", "şaşırtıcı"]
+    for u_tag in universal_fill:
+        if u_tag not in tags and len(tags) < 15:
+            tags.append(u_tag)
+
+    return tags[:15]
+
+
+def finalize_seo_compliance(seo_data: dict, lang: str = "tr", visual_manifest=None) -> dict:
+    """Strip tag stuffing, cap hashtags at 3, append the real source block."""
     seo_data = dict(seo_data or {})
     try:
         from compliance import ai_disclosure_block, sanitize_seo_description
-        desc = sanitize_seo_description(seo_data.get("seo_description") or "", max_hashtags=3)
+        from compliance.transparent_disclosure import append_ai_disclosure_to_description
+        desc = sanitize_seo_description(seo_data.get("seo_description") or seo_data.get("description") or "", max_hashtags=3)
         disc = ai_disclosure_block(
-            uses_tts=True, uses_ai_script=True, uses_photoreal_ai=False, lang=lang,
+            uses_tts=True,
+            uses_ai_script=True,
+            uses_photoreal_ai=False,
+            lang=lang,
+            clips_or_manifest=visual_manifest or None,
+            include_sources=bool(visual_manifest),
         )
-        para = disc.get("description_paragraph") or ""
-        if para and para not in desc:
-            desc = f"{desc.rstrip()}\n\n{para}"
+        desc = append_ai_disclosure_to_description(desc, disc)
         seo_data["seo_description"] = desc
+        seo_data["description"] = desc
         seo_data["ai_disclosure"] = disc
         seo_data["studio_ai_survey"] = disc.get("studio_ai_survey")
     except Exception:
         pass
-    tags = seo_data.get("tags") or []
-    if isinstance(tags, list) and len(tags) > 15:
-        seo_data["tags"] = tags[:15]
+
+    raw_tags = seo_data.get("tags") or []
+    cleaned_tags = []
+    if isinstance(raw_tags, list):
+        for t in raw_tags:
+            t_str = str(t).strip().lower()
+            if not t_str:
+                continue
+            # Filter out mashed sentences (no spaces and > 25 chars)
+            if len(t_str) > 25 and " " not in t_str:
+                continue
+            if t_str not in cleaned_tags:
+                cleaned_tags.append(t_str)
+
+    # Ensure 15 tags
+    if len(cleaned_tags) < 15:
+        kw = seo_data.get("seo_title") or "video"
+        pad = generate_15_viral_tags(kw, lang=lang)
+        for pt in pad:
+            if pt not in cleaned_tags and len(cleaned_tags) < 15:
+                cleaned_tags.append(pt)
+
+    seo_data["tags"] = cleaned_tags[:15]
     return seo_data
 
 
 def attach_shopping_product_tags(seo: dict, keyword: str = "", products: list = None) -> dict:
     """
     R10 #95: YouTube Shopping / product-tag metadata pack for operator paste into Studio.
-    Shopping API auto-tag is out of scope — structured tags for manual attach.
+    Only attached for explicit products or product/affiliate niches.
     """
     data = dict(seo or {})
     kw = (keyword or data.get("seo_title") or "ürün").strip()
     product_list = list(products or [])
+    kw_low = kw.lower()
+    is_product_topic = any(w in kw_low for w in ("ürün", "urun", "alet", "cihaz", "gadget", "amazon", "satın", "kulaklık", "şarj", "fiyat"))
+
     if not product_list:
+        if not is_product_topic:
+            return data
         product_list = [f"{kw} — öne çıkan ürün", f"{kw} alternatif set"]
+
     tags = []
     for i, name in enumerate(product_list[:5]):
         tags.append({
@@ -385,83 +567,162 @@ def attach_shopping_product_tags(seo: dict, keyword: str = "", products: list = 
     return data
 
 
-def generate_viral_seo_metadata(keyword: str, source_name: str = "", retention_metadata: dict = None) -> dict:
-    fallback_title = finalize_seo_title(f"{keyword}: Bu Gerçeği ASLA Unutmayın #Shorts")
+def generate_viral_seo_metadata(
+    keyword: str,
+    source_name: str = "",
+    retention_metadata: dict = None,
+    visual_manifest = None,
+    script_context: str = "",
+    niche: str = "",
+    lang: str = "tr",
+) -> dict:
+    effective_niche = niche or source_name
+    fallback_title = finalize_seo_title(f"{keyword}: Bu Gerçeği ASLA Unutmayın #Shorts", lang=lang)
+    fallback_tags = generate_15_viral_tags(keyword, niche=effective_niche, lang=lang)
     fallback = {
         "hook_text": f"{keyword} hakkında kimsenin bilmediği gerçekler!",
         "seo_title": fallback_title,
-        "seo_description": build_natural_seo_description(keyword, hook=f"{keyword} hakkında şok edici detaylar ve gizli kalmış sırlar bu videoda.", source_name=source_name),
-        "tags": ["shorts", "bilgi", keyword.replace(" ", ""), "ilginc", "viral"],
+        "seo_description": build_natural_seo_description(
+            keyword,
+            hook=f"{keyword} hakkında şok edici detaylar ve gizli kalmış sırlar bu videoda.",
+            source_name=source_name,
+            niche=effective_niche,
+            lang=lang,
+        ),
+        "tags": fallback_tags,
         "pinned_comment": f"Sizce {keyword} konusundaki en şaşırtıcı detay neydi? Yorumlarda buluşalım! 👇",
         "affiliate_text": "🔗 Bahsedilen ürün ve kaynak linkleri profilimde!"
     }
 
-    client_info = _seo_llm_client()
-    if not client_info[0]:
-        enriched = enrich_seo_with_retention_metadata(fallback, retention_metadata)
-        return attach_shopping_product_tags(enriched, keyword)
+    # Prepare user prompt with video script to give AI deep context
+    user_prompt_parts = [f"Başlık / Anahtar Kelime: {keyword}"]
+    if script_context and script_context.strip():
+        user_prompt_parts.append(f"Videonun Gerçek Senaryosu / Metni:\n{script_context.strip()[:1800]}")
+    if effective_niche:
+        user_prompt_parts.append(f"İçerik Nişi: {effective_niche}")
+    if lang:
+        user_prompt_parts.append(f"Dil: {lang}")
+    user_content = "\n\n".join(user_prompt_parts)
 
-    client, provider_name, model_name = client_info
-    print(f"\n  [Viral SEO Agent] '{keyword}' için SEO ve Kanca verileri üretiliyor...")
-
-    try:
-        params = dict(
-            model=model_name,
-            messages=[
-                {"role": "system", "content": SEO_PROMPT},
-                {"role": "user", "content": f"Anahtar kelime: {keyword}"}
-            ],
-            temperature=0.7,
-            max_tokens=1000,
+    gemini_key = (getattr(config, "GEMINI_API_KEY", "") or "").strip()
+    ai_candidates = []
+    if gemini_key:
+        c = OpenAI(
+            api_key=gemini_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            timeout=10.0,
         )
-        if provider_name in ("Gemini", "OpenAI"):
-            params["response_format"] = {"type": "json_object"}
+        for m in _seo_candidate_models():
+            ai_candidates.append((c, "Gemini", m))
 
-        resp = _call(client, params, provider_name=provider_name, model_name=model_name)
-        raw = resp.choices[0].message.content.strip()
-        data = _clean_json(raw)
+    if getattr(config, "OPENAI_API_KEY", ""):
+        c = OpenAI(api_key=config.OPENAI_API_KEY, timeout=10.0)
+        ai_candidates.append((c, "OpenAI", "gpt-4o-mini"))
 
-        if data and "seo_title" in data:
-            raw_title = data["seo_title"]
-            try:
-                from research_service import align_title_to_youtube_search
-                align = align_title_to_youtube_search(keyword, raw_title, lang="tr")
-                if align.get("aligned_title"):
-                    raw_title = align["aligned_title"]
-                    data["search_alignment"] = align
-            except Exception:
-                pass
-            data["seo_title"] = finalize_seo_title(raw_title)
-            # Auto-append investigative source reference
-            data["seo_description"] = append_research_source_reference(data.get("seo_description", ""), keyword=keyword, source_name=source_name)
-            data["seo_description"] = prepend_description_engagement_question(data["seo_description"], keyword=keyword, lang="tr")
-            print(f"    [OK] Viral SEO verileri başarıyla üretildi.")
-            try:
-                from quota_manager import quota_tracker
-                quota_tracker.record_call(provider_name or "Gemini")
-            except Exception:
-                pass
-            return finalize_seo_compliance(
-                attach_shopping_product_tags(
-                    enrich_seo_with_retention_metadata(data, retention_metadata),
-                    keyword,
-                )
+    if getattr(config, "DEEPSEEK_API_KEY", ""):
+        c = OpenAI(api_key=config.DEEPSEEK_API_KEY, base_url="https://api.deepseek.com", timeout=10.0)
+        ai_candidates.append((c, "DeepSeek", "deepseek-chat"))
+
+    if not ai_candidates and getattr(config, "AI_API_KEY", "") and getattr(config, "AI_BASE_URL", ""):
+        c = OpenAI(api_key=config.AI_API_KEY, base_url=config.AI_BASE_URL, timeout=10.0)
+        m = config.AI_MODEL if config.AI_MODEL and config.AI_MODEL != "procedural" else _SEO_LITE_MODEL
+        ai_candidates.append((c, config.AI_PROVIDER or "AI", m))
+
+    if not ai_candidates:
+        enriched = enrich_seo_with_retention_metadata(fallback, retention_metadata, lang=lang)
+        return finalize_seo_compliance(
+            attach_shopping_product_tags(enriched, keyword),
+            visual_manifest=visual_manifest,
+            lang=lang,
+        )
+
+    print(f"\n  [Viral SEO Agent] '{keyword}' için yapay zeka ile videoya özel SEO ve etiketler üretiliyor...")
+
+    for client, provider_name, model_name in ai_candidates:
+        try:
+            params = dict(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SEO_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.7,
+                max_tokens=1000,
             )
-    except Exception as e:
-        if _is_quota_error(e):
-            print("    [SEO] Gemini kotası dolu — procedural fallback kullanılıyor.")
-        else:
-            print(f"    [UYARI] Viral SEO Agent hatası: {e}. Fallback kullanılıyor.")
-        if not _is_quota_error(e):
-            try:
-                from quota_manager import quota_tracker
-                quota_tracker.record_error(provider_name or "Gemini", str(e))
-            except Exception:
-                pass
+            if provider_name in ("Gemini", "OpenAI") and "gemma" not in model_name.lower():
+                params["response_format"] = {"type": "json_object"}
 
-    return attach_shopping_product_tags(
-        enrich_seo_with_retention_metadata(fallback, retention_metadata),
-        keyword,
+            resp = _call(client, params, provider_name=provider_name, model_name=model_name)
+            raw = resp.choices[0].message.content.strip()
+            data = _clean_json(raw)
+
+            if data and isinstance(data, dict) and "seo_title" in data and "seo_description" in data:
+                raw_title = data["seo_title"]
+                try:
+                    from research_service import align_title_to_youtube_search
+                    align = align_title_to_youtube_search(keyword, raw_title, lang=lang)
+                    if align.get("aligned_title"):
+                        raw_title = align["aligned_title"]
+                        data["search_alignment"] = align
+                except Exception:
+                    pass
+                data["seo_title"] = finalize_seo_title(raw_title, lang=lang)
+
+                # Process AI-generated description cleanly
+                desc = data["seo_description"].strip()
+                desc = append_research_source_reference(desc, keyword=keyword, source_name=source_name or effective_niche)
+                desc = prepend_description_engagement_question(desc, keyword=keyword, lang=lang)
+                data["seo_description"] = desc
+
+                # Process AI-generated tags (ensure exactly 15 clean, high-value tags)
+                ai_tags = data.get("tags") or []
+                cleaned_tags = []
+                if isinstance(ai_tags, list):
+                    for t in ai_tags:
+                        t_str = str(t).strip().lower()
+                        if t_str and t_str not in cleaned_tags and len(t_str) <= 40:
+                            cleaned_tags.append(t_str)
+
+                # If AI tags are fewer than 15, pad with clean niche tags
+                if len(cleaned_tags) < 15:
+                    pad = generate_15_viral_tags(keyword, niche=effective_niche, lang=lang)
+                    for pt in pad:
+                        if pt not in cleaned_tags and len(cleaned_tags) < 15:
+                            cleaned_tags.append(pt)
+
+                data["tags"] = cleaned_tags[:15]
+                print(f"    [OK] Viral SEO açıklaması ve {len(data['tags'])} etiket {provider_name} ({model_name}) ile videoya özel başarıyla üretildi.")
+                try:
+                    from quota_manager import quota_tracker
+                    quota_tracker.record_call(provider_name)
+                except Exception:
+                    pass
+
+                return finalize_seo_compliance(
+                    attach_shopping_product_tags(
+                        enrich_seo_with_retention_metadata(data, retention_metadata, lang=lang),
+                        keyword,
+                    ),
+                    visual_manifest=visual_manifest,
+                    lang=lang,
+                )
+        except Exception as e:
+            if _is_quota_error(e) or "503" in str(e) or "404" in str(e):
+                print(f"    [SEO] {model_name} müsait değil ({str(e)[:60]}), sonraki modele geçiliyor...")
+                continue
+            else:
+                print(f"    [SEO] {model_name} hata ({str(e)[:60]}), sonraki modele geçiliyor...")
+                continue
+
+    # Fallback if all AI candidates failed
+    print("    [SEO] Tüm AI modelleri başarısız oldu — procedural fallback kullanılıyor.")
+    return finalize_seo_compliance(
+        attach_shopping_product_tags(
+            enrich_seo_with_retention_metadata(fallback, retention_metadata, lang=lang),
+            keyword,
+        ),
+        visual_manifest=visual_manifest,
+        lang=lang,
     )
 
 
@@ -664,6 +925,7 @@ def export_seo_operator_pack(
     title: str = "",
     source_name: str = "",
     retention_metadata: Optional[dict] = None,
+    script_context: str = "",
     related_video_url: str = "",
     business_email: str = "",
     target_country: str = "TR",
@@ -684,7 +946,13 @@ def export_seo_operator_pack(
     from proof_archiver import ProofArchiver
 
     clean_title = title or keyword
-    seo_meta = generate_viral_seo_metadata(clean_title, source_name=source_name, retention_metadata=retention_metadata)
+    seo_meta = generate_viral_seo_metadata(
+        clean_title,
+        source_name=source_name,
+        retention_metadata=retention_metadata,
+        script_context=script_context,
+        lang=lang,
+    )
     engagement = generate_studio_engagement_checklist(lang=lang)
     live_plan = generate_weekly_live_stream_plan(lang=lang)
     upload_sched = get_optimal_upload_schedule(target_country)

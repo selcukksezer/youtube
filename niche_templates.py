@@ -264,12 +264,12 @@ NICHES: Dict[str, Dict[str, Any]] = {
     },
     "10_religious_quotes": {
         "id": "10_religious_quotes",
-        "name": "Dini Sözler, Hadis & Günün Duası",
-        "name_en": "Spiritual Quotes & Daily Prayers",
+        "name": "Hadis-i Şerif & Ayet Mealleri (Arapça & Türkçe)",
+        "name_en": "Hadith & Quran Quotes (Bilingual Arabic/Turkish)",
         "category": "Maneviyat & Din",
         "tone": "peaceful, emotional, respectful",
-        "hook_style": "Gününüzü aydınlatacak ve içinizi ferahlatacak bu duaya amin deyin...",
-        "system_instruction": "Huzur veren, umut aşılayan ayet, hadis veya İslam alimlerinin hikmetli sözlerini estetik ve saygılı bir dille aktar.",
+        "hook_style": "Hz. Peygamber'in en çok tekrar ettiği o dua bugün hayatınızı değiştirebilir...",
+        "system_instruction": "Hadis-i Şerif ve Kur'an-ı Kerim ayet meallerini estetik, saygılı ve huzur veren bir dille aktar. Ekranda üstte orijinal tashkeelli Arapça metin, ortada Türkçe anlam ve seslendirme, altta kaynak hadis/sure referansı (örn: Buhari, Müslim, Sure no) yer alır. Seslendirme KESİNLİKLE sadece Türkçe meal ve açıklamayı okur, Arapça metni telaffuz etmeye kalkışmaz.",
         "default_music": "calm",
         "has_split_screen": False,
         "icon": "fa-moon",
@@ -283,11 +283,11 @@ NICHES: Dict[str, Dict[str, Any]] = {
         "tier1_compatible": False,
         "episodic_capable": True,
         "loop_formula": "cause_and_effect",
-        "trending_keywords": ["dua", "hadis", "ayet", "İslam", "günlük dua", "peygamber", "namaz", "kuran", "sahabe", "sünnet"],
+        "trending_keywords": ["hadis", "hadis-i şerif", "ayet", "kuran", "dua", "peygamber", "İslam", "buhari", "müslim", "tirmizi", "sünnet", "namaz"],
         "ab_test_hook_variants": [
-            "Gününüzü aydınlatacak ve içinizi ferahlatacak bu duaya amin deyin...",
             "Hz. Peygamber'in en çok tekrar ettiği o dua bugün hayatınızı değiştirebilir.",
-            "Sabah uyanınca bu duayı okuyan insanların hayatına ne oluyor?"
+            "Resulullah'ın kalplere şifa olan bu hadis-i şerifini biliyor muydunuz?",
+            "Gününüzü aydınlatacak ve içinizi ferahlatacak bu duaya amin deyin..."
         ]
     },
     "11_language_learning": {
@@ -1226,20 +1226,24 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
     },
     "religious": {
         "tr": (
-            "DİNİ SÖZ / DUA / HADİS YAPISI (zorunlu):\n"
-            "- Sahne 1: duasının/hadisin kancası — Hz. Peygamber'in sözü veya ayet bağlamı, saygılı ton.\n"
-            "- Orta: duasının anlamı, ne zaman okunduğu, günlük hayata etkisi. İsimleri saygıyla an.\n"
-            "- Son: amin / yorumda dua isteği + döngü.\n"
-            "GÖRSEL: cami, Kuran sayfası, dua eden eller, şafak, hat sanatı, geometrik desen.\n"
-            "YASAK: heykel, put, Marcus Aurelius, Roma büstü, colosseum, stoacı mermer, alkol, peygamber yüzü."
+            "HADİS-İ ŞERİF & AYET MEALİ YAPISI (zorunlu):\n"
+            "- Sahne 1: Hadis veya ayet kancası — Hz. Peygamber'in kutlu sözü veya ayet bağlamı, saygılı ve huzur veren ton.\n"
+            "- Orta: Hadis/ayetin derin manası, günlük hayata dokunan hikmeti ve ahlaki öğüdü. İsimleri saygıyla an.\n"
+            "- Son: Amin / dua çağrısı ve izleyiciyi hayra davet eden döngü.\n"
+            "- EKRAN İKİ DİLLİ TASARIM: Her sahnede üstte 'arabic_text' (orijinal tashkeelli Arapça metin), ortada Türkçe meal ve altta 'source_citation' (örn: Buhari, Müslim veya Sure adı/no) yer alır.\n"
+            "- SESLENDİRME: KESİNLİKLE SADECE Türkçe metni okur ('narration'). Asla Arapça harf/kelime okunmaz.\n"
+            "GÖRSEL: Kabe-i Muazzama / Mekke şafak vakti (kaaba mecca sanctuary aerial), cami kubbesi altın şafak, açık Kur'an sayfası, dua eden eller, altın tezhip hat sanatı.\n"
+            "YASAK: heykel, put, Marcus Aurelius, Roma büstü, colosseum, stoacı mermer, alkol, peygamber yüzü, kumaş, ipek, saten."
         ),
         "en": (
-            "RELIGIOUS QUOTE / DUA / HADITH STRUCTURE (mandatory):\n"
-            "- Scene 1: respectful hook of the prayer or hadith.\n"
-            "- Middle: meaning, when it is recited, daily effect. Honor names.\n"
-            "- Last: amin / comment ask + loop.\n"
-            "VISUALS: mosque, Quran pages, prayer hands, sunrise, calligraphy, geometry.\n"
-            "FORBIDDEN: statues, idols, Marcus Aurelius, Roman busts, colosseum, stoic marble, alcohol, faces of prophets."
+            "HADITH & QURANIC VERSE STRUCTURE (mandatory):\n"
+            "- Scene 1: Respectful hook of the Hadith or Quranic verse.\n"
+            "- Middle: Spiritual wisdom, moral guidance, and practical daily impact.\n"
+            "- Last: Amin / comment invitation + seamless loop.\n"
+            "- BILINGUAL ON-SCREEN: 'arabic_text' at top with calligraphy tashkeel, Turkish/English meaning in center, and 'source_citation' at bottom.\n"
+            "- VOICEOVER: MUST ONLY speak the translated narration text, never attempting Arabic recitation.\n"
+            "VISUALS: Kaaba Mecca aerial dawn, mosque dome sunrise, Quran pages, prayer hands, calligraphy art.\n"
+            "FORBIDDEN: statues, idols, Marcus Aurelius, Roman busts, colosseum, stoic marble, alcohol, faces of prophets, fabric ripples, silk."
         ),
     },
     "news": {
@@ -1398,6 +1402,219 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
 }
 
 
+# ─── Nişe Özgü Outro / CTA Talimatları ──────────────────────────────────────
+# AI senaryo üretimi sırasında son sahnenin narration'ını şekillendiren talimatlar.
+# Her niş için TR ve EN ayrı ayrı tanımlı; get_niche_prompt bu alanı prompt'a enjekte eder.
+NICHE_OUTRO_CTA: Dict[str, Dict[str, str]] = {
+    "1_news_flash": {
+        "tr": "Son sahne: izleyiciye bu gelişme hakkında ne düşündüğünü soracak bir tartışma sorusuyla bitir. Örnek ton: 'Bu haber sizi şaşırttı mı? Bu gelişmenin en önemli boyutunu yorumlarda paylaşın.' Mekanik 'abone ol' kalıbı YASAK.",
+        "en": "Final scene: close with a debate question about this news story. Example tone: 'Does this story surprise you? Drop your biggest takeaway in the comments.' No mechanical subscribe calls.",
+    },
+    "2_reddit_confessions": {
+        "tr": "Son sahne: 'Siz olsaydınız ne yapardınız?' veya 'Bu durumda haklı olan kim?' tarzında izleyicinin kendi deneyimini paylaşmasını davet eden organik bir soru sor. Konunun duygusal temasıyla örtüşsün.",
+        "en": "Final scene: invite the viewer with a relatable question like 'What would you have done?' or 'Who do you think was in the right?' Match the emotional theme of the story.",
+    },
+    "3_split_gameplay": {
+        "tr": "Son sahne: hızlı tempoya uygun kısa ve çarpıcı bir kapanış sorusu: 'Sen olsan ne yapardın?' veya 'Yorumlara cevabını yaz!' gibi oyun/aksiyon ruhuna yakın bir CTA.",
+        "en": "Final scene: fast, punchy closing question matching the action pace: 'What would you do?' or 'Drop your answer in the comments!' Keep it gameplay-energy.",
+    },
+    "4_would_you_rather": {
+        "tr": "Son sahne: 'A mı B mi — sen hangisini seçtin? Yorumlara yaz!' formatında net bir oylama/yorum çağrısı yap. Seçenekler videonun konusuyla örtüşsün.",
+        "en": "Final scene: clear voting/comment call — 'A or B — which did you choose? Tell me in the comments!' Options must match the video topic.",
+    },
+    "5_guess_flag_country": {
+        "tr": "Son sahne: 'Kaçıncı ipucunda bildin? Kaçını doğru yaptın? Yorumlara yaz!' tarzında izleyicinin skoru paylaşmasını teşvik et.",
+        "en": "Final scene: 'How many did you get right? Drop your score in the comments!' Encourage viewers to share their quiz results.",
+    },
+    "6_stoic_philosophy": {
+        "tr": "Son sahne: stoacı prensip üzerine derin bir kapanış cümlesi yaz ve izleyiciye 'Bugün hayatına bu ilkeyi nasıl uygulayacaksın?' tarzında içgörü uyandıran bir soru sor. 'Abone ol' YASAK — kaydet teşviki organik olsun.",
+        "en": "Final scene: close with a deep stoic principle and ask 'How will you apply this today?' or 'Which stoic idea resonates most with you?' No subscribe call — inspire introspection.",
+    },
+    "7_dark_psychology": {
+        "tr": "Son sahne: izleyiciye 'Hayatınızda bu manipülasyon taktiğiyle karşılaştınız mı?' veya 'Beden dilindeki hangi işareti siz de fark ettiniz?' gibi kişisel deneyimi açığa çıkaran bir soru sor. Gizemli ve analitik ton korusun.",
+        "en": "Final scene: ask 'Have you ever experienced this psychological tactic?' or 'Which body language signal have you noticed?' Keep the mysterious analytical tone throughout.",
+    },
+    "8_crypto_market": {
+        "tr": "Son sahne: 'Bu seviyede pozisyon alır mıydın? Yorumlara hedef fiyatını yaz!' veya 'Bitcoin şimdi al mı, sat mı? Düşünceni paylaş.' tarzında piyasa tartışması başlat.",
+        "en": "Final scene: spark market debate — 'Would you buy at this level? Drop your price target in the comments!' or 'Buy or sell right now? Share your trade plan.'",
+    },
+    "9_five_facts": {
+        "tr": "Son sahne: 'Bu bilgilerden hangisi seni en çok şaşırttı? Yorumlara yaz!' tarzında izleyiciyi en çarpıcı bulduğunu seçmeye davet et.",
+        "en": "Final scene: 'Which of these facts surprised you most? Tell me in the comments!' Invite viewers to pick their most mind-blowing moment.",
+    },
+    "10_religious_quotes": {
+        "tr": "Son sahne: 'Bu hadisi/ayeti bilen kalbe amin yazsın.' veya 'Bu güzel söz size de dokundu mu? Yorumlarda paylaşın.' tarzında manevi bir yorum kapanışı yap. Mekanik takip çağrısı YASAK.",
+        "en": "Final scene: spiritual closing — 'Type Amin in the comments if this touched your heart.' or 'Which verse speaks to you most?' No mechanical subscribe call.",
+    },
+    "11_language_learning": {
+        "tr": "Son sahne: 'Bu kalıplardan hangisini ilk kez duydun? Yorumlara yaz!' veya öğrenilen kalıplardan birini cümlede kullanan bir yorum yaz.",
+        "en": "Final scene: 'Which phrase was new to you? Write a sentence using it in the comments!' Encourage active language practice.",
+    },
+    "12_amazon_affiliate": {
+        "tr": "Son sahne: 'Bu ürünlerden hangisini almak isterdin? Yorumlara yaz!' veya 'Ürün linkini biyografiye bıraktım — hangisini beğendin?' tarzında alım kararını hızlandır.",
+        "en": "Final scene: 'Which product would you grab first? Tell me in the comments!' or 'Link in bio — which one caught your eye?' Accelerate the purchase decision.",
+    },
+    "13_mystery_paranormal": {
+        "tr": "Son sahne: 'Siz bu olayı nasıl açıklıyorsunuz? Yorumlara yazın!' veya 'Buna inanıyor musunuz yoksa inanmıyor musunuz?' tarzında gerilimli bir tartışma sorusu sor.",
+        "en": "Final scene: 'How do you explain this event? Tell me in the comments!' or 'Do you believe this — yes or no?' Keep the suspense alive.",
+    },
+    "14_movie_summaries": {
+        "tr": "Son sahne: 'Bu filmlerden hangisini izlediniz? Sizin favori ters köşe filminiz hangisi? Yorumlara yazın!' tarzında sinema tartışması başlat.",
+        "en": "Final scene: 'Have you seen these? What's your favourite plot-twist film? Drop it in the comments!' Spark a movie recommendation thread.",
+    },
+    "15_football_transfers": {
+        "tr": "Son sahne: 'Bu transfer gerçekleşirse takımı güçlenir mi zayıflar mı? Yorumlara beklentini yaz!' veya 'Sence bonservis bedeli hak ediyor mu?' tarzında futbol tartışması başlat.",
+        "en": "Final scene: 'Will this transfer strengthen or weaken the team? Drop your opinion in the comments!' or 'Is that fee worth it?' Spark the football debate.",
+    },
+    "16_wealth_entrepreneurship": {
+        "tr": "Son sahne: 'Bu girişimcinin sırrından hangi dersi çıkardın? Yorumlara yaz!' veya 'Aynı fırsatla karşılaşsaydın ne yapardın?' tarzında ilham verici bir kapanış sorusu sor.",
+        "en": "Final scene: 'What lesson did you take from this story? Share in the comments!' or 'What would you have done with the same opportunity?' Close with entrepreneurial inspiration.",
+    },
+    "17_before_after_evolution": {
+        "tr": "Son sahne: 'Bu değişim sizi en çok hangi açıdan şaşırttı? Yorumlara yazın!' veya '50 yıl sonra bu nasıl görünecek? Tahminini paylaş.' tarzında nostalji/gelecek tartışması başlat.",
+        "en": "Final scene: 'Which change surprised you most? Tell me in the comments!' or 'What will this look like in 50 years? Share your prediction.' Spark a past-vs-future debate.",
+    },
+    "18_astrology_horoscope": {
+        "tr": "Son sahne: 'Kendi burcunuzu yorumlara yazın, hangi özellik size uymadı?' veya 'Bu hafta hayatınıza en çok hangi yorum yansıdı?' tarzında burç temelli yorumu kişiselleştir.",
+        "en": "Final scene: 'Drop your sign in the comments — which trait didn't fit you?' or 'Which prediction came true for you this week?' Make the horoscope personal.",
+    },
+    "19_historical_battles": {
+        "tr": "Son sahne: 'O kritik kararı sen alsaydın ne yapardın? Yorumlara yaz!' veya 'Bu savaşın seyri farklı olsaydı tarih nasıl değişirdi?' tarzında tarihi tartışma başlat.",
+        "en": "Final scene: 'What would you have done in that critical moment? Tell me in the comments!' or 'How would history have changed with a different choice?' Spark a historical debate.",
+    },
+    "20_whatsapp_chat_story": {
+        "tr": "Son sahne: 'Siz bu mesajı görseydiniz nasıl cevap verirdiniz? Yorumlara yazın!' veya 'Bu mesajlaşmada kim haklıydı?' tarzında drama tartışması başlat.",
+        "en": "Final scene: 'What would you have replied to that message? Tell me in the comments!' or 'Who was right in this conversation?' Keep the drama discussion going.",
+    },
+    "21_ai_tools_hacks": {
+        "tr": "Son sahne: 'Bu araçlardan hangisini kullanmaya başladın? Favorin hangisi? Yorumlara yaz!' veya 'Hangi görevi artık yapay zekaya yaptırıyorsun?' tarzında teknoloji tartışması başlat.",
+        "en": "Final scene: 'Which tool will you try first? Drop your favourite in the comments!' or 'What task do you already delegate to AI?' Spark a productivity conversation.",
+    },
+    "22_emoji_guess_game": {
+        "tr": "Son sahne: 'Kaçını doğru bildin? Skoru yorumlara yaz!' veya bu sefer izleyicinin 3 emojili bir film şifresi oluşturmasını isteyen bir görev ver.",
+        "en": "Final scene: 'How many did you get right? Drop your score in the comments!' or challenge viewers to create their own 3-emoji movie code.",
+    },
+    "23_fitness_nutrition_hacks": {
+        "tr": "Son sahne: 'Bu tüyolardan hangisini yarın deneyeceksin? Yorumlara yaz!' veya 'Senin en iyi yağ yakma tüyon nedir? Paylaş!' tarzında fitness topluluk motivasyonu oluştur.",
+        "en": "Final scene: 'Which tip will you try tomorrow? Tell me in the comments!' or 'What's your best fat-loss hack? Share it!' Build community fitness motivation.",
+    },
+    "24_sigma_character_study": {
+        "tr": "Son sahne: 'Bu kurallardan hangisini zaten uyguluyorsun? Yorumlara yaz!' veya 'Hangisi sana en çok uymadı — neden?' tarzında karakter/kişisel gelişim refleksiyonu teşvik et.",
+        "en": "Final scene: 'Which of these rules do you already follow? Tell me in the comments!' or 'Which one challenged you most — and why?' Encourage self-reflection.",
+    },
+    "25_celebrity_net_worth": {
+        "tr": "Son sahne: 'Bu serveti sen olsan nasıl harcardın? Yorumlara yaz!' veya 'Bu rakam sizi şaşırttı mı? Ne düşündünüz?' tarzında magazin tartışması başlat.",
+        "en": "Final scene: 'How would you spend that fortune? Tell me in the comments!' or 'Did that number surprise you? What do you think?' Spark a wealth conversation.",
+    },
+    "26_dangerous_places": {
+        "tr": "Son sahne: 'Bu yerlerden birine gitme şansın olsaydı gider miydin? Yorumlara yaz!' veya 'Hangi yer seni en çok tüyleri diken diken etti?' tarzında tehlikeli merak tartışması başlat.",
+        "en": "Final scene: 'Would you ever visit one of these places if you could? Tell me in the comments!' or 'Which location gave you the most chills?' Keep the danger curiosity alive.",
+    },
+    "27_common_myths_busted": {
+        "tr": "Son sahne: 'Bu yanlışları daha önce doğru biliyordunuz muydu? Yorumlara yazın!' veya 'Hangi bilgiyi en çok şaşırdınız? Çevrenizde hala buna inanan var mı?' tarzında mit tartışması başlat.",
+        "en": "Final scene: 'Did you believe any of these myths before? Tell me in the comments!' or 'Which one shocked you most? Does anyone you know still believe it?' Bust the myth socially.",
+    },
+    "28_dream_meanings": {
+        "tr": "Son sahne: 'Bu rüyaları hiç gördünüz mü? Bilinçaltınız size ne söylüyor? Yorumlara yazın!' tarzında izleyicinin kendi rüya deneyimini paylaşmasını davet et.",
+        "en": "Final scene: 'Have you ever had one of these dreams? What do you think your subconscious is telling you? Share in the comments!' Invite personal dream stories.",
+    },
+    "29_optical_illusions_iq": {
+        "tr": "Son sahne: 'Hangi resmi ilk gördünüz? IQ'nuz kaç? Yorumlara yazın!' tarzında izleyiciyi kendi algı skorunu paylaşmaya davet et.",
+        "en": "Final scene: 'What did you see first? Drop your IQ score in the comments!' Invite viewers to share their perception result.",
+    },
+    "30_animal_world": {
+        "tr": "Son sahne: 'Bu hayvan gerçekten var olduğuna inanabiliyor musunuz? Favoriniz hangisi? Yorumlara yazın!' tarzında doğa hayranlığını yoruma çevir.",
+        "en": "Final scene: 'Can you believe this animal actually exists? Which is your favourite? Tell me in the comments!' Turn nature wonder into engagement.",
+    },
+    "31_space_cosmos": {
+        "tr": "Son sahne: 'Bu bilgi sizi de aklınızı başınızdan aldı mı? Evren hakkındaki en büyük sorunuz ne? Yorumlara yazın!' tarzında kozmos merakını tartışmaya çevir.",
+        "en": "Final scene: 'Did this blow your mind too? What's your biggest question about the universe? Tell me in the comments!' Turn cosmic wonder into debate.",
+    },
+    "32_relationship_tips": {
+        "tr": "Son sahne: 'Bu ipuçlarından hangisi ilişkinize en çok uymadı? Yorumlara yazın!' veya 'Siz ne yapardınız bu durumda?' tarzında empati ve tartışma oluştur.",
+        "en": "Final scene: 'Which tip surprised you most in your own relationship? Tell me in the comments!' or 'What would you do in this situation?' Build empathetic discussion.",
+    },
+    "33_cooking_recipes": {
+        "tr": "Son sahne: 'Bu tarifi denemek ister misiniz? Favoriniz hangisi? Yorumlara yazın!' veya 'Sizin gizli malzemeniz nedir? Paylaşın!' tarzında mutfak topluluğu oluştur.",
+        "en": "Final scene: 'Would you try this recipe? Drop your favourite in the comments!' or 'What's your secret ingredient? Share it!' Build a cooking community.",
+    },
+    "34_travel_destinations": {
+        "tr": "Son sahne: 'Bu yerlerden birine gitme fırsatınız olsa hangisini seçerdiniz? Yorumlara yazın!' veya 'En çok hangi detay sizi cezbetti? Paylaşın.'",
+        "en": "Final scene: 'If you could visit one of these places, which would you choose? Tell me in the comments!' or 'Which detail tempted you most? Share it!'",
+    },
+    "35_personal_finance": {
+        "tr": "Son sahne: 'Bu finansal tüyolardan hangisini yarın uygulayacaksın? Yorumlara yaz!' veya 'Paranı en çok nerede israf ettiğini fark ettin mi? Paylaş.' tarzında para farkındalığı oluştur.",
+        "en": "Final scene: 'Which financial tip will you apply tomorrow? Tell me in the comments!' or 'Where do you waste the most money — be honest!' Build financial self-awareness.",
+    },
+}
+
+
+def get_niche_outro_cta(niche_key: str, language: str = "tr") -> str:
+    """Returns niche-specific AI outro/CTA instruction for the last scene.
+    Used by get_niche_prompt to tell the AI how to write the closing narration.
+    Falls back to a generic instruction if niche is unknown.
+    """
+    lang = "tr" if language == "tr" else "en"
+    entry = NICHE_OUTRO_CTA.get(niche_key)
+    if entry:
+        return entry.get(lang, entry.get("tr", ""))
+    # Family-level fallback
+    family = NICHE_FAMILY_MAP.get(niche_key, "general")
+    family_defaults: Dict[str, Dict[str, str]] = {
+        "reddit": {
+            "tr": "Son sahne: izleyiciye 'Siz olsaydınız ne yapardınız?' sorusunu sorarak organik yorum bağlantısı kur.",
+            "en": "Final scene: ask 'What would you have done?' to create organic comment engagement.",
+        },
+        "news": {
+            "tr": "Son sahne: bu haberin en önemli boyutunu soran bir tartışma sorusuyla bitir.",
+            "en": "Final scene: close with a debate question about the most important angle of this story.",
+        },
+        "stoic": {
+            "tr": "Son sahne: stoacı ilke üzerine derin bir soru sor; 'Bunu bugün hayatına nasıl uygulayacaksın?'",
+            "en": "Final scene: close with a deep stoic question — 'How will you apply this today?'",
+        },
+        "crypto": {
+            "tr": "Son sahne: piyasa pozisyonu veya hedef fiyat tartışması başlat.",
+            "en": "Final scene: spark a market position or price target debate.",
+        },
+        "astrology": {
+            "tr": "Son sahne: izleyiciyi kendi burcunu yorumlara yazmaya davet et.",
+            "en": "Final scene: invite viewers to share their zodiac sign in the comments.",
+        },
+        "religious": {
+            "tr": "Son sahne: 'Amin' veya manevi bir yorum davet et; mekanik takip çağrısı YASAK.",
+            "en": "Final scene: invite a heartfelt 'Amen' or spiritual reflection; no mechanical subscribe call.",
+        },
+    }
+    fb = family_defaults.get(family, {})
+    if fb:
+        return fb.get(lang, fb.get("tr", ""))
+    # Generic last resort
+    if lang == "tr":
+        return "Son sahne: izleyiciye konu hakkında kişisel deneyimini veya görüşünü soran organik, nişe uygun bir yorum sorusuyla bitir. Mekanik 'abone ol/beğen' kalıpları YASAK."
+    return "Final scene: close with an organic, niche-appropriate comment question asking viewers for their personal experience or opinion. No mechanical 'subscribe/like' calls."
+
+
+def exact_style16(niche_key: str) -> Dict[str, Any]:
+    """Map a live or plan niche id onto one of the 16 style profiles.
+
+    Unknown ids return an empty dict. They must not become news by guess.
+    """
+    key = str(niche_key or "").strip().lower()
+    if not key:
+        return {}
+    try:
+        from services.niche_profiles import NICHE_16_PROFILES, NICHE_CANONICAL_MAP
+    except Exception:
+        return {}
+    canon = NICHE_CANONICAL_MAP.get(key)
+    if canon in NICHE_16_PROFILES:
+        return dict(NICHE_16_PROFILES[canon])
+    if key in NICHE_16_PROFILES:
+        return dict(NICHE_16_PROFILES[key])
+    return {}
+
+
 def get_niche_family(niche_key: str) -> str:
     """Returns panel/format family for a niche (news, reddit, whatsapp, stoic, crypto, ...)."""
     return NICHE_FAMILY_MAP.get(niche_key, "general")
@@ -1413,13 +1630,116 @@ def get_niche_scene_structure(niche_key: str, language: str = "tr") -> str:
     return templates.get(lang, templates.get("tr", ""))
 
 
+NICHE_HOOKS_EN: Dict[str, str] = {
+    "1_news_flash": "Something critical just happened that changes everything...",
+    "2_reddit_confessions": "I never planned on telling a soul, but last night everything fell apart...",
+    "3_split_gameplay": "Watch closely, because what happened next completely defies logic...",
+    "4_would_you_rather": "Only 1% of people can make this choice without hesitating...",
+    "5_guess_flag_country": "Can you guess this mystery country before the timer runs out?",
+    "6_stoic_philosophy": "Marcus Aurelius had a brutal rule for anger that most people never learn...",
+    "7_dark_psychology": "If someone looks you in the eyes like this, they are manipulating you...",
+    "8_crypto_market": "While retail investors panic, crypto whales are making this exact move...",
+    "9_five_facts": "5 mind-blowing facts that will completely alter how you see reality...",
+    "10_religious_quotes": "If your heart is feeling heavy, remember this powerful truth...",
+    "11_language_learning": "Stop saying 'very' in English — use these 5 advanced alternatives...",
+    "12_amazon_affiliate": "This viral Amazon gadget solves a problem you deal with every single day...",
+    "13_mystery_paranormal": "Even modern science cannot explain what happened in this bizarre event...",
+    "14_movie_summaries": "The ending of this psychological thriller will leave your mind completely blown...",
+    "15_football_transfers": "This single transfer decision changed football history forever...",
+    "16_wealth_entrepreneurship": "The wealthiest 1% follow one simple rule with money that schools never teach...",
+    "17_before_after_evolution": "You won't believe how much our world has transformed over the last 100 years...",
+    "18_astrology_horoscope": "Never push these 3 zodiac signs to their absolute limit...",
+    "19_historical_battles": "How a vastly outnumbered army pulled off the greatest victory in history...",
+    "20_whatsapp_chat_story": "These creepy 3 AM text messages will send absolute chills down your spine...",
+    "21_ai_tools_hacks": "3 secret AI tools that are so powerful they almost feel illegal to use...",
+    "22_emoji_guess_game": "Can you guess this legendary movie using only these 3 emojis?",
+    "23_fitness_nutrition_hacks": "The science-backed morning habit that burns stubborn fat without starving...",
+    "24_sigma_character_study": "The quiet psychological rule that makes a high-value mindset untouchable...",
+    "25_celebrity_net_worth": "How much money this superstar actually takes home after taxes will shock you...",
+    "26_dangerous_places": "The forbidden island on Earth that no human is allowed to visit...",
+    "27_common_myths_busted": "5 popular myths everyone still believes that are completely false...",
+    "28_dream_meanings": "What it actually means when you dream of falling from great heights...",
+    "29_optical_illusions_iq": "Only people with 130+ IQ can spot the hidden animal in 5 seconds...",
+    "30_poetry_quotes": "The hauntingly beautiful quote about heartbreak that you will never forget...",
+    "31_supercars_automotive": "The insane secret engineering that allows this hypercar to reach 300 MPH...",
+    "32_legal_consumer_hacks": "3 hidden consumer rights that major companies hide in the fine print...",
+    "33_parenting_child_hacks": "The 3-second phrase child psychologists use to stop tantrums instantly...",
+    "34_gaming_easter_eggs": "5 terrifying video game secrets that took players over a decade to discover...",
+    "35_animal_kingdom_stories": "The deadliest predator in the animal kingdom is not what you think...",
+    "36_kids_animation": "Join our adorable animal friends on a magical learning adventure!",
+    "37_interactive_quiz": "95% of adults fail question number 3 on this general knowledge test...",
+}
+
+NICHE_INSTRUCTIONS_EN: Dict[str, str] = {
+    "1_news_flash": "Deliver urgent, breaking global developments with rapid pace, journalistic clarity, and cinematic authority.",
+    "2_reddit_confessions": "Narrate an authentic first-person confession with emotional suspense, dramatic twists, and relatable tension.",
+    "3_split_gameplay": "Deliver a captivating, eerie, or fascinating story designed to keep the viewer glued from start to finish.",
+    "4_would_you_rather": "Present impossible moral dilemmas and polarizing choices that compel viewers to debate in the comments.",
+    "5_guess_flag_country": "Deliver an intense, fast-paced trivia challenge with 3 progressive clues before revealing the mystery country.",
+    "6_stoic_philosophy": "Explain timeless Stoic principles from Marcus Aurelius or Seneca focusing on emotional mastery and inner resilience.",
+    "7_dark_psychology": "Deconstruct dark psychological tactics, body language tells, and subtle manipulation techniques people face daily.",
+    "8_crypto_market": "Analyze high-stakes cryptocurrency moves, on-chain whale behavior, and market psychology with objective urgency.",
+    "9_five_facts": "Present mind-blowing, verified scientific or historical facts with rapid-fire clarity and high visual contrast.",
+    "10_religious_quotes": "Share authentic spiritual wisdom, Quranic verses, or Hadiths that bring deep peace and moral clarity to the soul.",
+    "11_language_learning": "Teach advanced vocabulary, native idioms, and fluency secrets that traditional classrooms never explain.",
+    "12_amazon_affiliate": "Demonstrate viral, life-improving gadgets with compelling problem-solution framing and clear practical value.",
+    "13_mystery_paranormal": "Investigate unsolved historical enigmas, eerie vanishings, and chilling true events with gripping suspense.",
+    "14_movie_summaries": "Break down jaw-dropping movie plot twists, hidden cinematic details, and psychological thrillers without cheap spoilers.",
+    "15_football_transfers": "Cover shocking football transfers, legendary tactical masterstrokes, and drama from the world of elite football.",
+    "16_wealth_entrepreneurship": "Deconstruct the ruthless work ethics, business philosophies, and money rules of self-made billionaires.",
+    "17_before_after_evolution": "Showcase dramatic historical contrasts and technological evolutions that highlight how the world has changed.",
+    "18_astrology_horoscope": "Explore deep astrological traits, subconscious zodiac powers, and behavioral dynamics with engaging mystery.",
+    "19_historical_battles": "Narrate epic military strategies, against-all-odds triumphs, and turning points in ancient and modern warfare.",
+    "20_whatsapp_chat_story": "Narrate a chilling, suspenseful text message exchange with rising dread and an unexpected cliffhanger.",
+    "21_ai_tools_hacks": "Highlight powerful, game-changing AI tools that boost productivity and automate complex workflows.",
+    "22_emoji_guess_game": "Challenge viewers to guess iconic movies using only 3 emojis with tight time pressure.",
+    "23_fitness_nutrition_hacks": "Provide science-backed fat loss, muscle building, and nutrition hacks that deliver fast, realistic results.",
+    "24_sigma_character_study": "Break down the psychological traits, quiet confidence, and independence of the sigma archetype.",
+    "25_celebrity_net_worth": "Reveal the real net worth, spending habits, and behind-the-scenes financial moves of famous celebrities.",
+    "26_dangerous_places": "Take viewers inside the most dangerous, forbidden, and hostile locations on Earth that humans cannot visit.",
+    "27_common_myths_busted": "Debunk widespread historical, scientific, or cultural myths with definitive evidence.",
+    "28_dream_meanings": "Decode the psychological and subconscious meanings behind common, vivid, and recurring dreams.",
+    "29_optical_illusions_iq": "Present mind-bending optical illusions and cognitive IQ tests that challenge visual perception.",
+    "30_poetry_quotes": "Share deeply emotional, poignant poetry and timeless literary quotes on love, resilience, and longing.",
+    "31_supercars_automotive": "Explore cutting-edge engineering secrets, insane top speeds, and performance specs of elite hypercars.",
+    "32_legal_consumer_hacks": "Expose secret consumer rights, airline loopholes, and legal protections that save money.",
+    "33_parenting_child_hacks": "Share practical child psychology techniques and calm parenting strategies that defuse difficult moments.",
+    "34_gaming_easter_eggs": "Uncover disturbing, hilarious, or secret easter eggs hidden deep within beloved video games.",
+    "35_animal_kingdom_stories": "Tell incredible stories of survival, deadly animal rivalries, and shocking wildlife behaviors.",
+    "36_kids_animation": "Craft delightful, educational, and fun narratives for young children teaching colors, animals, or morals.",
+    "37_interactive_quiz": "Run an interactive multiple-choice general knowledge quiz that engages viewers to guess and comment.",
+}
+
+
 def get_scenario_pack(niche_key: str, language: str = "tr") -> Dict[str, Any]:
     """
     Per-niche scenario pack: tone, forbidden visuals, shock policy, fallback family.
     Shared envelope (JSON / 8-16 / 38-60 / min 10 words) is NOT stored here.
     """
-    key = niche_key if niche_key in NICHES else "1_news_flash"
-    niche = NICHES[key]
+    style = exact_style16(niche_key)
+    if niche_key in NICHES:
+        key = niche_key
+        niche = NICHES[key]
+    elif style:
+        key = style["niche_id"]
+        niche = {
+            "id": key,
+            "name": style["name_tr"],
+            "name_en": style.get("name_en", style["name_tr"]),
+            "category": style.get("category", ""),
+            "tone": style["tone"],
+            "hook_style": style.get("hook_style", ""),
+            "system_instruction": (
+                f"Görsel motif: {style.get('visual_motif', '')}. "
+                f"Çekim konuları: {', '.join(style.get('visual_subjects') or [])}. "
+                f"Ton: {style['tone']}. "
+                "Başka nişin görselini bu motife taşıma."
+            ),
+            "default_music": style.get("bgm_mood") or "calm",
+        }
+    else:
+        key = "1_news_flash"
+        niche = NICHES[key]
     family = get_niche_family(key)
     try:
         from director.visual_intent import get_motif_bank
@@ -1431,6 +1751,8 @@ def get_scenario_pack(niche_key: str, language: str = "tr") -> Dict[str, Any]:
     exclude = list(bank.get("must_exclude") or [])
     include = list(bank.get("must_include") or [])
     subjects = list(bank.get("subjects") or [])
+    outro_cta_tr = get_niche_outro_cta(key, "tr")
+    outro_cta_en = get_niche_outro_cta(key, "en")
     return {
         "id": key,
         "name": niche["name"],
@@ -1438,7 +1760,9 @@ def get_scenario_pack(niche_key: str, language: str = "tr") -> Dict[str, Any]:
         "category": niche["category"],
         "tone": niche["tone"],
         "hook_style": niche["hook_style"],
+        "hook_style_en": niche.get("hook_style_en") or NICHE_HOOKS_EN.get(key, ""),
         "system_instruction": niche["system_instruction"],
+        "system_instruction_en": niche.get("system_instruction_en") or NICHE_INSTRUCTIONS_EN.get(key, ""),
         "default_music": niche.get("default_music", "dramatic"),
         "family": family,
         "must_exclude": exclude,
@@ -1452,10 +1776,12 @@ def get_scenario_pack(niche_key: str, language: str = "tr") -> Dict[str, Any]:
         "max_duration": 60.0,
         "target_duration": 0.0,
         "scene_structure": get_niche_scene_structure(key, language),
+        "outro_cta": outro_cta_tr,
+        "outro_cta_en": outro_cta_en,
     }
 
 
-def get_niche_prompt(niche_key: str, topic: str, language: str = "tr") -> str:
+def get_niche_prompt(niche_key: str, topic: str, language: str = "tr", enable_outro: bool = True) -> str:
     """
     Compose envelope (schema/duration) + this niche's pack (tone, forbidden visuals, structure).
     One shared PROMPT_TR is never enough — each niche gets its own content rules.
@@ -1480,6 +1806,31 @@ def get_niche_prompt(niche_key: str, topic: str, language: str = "tr") -> str:
     struct_block = f"\nRAKİP FORMAT SAHNE YAPISI:\n{structure}\n" if structure and is_tr else (
         f"\nCOMPETITOR FORMAT SCENE STRUCTURE:\n{structure}\n" if structure else ""
     )
+    outro_cta_tr = pack.get("outro_cta") or get_niche_outro_cta(pack["id"], "tr")
+    outro_cta_en = pack.get("outro_cta_en") or get_niche_outro_cta(pack["id"], "en")
+    if enable_outro:
+        outro_block_tr = (
+            "4. NİŞE ÖZEL OUTRO / CTA (son sahne - ZORUNLU):\n"
+            f"   {outro_cta_tr}\n"
+            "   Son sahne aynı zamanda 1. sahneye döngüsel bağlantı (SEAMLESS LOOP) içermeli.\n"
+            "   TARTIŞMA KURALI: İzleyiciyi yoruma teşvik eden açık uçlu soru veya merak ögesi bırak."
+        )
+        outro_block_en = (
+            "4. NICHE-SPECIFIC OUTRO / CTA (last scene - MANDATORY):\n"
+            f"   {outro_cta_en}\n"
+            "   The last scene should also loop back seamlessly (SEAMLESS LOOP) to the feeling of Scene 1."
+        )
+    else:
+        outro_block_tr = (
+            "4. OUTRO KAPALI:\n"
+            "   Son sahneye CTA, yorum sorusu, abone çağrısı veya döngü kapanışı yazma.\n"
+            "   Son cümle konunun son olgusu olsun ve orada bitsin."
+        )
+        outro_block_en = (
+            "4. OUTRO OFF:\n"
+            "   Do not write a CTA, comment question, subscribe line, or loop close.\n"
+            "   The last sentence is the last fact, then stop."
+        )
 
     if is_tr:
         return f"""{envelope}
@@ -1503,11 +1854,14 @@ ANLAM KURALLARI (zorunlu):
 3. İLK 3 SANİYE KANCASI (VIRAL HOOK - Sahne 1):
    Örnek yalnızca ritim içindir, metne kopyalama: "{pack['hook_style']}"
 
-4. SONSUZ DÖNGÜ, TARTIŞMA VE CTA (SEAMLESS LOOP - son sahne):
-   Son sahne 1. sahneye bağlanan döngü + yorum sorusu içermeli.
+{outro_block_tr}
 
 Başka nişin şablonunu (kripto grafiği, burç listesi, itiraf, haber bülteni) bu pakete kopyalama.
 """
+
+    sys_inst_en = pack.get("system_instruction_en") or NICHE_INSTRUCTIONS_EN.get(pack["id"]) or "Deliver a gripping, high-retention narrative on this topic in fluent English."
+    hook_style_en = pack.get("hook_style_en") or NICHE_HOOKS_EN.get(pack["id"]) or "The hidden truth about this topic changes everything..."
+
     return f"""{envelope}
 
 You are a professional YouTube Shorts algorithm expert and viral scriptwriter.
@@ -1518,22 +1872,23 @@ FORBIDDEN VISUALS (must_exclude): {forbidden}
 {shock_en}
 
 NICHE SPECIFIC INSTRUCTION:
-{pack['system_instruction']}
+{sys_inst_en}
 {struct_block}
 SENSE RULES (mandatory):
 - The only topic is "{topic}". Do not paste an example hook or another video's title into the script.
 - Each scene adds a new fact. Never paste the full title into a scene, and never repeat the same four words twice in one scene.
 - Do not attribute a quote to a person the topic does not name.
 - Forbidden patterns: "The claim is: [full title]" and "Check [full title] against a textbook". Tell the subject itself.
+- LANGUAGE MANDATE: Every single narration line in every scene MUST be written 100% in natural, fluent ENGLISH. Absolutely NO Turkish words, mixed phrases, or Turkish templates allowed.
 
 3. FIRST 3-SECOND VIRAL HOOK (Scene 1):
-   Rhythm reference only, do not copy: "{pack['hook_style']}"
+   Rhythm reference only, do not copy: "{hook_style_en}"
 
-4. SEAMLESS LOOP & CTA (last scene):
-   Last scene must flow back into Scene 1 and ask a debate question.
+{outro_block_en}
 
 Do not clone another niche's template (crypto charts, horoscope list, confession, news bulletin) into this pack.
 """
+
 
 
 def list_all_niches() -> List[Dict[str, Any]]:
@@ -1570,17 +1925,74 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
     """Returns the settings that the renderer should apply for a selected niche."""
     from director.schema import STOIC_AUDIO_RULES, STOIC_EFFECT_MANIFEST_OVERRIDES
 
-    niche = NICHES.get(niche_id, NICHES["1_news_flash"])
-    policy = overlay_policy_for_niche(niche.get("id", niche_id))
+    style = exact_style16(niche_id)
+    # A plan id such as 7_space_cosmos is its own style. The topic vault
+    # maps that id onto 9_five_facts; that pool must not replace the style.
+    keep_sixteen = bool(style) and niche_id == style.get("niche_id") and niche_id not in NICHES
+    canonical_id = niche_id
+    try:
+        from hybrid_niches import HYBRID_NICHES
+    except ImportError:
+        HYBRID_NICHES = {}
+        
+    if niche_id in HYBRID_NICHES:
+        hn = HYBRID_NICHES[niche_id]
+        niche = {
+            "id": hn["id"],
+            "name": hn["name"],
+            "category": hn["category"],
+            "tone": hn["tone"],
+            "hook_style": hn["hook_style"],
+            "default_music": hn.get("default_music", "mysterious"),
+            "rpm_tier": hn.get("rpm_tier", "$3-7"),
+            "viral_score": 90,
+            "avg_retention_pct": 75,
+            "competition_level": "medium",
+            "tier1_compatible": True,
+        }
+    else:
+        if not keep_sixteen and niche_id not in NICHES:
+            try:
+                from services.niche_topic_vault import NICHE_ALIASES
+                canonical_id = NICHE_ALIASES.get(niche_id, niche_id)
+            except ImportError:
+                pass
+    
+        niche = None if keep_sixteen else NICHES.get(canonical_id)
+        if niche is None and style:
+            niche = {
+                "id": style["niche_id"],
+                "name": style["name_tr"],
+                "category": style.get("category", ""),
+                "tone": style["tone"],
+                "hook_style": style.get("hook_style", ""),
+                "default_music": style.get("bgm_mood") or "calm",
+                "rpm_tier": "$2-5",
+                "viral_score": 75,
+                "avg_retention_pct": 70,
+                "competition_level": "medium",
+                "tier1_compatible": False,
+            }
+        elif niche is None:
+            niche = NICHES["1_news_flash"]
+            
+    policy = overlay_policy_for_niche(niche.get("id", canonical_id) if niche.get("id") in NICHES else niche_id)
     music_terms = {
         "dramatic": "dramatic", "mysterious": "mysterious", "lofi": "lofi",
         "energetic": "energetic", "epic": "epic", "calm": "calm", "kids": "kids",
+        "ambient": "ambient", "news": "dramatic",
     }
+
+    sub_preset = "red_fire" if niche.get("default_music") == "dramatic" else "capcut_yellow"
+    if style and style.get("subtitle_preset"):
+        sub_preset = style["subtitle_preset"]
+
     profile: Dict[str, Any] = {
         "id": niche["id"],
+        "requested_niche": niche_id,
         "name": niche["name"],
         "category": niche["category"],
-        "tone": niche["tone"],
+        "tone": style["tone"] if style else niche["tone"],
         "hook_style": niche["hook_style"],
         "rpm_tier": niche.get("rpm_tier", "$2-5"),
         "viral_score": niche.get("viral_score", 75),
@@ -1590,11 +2002,14 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
         "production_rules": {
             "split_screen": policy["allow_split"],
             "ken_burns": True,
-            "subtitle_preset": "red_fire" if niche.get("default_music") == "dramatic" else "capcut_yellow",
-            "music_keyword": music_terms.get(niche.get("default_music"), "ambient"),
+            "subtitle_preset": sub_preset,
+            "music_keyword": music_terms.get(
+                (style.get("bgm_mood") if style else None) or niche.get("default_music"),
+                "ambient",
+            ),
             "use_dynamic_motion": True,
             "use_progress_bar": True,
-            "voice_style": niche["tone"],
+            "voice_style": style["tone"] if style else niche["tone"],
             "clickbait_overlays": policy["clickbait_overlays"],
             "allow_polarize": policy["allow_polarize"],
             "allow_detective_bait": policy["allow_detective_bait"],
@@ -1603,6 +2018,12 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
             "allow_sticky_banner": policy["allow_sticky_banner"],
         },
         "overlay_policy": policy,
+        "target_bpm": style.get("target_bpm") if style else None,
+        "visual_motif": style.get("visual_motif", "") if style else "",
+        "visual_subjects": list(style.get("visual_subjects") or []) if style else [],
+        "must_include": list(style.get("must_include") or []) if style else [],
+        "must_exclude": list(style.get("must_exclude") or []) if style else [],
+        "bgm_mood": style.get("bgm_mood", "") if style else "",
         "effect_manifest_overrides": dict(policy["effect_manifest_overrides"]),
     }
     family = policy.get("family") or ""
@@ -1623,7 +2044,7 @@ def get_niche_production_profile(niche_id: str) -> Dict[str, Any]:
             "enable_tape_stop": False,
         }
     # P0-07: stoic/calm niches — lighter audio publish profile
-    if niche_id == "6_stoic_philosophy":
+    if niche_id == "6_stoic_philosophy" or (style and style.get("niche_id") == "2_philosophy_stoic"):
         profile["effect_manifest_overrides"].update(STOIC_EFFECT_MANIFEST_OVERRIDES)
         profile["audio_rules"] = dict(STOIC_AUDIO_RULES)
     return profile

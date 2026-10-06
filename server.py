@@ -37,6 +37,8 @@ from routers import (
     system_router,
     google_ai_router,
     kids_song_router,
+    clipper_router,
+    jobs_v1_router,
 )
 from v2_api.router import router as v2_router
 
@@ -62,6 +64,8 @@ async def on_startup():
 
 @app.on_event("shutdown")
 def on_shutdown():
+    from server_core import state
+    state.current_render_state["cancel_requested"] = True
     from kids_song_bridge import stop_managed
     stop_managed()
 
@@ -83,7 +87,9 @@ app.include_router(channel_router)
 app.include_router(system_router)
 app.include_router(google_ai_router)
 app.include_router(kids_song_router)
+app.include_router(clipper_router)
 app.include_router(v2_router)
+app.include_router(jobs_v1_router)
 
 # Serve BGM audio files for in-browser audio playback
 if not os.path.exists(config.BGM_DIR):
@@ -155,13 +161,6 @@ def read_root():
             headers={"Cache-Control": "no-cache, must-revalidate"},
         )
     return HTMLResponse("<h2>Web Dashboard is loading...</h2>")
-
-
-@app.get("/studio-v2", include_in_schema=False)
-def read_studio_v2():
-    path = os.path.join(STATIC_DIR, "studio-v2.html")
-    with open(path, "r", encoding="utf-8") as handle:
-        return HTMLResponse(handle.read(), headers={"Cache-Control": "no-cache"})
 
 
 if __name__ == "__main__":

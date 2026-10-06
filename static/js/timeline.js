@@ -224,9 +224,13 @@ function renderTimelineScenes(plan) {
                 </div>
             `;
         } else {
+            const isWbMode = sc.visual_mode === 'whiteboard' || window.currentPlan?.visual_mode === 'whiteboard';
             stockVideoHtml = `
                 <div class="scene-stock-badge-container" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                    <span style="font-size: 10px; color: #64748b;"><i class="fa-solid fa-film"></i> Görsel seçilmedi</span>
+                    ${isWbMode
+                    ? `<span class="scene-stock-provider-tag" style="color: #fb923c; border-color: rgba(249,115,22,0.3); background: rgba(249,115,22,0.1);"><i class="fa-solid fa-pen-nib"></i> Whiteboard Çizim Modu</span>`
+                    : `<span style="font-size: 10px; color: #64748b;"><i class="fa-solid fa-film"></i> Görsel seçilmedi</span>`
+                }
                     <button type="button" class="btn-fetch-single-stock" data-idx="${i}"><i class="fa-solid fa-cloud-arrow-down"></i> Stok</button>
                     <button type="button" class="btn-gen-ai-visual" data-idx="${i}" title="0 TL Flux AI Görseli Üret" style="background: rgba(168,85,247,0.18); color: #c084fc; border: 1px solid rgba(168,85,247,0.3); border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer;"><i class="fa-solid fa-wand-magic-sparkles"></i> Flux AI</button>
                     <button type="button" class="btn-gen-whiteboard" data-idx="${i}" title="Whiteboard Çizimi Üret" style="background: rgba(249,115,22,0.18); color: #fb923c; border: 1px solid rgba(249,115,22,0.3); border-radius: 4px; padding: 2px 6px; font-size: 11px; cursor: pointer;"><i class="fa-solid fa-pen-nib"></i> Çizim</button>

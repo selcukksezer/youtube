@@ -23,6 +23,7 @@ from server_core import (
 )
 from server_core import state
 from scenes.narration_validate import sanitize_plan_scene_descriptions
+from production.quality import validate_script_quality
 
 router = APIRouter(tags=["Video"])
 
@@ -74,6 +75,14 @@ def api_get_videos(limit: int = 50):
             qg = _quality_gate_summary_for_filename(video["filename"])
             if qg:
                 video["quality_gate"] = qg
+            try:
+                from services.gallery_cache import gallery_cache
+                task_key = os.path.splitext(os.path.basename(video["filename"]))[0]
+                thumb_path = gallery_cache.ensure_thumb(task_key, video_path)
+                if thumb_path:
+                    video["thumbnail_url"] = gallery_cache.get_thumb_url(task_key)
+            except Exception:
+                pass
             videos.append(video)
             if len(videos) >= limit:
                 break
@@ -82,8 +91,43 @@ def api_get_videos(limit: int = 50):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/videos/{task_id}/thumbnail")
+def api_get_video_thumbnail(task_id: str):
+    """Returns cached 480p preview thumbnail for completed video (Plan Section 28.1)."""
+    from services.gallery_cache import gallery_cache
+    from services.path_security import validate_task_id, UnsafePathError
+    from fastapi.responses import FileResponse
+    try:
+        safe_id = validate_task_id(task_id)
+    except UnsafePathError:
+        raise HTTPException(status_code=400, detail="Geçersiz görev kimliği.")
+
+    thumb_path = gallery_cache.get_thumb_path(safe_id)
+    if not thumb_path or not os.path.isfile(thumb_path):
+        cand_video = os.path.join(config.OUTPUT_DIR, safe_id)
+        if not os.path.isfile(cand_video):
+            cand_video = os.path.join(config.OUTPUT_DIR, f"{safe_id}.mp4")
+        if os.path.isfile(cand_video):
+            thumb_path = gallery_cache.ensure_thumb(safe_id, cand_video)
+
+    if not thumb_path or not os.path.isfile(thumb_path):
+        raise HTTPException(status_code=404, detail="Önizleme resmi bulunamadı.")
+    return FileResponse(thumb_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+
 @router.post("/api/video/render")
 def api_render_video(req: VideoRenderRequest, background_tasks: BackgroundTasks):
+    if req.plan is not None:
+        script_quality = validate_script_quality(req.plan)
+        if script_quality.get("hard_fail"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Senaryo üretim kalite kapısından geçemedi.",
+                    "script_quality": script_quality,
+                },
+            )
+
     with state.render_lock:
         if state.is_rendering_active:
             raise HTTPException(
@@ -98,26 +142,100 @@ def api_render_video(req: VideoRenderRequest, background_tasks: BackgroundTasks)
 
 @router.get("/api/events")
 async def sse_events(request: Request):
-    q = asyncio.Queue()
+    q = asyncio.Queue(maxsize=300)
     state.event_queues.append(q)
     
     async def event_generator():
         try:
+            # Section 10.1 Handshake: Reconnect retry period
+            yield "retry: 3000\n\n"
+
+            # Section 10.1 Replay: Page refresh state recovery
+            snapshot = state.get_current_render_snapshot()
+            if snapshot.get("is_rendering"):
+                yield state.format_sse_message(
+                    "progress",
+                    {
+                        "percent": snapshot.get("percent", 0),
+                        "step": snapshot.get("step", "Render ediliyor..."),
+                        "stage": snapshot.get("stage", "RENDERING")
+                    }
+                )
+                for log_line in snapshot.get("logs", [])[-25:]:
+                    yield state.format_sse_message("log", log_line)
+            elif snapshot.get("video_url"):
+                yield state.format_sse_message(
+                    "complete",
+                    {
+                        "url": snapshot.get("video_url"),
+                        "percent": 100,
+                        "step": "Tamamlandı!"
+                    }
+                )
+
+            # Main SSE event stream loop
             while True:
                 if await request.is_disconnected():
                     break
                 try:
-                    data = await asyncio.wait_for(q.get(), timeout=1.0)
-                    yield f"data: {data}\n\n"
+                    event_item = await asyncio.wait_for(q.get(), timeout=1.0)
+                    if isinstance(event_item, dict):
+                        e_type = event_item.get("type", "message")
+                        e_data = event_item.get("data")
+                        e_time = event_item.get("timestamp")
+                        yield state.format_sse_message(e_type, e_data, e_time)
+                    elif isinstance(event_item, str):
+                        if event_item.startswith("event:") or event_item.startswith(":"):
+                            yield event_item
+                        else:
+                            yield f"data: {event_item}\n\n"
                 except asyncio.TimeoutError:
-                    yield f": keep-alive\n\n"
+                    yield ": keep-alive\n\n"
         except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
             pass
         finally:
             if q in state.event_queues:
                 state.event_queues.remove(q)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.post("/api/project/clear_stock_cache")
+async def clear_stock_cache(request: Request):
+    """
+    Clears cached stock video files from project asset directory when switching to MiniMax-H3.
+    """
+    import re
+    try:
+        data = await request.json()
+        topic = data.get("topic") or data.get("project_slug") or ""
+        if not topic:
+            return {"status": "ok", "deleted_count": 0}
+
+        safe_slug = re.sub(r'[\/:*?"<>| ]', '_', topic)[:60].strip('_')
+        proj_dir = os.path.join(config.BASE_DIR, "assets", safe_slug)
+        deleted_count = 0
+        if os.path.exists(proj_dir):
+            for fname in os.listdir(proj_dir):
+                fl = fname.lower()
+                if (fl.endswith(".mp4") or fl.endswith(".webm")) and any(k in fl for k in ("pexels", "pixabay", "stock", "source")):
+                    fp = os.path.join(proj_dir, fname)
+                    try:
+                        os.remove(fp)
+                        deleted_count += 1
+                    except Exception:
+                        pass
+        return {"status": "ok", "deleted_count": deleted_count}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 
 @router.get("/api/gallery")
@@ -239,6 +357,7 @@ def _plan_gate_result(
     """Validate plan; optionally auto-repair before integrity gate."""
     from director import compile_director_plan, pre_render_score
     from director.quality_gate import check_narration_integrity
+    from scenes.narration_coherence import detect_repeated_topic_discontinuities
     from scenes.narration_validate import apply_auto_repair_if_needed, plan_narration_ok
 
     plan_in = dict(raw or {})
@@ -276,6 +395,7 @@ def _plan_gate_result(
         plan_out = plan_in
 
     plan_out = sanitize_plan_scene_descriptions(plan_out or {})
+    scene_continuity_advisories = detect_repeated_topic_discontinuities(plan_out.get("scenes") or [])
 
     integrity = check_narration_integrity(director)
     pre = pre_render_score(director)
@@ -290,6 +410,7 @@ def _plan_gate_result(
         "repaired": repaired,
         "fixes": fixes,
         "narration_integrity": integrity,
+        "scene_continuity_advisories": scene_continuity_advisories,
         "pre_render_score": pre,
         "plan": plan_out,
         "plan_narration_ok": plan_narration_ok(plan_out),
@@ -344,6 +465,7 @@ def repair_plan(req: PlanRepairRequest):
             "plan": gate["plan"],
             "narration_ok": gate["narration_ok"],
             "narration_integrity": gate["narration_integrity"],
+            "scene_continuity_advisories": gate["scene_continuity_advisories"],
             "pre_render_score": gate["pre_render_score"],
             "plan_narration_ok": plan_narration_ok(gate["plan"]),
         }
@@ -453,6 +575,12 @@ def cancel_render():
         state.current_render_state["cancel_requested"] = True
         state.current_render_state["cancel_notified"] = True
         state.broadcast_event("log", "[Sistem] Kullanıcı tarafından render iptal isteği gönderildi.")
+        try:
+            from visuals.ai_video.providers.minimax_h3 import comfy_base_url
+            import requests
+            requests.post(f"{comfy_base_url()}/interrupt", timeout=1.5)
+        except Exception:
+            pass
         return {"status": "ok", "message": "Render iptal isteği alındı.", "active": True}
 
     state.current_render_state["cancel_requested"] = False
@@ -492,16 +620,29 @@ def api_clipper_analyze(payload: Dict[str, Any]):
         # Fetch subtitles or transcribe
         subs = youtube_clipper.fetch_subtitles_or_transcribe(url, "")
         transcript_text = " ".join(s["text"] for s in subs) if subs else info.get("description", "")
-        highlights = youtube_clipper.detect_highlights_with_llm(
+        duration = float(info.get("duration") or 300)
+        raw_highlights = youtube_clipper.detect_highlights_with_llm(
             transcript_text=transcript_text,
+            num_clips=max(1, min(5, num_clips)),
+            video_duration=duration,
+        )
+        from services.highlight_clipper import select_highlights
+        words = [
+            {"w": row.get("text") or "", "s": row.get("start"), "e": row.get("end")}
+            for row in (subs or [])
+        ]
+        highlights = select_highlights(
+            raw_highlights,
+            duration=duration,
+            words=words,
             num_clips=num_clips,
-            video_duration=float(info.get("duration") or 300),
         )
         return {
             "status": "ok",
             "video_info": info,
             "highlights_count": len(highlights),
             "highlights": highlights,
+            "words": words,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Clipper analizi başarısız: {e}")

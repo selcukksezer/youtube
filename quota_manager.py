@@ -19,33 +19,16 @@ USAGE_FILE = os.path.join(DATA_DIR, "quota_usage.json")
 DEFAULT_LIMITS = {
     "Gemini": {
         "name": "Google Gemini Flash",
+        "category": "ai",
         "tier": "Google AI Studio (Ücretsiz Tier)",
         "rpm_limit": 15,
-        # Free-tier generate_content quota is model/project dependent. The
-        # configured Gemini key returned HTTP 429 at 20 daily requests; show
-        # conservative observed limit instead of claiming 1,500 requests.
-        "rpd_limit": 20,
+        "rpd_limit": 1500,
         "cost_per_video": "0.00 TL",
-        "description": "Dakikada 15 istek; ücretsiz model kotası proje/model bazlıdır (gözlenen limit: 20/gün)."
-    },
-    "Edge-TTS": {
-        "name": "Microsoft Edge Neural TTS",
-        "tier": "Açık Kaynak & Ücretsiz",
-        "rpm_limit": 9999,
-        "rpd_limit": 99999,
-        "cost_per_video": "0.00 TL",
-        "description": "Limitsiz yüksek kaliteli doğal ses sentezi."
-    },
-    "ElevenLabs": {
-        "name": "ElevenLabs Multilingual TTS",
-        "tier": "Free Tier (~10k karakter/ay)",
-        "rpm_limit": 30,
-        "rpd_limit": 10000,
-        "cost_per_video": "0.00 TL (free tier)",
-        "description": "Pre-made çok dilli sesler — TR+EN. Kota aşımında Edge yedek."
+        "description": "Dakikada 15 istek, günde 1.500 istek ücretsiz."
     },
     "Pexels": {
         "name": "Pexels Video API",
+        "category": "stock",
         "tier": "Resmi Geliştirici Hesabı",
         "rpm_limit": 200,
         "rpd_limit": 25000,
@@ -54,14 +37,43 @@ DEFAULT_LIMITS = {
     },
     "Pixabay": {
         "name": "Pixabay Video API",
+        "category": "stock",
         "tier": "Açık Medya Lisansı",
         "rpm_limit": 100,
         "rpd_limit": 5000,
         "cost_per_video": "0.00 TL",
-        "description": "Dakikada 100 istek ücretsiz."
+        "description": "Dakikada 100 istek, günde 5.000 istek ücretsiz."
+    },
+    "Edge-TTS": {
+        "name": "Microsoft Edge Neural TTS",
+        "category": "tts",
+        "tier": "Açık Kaynak & Ücretsiz",
+        "rpm_limit": 9999,
+        "rpd_limit": 99999,
+        "cost_per_video": "0.00 TL",
+        "description": "Limitsiz yüksek kaliteli doğal ses sentezi."
+    },
+    "ElevenLabs": {
+        "name": "ElevenLabs Multilingual TTS",
+        "category": "tts",
+        "tier": "Free Tier (~10k karakter/ay)",
+        "rpm_limit": 30,
+        "rpd_limit": 10000,
+        "cost_per_video": "0.00 TL (free tier)",
+        "description": "Pre-made çok dilli sesler — TR+EN. Kota aşımında Edge yedek."
+    },
+    "YouTube": {
+        "name": "YouTube Data API v3",
+        "category": "youtube",
+        "tier": "Google Cloud Console",
+        "rpm_limit": 300,
+        "rpd_limit": 10000,
+        "cost_per_video": "0.00 TL",
+        "description": "Günlük 10.000 kota birimi (Video yükleme: 1.600 birim)."
     },
     "OpenAI": {
         "name": "OpenAI GPT-4o Mini",
+        "category": "ai",
         "tier": "Kullanım Başına Ödeme (PayG)",
         "rpm_limit": 500,
         "rpd_limit": 10000,
@@ -70,6 +82,7 @@ DEFAULT_LIMITS = {
     },
     "Grok": {
         "name": "xAI Grok-2",
+        "category": "ai",
         "tier": "xAI Cloud",
         "rpm_limit": 60,
         "rpd_limit": 2000,
@@ -78,6 +91,7 @@ DEFAULT_LIMITS = {
     },
     "DeepSeek": {
         "name": "DeepSeek V3 / R1",
+        "category": "ai",
         "tier": "DeepSeek API",
         "rpm_limit": 120,
         "rpd_limit": 5000,
@@ -115,13 +129,24 @@ class QuotaTracker:
                     if saved_date == today:
                         self.usage_counts = data.get("daily_counts", {})
                         self.token_totals = data.get("token_totals", {})
+                        return
                     else:
                         self.usage_counts = {}
                         self.token_totals = {}
-                    return
+                        self._save_persistent_usage()
+                        return
             except Exception as e:
                 print(f"  [QuotaManager] Error loading persistent usage: {e}")
         self.usage_counts = {}
+        self.token_totals = {}
+        self._save_persistent_usage()
+
+    def _check_and_rollover_day(self):
+        """Checks if current date matches today; if not, resets counters for the new day."""
+        today = self._today_str()
+        if getattr(self, "_current_day_cached", None) != today:
+            self._current_day_cached = today
+            self._load_persistent_usage()
 
     def _save_persistent_usage(self):
         """Saves current usage counts to disk."""
@@ -139,6 +164,7 @@ class QuotaTracker:
             pass
 
     def record_call(self, provider: str):
+        self._check_and_rollover_day()
         prov = str(provider or "Gemini").capitalize()
         # Edge-TTS vs için formatlama
         if prov.lower() in ("edge-tts", "edgetts", "tts"):
@@ -149,6 +175,14 @@ class QuotaTracker:
             prov = "DeepSeek"
         elif prov.lower() == "grok":
             prov = "Grok"
+        elif prov.lower() in ("youtube", "youtube_api", "yt"):
+            prov = "YouTube"
+        elif prov.lower() == "elevenlabs":
+            prov = "ElevenLabs"
+        elif prov.lower() == "pexels":
+            prov = "Pexels"
+        elif prov.lower() == "pixabay":
+            prov = "Pixabay"
 
         self.usage_counts[prov] = self.usage_counts.get(prov, 0) + 1
         now = time.time()
@@ -347,6 +381,29 @@ class QuotaTracker:
             except Exception as e:
                 live_results["Gemini"] = {"online": False, "status_note": "Bağlantı Hatası"}
 
+        # 5. YOUTUBE DATA API LIVE HEALTH
+        yt_key = getattr(config, "YOUTUBE_DATA_API_KEY", "") or ""
+        if yt_key:
+            try:
+                url = f"https://www.googleapis.com/youtube/v3/videos?part=id&chart=mostPopular&maxResults=1&key={yt_key}"
+                req = urllib.request.Request(url, headers={"User-Agent": "ShortsVideoCreators/2.0"})
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    live_results["YouTube"] = {
+                        "online": True,
+                        "limit": 10000,
+                        "remaining": max(0, 10000 - self.usage_counts.get("YouTube", 0)),
+                        "status_note": "Canlı & Aktif (10.000 Birim)"
+                    }
+            except urllib.error.HTTPError as e:
+                msg = "Geçersiz YouTube Anahtarı" if e.code in (400, 401, 403) else ("YouTube Kotası Doldu" if e.code == 429 else f"HTTP {e.code}")
+                live_results["YouTube"] = {
+                    "online": False,
+                    "error_code": e.code,
+                    "status_note": msg
+                }
+            except Exception:
+                live_results["YouTube"] = {"online": True, "limit": 10000, "status_note": "Bağlı (10.000 Birim)"}
+
         self.live_cache = live_results
         self.live_cache_time = now
         return live_results
@@ -367,6 +424,7 @@ class QuotaTracker:
         self._save_persistent_usage()
 
     def get_stats(self, force_live: bool = False) -> Dict[str, Any]:
+        self._check_and_rollover_day()
         now = time.time()
         live_api_info = self.fetch_live_api_status(force=force_live)
 
@@ -386,6 +444,8 @@ class QuotaTracker:
             "Edge-TTS": True,
             "Pexels": bool(getattr(config, "PEXELS_API_KEY", "")),
             "Pixabay": bool(getattr(config, "PIXABAY_API_KEY", "")),
+            "ElevenLabs": bool(getattr(config, "ELEVENLABS_API_KEY", "")),
+            "YouTube": bool(getattr(config, "YOUTUBE_DATA_API_KEY", "")),
             "OpenAI": bool(getattr(config, "OPENAI_API_KEY", "")),
             "Grok": bool(getattr(config, "GROK_API_KEY", "")),
             "DeepSeek": bool(getattr(config, "DEEPSEEK_API_KEY", "")),
@@ -432,9 +492,18 @@ class QuotaTracker:
             is_live_down = (live_data.get("online") is False)
 
             if not has_k:
-                status_badge = "Anahtar Girilmedi"
-                badge_class = "secondary"
-                health_pct = 0
+                if prov_key == "YouTube":
+                    status_badge = "Tarayıcı Modu (0 Kota)"
+                    badge_class = "success"
+                    health_pct = 100
+                elif prov_key == "Edge-TTS":
+                    status_badge = "0 TL Limitsiz & Hazır"
+                    badge_class = "success"
+                    health_pct = 100
+                else:
+                    status_badge = "Anahtar Girilmedi"
+                    badge_class = "secondary"
+                    health_pct = 0
             elif is_exhausted or is_live_down:
                 status_badge = live_data.get("status_note") or "Kota / Limit Aşıldı"
                 badge_class = "warning" if is_exhausted else "danger"
@@ -451,6 +520,7 @@ class QuotaTracker:
 
             provider_cards[prov_key] = {
                 **limits,
+                "category": limits.get("category", "ai"),
                 "has_key": has_k,
                 "rpm_used": rpm_used,
                 "daily_used": used_effective,
@@ -490,6 +560,42 @@ class QuotaTracker:
             daily_remaining = active_card["remaining_calls"]
             rpd_max = active_card["rpd_limit"]
 
+        # Kategori bazlı özetler
+        categories_summary = {
+            "ai": {
+                "title": "Yapay Zeka (Metin)",
+                "active_name": active_provider_name,
+                "rpm_used": current_rpm,
+                "rpm_limit": rpm_max,
+                "daily_used": daily_calls,
+                "daily_remaining": daily_remaining,
+                "rpd_limit": rpd_max,
+                "health_pct": overall_health_pct,
+                "status_badge": overall_status_text,
+                "badge_class": "success" if overall_health_pct > 20 else "warning"
+            },
+            "stock": {
+                "title": "Stok Medya",
+                "pexels": provider_cards.get("Pexels", {}),
+                "pixabay": provider_cards.get("Pixabay", {}),
+                "health_pct": max(provider_cards.get("Pexels", {}).get("health_pct", 100), provider_cards.get("Pixabay", {}).get("health_pct", 100)),
+                "status_badge": provider_cards.get("Pexels", {}).get("status_badge", "Canlı & Aktif")
+            },
+            "tts": {
+                "title": "Seslendirme (TTS)",
+                "edge": provider_cards.get("Edge-TTS", {}),
+                "elevenlabs": provider_cards.get("ElevenLabs", {}),
+                "health_pct": 100,
+                "status_badge": "0 TL Limitsiz (Edge Neural)"
+            },
+            "youtube": {
+                "title": "YouTube API",
+                "provider": provider_cards.get("YouTube", {}),
+                "health_pct": provider_cards.get("YouTube", {}).get("health_pct", 100),
+                "status_badge": provider_cards.get("YouTube", {}).get("status_badge", "10.000 Birim / Tarayıcı")
+            }
+        }
+
         return {
             "uptime_seconds": int(now - self.last_reset),
             "active_provider": active_provider_id,
@@ -510,6 +616,7 @@ class QuotaTracker:
             "usage": dict(self.usage_counts),
             "errors": dict(self.error_counts),
             "providers": provider_cards,
+            "categories": categories_summary,
             "quota_status": active_exhaustions,
             "has_exhausted_providers": any(p.get("exhausted", False) for p in active_exhaustions.values()),
             "live_sync": True

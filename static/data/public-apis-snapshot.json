@@ -1,0 +1,55 @@
+{
+  "source": "https://github.com/public-apis/public-apis",
+  "role": "fallback_only",
+  "note": "Used only when a paid or quota source fails. Pexels and Pixabay stay the default.",
+  "fallbacks": [
+    {
+      "id": "wikipedia",
+      "kind": "facts",
+      "name": "Wikipedia",
+      "url": "https://en.wikipedia.org/api/rest_v1/",
+      "auth": "No",
+      "fits": "short factual lines"
+    },
+    {
+      "id": "wikidata",
+      "kind": "facts",
+      "name": "Wikidata",
+      "url": "https://www.wikidata.org/w/api.php",
+      "auth": "No",
+      "fits": "entity check"
+    },
+    {
+      "id": "openverse",
+      "kind": "images",
+      "name": "Openverse",
+      "url": "https://api.openverse.org/v1/images/",
+      "auth": "No",
+      "fits": "cc0 stills when stock quota fails"
+    },
+    {
+      "id": "met_museum",
+      "kind": "images",
+      "name": "Metropolitan Museum of Art",
+      "url": "https://collectionapi.metmuseum.org/public/collection/v1/",
+      "auth": "No",
+      "fits": "open cultural stills"
+    },
+    {
+      "id": "zenquotes",
+      "kind": "quotes",
+      "name": "ZenQuotes",
+      "url": "https://zenquotes.io/api/random",
+      "auth": "No",
+      "fits": "one-line quote"
+    },
+    {
+      "id": "dummyjson_quotes",
+      "kind": "quotes",
+      "name": "DummyJSON Quotes",
+      "url": "https://dummyjson.com/quotes/random",
+      "auth": "No",
+      "fits": "quote fallback"
+    }
+  ]
+}

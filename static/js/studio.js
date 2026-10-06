@@ -352,28 +352,45 @@ async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
     }
 
     try {
-        const res = await fetch('/api/script/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                keyword: topic,
-                language: selectLanguage?.value || 'tr',
+        if (forceRegenerate) {
+            window._studioVariationAttempt = (window._studioVariationAttempt || 0) + 1;
+        } else {
+            window._studioVariationAttempt = 0;
+        }
+        const prevNarr = currentPlan?.full_narration || (currentPlan?.scenes || []).map(s => s.narration).filter(Boolean).join(' ') || '';
+
+            const isEn = (window.APP_STATE && window.APP_STATE.language === 'en') || document.getElementById('select-language')?.value === 'en';
+            
+            const res = await fetch('/api/script/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    keyword: topic,
+                    language: isEn ? 'en' : 'tr',
+
                 niche: selectNiche?.value || '6_stoic_philosophy',
                 reddit_post: selectedRedditPost,
-                format_fingerprint: pendingFormatFingerprint || undefined
+                format_fingerprint: pendingFormatFingerprint || undefined,
+                force_regenerate: !!forceRegenerate,
+                variation_attempt: window._studioVariationAttempt || 0,
+                previous_narration: forceRegenerate ? prevNarr : null,
+                enable_outro: document.getElementById('chk-enable-outro')
+                    ? !!document.getElementById('chk-enable-outro').checked
+                    : true
             })
         });
         const data = await res.json();
         if (data.status === 'ok') {
             let plan = data.plan;
             const lockedNiche = plan.niche_id || plan.niche_profile?.id;
-            if (lockedNiche && selectNiche && selectNiche.value !== lockedNiche) {
+            if (!userManuallyPickedNiche && lockedNiche && selectNiche && selectNiche.value !== lockedNiche) {
                 selectNiche.value = lockedNiche;
                 await applyNicheProfile(lockedNiche);
             }
-            if (lockedNiche) {
-                const lockedName = allNiches.find(n => n.id === lockedNiche)?.name || lockedNiche;
-                showNicheLockBadge(lockedNiche, lockedName);
+            const activeNiche = selectNiche ? selectNiche.value : lockedNiche;
+            if (activeNiche) {
+                const activeName = allNiches.find(n => n.id === activeNiche)?.name || activeNiche;
+                showNicheLockBadge(activeNiche, activeName);
             }
             timelineReviewed = false;
             setCurrentPlan(plan, { skipQualityPanel: true });
@@ -583,6 +600,7 @@ inputTopic?.addEventListener('input', () => {
     updateFlowRail('topic');
     updateLoopBridge(selectNiche ? selectNiche.value : '6_stoic_philosophy', inputTopic.value);
     updateScriptActionButtons();
+    checkTopicLanguageAndSuggestTranslation();
     saveStudioSettings();
     if (!userManuallyPickedNiche) scheduleNicheResolveFromTopic();
 });
@@ -608,23 +626,25 @@ function renderTopicSuggestCards(suggestions, nicheName) {
     if (!panel || !body) return;
     lastTopicSuggestions = suggestions || [];
     panel.classList.remove('hidden');
+    const isEn = (selectLanguage?.value || 'tr') === 'en';
     if (titleEl && nicheName) {
-        titleEl.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> ${escapeHtml(nicheName)} — 5 Konu Önerisi`;
+        titleEl.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> ${escapeHtml(nicheName)} — ${isEn ? '5 Topic Suggestions' : '5 Konu Önerisi'}`;
     }
     if (!suggestions || !suggestions.length) {
-        body.innerHTML = '<div class="topic-suggest-empty">Bu niş için uygun konu bulunamadı. Yeniden deneyin.</div>';
+        body.innerHTML = `<div class="topic-suggest-empty">${isEn ? 'No topics found for this niche. Try again.' : 'Bu niş için uygun konu bulunamadı. Yeniden deneyin.'}</div>`;
         return;
     }
     body.innerHTML = suggestions.map((s, idx) => {
         const src = TOPIC_SOURCE_LABELS[s.source] || TOPIC_SOURCE_LABELS.ai;
         const hook = s.hook ? `<div class="topic-suggest-card-hook">${escapeHtml(s.hook)}</div>` : '';
+        const scoreLabel = isEn ? `Relevance ${s.confidence || s.relevance || 0}/100` : `Uygunluk ${s.confidence || s.relevance || 0}/100`;
         return `
             <button type="button" class="topic-suggest-card" data-suggest-idx="${idx}">
                 <div class="topic-suggest-card-title">${idx + 1}. ${escapeHtml(s.title)}</div>
                 ${hook}
                 <div class="topic-suggest-card-meta">
                     <span class="topic-suggest-badge ${src.cls}"><i class="${src.icon}"></i> ${src.label}</span>
-                    <span class="topic-suggest-score">Uygunluk ${s.confidence || s.relevance || 0}/100</span>
+                    <span class="topic-suggest-score">${scoreLabel}</span>
                 </div>
             </button>`;
     }).join('');
@@ -653,11 +673,13 @@ async function suggestTopic(ev) {
         showToast('Önce bir niş şablonu seçin.', 'warn');
         return;
     }
-    const language = document.getElementById('select-language')?.value || 'tr';
+    const isEn = (window.APP_STATE && window.APP_STATE.language === 'en') || document.getElementById('select-language')?.value === 'en';
+    const language = isEn ? 'en' : 'tr';
     const rawHint = (inputTopic?.value || '').trim();
-    const topicHint = (!isRetry && rawHint && !rawHint.includes('Marcus Aurelius')) ? rawHint : undefined;
+    const isSample = typeof isTopicSampleOrEmpty === 'function' ? isTopicSampleOrEmpty(rawHint) : false;
+    const topicHint = (!isRetry && rawHint && !isSample && !rawHint.includes('#')) ? rawHint : undefined;
     if (panel) panel.classList.remove('hidden');
-    if (body) body.innerHTML = '<div class="topic-suggest-loading"><i class="fa-solid fa-spinner fa-spin"></i> Yeni ve benzersiz konular araştırılıyor…</div>';
+    if (body) body.innerHTML = `<div class="topic-suggest-loading"><i class="fa-solid fa-spinner fa-spin"></i> ${isEn ? 'Searching for fresh and unique topics…' : 'Yeni ve benzersiz konular araştırılıyor…'}</div>`;
     if (btn) {
         btn.classList.add('is-loading');
         btn.disabled = true;
@@ -675,10 +697,10 @@ async function suggestTopic(ev) {
             }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Konu önerileri alınamadı.');
+        if (!res.ok) throw new Error(data.detail || (isEn ? 'Could not fetch topic suggestions.' : 'Konu önerileri alınamadı.'));
         renderTopicSuggestCards(data.suggestions, data.niche_name);
     } catch (err) {
-        if (body) body.innerHTML = `<div class="topic-suggest-error">${escapeHtml(err.message || 'Bağlantı hatası')}</div>`;
+        if (body) body.innerHTML = `<div class="topic-suggest-error">${escapeHtml(err.message || (isEn ? 'Connection error' : 'Bağlantı hatası'))}</div>`;
         console.error('Konu öner hatası:', err);
     } finally {
         if (btn) {
@@ -923,19 +945,284 @@ function updateLoopBridge(nicheId, topic) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════
+// 15. DİL SEÇİMİ, OTOMATİK KONU & ÇEVİRİ YÖNETİMİ
+// ══════════════════════════════════════════════════════════════
+
+const NICHE_SAMPLE_TOPICS = {
+    'en': {
+        '7_dark_psychology': '3 Dark Psychology Secrets Manipulation Experts Never Tell You',
+        '6_stoic_philosophy': 'Marcus Aurelius: 3 Stoic Rules That Destroy Anger and Anxiety',
+        '1_news_flash': 'BREAKING: Urgent Global Market Shift Shocking Financial Analysts Today',
+        '2_reddit_confessions': 'I Found My Boss In A Secret Meeting He Did Not Know I Was Listening',
+        '3_split_gameplay': 'Minecraft Parkour: 3 Psychological Life Hacks That Change Everything',
+        '4_would_you_rather': 'Would You Rather: 10 Million Dollars Right Now or Travel Back to 2010?',
+        '5_guess_flag_country': 'Can You Guess The Country From These 3 Surprising Clues in 5 Seconds?',
+        '8_crypto_market': 'Bitcoin Whale Alert: 3 Massive Crypto Signals Everyone is Missing',
+        '9_five_facts': '5 Mind-Blowing Facts About Space That Scientists Cannot Explain',
+        '10_religious_quotes': '3 Islamic Lessons on Patience and Inner Peace That Transform Your Heart',
+        '11_language_learning': '5 English Idioms That Native Speakers Use Daily But You Were Never Taught',
+        '12_amazon_affiliate': '3 Viral Amazon Gadgets You Actually Need Under $25',
+        '13_mystery_paranormal': 'The Terrifying Mystery of The Bridgewater Triangle No One Solved',
+        '14_movie_summaries': 'The Ending of Inception Finally Explained: Was He Still In A Dream?',
+        '15_football_transfers': 'The Most Shocking 100 Million Transfer In Football History',
+        '16_wealth_entrepreneurship': 'How A 21-Year Old Built An 8-Figure Empire With Zero Experience',
+        '17_before_after_evolution': 'How Earth Looked 100 Million Years Ago vs How It Looks Today',
+        '18_astrology_horoscope': 'The 3 Most Dangerous Zodiac Signs When Provoked to Anger',
+        '19_historical_battles': 'The Clever Military Tactic That Won The Battle of Marathon Against All Odds',
+        '20_whatsapp_chat_story': 'Scary WhatsApp Text Messages Sent At 3 AM That Chilled Me To The Bone',
+        '21_ai_tools_hacks': '3 Free AI Tools That Are So Powerful They Almost Feel Illegal',
+        '22_emoji_guess_game': 'Guess The Famous Hollywood Movie Using Only These 3 Emojis',
+        '23_fitness_nutrition_hacks': '3 High-Protein Breakfast Hacks That Burn Belly Fat Effortlessly',
+        '24_sigma_character_study': 'The Silent Rule of The Sigma Mindset That Makes You Unstoppable',
+        '25_celebrity_net_worth': 'How Keanu Reeves Secretly Spends His Millions Helping Others',
+        '26_dangerous_places': 'The Deadliest Island On Earth Where Humans Are Forbidden To Visit',
+        '27_common_myths_busted': '5 Scientific Myths You Still Believe That Are Completely False',
+        '28_dream_meanings': 'What It Really Means When You Fall or Fly In Your Dreams',
+        '29_optical_illusions_iq': 'Only 1% of Geniuses Can Spot The Hidden Animal In This Image in 5 Seconds',
+        '30_poetry_quotes': 'The Most Heartbreaking Quote About Love That Will Stay With You Forever',
+        '31_supercars_automotive': 'The Secret Engineering Reason Bugatti Chiron Can Exceed 300 MPH',
+        '32_legal_consumer_hacks': '3 Hidden Consumer Rights Stores Never Want You To Know About',
+        '33_parenting_child_hacks': 'The 3-Second Phrase Child Psychologists Use To Stop Tantrums Instantly',
+        '34_gaming_easter_eggs': '5 Insane GTA Secrets That Took Players Over 10 Years To Find',
+        '35_animal_kingdom_stories': "The Deadliest Predator In The Ocean Isn't A Great White Shark",
+        '36_kids_animation': 'Learn The Colors and Animals Fun Adventure for Kids',
+        '37_interactive_quiz': '99% of People Fail This 3-Question Common Sense Trivia Quiz',
+    },
+    'tr': {
+        '6_stoic_philosophy': "Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı",
+        '7_dark_psychology': 'Karanlık Psikolojinin En Tehlikeli 3 Manipülasyon Sırrı',
+        '1_news_flash': 'SON DAKİKA: Piyasaları Sarsan Kritik Açıklama ve Flaş Gelişmeler',
+        '2_reddit_confessions': 'Patronumun Gizli Toplantısını Yanlışlıkla Dinledim ve Hayatım Değişti',
+        '3_split_gameplay': 'Minecraft Parkur Eşliğinde İnsan Psikolojisinin 3 Tuhaf Kuralı',
+        '4_would_you_rather': 'Hangisini Seçerdin: Hemen 10 Milyon Dolar mı, 10 Yıl Geriye Gitmek mi?',
+        '5_guess_flag_country': 'Bu 3 İpucundan Hangi Ülke Olduğunu 5 Saniyede Tahmin Edebilir misin?',
+        '8_crypto_market': 'Bitcoin ve Kriptoda Balinaların Gizlice Topladığı 3 Kritik Gösterge',
+        '9_five_facts': 'Evren Hakkında Bilim İnsanlarının Bile Açıklayamadığı 5 Büyüleyici Gerçek',
+        '10_religious_quotes': 'Kalbe Huzur Veren ve Sabrı Öğreten 3 Manevi Ayet ve Hadis',
+        '11_language_learning': 'Ana Dili İngilizce Olanların Sürekli Kullandığı 5 Harika Deyim',
+        '12_amazon_affiliate': 'Hayatınızı Kolaylaştıracak 3 Viral Amazon Ürünü',
+        '13_mystery_paranormal': 'Bermuda Şeytan Üçgeni Hakkında Kimsenin Açıklayamadığı 3 Gizemli Olay',
+        '14_movie_summaries': 'Inception Filminin Gerçek Sonu: Fırıldak Aslında Duruyor mu?',
+        '15_football_transfers': 'Futbol Tarihinin En Pahalı ve En Şok Edici 3 Transfer Skandalı',
+        '16_wealth_entrepreneurship': 'Sıfır Sermaye ile Milyon Dolarlık Şirket Kuran Girişimcinin 3 Sırrı',
+        '17_before_after_evolution': '100 Yıl Önceki Dünya ile Günümüz Dünyasının Şaşırtıcı Karşılaştırması',
+        '18_astrology_horoscope': 'Öfkesi En Korkunç 3 Burç: Sakın Onları Çileden Çıkarmayın!',
+        '19_historical_battles': 'Tarihin Akışını Değiştiren En Zekice 3 Askeri Savaş Taktiği',
+        '20_whatsapp_chat_story': "Gece 03:00'te Gelen Gizemli WhatsApp Mesajları ve Tüyler Ürperten Son",
+        '21_ai_tools_hacks': 'Kullanması Yasa Dışı Gibi Gelen 3 Harika Ücretsiz Yapay Zeka Aracı',
+        '22_emoji_guess_game': 'Sadece Bu 3 Emojiden Hangi Efsane Filmi Anlatıyoruz? Tahmin Et!',
+        '23_fitness_nutrition_hacks': 'Göbek Yağlarını Hızla Eriten ve Tok Tutan 3 Kahvaltı Sırrı',
+        '24_sigma_character_study': 'Sigma Karakterinin Asla Taviz Vermediği 3 Sessiz Kural',
+        '25_celebrity_net_worth': 'Keanu Reeves Servetini Nasıl Harcıyor? Şaşırtıcı Gerçekler',
+        '26_dangerous_places': 'Dünyanın En Tehlikeli Yılan Adası: İnsanların Girişi Neden Yasak?',
+        '27_common_myths_busted': 'Doğru Bildiğiniz Ama Tamamen Yanlış Olan 5 Bilimsel Efsane',
+        '28_dream_meanings': 'Rüyada Yüksekten Düşmenin veya Uçmanın Gerçek Psikolojik Anlamı',
+        '29_optical_illusions_iq': "Bu Görseldeki Gizli Hayvanı Sadece Yüksek IQ'ya Sahip Olanlar 5 Saniyede Buluyor",
+        '30_poetry_quotes': "Nazım Hikmet ve Cemal Süreya'dan Kalbe Dokunan En Güzel Aşk Sözleri",
+        '31_supercars_automotive': "Bugatti Chiron'un 400 km Hıza Ulaşmasını Sağlayan İnanılmaz Mühendislik",
+        '32_legal_consumer_hacks': 'Mağazaların ve Şirketlerin Sizden Sakladığı 3 Tüketici Hakkı',
+        '33_parenting_child_hacks': 'Çocuk Psikologlarının Ağlama Krizini Bitirmek İçin Kullandığı 3 Saniye Kuralı',
+        '34_gaming_easter_eggs': "GTA 5'te 10 Yıldır Gizli Kalan En Korkunç 5 Easter Egg",
+        '35_animal_kingdom_stories': 'Okyanusların En Acımasız Avcısı Katil Balinaların Şok Eden Taktikleri',
+        '36_kids_animation': 'Sevimli Hayvanlar ve Renkleri Öğreniyoruz Çocuk Şarkısı',
+        '37_interactive_quiz': "İnsanların %95'inin Yanıldığı 3 Soruluk Mantık ve Genel Kültür Testi",
+    }
+};
+
+function isTopicSampleOrEmpty(val) {
+    if (!val || !val.trim()) return true;
+    const clean = val.trim().toLowerCase();
+    for (const lang of ['en', 'tr']) {
+        for (const key in NICHE_SAMPLE_TOPICS[lang]) {
+            if (NICHE_SAMPLE_TOPICS[lang][key].toLowerCase() === clean) return true;
+        }
+    }
+    if (clean.includes("marcus aurelius") || clean.includes("dark psychology secrets") || clean.includes("öfkeyi yok eden") || clean.includes("#shorts")) return true;
+    return false;
+}
+
+function checkTopicLanguageAndSuggestTranslation() {
+    const btnTranslate = document.getElementById('btn-translate-topic');
+    if (!btnTranslate || !inputTopic) return;
+    const currentLang = selectLanguage?.value || 'tr';
+    const text = (inputTopic.value || '').trim();
+    if (currentLang === 'en' && text) {
+        const hasTurkishChars = /[çğıöşüÇĞİÖŞÜ]/.test(text);
+        const hasTurkishWords = /\b(ve|ile|bir|için|nasıl|neden|kural|sır|en|hakkında|taktiği|gerçek|büyük)\b/i.test(text);
+        if (hasTurkishChars || hasTurkishWords) {
+            btnTranslate.style.display = 'inline-flex';
+        } else {
+            btnTranslate.style.display = 'none';
+        }
+    } else {
+        btnTranslate.style.display = 'none';
+    }
+}
+
+async function translateCurrentTopicToEnglish() {
+    const btn = document.getElementById('btn-translate-topic');
+    const topicText = (inputTopic?.value || '').trim();
+    if (!topicText) return;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Çevriliyor...';
+    }
+    try {
+        const res = await fetch('/api/topics/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic: topicText, target_lang: 'en' })
+        });
+        const data = await res.json();
+        if (data.status === 'ok' && data.translated) {
+            inputTopic.value = data.translated;
+            if (btn) btn.style.display = 'none';
+            showToast('🌐 Konu İngilizceye çevrildi!');
+            updateLoopBridge(selectNiche?.value || '1_news_flash', data.translated);
+            saveStudioSettings();
+        } else {
+            showToast(data.message || 'Çeviri yapılamadı', 'warn');
+        }
+    } catch (e) {
+        console.warn('Translate error:', e);
+        showToast('Çeviri hatası: ' + e.message, 'warn');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-language"></i> İngilizceye Çevir';
+        }
+    }
+}
+
+function setStudioLanguage(lang, options = {}) {
+    const isEn = (lang === 'en');
+    const targetLang = isEn ? 'en' : 'tr';
+
+    // 1. Senkronize et dropdown
+    const selLang = document.getElementById('select-language');
+    if (selLang) {
+        selLang.value = targetLang;
+    }
+
+    // 2. Buton stilleri
+    const btnTr = document.getElementById('btn-quick-lang-tr');
+    const btnEn = document.getElementById('btn-quick-lang-en');
+    if (btnTr && btnEn) {
+        if (isEn) {
+            btnTr.classList.remove('active');
+            btnTr.classList.add('btn-outline');
+            btnTr.style.background = 'transparent';
+            btnTr.style.color = '#94a3b8';
+            btnTr.style.borderColor = 'rgba(148, 163, 184, 0.25)';
+
+            btnEn.classList.add('active');
+            btnEn.classList.remove('btn-outline');
+            btnEn.style.background = 'linear-gradient(135deg, #2563eb, #1d4ed8)';
+            btnEn.style.color = '#ffffff';
+            btnEn.style.borderColor = '#60a5fa';
+        } else {
+            btnEn.classList.remove('active');
+            btnEn.classList.add('btn-outline');
+            btnEn.style.background = 'transparent';
+            btnEn.style.color = '#94a3b8';
+            btnEn.style.borderColor = 'rgba(148, 163, 184, 0.25)';
+
+            btnTr.classList.add('active');
+            btnTr.classList.remove('btn-outline');
+            btnTr.style.background = 'linear-gradient(135deg, #2563eb, #1d4ed8)';
+            btnTr.style.color = '#ffffff';
+            btnTr.style.borderColor = '#60a5fa';
+        }
+    }
+
+    // 3. Placeholder güncelle
+    if (inputTopic) {
+        if (isEn) {
+            inputTopic.placeholder = 'e.g.: 3 Dark Psychology Secrets Manipulation Experts Never Tell You';
+        } else {
+            inputTopic.placeholder = "Örn: Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı";
+        }
+    }
+
+    // 4. TTS seslerini hedef dile güncelle
+    if (typeof populateTtsVoiceSelect === 'function') {
+        populateTtsVoiceSelect(targetLang);
+    }
+    if (selectTtsVoice && isEn) {
+        if ([...selectTtsVoice.options].some(o => o.value === 'en-US-GuyNeural')) {
+            selectTtsVoice.value = 'en-US-GuyNeural';
+        }
+    }
+
+    // 5. Konu metnini güncelle veya çevir
+    const currentTopic = (inputTopic?.value || '').trim();
+    const btnTranslate = document.getElementById('btn-translate-topic');
+    const currentNiche = selectNiche?.value || (isEn ? '7_dark_psychology' : '6_stoic_philosophy');
+
+    if (isEn) {
+        if (isTopicSampleOrEmpty(currentTopic)) {
+            const enSample = NICHE_SAMPLE_TOPICS['en']?.[currentNiche] || '3 Dark Psychology Secrets Manipulation Experts Never Tell You';
+            if (inputTopic) inputTopic.value = enSample;
+            if (btnTranslate) btnTranslate.style.display = 'none';
+        } else {
+            const hasTr = /[çğıöşüÇĞİÖŞÜ]/.test(currentTopic) || /\b(ve|ile|bir|için|nasıl|neden)\b/i.test(currentTopic);
+            if (btnTranslate && hasTr) {
+                btnTranslate.style.display = 'inline-flex';
+            }
+            if (options.autoTranslate && hasTr) {
+                translateCurrentTopicToEnglish();
+            }
+        }
+    } else {
+        if (btnTranslate) btnTranslate.style.display = 'none';
+        if (isTopicSampleOrEmpty(currentTopic)) {
+            const trSample = NICHE_SAMPLE_TOPICS['tr']?.[currentNiche] || "Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı";
+            if (inputTopic) inputTopic.value = trSample;
+        }
+    }
+
+    // 6. Tier-1 buton durumunu güncelle
+    const btnTier1El = document.getElementById('qa-tier1-en');
+    if (btnTier1El) {
+        btnTier1El.classList.toggle('active', isEn);
+        const span = btnTier1El.querySelector('span');
+        if (span) span.textContent = isEn ? 'Tier-1 EN: AKTİF (ABD)' : 'Tier-1 (ABD/İngilizce) Modu';
+    }
+
+    if (selectNiche && inputTopic) {
+        updateLoopBridge(selectNiche.value, inputTopic.value);
+    }
+    updateScriptActionButtons();
+    saveStudioSettings();
+    if (options.toast) {
+        showToast(isEn ? '🇺🇸 İngilizce (Global / Tier-1) Modu Aktif' : '🇹🇷 Türkçe Modu Aktif');
+    }
+}
+
+// Buton dinleyicilerini bağla
+document.getElementById('btn-quick-lang-tr')?.addEventListener('click', () => setStudioLanguage('tr', { toast: true }));
+document.getElementById('btn-quick-lang-en')?.addEventListener('click', () => setStudioLanguage('en', { toast: true, autoTranslate: true }));
+selectLanguage?.addEventListener('change', () => setStudioLanguage(selectLanguage.value, { toast: false, autoTranslate: true }));
+document.getElementById('btn-translate-topic')?.addEventListener('click', translateCurrentTopicToEnglish);
+
 selectNiche?.addEventListener('change', () => {
     userManuallyPickedNiche = true;
-    if (lockedNicheId && selectNiche.value !== lockedNicheId) {
-        showToast('Konu ile niş uyumsuz olabilir', 'warn');
+    showNicheLockBadge(null); // Eski kilit rozetini kaldır
+
+    const currentLang = selectLanguage?.value || 'tr';
+    if (inputTopic && isTopicSampleOrEmpty(inputTopic.value)) {
+        const sample = NICHE_SAMPLE_TOPICS[currentLang]?.[selectNiche.value] ||
+            (currentLang === 'en' ? '3 Secrets Manipulation Experts Never Tell You' : "Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı");
+        inputTopic.value = sample;
     }
+    checkTopicLanguageAndSuggestTranslation();
     updateLoopBridge(selectNiche.value, inputTopic.value);
     applyNicheProfile(selectNiche.value);
     saveStudioSettings();
 });
 
 // ══════════════════════════════════════════════════════════════
-
-
 // 16. HIZLI AKSİYON BUTONLARI (Quick Action Strip)
 // ══════════════════════════════════════════════════════════════
 // 1. Rastgele Niş Seç & Konu Üret
@@ -989,36 +1276,11 @@ btnSplitMode?.addEventListener('click', () => {
     showToast(chkSplitScreen.checked ? '🎮 Split-Screen (Oynanış + Kurgu) Aktif!' : '⏹️ Split-Screen Modu Kapatıldı');
 });
 
-
-
 // 4. Tier-1 (ABD/İngilizce) Modu (Toggle TR / EN)
 const btnTier1 = document.getElementById('qa-tier1-en');
-btnTier1?.addEventListener('click', async () => {
-    const isCurrentlyEn = selectLanguage.value === 'en';
-    if (!isCurrentlyEn) {
-        selectLanguage.value = 'en';
-        populateTtsVoiceSelect('en');
-        if (selectTtsVoice) selectTtsVoice.value = 'en-US-GuyNeural';
-        selectNiche.value = '7_dark_psychology';
-        await applyNicheProfile('7_dark_psychology');
-        inputTopic.value = "3 Dark Psychology Secrets Manipulation Experts Never Tell You #Shorts";
-        btnTier1.classList.add('active');
-        const span = btnTier1.querySelector('span');
-        if (span) span.textContent = 'Tier-1 EN: AKTİF (ABD)';
-        switchTab('studio');
-        showToast('🌎 Tier-1 ABD (İngilizce Yüksek CPM) Modu Aktif Edildi!');
-    } else {
-        selectLanguage.value = 'tr';
-        selectVoiceGender.value = 'auto';
-        selectNiche.value = '6_stoic_philosophy';
-        await applyNicheProfile('6_stoic_philosophy');
-        inputTopic.value = "Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı";
-        btnTier1.classList.remove('active');
-        const span = btnTier1.querySelector('span');
-        if (span) span.textContent = 'Tier-1 (ABD/İngilizce) Modu';
-        switchTab('studio');
-        showToast('🇹🇷 Türkçe Moduna Geri Dönüldü');
-    }
+btnTier1?.addEventListener('click', () => {
+    const isCurrentlyEn = selectLanguage?.value === 'en';
+    setStudioLanguage(isCurrentlyEn ? 'tr' : 'en', { toast: true, autoTranslate: true });
 });
 
 // ══════════════════════════════════════════════════════════════

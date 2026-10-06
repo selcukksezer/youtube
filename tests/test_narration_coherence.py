@@ -10,6 +10,7 @@ from director.timeline import _split_narration_near_mid, solve_timeline
 from director.schema import DirectorPlan, QualityThresholds, ScenePlan
 from scenes.narration_coherence import (
     detect_split_verb_pair,
+    detect_repeated_topic_discontinuities,
     repair_cross_scene_coherence,
     repair_split_verbs_across_scenes,
 )
@@ -61,6 +62,75 @@ class TestSplitVerbDetection(unittest.TestCase):
                 "Etti ve düğünü mahveden cani olarak görüyorlar.",
             )
         )
+
+
+def _topic_scenes(*narrations):
+    return [{"narration": narration} for narration in narrations]
+
+
+class TestRepeatedTopicDiscontinuities(unittest.TestCase):
+    def test_reports_two_consecutive_unbridged_topic_jumps(self):
+        advisories = detect_repeated_topic_discontinuities(_topic_scenes(
+            "Astronot Mars yüzeyindeki kraterleri ölçtü ve kaya örneklerini topladı.",
+            "Şef mutfakta hamuru yoğurdu, baharatları ekledi ve fırını ısıttı.",
+            "Keman sanatçısı sahnede melodiyi çaldı, yayını kaldırdı ve dinleyicileri selamladı.",
+        ))
+        self.assertEqual(len(advisories), 1)
+        self.assertIn("Sahneler 1-3", advisories[0])
+
+    def test_repeated_topic_entity_prevents_warning(self):
+        advisories = detect_repeated_topic_discontinuities(_topic_scenes(
+            "Marmara depremi kıyı kentlerinde hasara ve uzun süreli paniğe yol açtı.",
+            "Marmara depremi uzmanların erken uyarı sistemlerini yeniden incelemesine neden oldu.",
+            "Marmara depremi sonrasında ekipler güvenli toplanma alanlarını duyurdu.",
+        ))
+        self.assertEqual(advisories, [])
+
+    def test_conjunction_bridge_prevents_warning(self):
+        advisories = detect_repeated_topic_discontinuities(_topic_scenes(
+            "Astronot Mars yüzeyindeki kraterleri ölçtü ve kaya örneklerini topladı.",
+            "Şef mutfakta hamuru yoğurdu, baharatları ekledi ve fırını ısıttı.",
+            "Ancak keman sanatçısı sahnede melodiyi çaldı, yayını kaldırdı ve dinleyicileri selamladı.",
+        ))
+        self.assertEqual(advisories, [])
+
+    def test_attribution_bridge_prevents_warning(self):
+        advisories = detect_repeated_topic_discontinuities(_topic_scenes(
+            "Astronot Mars yüzeyindeki kraterleri ölçtü ve kaya örneklerini topladı.",
+            "Şef mutfakta hamuru yoğurdu, baharatları ekledi ve fırını ısıttı.",
+            "Keman sanatçısı sahnede melodiyi çaldı, yayını kaldırdı ve dinleyicileri selamladı, dedi.",
+        ))
+        self.assertEqual(advisories, [])
+
+    def test_single_discontinuity_is_not_reported(self):
+        advisories = detect_repeated_topic_discontinuities(_topic_scenes(
+            "Astronot Mars yüzeyindeki kraterleri ölçtü ve kaya örneklerini topladı.",
+            "Şef mutfakta hamuru yoğurdu, baharatları ekledi ve fırını ısıttı.",
+        ))
+        self.assertEqual(advisories, [])
+
+    def test_short_or_empty_scene_breaks_discontinuity_run(self):
+        for scenes in (
+            _topic_scenes(
+                "Astronot Mars yüzeyindeki kraterleri ölçtü ve kaya örneklerini topladı.",
+                "Kısa.",
+                "Keman sanatçısı sahnede melodiyi çaldı, yayını kaldırdı ve dinleyicileri selamladı.",
+            ),
+            _topic_scenes(
+                "Astronot Mars yüzeyindeki kraterleri ölçtü ve kaya örneklerini topladı.",
+                "",
+                "Keman sanatçısı sahnede melodiyi çaldı, yayını kaldırdı ve dinleyicileri selamladı.",
+            ),
+        ):
+            self.assertEqual(detect_repeated_topic_discontinuities(scenes), [])
+
+    def test_metaphor_bridge_prevents_warning(self):
+        advisories = detect_repeated_topic_discontinuities(_topic_scenes(
+            "Astronot Mars yüzeyindeki kraterleri ölçtü ve kaya örneklerini topladı.",
+            "İnsan hafızası, eski anıları saklayan bir kütüphane gibidir.",
+            "Keman sanatçısı sahnede melodiyi çaldı, yayını kaldırdı ve dinleyicileri selamladı.",
+        ))
+        self.assertEqual(advisories, [])
 
     def test_complete_sentences_not_flagged(self):
         self.assertFalse(

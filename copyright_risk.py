@@ -15,7 +15,7 @@ _COMPILED_PATTERNS = [re.compile(pattern, re.IGNORECASE) for pattern in _KNOWN_C
 _SAFE_SOURCES = {
     "pexels", "pixabay", "unsplash", "coverr", "mixkit", "videvo", "freepik_video", "ai_generated",
     "custom_footage", "openverse", "youtube_audio_library_free", "ccmixter", "freemusicarchive",
-    "bensound_free", "incompetech", "purple_planet",
+    "bensound_free", "incompetech", "purple_planet", "yt_safe", "youtube_safe", "royalty_free", "voicelab",
 }
 
 

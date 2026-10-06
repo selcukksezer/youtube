@@ -75,6 +75,46 @@ def resolve_motif(scene_description: str = "", visual_intent: Optional[dict] = N
     return "cinematic_general"
 
 
+def render_geq_fallback(
+    output_path: str,
+    duration: float,
+    scene_index: int = 0,
+    width: int = 1080,
+    height: int = 1920,
+    fps: int = 30,
+) -> Optional[str]:
+    """Quarter-res geq, then scale. A full 1080x1920 geq eval is too slow."""
+    w, h = int(width), int(height)
+    r = int(fps)
+    dur = max(0.4, float(duration))
+    phase = (scene_index % 7) * 0.9
+    sw, sh = max(160, w // 4), max(284, h // 4)
+    sw -= sw % 2
+    sh -= sh % 2
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    cmd = [
+        ffmpeg, "-y", "-loglevel", "error",
+        "-f", "lavfi", "-i", f"color=c=0x0a0f1a:s={sw}x{sh}:r={r}:d={dur:.3f}",
+        "-t", f"{dur:.3f}",
+        "-vf", (
+            f"geq=r='18+14*sin(2*PI*T/3+X/70+{phase:.2f})':"
+            f"g='26+18*sin(2*PI*T/4+Y/90+{phase:.2f})':"
+            f"b='48+22*sin(2*PI*T/5+(X+Y)/120)',"
+            f"scale={w}:{h}:flags=bicubic,vignette=PI/4,format=yuv420p"
+        ),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an",
+        output_path,
+    ]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90)
+    except Exception as exc:
+        print(f"    [Procedural:geq] {exc}")
+        return None
+    if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
+        return output_path
+    return None
+
+
 def build_procedural_clip(
     output_path: str,
     duration: float,
@@ -100,6 +140,59 @@ def build_procedural_clip(
     pan = cheap_pan_filter(w, h, dur, scene_index)
     speed = 0.03 + 0.01 * (scene_index % 4)
 
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+
+    # Specialized procedural engines (cellauto, mandelbrot, cyber_grid)
+    if motif in ("cellular_automata", "cellauto"):
+        rule = (110 + (scene_index * 2)) % 256
+        cmd = [
+            ffmpeg, "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"cellauto=s={max(60, w//4)}x{max(100, h//4)}:rule={rule}:rate={r}",
+            "-t", f"{dur:.3f}",
+            "-vf", f"scale={w}:{h}:flags=neighbor,colorchannelmixer=rr=0.2:gg=0.8:bb=0.6,vignette=PI/4,format=yuv420p",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an",
+            output_path,
+        ]
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+            if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
+                return output_path
+        except Exception as exc:
+            print(f"    [Procedural:cellauto] {exc}")
+
+    elif motif in ("mandelbrot_fractal", "mandelbrot"):
+        cmd = [
+            ffmpeg, "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"mandelbrot=s={w//2}x{h//2}:rate={r}:maxiter=120",
+            "-t", f"{dur:.3f}",
+            "-vf", f"scale={w}:{h},hue=H=PI*t/12:s=2,format=yuv420p",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an",
+            output_path,
+        ]
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+            if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
+                return output_path
+        except Exception as exc:
+            print(f"    [Procedural:mandelbrot] {exc}")
+
+    elif motif in ("cyber_grid", "testsrc2"):
+        cmd = [
+            ffmpeg, "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"testsrc2=s={w}x{h}:r={r}",
+            "-t", f"{dur:.3f}",
+            "-vf", "colorchannelmixer=rr=0.2:gg=0.7:bb=1.0,vignette=PI/4,format=yuv420p",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an",
+            output_path,
+        ]
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
+            if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
+                return output_path
+        except Exception as exc:
+            print(f"    [Procedural:cyber_grid] {exc}")
+
+    # Standard cinematic gradient + cellular life
     grad = (
         f"gradients=s={w}x{h}:c0={pal[0]}:c1={pal[1]}:c2={pal[2]}:c3={pal[3]}"
         f":n=4:speed={speed:.3f}:type={gtype}:duration={dur:.3f}:rate={r}:seed={seed}"
@@ -115,7 +208,6 @@ def build_procedural_clip(
         f"{pan},"
         "vignette=PI/4.6,noise=alls=6:allf=t,format=yuv420p"
     )
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     cmd = [
         ffmpeg, "-y", "-loglevel", "error",
         "-f", "lavfi", "-i", grad,
@@ -127,12 +219,49 @@ def build_procedural_clip(
     ]
     try:
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
+        if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
+            return output_path
     except Exception as exc:
         print(f"    [Procedural] ffmpeg error: {exc}")
-        return None
-    if res.returncode != 0:
-        print(f"    [Procedural] ffmpeg failed: {res.stderr.decode('utf-8', 'ignore')[-300:]}")
-        return None
-    if os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
-        return output_path
+
+    # Fallback Cascade 1: cellauto
+    try:
+        cmd_fallback = [
+            ffmpeg, "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"cellauto=s={max(60, w//4)}x{max(100, h//4)}:rule=110:rate={r}",
+            "-t", f"{dur:.3f}",
+            "-vf", f"scale={w}:{h}:flags=neighbor,colorchannelmixer=rr=0.2:gg=0.8:bb=0.6,vignette=PI/4,format=yuv420p",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an",
+            output_path,
+        ]
+        res = subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
+            return output_path
+    except Exception:
+        pass
+
+    # Fallback Cascade 2: geq field. testsrc2 is a calibration card, so it
+    # stays last.
+    geq_out = render_geq_fallback(
+        output_path, dur, scene_index=scene_index, width=w, height=h, fps=r,
+    )
+    if geq_out:
+        return geq_out
+
+    # Fallback Cascade 3: testsrc2
+    try:
+        cmd_fallback2 = [
+            ffmpeg, "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", f"testsrc2=s={w}x{h}:r={r}",
+            "-t", f"{dur:.3f}",
+            "-vf", "colorchannelmixer=rr=0.2:gg=0.7:bb=1.0,vignette=PI/4,format=yuv420p",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an",
+            output_path,
+        ]
+        res = subprocess.run(cmd_fallback2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+        if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10_000:
+            return output_path
+    except Exception:
+        pass
+
     return None

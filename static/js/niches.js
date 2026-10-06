@@ -23,6 +23,74 @@ function parseRpmMax(rpmStr) {
 // Helper: competition level to sort order (low = best)
 function compToNum(lvl) { return lvl === 'low' ? 3 : lvl === 'medium' ? 2 : 1; }
 
+// Helper: Nişleri ana kategorilere eşleyen sınıflandırıcı
+function getNicheCategoryGroup(n) {
+    if (!n) return 'Diğer & Genel';
+    const cat = (n.category || '').toLowerCase();
+    const name = (n.name || '').toLowerCase();
+    const nid = (n.id || '').toLowerCase();
+    const full = `${name} ${cat} ${nid}`;
+
+    // 1. Din & Maneviyat
+    if (/din|maneviyat|ayet|hadis|huzur|dini/.test(full)) return 'Din & Maneviyat';
+
+    // 2. Çocuk & Aile
+    if (/çocuk|pedagoji|ebeveyn|aile animasyon/.test(full)) return 'Çocuk & Aile';
+
+    // 3. Alışveriş & Ürünler
+    if (/affiliate|ürün|alışveriş|e-ticaret|amazon|trendyol/.test(full)) return 'Alışveriş & Ürünler';
+
+    // 4. Bilim, Uzay & Teknoloji (Quiz'den önce test edilmeli, 'yapay zeka' zeka ile karışmasın)
+    if (/yapay zeka|ai araç|teknoloji & yapay zeka|astronomi|bilim & evren|gelecek simülasyonu|mit avcısı|bilim &/.test(full)) return 'Bilim, Uzay & Teknoloji';
+
+    // 5. Gizem, Gerilim & Suç (Finans'tan önce test edilmeli, 'paranormal' para ile karışmasın)
+    if (/paranormal|komplo teorileri|komplo|gerçek suç|cctv|gizli mikrofon|sızıntı/.test(full)) return 'Gizem, Gerilim & Suç';
+
+    // 6. Psikoloji & Zihin (Oyun'dan önce test edilmeli)
+    if (/psikoloji|beden dili|rüya tabir|manipülasyon|bilinçaltı|korku/.test(full)) return 'Psikoloji & Zihin';
+
+    // 7. Felsefe & Kişisel Gelişim
+    if (/felsefe|stoa|kişisel gelişim|karakter analizi|kitap özeti|sigma|motivasyon/.test(full)) return 'Felsefe & Kişisel Gelişim';
+
+    // 8. Tarih & Mitoloji
+    if (/tarih|mitoloji|medeniyet|arkeoloji|savaş|zaman makinesi|askeri taktik|tarihi şahsiyet/.test(full)) return 'Tarih & Mitoloji';
+
+    // 9. Finans, Ekonomi & İş Dünyası
+    if (/finans|kripto|borsa|\bpara\b|ekonomi|iş dünyası|girişim|zengin|şirket|fiyat/.test(full)) return 'Finans, Ekonomi & İş Dünyası';
+
+    // 10. Sağlık, Spor & Fitness
+    if (/sağlık|spor|fitness|futbol|beslenme|rekor/.test(full)) return 'Sağlık, Spor & Fitness';
+
+    // 11. Quiz, Zeka & Bulmaca
+    if (/quiz|zeka|bulmaca|tahmin|test|would you rather|tercih et|bilmece|illüzyon/.test(full)) return 'Quiz, Zeka & Bulmaca';
+
+    // 12. Oyun & Gaming
+    if (/oyun|gaming|easter egg|gameplay|split-screen/.test(full)) return 'Oyun & Gaming';
+
+    // 13. Coğrafya, Seyahat & Kültür
+    if (/coğrafya|seyahat|ülke|tehlikeli yerler|yasak|harita/.test(full)) return 'Coğrafya, Seyahat & Kültür';
+
+    // 14. Sinema, Dizi & Sanat
+    if (/sinema|dizi|film|sanat|edebiyat|şiir/.test(full)) return 'Sinema, Dizi & Sanat';
+
+    // 15. Ses, Müzik & ASMR
+    if (/ses|asmr|müzik|frekans|gece modu|dark mode|rahatlatıcı/.test(full)) return 'Ses, Müzik & ASMR';
+
+    // 16. Doğa & Hayvanlar
+    if (/hayvan|doğa|vahşi|deniz|talasofobi/.test(full)) return 'Doğa & Hayvanlar';
+
+    // 17. Sosyal Medya, Mizah & Eğlence
+    if (/sosyal|reddit|mizah|eğlence|itiraf|diyalog|röportaj|yorum|durdurma/.test(full)) return 'Sosyal Medya, Mizah & Eğlence';
+
+    // 18. Haber, Gündem & Trendler
+    if (/haber|gündem|trend|flaş|son dakika/.test(full)) return 'Haber, Gündem & Trendler';
+
+    // 19. Yaşam, Eğitim & Otomobil
+    if (/eğitim|dil|ingilizce|astroloji|otomobil|araba|hukuk|nostalji|hap bilgi/.test(full)) return 'Yaşam, Eğitim & Otomobil';
+
+    return 'Diğer & Genel';
+}
+
 async function loadNiches() {
     try {
         const res = await fetch('/api/niches');
@@ -53,16 +121,44 @@ async function loadNiches() {
         if (collisionA) collisionA.innerHTML = '';
         if (collisionB) collisionB.innerHTML = '';
 
+        // Başlık etiketini güncelle
+        const nicheLabelSpan = document.querySelector('label[for="select-niche"] span:first-child');
+        if (nicheLabelSpan) {
+            nicheLabelSpan.innerHTML = `<i class="fa-solid fa-shapes text-warning"></i> Niş Şablonu (${allNiches.length} Niş)`;
+        }
+
+        // Kategorilere göre grupla ve her kategoride alfabetik sırala
+        const nicheGroups = {};
         allNiches.forEach(n => {
-            const opt = document.createElement('option');
-            opt.value = n.id;
-            opt.textContent = `${n.name} (${n.category})`;
-            selectNiche.appendChild(opt);
-            if (batchNicheSelect) batchNicheSelect.appendChild(opt.cloneNode(true));
-            if (compareA) compareA.appendChild(opt.cloneNode(true));
-            if (compareB) compareB.appendChild(opt.cloneNode(true));
-            if (collisionA) collisionA.appendChild(opt.cloneNode(true));
-            if (collisionB) collisionB.appendChild(opt.cloneNode(true));
+            const groupName = getNicheCategoryGroup(n);
+            if (!nicheGroups[groupName]) nicheGroups[groupName] = [];
+            nicheGroups[groupName].push(n);
+        });
+
+        // Kategorileri Türkçe alfabetik sırala
+        const sortedGroupNames = Object.keys(nicheGroups).sort((a, b) => a.localeCompare(b, 'tr'));
+
+        sortedGroupNames.forEach(groupName => {
+            const groupNiches = nicheGroups[groupName];
+            // Kategori içindeki nişleri Türkçe alfabetik sırala
+            groupNiches.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
+
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = `📁 ${groupName} (${groupNiches.length})`;
+
+            groupNiches.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n.id;
+                opt.textContent = `${n.name} (${n.category})`;
+                optgroup.appendChild(opt);
+            });
+
+            selectNiche.appendChild(optgroup);
+            if (batchNicheSelect) batchNicheSelect.appendChild(optgroup.cloneNode(true));
+            if (compareA) compareA.appendChild(optgroup.cloneNode(true));
+            if (compareB) compareB.appendChild(optgroup.cloneNode(true));
+            if (collisionA) collisionA.appendChild(optgroup.cloneNode(true));
+            if (collisionB) collisionB.appendChild(optgroup.cloneNode(true));
         });
 
         // Default compare B to second niche

@@ -239,4 +239,25 @@ __all__ = [
     "punch_in_director",
     "PunchInDirector",
     "PunchInBeat",
+    # audio visualizer (Item 2.1.8 & 28.8)
+    "build_waveform_filter",
+    "render_standalone_waveform",
+    "is_visualizer_recommended_for_niche",
+    # breaking news ticker (Item 2.1.10 & 28.10)
+    "generate_news_ticker_image",
+    "build_news_ticker_ffmpeg_filter",
+    "is_ticker_enabled_for_niche",
 ]
+
+from .audio_visualizer import (
+    build_waveform_filter,
+    render_standalone_waveform,
+    is_visualizer_recommended_for_niche,
+)
+from .ticker import (
+    generate_news_ticker_image,
+    build_news_ticker_ffmpeg_filter,
+    is_ticker_enabled_for_niche,
+)
+
+

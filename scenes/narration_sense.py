@@ -85,7 +85,7 @@ def _off_topic(narration: str, topic: str) -> bool:
     return not any(tok in blob for tok in distinctive)
 
 
-def repair_nonsensical_narration(plan: Dict[str, Any], topic: str = "") -> Dict[str, Any]:
+def repair_nonsensical_narration(plan: Dict[str, Any], topic: str = "", language: str = None) -> Dict[str, Any]:
     """Return the plan with mashed titles and template lines replaced."""
     if not isinstance(plan, dict):
         return plan
@@ -97,7 +97,8 @@ def repair_nonsensical_narration(plan: Dict[str, Any], topic: str = "") -> Dict[
     from scenes.fallback import _topic_bound_narrations, _viewer_subject
 
     subject = _viewer_subject(topic)
-    is_tr = str(plan.get("language") or "tr").lower()[:2] != "en"
+    effective_lang = language or plan.get("language") or "tr"
+    is_tr = str(effective_lang).lower()[:2] != "en"
     beats = _topic_bound_narrations(subject, is_tr)
 
     joined_after_strip = []

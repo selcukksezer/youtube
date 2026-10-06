@@ -23,6 +23,7 @@ current_render_state = {
     "is_rendering": False,
     "percent": 0,
     "step": "Hazır",
+    "stage": "IDLE",
     "keyword": "",
     "logs": [],
     "cancel_requested": False,
@@ -32,12 +33,57 @@ current_render_state = {
 }
 
 
+def format_sse_message(event_type: str, data: Any, timestamp: float = None) -> str:
+    """
+    Formats a message according to Section 10.1 canonical SSE specification:
+    event: <event_type>
+    data: <payload>
+    """
+    if timestamp is None:
+        timestamp = time.time()
+
+    if isinstance(data, dict):
+        payload_obj = dict(data)
+        if "timestamp" not in payload_obj:
+            payload_obj["timestamp"] = timestamp
+        payload_str = json.dumps(payload_obj, ensure_ascii=False)
+    elif isinstance(data, (list, int, float, bool)):
+        payload_str = json.dumps(data, ensure_ascii=False)
+    else:
+        payload_str = str(data)
+
+    return f"event: {event_type}\ndata: {payload_str}\n\n"
+
+
+def get_current_render_snapshot() -> dict:
+    """Returns a thread-safe copy of the current render state across page refreshes."""
+    with render_lock:
+        return {
+            "is_rendering": bool(current_render_state.get("is_rendering", False)),
+            "percent": int(current_render_state.get("percent", 0)),
+            "step": str(current_render_state.get("step", "Hazır")),
+            "stage": str(current_render_state.get("stage", "IDLE")),
+            "keyword": str(current_render_state.get("keyword", "")),
+            "logs": list(current_render_state.get("logs", [])),
+            "cancel_requested": bool(current_render_state.get("cancel_requested", False)),
+            "video_url": current_render_state.get("video_url"),
+            "error": current_render_state.get("error")
+        }
+
+
 def broadcast_event(event_type: str, data: Any):
     global current_render_state
+    try:
+        from services.log_sanitizer import sanitize_payload
+        data = sanitize_payload(data)
+    except Exception:
+        pass
     if event_type == "progress":
         if isinstance(data, dict):
             current_render_state["percent"] = data.get("percent", current_render_state["percent"])
             current_render_state["step"] = data.get("step", current_render_state["step"])
+            if "stage" in data:
+                current_render_state["stage"] = data["stage"]
     elif event_type == "log":
         current_render_state["logs"].append(str(data))
         if len(current_render_state["logs"]) > 150:
@@ -73,10 +119,16 @@ def broadcast_event(event_type: str, data: Any):
         except Exception as exc:
             logger.warning("Render job state güncellenemedi (%s): %s", job_id, exc)
 
-    payload = json.dumps({"type": event_type, "data": data, "timestamp": time.time()})
+    # Section 10.1 payload object (supports both dict event items and JSON string consumers)
+    payload_dict = {"type": event_type, "data": data, "timestamp": time.time()}
     for q in list(event_queues):
         try:
-            q.put_nowait(payload)
+            if q.full():
+                try:
+                    q.get_nowait()
+                except Exception:
+                    pass
+            q.put_nowait(payload_dict)
         except Exception as exc:
             logger.debug("SSE kuyruğuna olay yazılamadı: %s", exc)
 

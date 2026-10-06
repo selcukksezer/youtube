@@ -323,8 +323,7 @@ def generate_image_bytes(
             if circuit_breaker is not None and r.status_code in (429, 500, 503):
                 # Free-tier image often reports limit:0 — trip fast, long cool-down
                 cool = 1800.0 if r.status_code == 429 else 60.0
-                circuit_breaker.recovery_timeout = cool
-                circuit_breaker.record_failure("gemini_image", msg)
+                circuit_breaker.record_failure("gemini_image", msg, custom_timeout=cool)
                 if r.status_code == 429:
                     # Trip immediately on quota (don't wait for 3 failures)
                     s = circuit_breaker._get_service("gemini_image")

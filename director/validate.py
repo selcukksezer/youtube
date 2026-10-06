@@ -56,12 +56,22 @@ def validate_director_plan(plan: DirectorPlan) -> Dict[str, Any]:
         else:
             errors.append(ni)
 
+    from .schema import SCENE_INTENTS, CAMERA_DIRECTIONS
+
     alignment_flags = 0
     for s in plan.scenes:
         if s.visual_intent and s.visual_intent.must_exclude:
             alignment_flags += 1
         if not (s.search_queries or s.visual_intent.search_queries):
             warnings.append(f"Sahne {s.index}: search_queries boş")
+        if s.scene_intent not in SCENE_INTENTS:
+            warnings.append(
+                f"Sahne {s.index}: geçersiz scene_intent '{s.scene_intent}', beklenen {SCENE_INTENTS}"
+            )
+        if s.camera_direction not in CAMERA_DIRECTIONS:
+            warnings.append(
+                f"Sahne {s.index}: geçersiz camera_direction '{s.camera_direction}', beklenen {CAMERA_DIRECTIONS}"
+            )
 
     ok = len(errors) == 0
     result = {

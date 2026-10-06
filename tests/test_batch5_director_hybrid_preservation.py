@@ -58,7 +58,9 @@ class TestBatch5DirectorHybridPreservation(unittest.TestCase):
                 {"narration": "End.", "duration": 3.0},
             ]
         }
-        out = apply_retention_hooks_to_plan(plan, "Zihin", lang="tr", variation_attempt=4)
+        from scenes.retention_hooks import opening_strategy_names
+        attempt = opening_strategy_names().index("single_sentence")
+        out = apply_retention_hooks_to_plan(plan, "Zihin", lang="tr", variation_attempt=attempt)
         self.assertEqual(out["retention_metadata"]["hook_strategy"], "single_sentence")
 
     def test_item_345_perfect_loop_on_variation(self):

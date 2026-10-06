@@ -25,6 +25,10 @@ def mark_used(uid: str) -> None:
         _used_uids.add(uid)
 
 
+def is_used(uid: str) -> bool:
+    return bool(uid) and uid in _used_uids
+
+
 def provider_available(spec: ProviderSpec) -> bool:
     if not spec.key_env:
         return True
@@ -153,6 +157,17 @@ def score_candidate(
         c.matched_terms = []
         c.semantic_evidence = {"query": query, "subject_match": False, "rejected": "unsafe_or_unknown_license"}
         return -1e9
+    if c.width and c.height:
+        from system_resilience import is_material_resolution_acceptable
+        if not is_material_resolution_acceptable(c.width, c.height):
+            c.topic_match_score = c.visual_verification_score = 0.0
+            c.matched_terms = []
+            c.semantic_evidence = {
+                "query": query,
+                "subject_match": False,
+                "rejected": f"low_resolution_{c.width}x{c.height}",
+            }
+            return -1e9
     score = 50.0
     # portrait bonus
     if c.is_portrait:

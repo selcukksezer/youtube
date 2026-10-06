@@ -94,5 +94,27 @@ class TestSourceSelection(unittest.TestCase):
         self.assertEqual(pool_before, 4)
 
 
+class TestParallelAssetClaim(unittest.TestCase):
+    def test_one_pexels_id_and_hash_survive_parallel_claim(self):
+        import threading
+        from visuals.fetch import claim_job_asset, reset_job_manifest
+
+        reset_job_manifest()
+        results = []
+
+        def grab():
+            results.append(claim_job_asset("pexels:3755076", "same-bytes"))
+
+        threads = [threading.Thread(target=grab) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(results.count(True), 1)
+        self.assertFalse(claim_job_asset("pixabay:9", "same-bytes"))
+        reset_job_manifest()
+
+
 if __name__ == "__main__":
     unittest.main()

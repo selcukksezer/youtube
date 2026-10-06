@@ -71,6 +71,10 @@ class ScriptGenerateRequest(BaseModel):
     reddit_post: Optional[Dict[str, Any]] = None
     channel_id: Optional[str] = None
     format_fingerprint: Optional[Dict[str, Any]] = None
+    force_regenerate: Optional[bool] = False
+    variation_attempt: Optional[int] = 0
+    previous_narration: Optional[str] = None
+    enable_outro: Optional[bool] = True
 
 
 class PlanValidateRequest(BaseModel):
@@ -116,14 +120,14 @@ class VideoRenderRequest(BaseModel):
     tts_voice: Optional[str] = None
     bgm_track: Optional[str] = ""
     bgm_volume: Optional[float] = 0.12
-    subtitle_highlight_color: Optional[str] = "#FFD700"
-    subtitle_color: Optional[str] = "white"
+    subtitle_highlight_color: Optional[str] = None
+    subtitle_color: Optional[str] = None
     subtitle_font_size: Optional[int] = 54
     subtitle_y_position: Optional[float] = 0.8
     subtitle_preset: Optional[str] = None
     split_screen: Optional[bool] = False
     gameplay_category: Optional[str] = "auto"
-    anti_duplicate: Optional[bool] = False
+    anti_duplicate: Optional[bool] = True
     watermark_path: Optional[str] = None
     enable_ken_burns: Optional[bool] = False
     enable_zoompan: Optional[bool] = False
@@ -132,6 +136,30 @@ class VideoRenderRequest(BaseModel):
     visual_mode: Optional[str] = "auto"
     auto_publish: Optional[bool] = False
     channel_id: Optional[str] = None
+    allow_similar_script: Optional[bool] = False
+    force_render: Optional[bool] = False
+    resume: Optional[bool] = False
+    whisper_align: Optional[bool] = None
+    enable_intro_whoosh: Optional[bool] = False
+    enable_bgm: Optional[bool] = None
+    enable_outro: Optional[bool] = True
+    enable_outro_swell: Optional[bool] = True
+    duck_attack_ms: Optional[float] = 80
+    duck_release_ms: Optional[float] = 200
+    intro_blast: Optional[float] = 0.85
+    outro_swell_sec: Optional[float] = 5
+    enable_hook_card: Optional[bool] = True
+    hook_text: Optional[str] = None
+    enable_broll_insert: Optional[bool] = False
+    enable_face_center: Optional[bool] = False
+    enable_emphasis_card: Optional[bool] = False
+    enable_audio_visualizer: Optional[bool] = False
+    audio_visualizer_mode: Optional[str] = "line"
+    audio_visualizer_color: Optional[str] = "0x00D7FF"
+    enable_news_ticker: Optional[bool] = False
+    news_ticker_text: Optional[str] = None
+    enable_reddit_card: Optional[bool] = False
+    task_id: Optional[str] = None
 
 
 class KeyTestRequest(BaseModel):

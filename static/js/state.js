@@ -72,6 +72,15 @@ function initDomElements() {
     chkAntiDuplicate = document.getElementById('chk-anti-duplicate');
     chkKenBurns = document.getElementById('chk-ken-burns');
     chkZoompan = document.getElementById('chk-zoompan');
+    chkBrollInsert = document.getElementById('chk-broll-insert');
+    chkCenterFace = document.getElementById('chk-center-face');
+    chkEmphasisCard = document.getElementById('chk-emphasis-card');
+    chkEmphasisCardLab = document.getElementById('chk-emphasis-card-lab');
+    if (chkEmphasisCard && chkEmphasisCardLab) {
+        chkEmphasisCard.addEventListener('change', () => { chkEmphasisCardLab.checked = chkEmphasisCard.checked; });
+        chkEmphasisCardLab.addEventListener('change', () => { chkEmphasisCard.checked = chkEmphasisCardLab.checked; });
+    }
+    chkAllowSimilarScript = document.getElementById('chk-allow-similar-script');
     chkAutoPublish = document.getElementById('chk-auto-publish');
     btnCreateScript = document.getElementById('btn-create-script');
     btnQuickRender = document.getElementById('btn-quick-render');
@@ -103,6 +112,17 @@ function initDomElements() {
     window.chkAntiDuplicate = chkAntiDuplicate;
     window.chkKenBurns = chkKenBurns;
     window.chkZoompan = chkZoompan;
+    window.chkBrollInsert = chkBrollInsert;
+    window.chkCenterFace = chkCenterFace;
+    window.chkEmphasisCard = chkEmphasisCard;
+    window.chkEmphasisCardLab = chkEmphasisCardLab;
+    window.chkAllowSimilarScript = chkAllowSimilarScript;
+    if (chkAllowSimilarScript) {
+        chkAllowSimilarScript.addEventListener('change', () => {
+            const plag = currentPlan?.plagiarism || currentPlan?.meta?.plagiarism;
+            if (plag) applyPlagiarismBadge(plag);
+        });
+    }
     window.chkAutoPublish = chkAutoPublish;
     window.btnCreateScript = btnCreateScript;
     window.btnQuickRender = btnQuickRender;
@@ -173,7 +193,6 @@ function planHasBrokenNarration(plan) {
 }
 
 const STUDIO_SETTINGS_STORAGE_KEY = 'shortsStudioSettings';
-let userManuallyPickedNiche = false;
 
 function saveStudioSettings() {
     try {
@@ -192,6 +211,16 @@ function saveStudioSettings() {
             antiDuplicate: chkAntiDuplicate ? !!chkAntiDuplicate.checked : true,
             kenBurns: chkKenBurns ? !!chkKenBurns.checked : true,
             zoompan: chkZoompan ? !!chkZoompan.checked : false,
+            brollInsert: chkBrollInsert ? !!chkBrollInsert.checked : false,
+            centerFace: chkCenterFace ? !!chkCenterFace.checked : false,
+            emphasisCard: (chkEmphasisCard ? !!chkEmphasisCard.checked : (chkEmphasisCardLab ? !!chkEmphasisCardLab.checked : false)),
+            enableBgm: document.getElementById('chk-enable-bgm')
+                ? !!document.getElementById('chk-enable-bgm').checked
+                : true,
+            enableOutro: document.getElementById('chk-enable-outro')
+                ? !!document.getElementById('chk-enable-outro').checked
+                : true,
+            introWhoosh: !!document.getElementById('chk-intro-whoosh')?.checked,
             userManuallyPickedNiche: !!userManuallyPickedNiche,
             savedAt: Date.now()
         };
@@ -222,6 +251,23 @@ function restoreStudioSettings() {
         }
         if (s.language && selectLanguage) {
             selectLanguage.value = s.language;
+            const btnTr = document.getElementById('btn-quick-lang-tr');
+            const btnEn = document.getElementById('btn-quick-lang-en');
+            if (btnTr && btnEn) {
+                if (s.language === 'en') {
+                    btnTr.classList.remove('active');
+                    btnTr.classList.add('btn-outline');
+                    btnEn.classList.add('active');
+                    btnEn.classList.remove('btn-outline');
+                    if (inputTopic) inputTopic.placeholder = 'e.g.: 3 Dark Psychology Secrets Manipulation Experts Never Tell You #Shorts';
+                } else {
+                    btnEn.classList.remove('active');
+                    btnEn.classList.add('btn-outline');
+                    btnTr.classList.add('active');
+                    btnTr.classList.remove('btn-outline');
+                    if (inputTopic) inputTopic.placeholder = "Örn: Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı";
+                }
+            }
         }
         if (s.ttsVoice && selectTtsVoice) {
             if ([...selectTtsVoice.options].some(o => o.value === s.ttsVoice)) {
@@ -260,6 +306,34 @@ function restoreStudioSettings() {
         }
         if (s.zoompan !== undefined && chkZoompan) {
             chkZoompan.checked = !!s.zoompan;
+        }
+        if (s.brollInsert !== undefined && chkBrollInsert) {
+            chkBrollInsert.checked = !!s.brollInsert;
+        }
+        if (s.centerFace !== undefined && chkCenterFace) {
+            chkCenterFace.checked = !!s.centerFace;
+        }
+        if (s.emphasisCard !== undefined) {
+            if (chkEmphasisCard) chkEmphasisCard.checked = !!s.emphasisCard;
+            if (chkEmphasisCardLab) chkEmphasisCardLab.checked = !!s.emphasisCard;
+        }
+        if (s.enableBgm !== undefined) {
+            const studioBgm = document.getElementById('chk-enable-bgm');
+            const audioBgm = document.getElementById('audio-chk-enable-bgm');
+            if (studioBgm) studioBgm.checked = !!s.enableBgm;
+            if (audioBgm) audioBgm.checked = !!s.enableBgm;
+        }
+        if (s.enableOutro !== undefined) {
+            const studioOutro = document.getElementById('chk-enable-outro');
+            const audioOutro = document.getElementById('audio-chk-enable-outro');
+            if (studioOutro) studioOutro.checked = !!s.enableOutro;
+            if (audioOutro) audioOutro.checked = !!s.enableOutro;
+        }
+        if (s.introWhoosh !== undefined) {
+            const studioWhoosh = document.getElementById('chk-intro-whoosh');
+            const audioWhoosh = document.getElementById('audio-chk-intro-whoosh');
+            if (studioWhoosh) studioWhoosh.checked = !!s.introWhoosh;
+            if (audioWhoosh) audioWhoosh.checked = !!s.introWhoosh;
         }
         return s;
     } catch (e) {
@@ -344,6 +418,9 @@ function setCurrentPlan(plan, opts = {}) {
         }
     }
     updateScriptActionButtons();
+    try {
+        window.dispatchEvent(new CustomEvent('shorts:planChanged', { detail: { plan, opts } }));
+    } catch (_) {}
 }
 
 function hasExistingPlan() {
@@ -429,11 +506,15 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     const panel = document.getElementById('studio-quality-panel');
     const badge = document.getElementById('sqp-status-badge');
     const issuesEl = document.getElementById('sqp-issues');
+    const advisoryGroup = document.getElementById('sqp-advisory-group');
+    const advisoriesEl = document.getElementById('sqp-advisories');
     if (!panel || !badge) return { ok: false, issues: ['Panel yok'] };
 
     if (!plan?.scenes?.length) {
-        badge.className = 'sqp-status-badge waiting';
-        badge.textContent = 'Senaryo bekleniyor';
+        const scriptQuality = plan?.meta?.script_quality || {};
+        const scriptHardFail = scriptQuality.hard_fail === true;
+        badge.className = `sqp-status-badge ${scriptHardFail ? 'blocked' : 'waiting'}`;
+        badge.textContent = scriptHardFail ? 'Senaryo kalite kapisi: BLOKE' : 'Senaryo bekleniyor';
         setSqpPill('sqp-cadence', 'Cadence: —', 'neutral');
         setSqpPill('sqp-words', 'Kelime: —', 'neutral');
         setSqpPill('sqp-duration', 'Sure: —', 'neutral');
@@ -443,11 +524,19 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
         setSqpPill('sqp-discovery', 'Keşfet: —', 'neutral');
         setSqpPill('sqp-pov', 'POV: —', 'neutral');
         if (issuesEl) {
-            issuesEl.classList.add('hidden');
-            issuesEl.innerHTML = '';
+            const scriptIssues = [
+                ...(scriptQuality.issues || []).map(issue => `Senaryo kalite: ${issue}`),
+                ...(scriptQuality.warnings || []).map(warning => `Senaryo kalite uyarısı: ${warning}`),
+            ];
+            issuesEl.classList.toggle('hidden', !scriptIssues.length);
+            issuesEl.innerHTML = scriptIssues.map(issue => `<li>${formatQualityIssueWithRoadmap(issue)}</li>`).join('');
         }
-        updateRenderButtonsBlocked(true, 'Once senaryo olusturun');
-        return { ok: false, issues: ['Senaryo yok'] };
+        if (advisoryGroup && advisoriesEl) {
+            advisoriesEl.replaceChildren();
+            advisoryGroup.classList.add('hidden');
+        }
+        updateRenderButtonsBlocked(true, scriptQuality.issues?.[0] || 'Once senaryo olusturun');
+        return { ok: false, issues: scriptQuality.issues || ['Senaryo yok'], script_quality: scriptQuality, hard_fail: scriptHardFail };
     }
 
     const scenes = plan.scenes;
@@ -467,9 +556,26 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     badge.textContent = 'Dogrulaniyor...';
 
     const validation = await validatePlanViaApi(plan, { autoRepair: true });
+    const continuityAdvisories = Array.isArray(validation.scene_continuity_advisories)
+        ? validation.scene_continuity_advisories
+        : [];
+    if (advisoryGroup && advisoriesEl) {
+        advisoriesEl.replaceChildren();
+        continuityAdvisories.forEach(advisory => {
+            const item = document.createElement('li');
+            item.textContent = String(advisory);
+            advisoriesEl.appendChild(item);
+        });
+        advisoryGroup.classList.toggle('hidden', continuityAdvisories.length === 0);
+    }
     let activePlan = plan;
     if (validation.plan) {
-        activePlan = validation.plan;
+        activePlan = validation.plan === plan
+            ? plan
+            : {
+                ...validation.plan,
+                meta: { ...(plan.meta || {}), ...(validation.plan.meta || {}) }
+            };
         if (activePlan !== currentPlan) {
             currentPlan = activePlan;
             persistCurrentPlan();
@@ -504,12 +610,18 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     const hook = (hc.mute_hook_line || '').slice(0, 28);
     setSqpPill('sqp-pov', hook ? `POV: ${pov} · ${hook}` : `POV: ${pov}`, hc.pov_angle ? 'ok' : 'neutral');
 
+    const scriptQuality = activePlan.meta?.script_quality || {};
+    const scriptHardFail = scriptQuality.hard_fail === true;
     if (issuesEl) {
         const craftIssues = [];
         if (disc.fail_reasons?.length) {
             craftIssues.push(...disc.fail_reasons.map(r => `keşfet:${r}`));
         }
-        const allIssues = [...(validation.issues || []), ...craftIssues];
+        const scriptIssues = [
+            ...(scriptQuality.issues || []).map(issue => `Senaryo kalite: ${issue}`),
+            ...(scriptQuality.warnings || []).map(warning => `Senaryo kalite uyarısı: ${warning}`),
+        ];
+        const allIssues = [...(validation.issues || []), ...craftIssues, ...scriptIssues];
         if (allIssues.length) {
             issuesEl.classList.remove('hidden');
             issuesEl.innerHTML = allIssues.map(i => `<li>${formatQualityIssueWithRoadmap(i)}</li>`).join('');
@@ -518,33 +630,69 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
             issuesEl.innerHTML = '';
         }
     }
-
-    qualityPanelGreen = narrOk && (discPass || discScore == null);
+    qualityPanelGreen = !scriptHardFail && narrOk && (discPass || discScore == null);
     if (qualityPanelGreen) {
         badge.className = 'sqp-status-badge ok';
         badge.textContent = 'Render hazir';
         updateRenderButtonsBlocked(false);
     } else {
         badge.className = 'sqp-status-badge blocked';
-        badge.textContent = discPass === false ? 'Keşfet skoru düşük' : 'Render kapali';
-        updateRenderButtonsBlocked(true, validation.issues?.[0] || disc.fail_reasons?.[0] || 'Anlatim kalite kapisi');
+        badge.textContent = scriptHardFail
+            ? 'Senaryo kalite kapisi: BLOKE'
+            : (discPass === false ? 'Keşfet skoru düşük' : 'Render kapali');
+        updateRenderButtonsBlocked(
+            true,
+            scriptQuality.issues?.[0] || validation.issues?.[0] || disc.fail_reasons?.[0] || 'Anlatim kalite kapisi'
+        );
     }
 
-    return validation;
+    return { ...validation, script_quality: scriptQuality, hard_fail: scriptHardFail };
 }
 
 function applyPlagiarismBadge(plagiarism) {
+    const btnForce = document.getElementById('btn-force-similar-script');
+    const chkAllow = document.getElementById('chk-allow-similar-script');
+    const isBypass = !!(chkAllow && chkAllow.checked);
+
     if (!plagiarism) {
         setSqpPill('sqp-plagiarism', 'Özgünlük: —', 'neutral');
+        if (btnForce) btnForce.classList.add('hidden');
         return;
     }
     const pct = plagiarism.similarity_pct ?? 0;
-    const ok = plagiarism.approved !== false;
-    setSqpPill(
-        'sqp-plagiarism',
-        ok ? `Özgünlük: %${pct}` : `İntihal riski: %${pct}`,
-        ok ? (pct <= 25 ? 'ok' : 'warn') : 'fail'
-    );
+    const backendApproved = plagiarism.approved !== false;
+    const ok = backendApproved || isBypass;
+
+    if (btnForce) {
+        if (!backendApproved && !isBypass) {
+            btnForce.classList.remove('hidden');
+            btnForce.onclick = () => {
+                if (chkAllow) chkAllow.checked = true;
+                btnForce.classList.add('hidden');
+                applyPlagiarismBadge(plagiarism);
+                updateRenderButtonsBlocked(false);
+                if (typeof showToast === 'function') {
+                    showToast('Benzerlik eşiği yok sayıldı. Render açıldı.', 'success');
+                }
+            };
+        } else {
+            btnForce.classList.add('hidden');
+        }
+    }
+
+    if (isBypass && !backendApproved) {
+        setSqpPill(
+            'sqp-plagiarism',
+            `Benzerlik: %${pct} (Atlandı)`,
+            'warn'
+        );
+    } else {
+        setSqpPill(
+            'sqp-plagiarism',
+            ok ? `Özgünlük: %${pct}` : `İntihal riski: %${pct}`,
+            ok ? (pct <= 25 ? 'ok' : 'warn') : 'fail'
+        );
+    }
 }
 
 const QG_ISSUE_ROADMAP = {
@@ -595,6 +743,24 @@ function openRoadmapDeepLink(itemNum) {
     }
 }
 
+function formatQualityGateIssue(issue) {
+    if (!issue) return '';
+    if (issue.startsWith('av_delta_')) {
+        const delta = parseFloat(issue.replace('av_delta_', '')) || 0;
+        return `Ses-Görüntü Senkronizasyonu (Fark: ${delta.toFixed(3)}s)`;
+    }
+    const map = {
+        'low_resolution_test_mode': 'Hızlı Test Çözünürlüğü Modu (540p / 720p)',
+        'post_duration_band': 'Hedef Süre Toleransı',
+        'duplicate_shots': 'Tekrarlayan Görsel Sahne',
+        'duplicate_content_hash': 'İçerik Parmak İzi Çakışması',
+        'missing_output': 'Çıktı Dosyası Eksik',
+        'file_too_small': 'Video Dosya Boyutu Düşük',
+        'fragment_sentence_full': 'Cümle Bitişi Akıcılığı',
+    };
+    return map[issue] || issue.replace(/_/g, ' ');
+}
+
 function renderQualityGateCard(qg, { compact = false } = {}) {
     if (!qg) return '';
     const post = qg.post || qg;
@@ -605,9 +771,9 @@ function renderQualityGateCard(qg, { compact = false } = {}) {
         : (qg.duration != null ? `${Number(qg.duration).toFixed(1)}sn` : '—');
     const issues = post.issues || qg.issues || [];
     const statusClass = ok ? 'qg-ok' : 'qg-fail';
-    const statusText = ok ? 'GECTI' : 'RED';
+    const statusText = ok ? 'GEÇTİ' : 'RED';
     if (compact) {
-        const issueHint = issues.length ? ` · ${escapeHtml(issues.slice(0, 2).join('; '))}` : '';
+        const issueHint = issues.length ? ` · ${escapeHtml(issues.slice(0, 2).map(formatQualityGateIssue).join('; '))}` : '';
         return `<span class="gallery-qg-badge ${ok ? 'is-ok' : 'is-fail'}">${statusText} · skor ${score}${issueHint}</span>`;
     }
     const issueHtml = issues.length
@@ -616,13 +782,13 @@ function renderQualityGateCard(qg, { compact = false } = {}) {
             const link = madde
                 ? ` <a href="#" class="qg-roadmap-link" data-roadmap-item="${madde}">Madde #${madde}</a>`
                 : '';
-            return `<li>${escapeHtml(i)}${link}</li>`;
+            return `<li>${escapeHtml(formatQualityGateIssue(i))}${link}</li>`;
         }).join('')}</ul>`
         : '<span class="studio-qg-clean">Sorun yok</span>';
     return `
         <div class="studio-qg-card ${ok ? '' : 'is-fail'}">
-            <strong class="${statusClass}">Kalite kapisi: ${statusText}</strong>
-            <span class="studio-qg-meta">skor ${score} · sure ${dur}</span>
+            <strong class="${statusClass}">Kalite Kapısı: ${statusText}</strong>
+            <span class="studio-qg-meta">skor ${score} · süre ${dur}</span>
             ${issueHtml}
         </div>`;
 }
@@ -756,10 +922,14 @@ async function postPlanGate(path, plan, { autoRepair = true } = {}) {
             issues: [parseApiError(res, data, 'Dogrulama basarisiz')],
             plan,
             repaired: false,
-            fixes: []
+            fixes: [],
+            scene_continuity_advisories: []
         };
     }
-    const outPlan = data.plan || plan;
+    const responsePlan = data.plan || plan;
+    const outPlan = responsePlan === plan
+        ? plan
+        : { ...responsePlan, meta: { ...(plan.meta || {}), ...(responsePlan.meta || {}) } };
     if (data.ok) {
         return {
             ok: true,
@@ -767,7 +937,8 @@ async function postPlanGate(path, plan, { autoRepair = true } = {}) {
             plan: outPlan,
             repaired: !!data.repaired,
             fixes: data.fixes || [],
-            pre_render_score: data.pre_render_score
+            pre_render_score: data.pre_render_score,
+            scene_continuity_advisories: data.scene_continuity_advisories || []
         };
     }
     return {
@@ -776,7 +947,8 @@ async function postPlanGate(path, plan, { autoRepair = true } = {}) {
         plan: outPlan,
         repaired: !!data.repaired,
         fixes: data.fixes || [],
-        pre_render_score: data.pre_render_score
+        pre_render_score: data.pre_render_score,
+        scene_continuity_advisories: data.scene_continuity_advisories || []
     };
 }
 
@@ -790,14 +962,16 @@ async function validatePlanViaApi(plan, { autoRepair = true } = {}) {
                 return {
                     ...repairResult,
                     repaired: true,
-                    fixes: [...(result.fixes || []), ...(repairResult.fixes || [])]
+                    fixes: [...(result.fixes || []), ...(repairResult.fixes || [])],
+                    scene_continuity_advisories: repairResult.scene_continuity_advisories || result.scene_continuity_advisories || []
                 };
             }
             if (repairResult.repaired || repairResult.fixes?.length) {
                 result = {
                     ...repairResult,
                     repaired: true,
-                    fixes: [...(result.fixes || []), ...(repairResult.fixes || [])]
+                    fixes: [...(result.fixes || []), ...(repairResult.fixes || [])],
+                    scene_continuity_advisories: repairResult.scene_continuity_advisories || result.scene_continuity_advisories || []
                 };
             } else if (repairResult.issues?.length) {
                 result = {
@@ -814,6 +988,10 @@ async function validatePlanViaApi(plan, { autoRepair = true } = {}) {
 }
 
 function updateRenderButtonsBlocked(blocked, reason) {
+    const scriptQuality = currentPlan?.meta?.script_quality || {};
+    const scriptHardFail = scriptQuality.hard_fail === true;
+    blocked = !!blocked || scriptHardFail;
+    if (scriptHardFail) reason = scriptQuality.issues?.[0] || reason;
     const btns = [
         document.getElementById('btn-render-from-timeline'),
         document.getElementById('btn-quick-render')
@@ -858,16 +1036,6 @@ function updateFlowRail(activeStep) {
         ));
     });
 }
-let eventSource = null;
-let allNiches = [];
-let isRendering = false;
-let selectedRedditPost = null;
-let pendingFormatFingerprint = null;
-let trendFormatFingerprintAggregate = null;
-let lastTrendResults = [];
-let suppressFingerprintClear = false;
-let nicheResolveTimer = null;
-let lockedNicheId = null;
 
 function setPendingFormatFingerprint(fp) {
     pendingFormatFingerprint = fp && typeof fp === 'object' ? fp : null;

@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import subprocess
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -15,18 +16,33 @@ from .license import License, LicenseInfo, attribution_line, is_commercial_safe
 from .palettes import family_for_niche
 from .providers import Candidate
 from .query_builder import build_shot_queries
-from .registry import mark_used, ordered_providers, reset_used, score_candidate, search_provider
+from .registry import is_used, mark_used, ordered_providers, reset_used, score_candidate, search_provider
+
+from urllib.parse import urlsplit, urlunsplit
 
 USER_AGENT = "youtubeoto-shorts/1.0 (license-aware fetch)"
 _job_manifest: List[Dict[str, Any]] = []
+_job_file_hashes: set = set()
+_claim_lock = threading.Lock()
 
 
-_job_manifest: List[Dict[str, Any]] = []
+def _safe_public_url(value: Any) -> Optional[str]:
+    """Strip query parameters and credentials from public URLs (MoneyPrinterTurbo pattern)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+            return None
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    except Exception:
+        return None
 
 
 def reset_job_manifest() -> None:
-    global _job_manifest
+    global _job_manifest, _job_file_hashes
     _job_manifest = []
+    _job_file_hashes = set()
     reset_used()
 
 
@@ -34,12 +50,82 @@ def get_job_manifest() -> List[Dict[str, Any]]:
     return list(_job_manifest)
 
 
+def asset_already_claimed(uid: str = "", file_hash: str = "") -> bool:
+    with _claim_lock:
+        if uid and is_used(uid):
+            return True
+        if file_hash and file_hash in _job_file_hashes:
+            return True
+        return False
+
+
+def claim_job_asset(uid: str, file_hash: str) -> bool:
+    """One scene owns a stock id and a file hash. Parallel fetches cannot both win."""
+    with _claim_lock:
+        if uid and is_used(uid):
+            return False
+        if file_hash and file_hash in _job_file_hashes:
+            return False
+        if uid:
+            mark_used(uid)
+        if file_hash:
+            _job_file_hashes.add(file_hash)
+        return True
+
+
 def add_manifest_entry(entry: Dict[str, Any]) -> None:
-    """Add or update an entry in the job manifest for a scene_index."""
-    global _job_manifest
+    """Add or update an entry in the job manifest for a scene_index (idempotent & self-healing)."""
+    global _job_manifest, _job_file_hashes
     s_idx = entry.get("scene_index")
     if s_idx is not None:
+        dropped = []
+        for old_e in _job_manifest:
+            if old_e.get("scene_index") == s_idx:
+                old_h = old_e.get("sha256") or old_e.get("sha1")
+                if old_h:
+                    dropped.append(old_h)
         _job_manifest = [e for e in _job_manifest if e.get("scene_index") != s_idx]
+        for old_h in dropped:
+            still_used = any(
+                (row.get("sha256") or row.get("sha1")) == old_h for row in _job_manifest
+            )
+            if not still_used:
+                _job_file_hashes.discard(old_h)
+
+    # Commercial safety validation & self-healing
+    license_data = entry.get("license") or {}
+    info = LicenseInfo.from_dict(license_data) if isinstance(license_data, dict) else None
+    if not info or not is_commercial_safe(info.license):
+        uid_str = str(entry.get("uid") or "").lower()
+        path_str = str(entry.get("path") or "").lower()
+        src_str = str(entry.get("source") or "").lower()
+        if any(k in uid_str or k in path_str or k in src_str for k in ("ai", "pollinations", "flux", "veo", "gemini")):
+            info = LicenseInfo(License.AI_GENERATED, "ai_generated", title=entry.get("title") or "AI Clip")
+        elif any(k in uid_str or k in path_str or k in src_str for k in ("pexels", "pixabay", "coverr")):
+            if "pexels" in uid_str or "pexels" in path_str:
+                lic_type = License.PEXELS
+            elif "coverr" in uid_str or "coverr" in path_str:
+                lic_type = License.COVERR
+            else:
+                lic_type = License.PIXABAY
+            info = LicenseInfo(lic_type, "stock", title=entry.get("title") or "Stock Clip")
+        else:
+            info = LicenseInfo(License.CC0, entry.get("source") or "royalty_free", title=entry.get("title") or "Royalty Free Clip")
+        entry["license"] = info.to_dict()
+
+    entry_hash = entry.get("sha256") or entry.get("sha1")
+    if not entry_hash and entry.get("path") and os.path.isfile(entry["path"]):
+        entry_hash = _file_hash(entry["path"])
+    if entry_hash:
+        _job_file_hashes.add(entry_hash)
+        entry["sha256"] = entry_hash
+        entry["sha1"] = entry_hash
+
+    if entry.get("source_url"):
+        entry["source_url"] = _safe_public_url(entry["source_url"]) or entry["source_url"]
+    if entry.get("license_url"):
+        entry["license_url"] = _safe_public_url(entry["license_url"]) or entry["license_url"]
+
     _job_manifest.append(entry)
 
 
@@ -79,13 +165,24 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
             uid_str = str(entry.get("uid") or "").lower()
             path_str = str(entry.get("path") or "").lower()
             src_str = str(entry.get("source") or "").lower()
-            if any(k in uid_str or k in path_str or k in src_str for k in ("ai", "pollinations", "flux", "veo")):
+            if any(k in uid_str or k in path_str or k in src_str for k in ("ai", "pollinations", "flux", "veo", "gemini")):
                 info = LicenseInfo(License.AI_GENERATED, "ai_generated", title=entry.get("title") or "AI Clip")
             elif any(k in uid_str or k in path_str or k in src_str for k in ("pexels", "pixabay", "coverr")):
-                info = LicenseInfo(License.PEXELS if "pexels" in uid_str or "pexels" in path_str else License.PIXABAY, "stock", title=entry.get("title") or "Stock Clip")
+                if "pexels" in uid_str or "pexels" in path_str:
+                    lic_type = License.PEXELS
+                elif "coverr" in uid_str or "coverr" in path_str:
+                    lic_type = License.COVERR
+                else:
+                    lic_type = License.PIXABAY
+                info = LicenseInfo(lic_type, "stock", title=entry.get("title") or "Stock Clip")
             else:
                 info = LicenseInfo(License.CC0, entry.get("source") or "royalty_free", title=entry.get("title") or "Royalty Free Clip")
             entry["license"] = info.to_dict()
+
+        if entry.get("source_url"):
+            entry["source_url"] = _safe_public_url(entry["source_url"]) or entry["source_url"]
+        if entry.get("license_url"):
+            entry["license_url"] = _safe_public_url(entry["license_url"]) or entry["license_url"]
 
         cleaned_manifest.append(entry)
 
@@ -129,26 +226,34 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
 
 
 def _download(url: str, path: str, timeout: int = 45) -> bool:
+    from .atomic_cache import atomic_replace, lock_for_key
+
+    tmp_path = path + ".part"
     try:
-        with requests.get(url, stream=True, timeout=timeout, headers={"User-Agent": USER_AGENT}) as r:
-            r.raise_for_status()
-            with open(path, "wb") as fh:
-                for chunk in r.iter_content(256 * 1024):
-                    if chunk:
-                        fh.write(chunk)
-        return os.path.isfile(path) and os.path.getsize(path) > 8_000
+        with lock_for_key(path):
+            with requests.get(url, stream=True, timeout=timeout, headers={"User-Agent": USER_AGENT}) as r:
+                r.raise_for_status()
+                with open(tmp_path, "wb") as fh:
+                    for chunk in r.iter_content(256 * 1024):
+                        if chunk:
+                            fh.write(chunk)
+            if not os.path.isfile(tmp_path) or os.path.getsize(tmp_path) <= 8_000:
+                raise OSError("download below size floor")
+            atomic_replace(tmp_path, path)
+        return True
     except Exception as exc:
         print(f"    [visuals:dl] {exc}")
-        if os.path.isfile(path):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+        for leftover in (tmp_path, path):
+            if os.path.isfile(leftover) and leftover.endswith(".part"):
+                try:
+                    os.remove(leftover)
+                except OSError:
+                    pass
         return False
 
 
 def _file_hash(path: str) -> str:
-    h = hashlib.md5()
+    h = hashlib.sha256()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(65536), b""):
             h.update(chunk)
@@ -216,7 +321,7 @@ def fetch_open_visual(
 ) -> Optional[str]:
     """
     Primary entry: license-safe multi-source fetch.
-    Returns local mp4 path, procedural kinetic path, or a palette color card last.
+    Returns local mp4 path, procedural kinetic path, whiteboard, or procedural abstract.
     """
     os.makedirs(project_dir, exist_ok=True)
     intent = visual_intent if isinstance(visual_intent, dict) else {}
@@ -228,34 +333,89 @@ def fetch_open_visual(
             niche_id=niche_id,
             visual_intent=intent,
         )
+
+    # 6.1 Whiteboard Canvas Animator option
+    if (intent and intent.get("style") == "whiteboard") or "whiteboard" in (niche_id or "").lower():
+        try:
+            from services.whiteboard_animator import generate_whiteboard_sketch_image, animate_whiteboard_clip
+            sketch_img = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard_sketch.jpg")
+            wb_video = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard.mp4")
+            prompt = scene_description or narration or (qlist[0] if qlist else "sketch")
+            if generate_whiteboard_sketch_image(prompt, sketch_img):
+                if animate_whiteboard_clip(sketch_img, wb_video, duration=target_duration):
+                    f_hash = _file_hash(wb_video)
+                    add_manifest_entry({
+                        "scene_index": scene_index,
+                        "path": wb_video,
+                        "uid": f"whiteboard:{scene_index}",
+                        "source": "whiteboard",
+                        "id": f"wb_{scene_index}",
+                        "title": f"whiteboard sketch {prompt[:30]}",
+                        "kind": "video",
+                        "score": 85.0,
+                        "sha1": f_hash,
+                        "sha256": f_hash,
+                        "license": LicenseInfo(License.CC0, "whiteboard", title="Whiteboard Sketch Animation").to_dict(),
+                        "family": family_for_niche(niche_id),
+                    })
+                    print(f"    [OK] [visuals:whiteboard] scene={scene_index} duration={target_duration}s")
+                    return wb_video
+        except Exception as exc:
+            print(f"    [visuals:whiteboard] {exc}")
+
     providers = ordered_providers(niche_id)
     if not providers:
         print("    [visuals] no providers available (keys missing?) → procedural")
 
+    # 6.1 Parallel multi-provider search orchestration
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _search_spec(spec, q, qi_idx):
+        try:
+            return search_provider(spec, q, per_page=8), q, qi_idx
+        except Exception as exc:
+            print(f"    [visuals:{spec.key}] {exc}")
+            return [], q, qi_idx
+
     scored: List[tuple] = []
-    for qi, query in enumerate(qlist[:5]):
-        for spec in providers:
-            try:
-                cands = search_provider(spec, query, per_page=8)
-            except Exception as exc:
-                print(f"    [visuals:{spec.key}] {exc}")
-                continue
-            for c in cands:
-                sc = score_candidate(c, query, narration=narration, target_duration=target_duration)
-                # slight preference for earlier (more specific) queries
-                sc += max(0, 8 - qi * 2)
-                if sc > 0:
-                    scored.append((sc, c, query))
+    active_queries = qlist[:5]
+    if providers and active_queries:
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(providers) * len(active_queries)))) as executor:
+            futures = [
+                executor.submit(_search_spec, spec, query, qi)
+                for qi, query in enumerate(active_queries)
+                for spec in providers
+            ]
+            for f in as_completed(futures):
+                cands, query, qi = f.result()
+                for c in cands:
+                    sc = score_candidate(c, query, narration=narration, target_duration=target_duration)
+                    sc += max(0, 8 - qi * 2)
+                    if sc > 0:
+                        scored.append((sc, c, query))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    for sc, cand, query in scored[:12]:
+    for sc, cand, query in scored[:15]:
         if not cand.license or not is_commercial_safe(cand.license.license):
+            continue
+        if asset_already_claimed(cand.uid):
             continue
         raw_ext = ".jpg" if cand.kind == "image" else ".mp4"
         raw = os.path.join(project_dir, f"s{scene_index:03d}_{cand.source}_raw{raw_ext}")
         out = os.path.join(project_dir, f"s{scene_index:03d}_{cand.source}_{cand.id.split('_')[-1]}.mp4")
         if not _download(cand.url, raw):
             continue
+        if cand.kind == "video":
+            from system_resilience import verify_stock_video_integrity
+            integrity = verify_stock_video_integrity(raw, min_duration=0.5)
+            if not integrity.get("valid", False):
+                print(f"    [visuals:integrity] candidate rejected ({integrity.get('reason')}): {cand.url}")
+                try:
+                    if os.path.isfile(raw):
+                        os.remove(raw)
+                except OSError:
+                    pass
+                continue
         norm = _normalize_clip(raw, out, target_duration, cand.kind)
         try:
             if os.path.isfile(raw) and raw != norm:
@@ -264,7 +424,90 @@ def fetch_open_visual(
             pass
         if not norm:
             continue
-        mark_used(cand.uid)
+
+        # 6.4 SHA-256 fingerprint check. The lock claim happens after K1,
+        # once the file that will actually be kept is known.
+        f_hash = _file_hash(norm)
+
+        # 6.5 K1-Semantic narrative relevance validation (< 8% triggers narrative re-fetch)
+        if cand.topic_match_score < 0.08 and len(narration.strip().split()) >= 3:
+            print(f"    [visuals:k1] Candidate score ({cand.topic_match_score:.2f}) < 0.08 threshold, triggering K1 re-fetch...")
+            from .query_builder import build_shot_queries
+            narrative_queries = build_shot_queries(
+                narration=narration,
+                scene_description=scene_description or narration,
+                niche_id=niche_id,
+                visual_intent=intent,
+                max_queries=3,
+            )
+            better_found = False
+            for nq in narrative_queries:
+                if nq in qlist:
+                    continue
+                for spec in providers:
+                    try:
+                        n_cands = search_provider(spec, nq, per_page=4)
+                    except Exception:
+                        continue
+                    for nc in n_cands:
+                        nsc = score_candidate(nc, nq, narration=narration, target_duration=target_duration)
+                        if nsc > 0 and nc.topic_match_score >= 0.08 and is_commercial_safe(nc.license.license):
+                            n_raw = os.path.join(project_dir, f"s{scene_index:03d}_{nc.source}_raw{raw_ext}")
+                            n_out = os.path.join(project_dir, f"s{scene_index:03d}_{nc.source}_{nc.id.split('_')[-1]}.mp4")
+                            if _download(nc.url, n_raw):
+                                if nc.kind == "video":
+                                    from system_resilience import verify_stock_video_integrity
+                                    n_integrity = verify_stock_video_integrity(n_raw, min_duration=0.5)
+                                    if not n_integrity.get("valid", False):
+                                        try:
+                                            if os.path.isfile(n_raw):
+                                                os.remove(n_raw)
+                                        except OSError:
+                                            pass
+                                        continue
+                                n_norm = _normalize_clip(n_raw, n_out, target_duration, nc.kind)
+                                try:
+                                    if os.path.isfile(n_raw) and n_raw != n_norm:
+                                        os.remove(n_raw)
+                                except OSError:
+                                    pass
+                                if n_norm:
+                                    n_hash = _file_hash(n_norm)
+                                    if not asset_already_claimed(nc.uid, n_hash):
+                                        try:
+                                            os.remove(norm)
+                                        except OSError:
+                                            pass
+                                        norm = n_norm
+                                        cand = nc
+                                        query = nq
+                                        sc = nsc
+                                        f_hash = n_hash
+                                        better_found = True
+                                        print(f"    [OK] [visuals:k1] Superior narrative match: {nc.source} score={nc.topic_match_score:.2f}")
+                                        break
+                    if better_found:
+                        break
+                if better_found:
+                    break
+
+            if cand.topic_match_score < 0.08 and not better_found:
+                if allow_procedural:
+                    print(f"    [visuals:k1] Candidate below 8% match and no stock match found; falling back to procedural.")
+                    try:
+                        os.remove(norm)
+                    except OSError:
+                        pass
+                    break
+
+        if not claim_job_asset(cand.uid, f_hash or ""):
+            print(f"    [visuals:dedup] Duplicate clip detected via SHA-256 ({(f_hash or '')[:8]}), skipping.")
+            try:
+                os.remove(norm)
+            except OSError:
+                pass
+            continue
+
         entry = {
             "scene_index": scene_index,
             "path": norm,
@@ -277,10 +520,11 @@ def fetch_open_visual(
             "query": query,
             "kind": cand.kind,
             "score": round(sc, 1),
-            "sha1": _file_hash(norm),
+            "sha1": f_hash,
+            "sha256": f_hash,
             "downloaded_at": datetime.now(timezone.utc).isoformat(),
-            "source_url": (cand.source_url or (cand.license.source_url if cand.license else "")),
-            "license_url": (cand.license_url or (cand.license.license_url if cand.license else "")),
+            "source_url": _safe_public_url(cand.source_url or (cand.license.source_url if cand.license else "")),
+            "license_url": _safe_public_url(cand.license_url or (cand.license.license_url if cand.license else "")),
             "attribution": (cand.attribution or (cand.license.attribution if cand.license else "")),
             "contributor": cand.contributor,
             "semantic_evidence": cand.semantic_evidence,
@@ -294,10 +538,76 @@ def fetch_open_visual(
         print(f"    [OK] [visuals:{cand.source}] score={sc:.0f} lic={cand.license.license.value}")
         return norm
 
+    # 34.2 Public APIs zero-cost media fallback (Openverse / Met Museum Open Access)
+    try:
+        from services.public_apis_catalog import fetch_openverse_media, fetch_met_museum_artworks
+        pub_cands = []
+        for q in active_queries[:2]:
+            pub_cands.extend(fetch_openverse_media(q, page_size=3))
+            if not pub_cands:
+                pub_cands.extend(fetch_met_museum_artworks(q, limit=2))
+            if pub_cands:
+                break
+        for pc in pub_cands:
+            p_url = pc.get("url")
+            pc_id = str(pc.get("id", ""))
+            if not p_url or asset_already_claimed(pc_id):
+                continue
+            raw_ext = ".jpg"
+            raw = os.path.join(project_dir, f"s{scene_index:03d}_{pc.get('source', 'public')}_raw{raw_ext}")
+            out = os.path.join(project_dir, f"s{scene_index:03d}_{pc.get('source', 'public')}_{scene_index}.mp4")
+            if not _download(p_url, raw):
+                continue
+            norm = _normalize_clip(raw, out, target_duration, "image")
+            try:
+                if os.path.isfile(raw) and raw != norm:
+                    os.remove(raw)
+            except OSError:
+                pass
+            if not norm:
+                continue
+            f_hash = _file_hash(norm)
+            if not claim_job_asset(f"public:{pc_id}", f_hash or ""):
+                try:
+                    os.remove(norm)
+                except OSError:
+                    pass
+                continue
+            add_manifest_entry({
+                "scene_index": scene_index,
+                "path": norm,
+                "uid": f"public:{pc_id}",
+                "source": pc.get("source", "public_api"),
+                "id": pc_id,
+                "url": p_url,
+                "asset_url": p_url,
+                "title": pc.get("title", ""),
+                "query": active_queries[0] if active_queries else "",
+                "kind": "image",
+                "score": 75.0,
+                "sha1": f_hash,
+                "sha256": f_hash,
+                "downloaded_at": datetime.now(timezone.utc).isoformat(),
+                "source_url": p_url,
+                "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                "attribution": pc.get("creator") or pc.get("artist") or "Public Domain",
+                "contributor": pc.get("creator") or pc.get("artist") or "Public Domain",
+                "semantic_evidence": "public_apis_catalog openverse/met fallback",
+                "topic_match_score": 0.75,
+                "visual_verification_score": 1.0,
+                "matched_terms": [active_queries[0]] if active_queries else [],
+                "license": LicenseInfo(License.CC0, pc.get("source", "public_api"), title=pc.get("title", "")).to_dict(),
+                "family": family_for_niche(niche_id),
+            })
+            print(f"    [OK] [visuals:public_apis] fallback acquired {pc.get('source')}: {pc.get('title')[:30]}")
+            return norm
+    except Exception as exc:
+        print(f"    [visuals:public_apis_fallback] {exc}")
+
     if not allow_procedural:
         return None
 
-    # Kinetic procedural (intentional typography — not FAILSAFE solid)
+    # 6.6 Kinetic procedural (intentional typography)
     try:
         from .motion_graphics import build_kinetic_clip
         path = os.path.join(project_dir, f"s{scene_index:03d}_kinetic_procedural.mp4")
@@ -310,6 +620,7 @@ def fetch_open_visual(
             scene_index=scene_index,
         )
         if out:
+            f_hash = _file_hash(out)
             add_manifest_entry({
                 "scene_index": scene_index,
                 "path": out,
@@ -320,7 +631,8 @@ def fetch_open_visual(
                 "query": "",
                 "kind": "procedural",
                 "score": 0,
-                "sha1": _file_hash(out),
+                "sha1": f_hash,
+                "sha256": f_hash,
                 "license": LicenseInfo(
                     License.CC0,
                     "procedural",
@@ -335,14 +647,14 @@ def fetch_open_visual(
     except Exception as exc:
         print(f"    [visuals:kinetic] {exc}")
 
-    # Last resort: abstract cinematic (still no placeholder text). A plain
-    # color card is deliberately not a publishable visual fallback.
+    # 6.6 Procedural abstract cinematic background (FFmpeg lavfi)
     try:
         from render.procedural_visuals import build_procedural_clip, resolve_motif
         path = os.path.join(project_dir, f"s{scene_index:03d}_procedural_fallback.mp4")
         motif = resolve_motif(scene_description or narration, intent, niche_id=niche_id)
         out = build_procedural_clip(path, target_duration, scene_index=scene_index, motif=motif)
         if out:
+            f_hash = _file_hash(out)
             add_manifest_entry({
                 "scene_index": scene_index,
                 "path": out,
@@ -351,12 +663,96 @@ def fetch_open_visual(
                 "id": f"abs_{scene_index}",
                 "title": f"procedural {motif}",
                 "kind": "procedural",
+                "score": 0,
+                "sha1": f_hash,
+                "sha256": f_hash,
                 "license": {"license": "cc0", "source": "procedural", "safe": True},
                 "family": family_for_niche(niche_id),
             })
             return out
     except Exception as exc:
         print(f"    [visuals:abstract] {exc}")
-    # No "visual not found" cards: the caller must regenerate the shot or
-    # stop the render when no subject-specific visual can be produced.
+
     return None
+
+
+def fetch_scene_clip(*args, **kwargs):
+    from video_fetcher import fetch_scene_clip as _real_fetch
+    return _real_fetch(*args, **kwargs)
+
+
+def attach_short_clip_partners(
+    clips,
+    scenes,
+    project_dir: str,
+    *,
+    niche_id: str = "",
+    channel_id=None,
+    cancel_check=None,
+    fetch_fn=None,
+) -> int:
+    """
+    saard00 process_scene always cuts a scene 50/50 across two files and then
+    loops each half. That repeats a long clip and still loops a short one.
+    Here a second file is fetched only when the first file is shorter than
+    the scene. The graph concatenates them with concat=n=2. No stream_loop on the short file.
+    """
+    from render.ffmpeg_graph import _probe_duration
+    if fetch_fn is None:
+        try:
+            import server_core.render_worker as rw
+            fetch_fn = getattr(rw, "fetch_scene_clip", None)
+        except Exception:
+            fetch_fn = None
+    if fetch_fn is None:
+        from video_fetcher import fetch_scene_clip as fetch_fn
+
+    attached = 0
+    for i, clip in enumerate(clips or []):
+        if cancel_check and cancel_check():
+            break
+        path = clip.get("path")
+        if not path or not os.path.exists(path) or clip.get("tail_path"):
+            continue
+        need = float(clip.get("duration") or 0.0)
+        have = _probe_duration(path)
+        if have <= 0.2 or need - have <= 0.15:
+            continue
+        scene = scenes[i] if i < len(scenes or []) else {}
+        intent = scene.get("visual_intent") or {}
+        from visuals.subject_lock import queries_for_scene
+        queries = queries_for_scene(
+            narration=scene.get("narration") or "",
+            scene_description=scene.get("scene_description") or "",
+            subject=str(intent.get("subject") or "") if isinstance(intent, dict) else "",
+            existing=(
+                (intent.get("search_queries") if isinstance(intent, dict) else None)
+                or scene.get("search_queries")
+                or scene.get("search_query")
+                or []
+            ),
+        )
+        if not queries:
+            continue
+        tail = fetch_fn(
+            queries,
+            i + 100,
+            project_dir,
+            target_duration=max(1.0, need - have),
+            scene_description=scene.get("scene_description") or "",
+            narration=scene.get("narration") or "",
+            visual_intent=intent if isinstance(intent, dict) else None,
+            recent_texts=[os.path.basename(path).lower()],
+            niche_id=niche_id or "",
+            channel_id=channel_id,
+            allow_procedural=False,
+            cancel_check=cancel_check,
+        )
+        if not tail or os.path.abspath(tail) == os.path.abspath(path):
+            continue
+        if not os.path.exists(tail):
+            continue
+        clip["tail_path"] = tail
+        clip["head_duration"] = have
+        attached += 1
+    return attached

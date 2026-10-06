@@ -30,35 +30,32 @@ from video_fetcher import fetch_scene_clip, reset_session_source_counts
 
 class TestMultiSourceFetch(unittest.TestCase):
     @patch("system_resilience.verify_stock_video_integrity", return_value={"valid": True})
-    @patch("video_fetcher.search_and_download")
-    def test_fetch_scene_clip_retries_second_provider(self, mock_search, _mock_ffprobe):
-        mock_search.side_effect = [None, "/tmp/s001_pixabay_42.mp4"]
+    @patch("video_fetcher.gather_scene_pools", return_value="/tmp/s001_pixabay_42.mp4")
+    def test_fetch_scene_clip_uses_one_pool_gather(self, mock_gather, _mock_ffprobe):
         reset_session_source_counts()
         with tempfile.TemporaryDirectory() as tmp:
             result = fetch_scene_clip(["nature"], 1, tmp, target_duration=5)
         self.assertEqual(result, "/tmp/s001_pixabay_42.mp4")
-        self.assertGreaterEqual(mock_search.call_count, 2)
-        sources = {c.kwargs.get("preferred_source") for c in mock_search.call_args_list}
-        self.assertGreaterEqual(len(sources), 2)
+        self.assertEqual(mock_gather.call_count, 1)
 
     @patch("system_resilience.verify_stock_video_integrity", return_value={"valid": True})
-    @patch("video_fetcher.search_and_download")
-    def test_fetch_scene_clip_defined_no_name_error(self, mock_search, _mock_ffprobe):
-        mock_search.return_value = "/tmp/s000_pexels_1.mp4"
+    @patch("video_fetcher.gather_scene_pools", return_value="/tmp/s000_pexels_1.mp4")
+    def test_fetch_scene_clip_defined_no_name_error(self, mock_gather, _mock_ffprobe):
         reset_session_source_counts()
         with tempfile.TemporaryDirectory() as tmp:
             path = fetch_scene_clip(["city"], 0, tmp)
         self.assertTrue(path.endswith(".mp4"))
+        self.assertEqual(mock_gather.call_count, 1)
 
     @patch("system_resilience.verify_stock_video_integrity")
-    @patch("video_fetcher.search_and_download")
-    def test_fetch_scene_clip_rejects_sub720p_p1_16(self, mock_search, mock_integrity):
-        mock_search.return_value = "/tmp/s000_pexels_1.mp4"
+    @patch("video_fetcher.gather_scene_pools", return_value="/tmp/s000_pexels_1.mp4")
+    def test_fetch_scene_clip_rejects_sub720p_p1_16(self, mock_gather, mock_integrity):
         mock_integrity.return_value = {"valid": False, "reason": "720p altı (640x360)"}
         reset_session_source_counts()
         with tempfile.TemporaryDirectory() as tmp:
             path = fetch_scene_clip(["city"], 0, tmp)
         self.assertIsNone(path)
+        self.assertEqual(mock_gather.call_count, 1)
 
 
 class TestClipContract(unittest.TestCase):

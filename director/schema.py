@@ -24,6 +24,7 @@ class VisualIntent:
     must_exclude: List[str] = field(default_factory=list)
     continuity_motif: str = "default"
     search_queries: List[str] = field(default_factory=list)
+    shot_type: str = "establishing"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -43,6 +44,7 @@ class VisualIntent:
             must_exclude=list(data.get("must_exclude") or []),
             continuity_motif=str(data.get("continuity_motif", "default")),
             search_queries=list(data.get("search_queries") or []),
+            shot_type=str(data.get("shot_type") or "establishing"),
         )
 
 
@@ -70,6 +72,21 @@ class AudioEvent:
         )
 
 
+SCENE_INTENTS = (
+    "establishing", "closeup", "action", "transition",
+    "question", "conclusion",
+)
+CAMERA_DIRECTIONS = (
+    "zoom_in",
+    "zoom_out",
+    "pan_left",
+    "pan_right",
+    "tilt_up",
+    "tilt_down",
+    "static",
+)
+
+
 @dataclass
 class ScenePlan:
     index: int
@@ -81,6 +98,8 @@ class ScenePlan:
     scene_description: str = ""
     search_queries: List[str] = field(default_factory=list)
     visual_intent: VisualIntent = field(default_factory=VisualIntent)
+    scene_intent: str = "action"
+    camera_direction: str = "zoom_in"
     badge_label: Optional[str] = None
     enable_pip: bool = False
     pip_path: Optional[str] = None
@@ -94,6 +113,10 @@ class ScenePlan:
     evidence_required: bool = False
     caption_emphasis: List[str] = field(default_factory=list)
     transition_intent: str = "cut"
+    arabic_text: Optional[str] = None
+    source_citation: Optional[str] = None
+    visual_mode: Optional[str] = None
+    selected_video: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -116,6 +139,8 @@ class ScenePlan:
                 or ([data["search_query"]] if data.get("search_query") else [])
             ),
             visual_intent=vi,
+            scene_intent=str(data.get("scene_intent", "action")),
+            camera_direction=str(data.get("camera_direction", "zoom_in")),
             badge_label=data.get("badge_label"),
             enable_pip=bool(data.get("enable_pip", False)),
             pip_path=data.get("pip_path"),
@@ -129,16 +154,27 @@ class ScenePlan:
             evidence_required=bool(data.get("evidence_required", False)),
             caption_emphasis=list(data.get("caption_emphasis") or []),
             transition_intent=str(data.get("transition_intent", "cut")),
+            arabic_text=data.get("arabic_text"),
+            source_citation=data.get("source_citation"),
+            visual_mode=data.get("visual_mode"),
+            selected_video=data.get("selected_video"),
         )
+
+
+# Bölüm 7.6: DirectorScene, ScenePlan nesnesinin birinci sınıf tip takma adıdır (alias).
+DirectorScene = ScenePlan
 
 
 # tr-TR Edge TTS ≈ 2.3–2.6 words/s. ElevenLabs TR measured ~2.0 wps (slower).
 TTS_WORDS_PER_SEC = 2.45
 TTS_BUDGET_WPS = 2.5
-# fit_tts_to_timeline emergency ceiling — raw TTS must fit max_duration after this factor.
+# Historical emergency ceiling. Default fit path no longer speeds speech (Item 494).
 TTS_EMERGENCY_MAX_SPEED = 1.35
-# ElevenLabs TR ~2.0 wps; 5% safety → 60×1.35×1.92 ≈ 155 words (Item 494).
+# ElevenLabs TR ~2.0 wps. Natural 60s budget does not multiply by 1.35.
 TTS_BUDGET_WPS_ELEVEN = 1.92
+# Charon / Edge-TR measured ~1.9 wps (179 words → 94s). 60s natural ≈ 110 words.
+NATURAL_TTS_WPS = 1.9
+NATURAL_SHORTS_WORD_CAP = 160
 
 
 def _effective_tts_budget_wps() -> float:
@@ -162,18 +198,42 @@ def natural_target_duration(
 ) -> float:
     """Content-driven Shorts length. Floor 38, cap 60 — 48 is not a magnet."""
     natural = max(0, int(word_count or 0)) / max(float(wps) or TTS_WORDS_PER_SEC, 0.1)
-    return round(min(float(max_d), max(float(min_d), natural)), 2)
+    return round(min(float(max_d), natural), 2)
 
 
 def shorts_word_budget(max_duration: float = 60.0, max_audio_speed: float = 1.15) -> int:
     """
-    Max narration words so raw TTS fits max_duration after emergency speed-up (Item 494).
-    Uses provider-aware wps — ElevenLabs TR is slower than Edge (~2.0 vs ~2.45 wps).
+    Max narration words so raw TTS fits max_duration at natural pace (Item 494).
+    Does not assume a 1.35× speed-up. Provider wps still applies, then the
+    natural ceiling (110 words) wins when that pace would run past 60s.
     """
-    _ = max_audio_speed  # preferred pace; budget locks to TTS_EMERGENCY_MAX_SPEED
+    _ = max_audio_speed
     wps = _effective_tts_budget_wps()
-    cap = int(float(max_duration) * TTS_EMERGENCY_MAX_SPEED * wps)
-    return max(96, cap)
+    cap = int(float(max_duration) * wps)
+    # 1.35× used to lift Edge to ~198 words. That speech was rushed.
+    # Natural 60s ceiling is 110 words at ~1.9 wps for every provider.
+    cap = min(cap, NATURAL_SHORTS_WORD_CAP)
+    return max(48, cap)
+
+
+def natural_narration_word_cap(
+    measured_words: int = 0,
+    measured_seconds: float = 0.0,
+    max_duration: float = 60.0,
+) -> int:
+    """
+    Words that fit max_duration at the pace just measured.
+    Ceiling is 110. A 1.35× speed-up is not part of the budget.
+    179 words / 94s ≈ 1.9 wps → 60s ≈ 114, clamped to 110.
+    """
+    ceiling = NATURAL_SHORTS_WORD_CAP
+    if measured_words > 0 and measured_seconds > 1.0:
+        wps = float(measured_words) / float(measured_seconds)
+        measured_cap = int(float(max_duration) * wps)
+        ceiling = min(ceiling, measured_cap)
+    else:
+        ceiling = min(ceiling, shorts_word_budget(max_duration))
+    return max(48, ceiling)
 
 
 @dataclass
@@ -210,6 +270,7 @@ class DirectorPlan:
     hook_text: str = ""
     loop_text: str = ""
     reddit_post: Optional[Dict[str, Any]] = None
+    visual_mode: Optional[str] = None
     meta: Dict[str, Any] = field(default_factory=dict)
 
     def total_duration(self) -> float:
@@ -230,6 +291,7 @@ class DirectorPlan:
             "niche_id": self.niche_id,
             "niche_profile": self.niche_profile,
             "visual_theme": self.visual_theme,
+            "visual_mode": self.visual_mode or meta.get("visual_mode"),
             "hook_text": self.hook_text,
             "loop_text": self.loop_text,
             "reddit_post": self.reddit_post,
@@ -250,6 +312,8 @@ class DirectorPlan:
                     "scene_description": s.scene_description,
                     "search_queries": s.search_queries or s.visual_intent.search_queries,
                     "visual_intent": s.visual_intent.to_dict(),
+                    "scene_intent": s.scene_intent,
+                    "camera_direction": s.camera_direction,
                     "badge_label": s.badge_label,
                     "enable_pip": s.enable_pip,
                     "pip_path": s.pip_path,
@@ -262,6 +326,10 @@ class DirectorPlan:
                     "evidence_required": s.evidence_required,
                     "caption_emphasis": s.caption_emphasis,
                     "transition_intent": s.transition_intent,
+                    "arabic_text": s.arabic_text,
+                    "source_citation": s.source_citation,
+                    "visual_mode": s.visual_mode,
+                    "selected_video": s.selected_video,
                 }
                 for s in self.scenes
             ],
@@ -291,6 +359,8 @@ class DirectorPlan:
                 "wipe_direction": s.wipe_direction,
                 "beat_type": s.beat_type,
                 "visual_intent": s.visual_intent.to_dict(),
+                "scene_intent": s.scene_intent,
+                "camera_direction": s.camera_direction,
                 "t0": s.t0,
                 "t1": s.t1,
                 "search_queries": s.search_queries,
@@ -300,7 +370,7 @@ class DirectorPlan:
 
 
 DEFAULT_EFFECT_MANIFEST = {
-    "item_101_jitter": True,
+    "item_101_jitter": False,
     "item_87_sonic_watermark": False,
     "item_103_out_of_focus": True,
     "item_108_pink_noise": False,

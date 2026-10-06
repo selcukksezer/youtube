@@ -83,11 +83,24 @@ class TestSection6Items346360(unittest.TestCase):
         self.assertEqual(len(kw), 10)
         self.assertIn("stoacılık", kw)
 
-    def test_excluded_items_not_auto_upload_scope(self):
-        """354-357, 359-360 are manual Studio upload — no automation assertions here."""
-        excluded = {354, 355, 356, 357, 359, 360}
-        in_scope = {346, 347, 348, 349, 350, 351, 352, 353, 358}
-        self.assertFalse(excluded & in_scope)
+    def test_item_346_title_no_dangling_tail_words(self):
+        title = "Modern Dünyanın Henüz Açıklayamadığı En İlginç Üç Bilimsel Gizem ve Olay"
+        res = finalize_seo_title(title)
+        self.assertLessEqual(len(res), 60)
+        self.assertFalse(res.endswith("En #Shorts"))
+        self.assertIn("#Shorts", res)
+
+    def test_item_350_generate_15_clean_viral_tags(self):
+        from viral_seo_agent import generate_15_viral_tags
+        tags = generate_15_viral_tags("Modern Dünyanın Henüz Açıklayamadığı En İlginç Üç Bilimsel Gizem ve Olay", niche="7_space_cosmos")
+        self.assertEqual(len(tags), 15)
+        # No 70-character joined sentence
+        for t in tags:
+            self.assertLessEqual(len(t), 35)
+
+    def test_shopping_tags_not_attached_for_science_topic(self):
+        meta = generate_viral_seo_metadata("Modern Dünyanın Bilimsel Gizemleri")
+        self.assertIsNone(meta.get("shopping_product_tags"))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,19 @@ def _tokenize(text: str) -> set:
     }
 
 
+def _expand_tokens_with_translations(tokens: set) -> set:
+    expanded = set(tokens)
+    try:
+        from visuals.query_builder import _TR_EN
+        for tr_word in list(tokens):
+            if tr_word in _TR_EN:
+                for en_word in _tokenize(_TR_EN[tr_word]):
+                    expanded.add(en_word)
+    except Exception:
+        pass
+    return expanded
+
+
 def _clip_name_tokens(clip: Dict[str, Any]) -> set:
     tokens: set = set()
     path = clip.get("path") or ""
@@ -30,23 +43,108 @@ def _clip_name_tokens(clip: Dict[str, Any]) -> set:
         tokens |= _tokenize(os.path.splitext(os.path.basename(path))[0])
     for q in clip.get("search_queries") or []:
         tokens |= _tokenize(q)
+    v_intent = clip.get("visual_intent") or {}
+    if isinstance(v_intent, dict):
+        for q in v_intent.get("search_queries") or []:
+            tokens |= _tokenize(q)
+        tokens |= _tokenize(v_intent.get("subject") or "")
+        tokens |= _tokenize(v_intent.get("lighting") or "")
+        tokens |= _tokenize(v_intent.get("shot_type") or "")
     tokens |= _tokenize(clip.get("scene_description") or "")
-    return tokens
+    tokens |= _tokenize(clip.get("mood") or "")
+    tokens |= _tokenize(clip.get("badge_label") or "")
+    return _expand_tokens_with_translations(tokens)
 
 
 def _narration_tokens(clip: Dict[str, Any]) -> set:
-    return _tokenize(clip.get("narration") or "")
+    return _expand_tokens_with_translations(_tokenize(clip.get("narration") or ""))
+
+
+def attach_candidate_metadata(clips: List[Dict[str, Any]], manifest_rows: List[Dict[str, Any]]) -> None:
+    """Attach provider evidence only when the manifest row belongs to this scene and path."""
+    rows_by_scene = {
+        row.get("scene_index"): row
+        for row in manifest_rows
+        if isinstance(row, dict) and row.get("scene_index") is not None
+    }
+    for index, clip in enumerate(clips):
+        if not isinstance(clip, dict):
+            continue
+        for key in (
+            "candidate_topic_match_score", "candidate_semantic_evidence",
+            "candidate_title", "candidate_tags", "candidate_description",
+            "candidate_matched_terms",
+        ):
+            clip.pop(key, None)
+        row = rows_by_scene.get(index)
+        if not row or not clip.get("path") or not row.get("path"):
+            continue
+        clip_path = os.path.normcase(os.path.abspath(str(clip["path"])))
+        row_path = os.path.normcase(os.path.abspath(str(row["path"])))
+        if clip_path != row_path:
+            continue
+        topic_score = row.get("topic_match_score")
+        if isinstance(topic_score, (int, float)) and not isinstance(topic_score, bool):
+            clip["candidate_topic_match_score"] = float(topic_score)
+        evidence = row.get("semantic_evidence")
+        if isinstance(evidence, dict):
+            clip["candidate_semantic_evidence"] = evidence
+        for source_key, target_key in (
+            ("title", "candidate_title"), ("tags", "candidate_tags"),
+            ("description", "candidate_description"),
+            ("matched_terms", "candidate_matched_terms"),
+        ):
+            if row.get(source_key):
+                clip[target_key] = row[source_key]
 
 
 def _semantic_overlap(clip: Dict[str, Any]) -> float:
-    a = _clip_name_tokens(clip)
+    if not isinstance(clip, dict):
+        return 0.0
+    topic_score = clip.get("candidate_topic_match_score")
+    if isinstance(topic_score, (int, float)) and not isinstance(topic_score, bool) and topic_score >= 0.08:
+        return 1.0
+    evidence = clip.get("candidate_semantic_evidence")
+    if isinstance(evidence, dict) and evidence.get("subject_match") is True and not evidence.get("rejected"):
+        return 1.0
     b = _narration_tokens(clip)
     if not b:
         return 1.0
+    candidate_text = " ".join(
+        str(clip.get(key) or "")
+        for key in (
+            "candidate_title", "candidate_tags", "candidate_description",
+            "candidate_matched_terms",
+        )
+    )
+    a = _expand_tokens_with_translations(_tokenize(candidate_text))
     if not a:
         return 0.0
-    union = len(a | b)
-    return len(a & b) / union if union else 0.0
+    return len(a & b) / len(a)
+
+
+def retry_low_confidence_scenes(clips, retry_scene, threshold: float = 0.08):
+    """Retry low-confidence scenes once and return retried and still-low indices."""
+    retry_indices = [
+        index for index, clip in enumerate(clips)
+        if _semantic_overlap(clip) < threshold and isinstance(clip, dict) and clip.get("narration")
+    ]
+    for index in retry_indices:
+        retry_scene(index, clips[index])
+    remaining = [
+        index for index, clip in enumerate(clips)
+        if _semantic_overlap(clip) < threshold and isinstance(clip, dict) and clip.get("narration")
+    ]
+    return retry_indices, remaining
+
+
+def require_semantic_confidence(scene_indices) -> None:
+    if scene_indices:
+        blocked = ", ".join(str(index + 1) for index in scene_indices)
+        raise RuntimeError(
+            f"Visual/narration mismatch remains in scene(s): {blocked}. "
+            "Regenerate the script or select visuals that match the narration."
+        )
 
 
 def _ffprobe_duration(path: str) -> float:
@@ -54,17 +152,18 @@ def _ffprobe_duration(path: str) -> float:
     try:
         import imageio_ffmpeg
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-        # Use ffmpeg -i to extract duration from stderr
+        # Use ffmpeg -i to extract duration from stderr (bytes mode to prevent Windows cp1254 crashes)
         r = subprocess.run(
             [ffmpeg, "-i", path, "-f", "null", "-"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
         )
+        stderr = r.stderr.decode("utf-8", errors="ignore") if r.stderr else ""
         # Parse "Duration: HH:MM:SS.ms" from stderr
         import re
-        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)", r.stderr)
+        m = re.search(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)", stderr)
         if m:
             h, mn, s, cs = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
-            return h * 3600 + mn * 60 + s + cs / 100.0
+            return h * 3600 + mn * 60 + s + cs / (10 ** len(m.group(4)))
         return -1.0
     except Exception:
         return -1.0
@@ -77,9 +176,9 @@ def _ffprobe_streams(path: str) -> List[Dict[str, str]]:
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
         r = subprocess.run(
             [ffmpeg, "-i", path],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20,
         )
-        stderr = r.stderr or ""
+        stderr = r.stderr.decode("utf-8", errors="ignore") if r.stderr else ""
         streams = []
         for line in stderr.split("\n"):
             if "Stream #" not in line:
@@ -137,12 +236,16 @@ def pre_render_audit(
         errors.append(f"duplicate_clips:{dupe_info}")
 
     clip_total = sum(float(c.get("duration", 0)) for c in clips)
-    audio_dur = _ffprobe_duration(audio_path) if audio_path and os.path.exists(audio_path) else -1.0
-    av_delta = abs(clip_total - audio_dur) if audio_dur > 0 else None
-    if audio_dur <= 0:
-        warnings.append("audio_duration_probe_failed")
-    elif av_delta is not None and av_delta > tolerance_seconds:
-        warnings.append(f"av_duration_mismatch:clips={clip_total:.1f}s audio={audio_dur:.1f}s delta={av_delta:.1f}s")
+    audio_dur = -1.0
+    av_delta = None
+    if audio_path and os.path.exists(audio_path) and os.path.getsize(audio_path) > 1000:
+        audio_dur = _ffprobe_duration(audio_path)
+        if audio_dur <= 0:
+            warnings.append("audio_duration_probe_failed")
+        else:
+            av_delta = abs(clip_total - audio_dur)
+            if av_delta > tolerance_seconds:
+                warnings.append(f"av_duration_mismatch:clips={clip_total:.1f}s audio={audio_dur:.1f}s delta={av_delta:.1f}s")
 
     low_match: List[str] = []
     semantic_scores: List[float] = []
@@ -239,7 +342,7 @@ def post_render_audit(
     pix_fmts = [s.get("pix_fmt", "") for s in streams if s.get("codec_type") == "video"]
     if codec_names and "h264" not in codec_names and "hevc" not in codec_names:
         warnings.append(f"unexpected_video_codec:{codec_names}")
-    if pix_fmts and "yuv420p" not in pix_fmts:
+    if pix_fmts and not any(f in ("yuv420p", "yuvj420p") for f in pix_fmts):
         warnings.append(f"unexpected_pix_fmt:{pix_fmts}")
 
     expected_dur = sum(float(c.get("duration", 0)) for c in clips)
@@ -283,14 +386,28 @@ def audit_search_queries(clips: List[Dict[str, Any]]) -> Dict[str, Any]:
     issues: List[Dict[str, Any]] = []
     for idx, clip in enumerate(clips):
         queries = clip.get("search_queries") or []
+        if not queries and isinstance(clip.get("visual_intent"), dict):
+            queries = clip["visual_intent"].get("search_queries") or []
+        if not queries and isinstance(clip.get("visual_intent"), dict) and clip["visual_intent"].get("subject"):
+            queries = [clip["visual_intent"]["subject"]]
+        if not queries and clip.get("scene_description"):
+            queries = [clip["scene_description"]]
+
         bad = [q for q in queries if q.strip().lower() in _GENERIC_FALLBACKS]
         empty = [i for i, q in enumerate(queries) if not q or not q.strip()]
         narr_tokens = _narration_tokens(clip)
         query_tokens: set = set()
         for q in queries:
-            query_tokens |= _tokenize(q)
+            query_tokens |= _expand_tokens_with_translations(_tokenize(q))
         overlap = len(narr_tokens & query_tokens) / max(1, len(narr_tokens))
-        if bad or empty or overlap < 0.05:
+
+        has_valid_clip = bool(clip.get("path") and os.path.exists(clip["path"]) and os.path.getsize(clip["path"]) > 1000)
+        is_bad = bool(bad)
+        all_empty = bool(queries and len(empty) == len(queries))
+        missing_queries = bool(not queries and not has_valid_clip)
+        low_overlap = bool(overlap < 0.05 and not has_valid_clip and not clip.get("scene_description"))
+
+        if is_bad or all_empty or missing_queries or low_overlap:
             issues.append({
                 "scene_index": idx,
                 "queries": queries,

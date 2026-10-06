@@ -27,17 +27,10 @@ from video_fetcher import (
 from reddit_card_renderer import generate_reddit_post_card_clip
 from tts_engine import generate_narration_with_timing
 from niche_templates import get_niche_production_profile
-from subtitle_generator import SUBTITLE_PRESETS, resolve_ab_subtitle_preset
+from subtitle_generator import SUBTITLE_PRESETS, merge_studio_subtitle_opts, resolve_ab_subtitle_preset
 from batch_processor import batch_manager
 from notifications import notify_video_ready, notify_render_error
 from . import state
-
-
-def _log(msg, pct=None):
-    print(msg, flush=True)
-    state.broadcast_event("log", msg)
-    if pct is not None:
-        state.broadcast_event("progress", {"percent": pct, "step": msg})
 
 
 def _gemini_image_circuit_open() -> bool:
@@ -47,6 +40,29 @@ def _gemini_image_circuit_open() -> bool:
         return not circuit_breaker.can_execute("gemini_image")
     except Exception:
         return False
+
+
+from visuals.fetch import attach_short_clip_partners
+
+
+def procedural_on_retry_pass(attempt: int, max_passes: int) -> bool:
+    """Stock-only on early passes. The last pass may synthesize lavfi.
+
+    A missing scene has no licensed clip. Turning procedural on for every
+    pass would freeze a mandelbrot in before a rate-limited API answers.
+    Leaving it off for the last pass hard-fails the render, which is the
+    hole this guards. K1 and the short-clip tail stay stock-only: those
+    scenes already have a real file.
+    """
+    return int(attempt) >= int(max_passes)
+
+
+def _log(msg, pct=None):
+    # print only. SSELogStreamer already broadcasts stdout. A second
+    # broadcast made every scene line appear twice in the live log.
+    print(msg, flush=True)
+    if pct is not None:
+        state.broadcast_event("progress", {"percent": pct, "step": msg})
 
 
 def _veo_circuit_open() -> bool:
@@ -155,13 +171,33 @@ def _sweep_render_temp_files(job_prefix: str = "") -> None:
                 pass
 
 
-def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None, channel_id=None):
+def _stamp_visual_mode(plan, selected) -> None:
+    from visuals.mixed_visual import apply_selected_visual_mode, is_mixed_mode
+
+    if plan and is_mixed_mode(selected):
+        _log("[Visual] Karışık mod: sahneler sırayla stok, yerel MiniMax-H3, Flux")
+    apply_selected_visual_mode(plan, selected)
+
+
+def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None, channel_id=None, req=None):
     """Sync fetch for one scene — used from parallel executor (P1-13)."""
+    def _is_cancelled():
+        return bool(state.current_render_state.get("cancel_requested", False))
+
+    if _is_cancelled():
+        return i, None, None
+
     q = scene.get("search_queries") or ([scene.get("search_query")] if scene.get("search_query") else [])
     d = scene.get("duration", 7)
     desc = scene.get("scene_description", "")
     intent = scene.get("visual_intent") or {}
     narr = scene.get("narration", "")
+    if not q and isinstance(intent, dict):
+        q = intent.get("search_queries") or []
+    if not q and isinstance(intent, dict) and intent.get("subject"):
+        q = [intent.get("subject")]
+    if not q and desc:
+        q = [desc]
     niche_id = (
         (plan or {}).get("locked_niche")
         or (plan or {}).get("niche_id")
@@ -175,19 +211,31 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
     source_policy = str(scene.get("visual_source_policy") or "licensed_first").casefold()
     prefer_ai = source_policy in {"ai", "synthetic", "ai_first"} or bool((plan or {}).get("prefer_ai_visuals"))
 
+    visual_mode = str(
+        scene.get("visual_mode")
+        or (plan or {}).get("visual_mode")
+        or (getattr(req, "visual_mode", "") if req else "")
+        or (plan or {}).get("visual_style")
+        or ""
+    ).lower()
+    from visuals.mixed_visual import is_mixed_mode, mixed_scene_mode
+    if is_mixed_mode(visual_mode):
+        visual_mode = mixed_scene_mode(i)
+    if visual_mode == "stock":
+        prefer_ai = False
+
     # 0) Direct assigned clip (AI preview, Whiteboard preview, or custom selected local clip)
     selected_vid = scene.get("selected_video") or {}
     local_candidate = selected_vid.get("path") or scene.get("video_path") or selected_vid.get("file_path")
     if local_candidate and os.path.exists(local_candidate):
-        p = local_candidate
-        _log(f"[Visual] Sahne #{i+1}: Önceden üretilen yerel klip kullanılıyor: {os.path.basename(p)}")
-
-    visual_mode = str(
-        (plan or {}).get("visual_mode")
-        or scene.get("visual_mode")
-        or (plan or {}).get("visual_style")
-        or ""
-    ).lower()
+        cand_name = os.path.basename(local_candidate).lower()
+        if visual_mode in ("whiteboard", "sketch", "cizim") and "whiteboard" not in cand_name:
+            p = None
+        elif visual_mode in ("minimax_h3", "minimax-h3", "h3") and ("minimax" not in cand_name and "h3" not in cand_name):
+            p = None
+        else:
+            p = local_candidate
+            _log(f"[Visual] Sahne #{i+1}: Önceden üretilen yerel klip kullanılıyor: {os.path.basename(p)}")
 
     if not p and visual_mode in ("whiteboard", "sketch", "cizim"):
         from services.whiteboard_animator import create_whiteboard_scene_clip
@@ -199,6 +247,41 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
             duration=d,
             scene_index=i,
         )
+
+    if not p and visual_mode in ("minimax_h3", "minimax-h3", "h3"):
+        from visuals.ai_video.providers.minimax_h3 import comfy_base_url, generate_local_h3_clip
+        _log(f"[MiniMax-H3] Sahne #{i+1}: ComfyUI kuyruğu ({comfy_base_url()})")
+        h3_path = os.path.join(proj, f"s{i:03d}_minimax_h3.mp4")
+
+        # 8GB VRAM (RTX 3070) safe resolution: 512x896 with VAEDecodeTiled (tile_size=256)
+        _low_vram = False
+        try:
+            from hardware_detector import get_gpu_info
+            _low_vram = float(get_gpu_info().get("vram_gb", 0) or 0) <= 10.0
+        except Exception:
+            pass
+
+        from visuals.ai_video.providers.minimax_h3 import h3_frame_length
+        # Dynamic length matching scene duration (73..124 frames = ~3.0s..5.2s)
+        target_frames = h3_frame_length(d, min_seconds=3.0)
+        if _low_vram:
+            target_frames = min(124, max(73, target_frames))
+
+        p = generate_local_h3_clip(
+            desc or narr or (q[0] if q else "cinematic vertical scene"),
+            h3_path,
+            duration=d,
+            aspect="9:16",
+            scene_label=f"Sahne #{i+1}",
+            cancel_check=_is_cancelled,
+            width=512 if _low_vram else 768,
+            height=896 if _low_vram else 1344,
+            length=target_frames,
+        )
+        if _is_cancelled():
+            return i, None, None
+        if not p:
+            _log(f"[MiniMax-H3] Sahne #{i+1}: yerel sunucu cevap vermedi, mevcut stok hattı sürüyor")
 
     if not p and (
         visual_mode in ("pollinations", "flux", "0tl_ai", "flux_ai", "pollinations_ai")
@@ -266,6 +349,9 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         reason = "veo 429" if _veo_circuit_open() else "gemini_image 429"
         _log(f"[Visual] Sahne {i + 1}/{total_s}: {reason} devre acik — zorunlu stok regen")
 
+    if _is_cancelled():
+        return i, None, None
+
     if not p:
         p = fetch_scene_clip(
             q,
@@ -303,6 +389,7 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         "duration": d,
         "narration": narr,
         "scene_description": desc,
+        "search_queries": q,
         "badge_label": scene.get("badge_label"),
         "enable_pip": scene.get("enable_pip", False),
         "pip_path": scene.get("pip_path"),
@@ -313,6 +400,10 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         "wipe_transition": scene.get("wipe_transition", False),
         "wipe_direction": scene.get("wipe_direction", "horizontal"),
         "visual_intent": intent,
+        "scene_intent": scene.get("scene_intent") or (intent.get("shot_type") if isinstance(intent, dict) else ""),
+        "camera_direction": scene.get("camera_direction") or "",
+        "score": 100 if p else 0,
+        "topic_match_score": 1.0 if p else 0.0,
         "t0": scene.get("t0", 0),
         "t1": scene.get("t1", 0),
     }
@@ -323,7 +414,12 @@ async def _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=None
     """P1-13: asyncio.gather per-scene stock fetch via thread pool."""
     loop = asyncio.get_running_loop()
 
+    def _cancelled():
+        return bool(state.current_render_state.get("cancel_requested", False))
+
     async def _one(i, scene):
+        if _cancelled():
+            return i, None, None
         return await loop.run_in_executor(
             None,
             lambda i=i, scene=scene: _fetch_single_scene_visual(
@@ -332,7 +428,11 @@ async def _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=None
             ),
         )
 
-    return await asyncio.gather(*(_one(i, scene) for i, scene in enumerate(scenes)))
+    tasks = [_one(i, scene) for i, scene in enumerate(scenes)]
+    results = await asyncio.gather(*tasks)
+    if _cancelled():
+        raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
+    return results
 
 
 def process_video_task(req: VideoRenderRequest):
@@ -343,13 +443,27 @@ def process_video_task(req: VideoRenderRequest):
     orig_lang = config.LANGUAGE
     orig_voice = config.TTS_VOICE
     orig_rate = config.TTS_RATE
+    orig_sacred = bool(getattr(config, "TTS_SACRED_CALM", False))
     script_regen_494 = False
+    gate_context = None
+    slot_acquired = False
 
     def check_cancelled():
         if state.current_render_state.get("cancel_requested"):
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
     try:
+        # Chapter 28.8 / short-video-maker: Hardware Render Concurrency Guard & Structured Logging
+        from render.render_limits import GLOBAL_RENDER_GATE
+        from services.structured_logger import get_structured_logger
+        task_id = getattr(req, "task_id", None) or f"task_{int(time.time()*1000)}"
+        slogger = get_structured_logger("render_worker", task_id=task_id, niche=req.niche, topic=req.keyword)
+        slogger.info("Render kuyruğuna alındı", extra={"queued_renders": GLOBAL_RENDER_GATE.queued_count, "active_renders": GLOBAL_RENDER_GATE.active_count})
+        gate_context = GLOBAL_RENDER_GATE.acquire_slot_sync(task_id=task_id, timeout=180.0)
+        gate_context.__enter__()
+        slot_acquired = True
+        slogger.info("Render donanım slotu tahsis edildi", extra={"active_renders": GLOBAL_RENDER_GATE.active_count})
+
         state.current_render_state["cancel_requested"] = False
         state.current_render_state["cancel_notified"] = False
         # Every job starts with clean terminal state. Otherwise a previous
@@ -391,8 +505,8 @@ def process_video_task(req: VideoRenderRequest):
         config.LANGUAGE = target_lang
 
         plan = req.plan
-        if plan and getattr(req, "visual_mode", None) and req.visual_mode != "auto":
-            plan["visual_mode"] = req.visual_mode
+        vm = getattr(req, "visual_mode", None)
+        _stamp_visual_mode(plan, vm)
         keyword = (plan.get("title") if plan and plan.get("title") else req.keyword) or "Video"
 
         # Niche lock ASAP — voice gender + Gemini both need correct motif
@@ -405,12 +519,23 @@ def process_video_task(req: VideoRenderRequest):
         db_id = database.add_video_record(
             keyword, target_lang, config.AI_PROVIDER, channel_slug=ch_paths["slug"]
         )
+        from .pipeline_state_machine import PipelineStateMachine, PipelineStage
+        sm = PipelineStateMachine(job_id=str(db_id or "job"), keyword=keyword, niche_id=locked_niche)
         _log(f"[Director] İşlem başlatılıyor: '{keyword}'...", 5)
         if locked_niche != requested_niche:
             _log(
                 f"[Niche] Konu kilidi: '{requested_niche}' -> '{locked_niche}' "
                 f"(baslik: {keyword[:48]})",
                 6,
+            )
+
+        from scenes.hadith_overlay import is_sacred_niche
+        if is_sacred_niche(locked_niche, keyword):
+            config.TTS_SACRED_CALM = True
+            config.TTS_RATE = getattr(config, "SACRED_TTS_RATE", "+8%")
+            _log(
+                "[TTS] Kutsal niş: tempo varsayılandan sakin. Ses hızlandırılmaz.",
+                7,
             )
 
         gender = req.voice_gender or "male"
@@ -436,6 +561,7 @@ def process_video_task(req: VideoRenderRequest):
             _log(f"[Channel] Çıktı klasörü: channels/{ch_paths['slug']}", 7)
         proj = os.path.join(assets_root, safe)
         os.makedirs(proj, exist_ok=True)
+        sm.bind_project(proj, resume=bool(getattr(req, "resume", False)))
         reset_used_videos()
         # One render owns one visual manifest.  Reset it before parallel scene
         # acquisition so credits never leak from a previous job.
@@ -479,6 +605,7 @@ def process_video_task(req: VideoRenderRequest):
             check_cancelled()
             if orig_attempt > 0 or not plan:
                 if orig_attempt == 0:
+                    sm.transition_to(PipelineStage.STAGE_2_HOOK_NARRATIVE, f"Kanca ve Anlatı Üretimi: '{keyword}' (Niş: {locked_niche})", pct=8.0)
                     _log(
                         f"[Director] AI senaryosu oluşturuluyor ({lang_label} - {config.AI_PROVIDER}, "
                         f"niş={locked_niche}): '{keyword}'",
@@ -495,7 +622,9 @@ def process_video_task(req: VideoRenderRequest):
                     niche_type=locked_niche,
                     language=target_lang,
                     variation_attempt=orig_attempt,
+                    enable_outro=getattr(req, "enable_outro", True) is not False,
                 )
+                _stamp_visual_mode(plan, vm)
                 try:
                     from hybrid_niches import enrich_plan_with_hybrid
                     plan = enrich_plan_with_hybrid(plan, keyword, locked_niche)
@@ -544,6 +673,7 @@ def process_video_task(req: VideoRenderRequest):
                 lang=target_lang,
                 niche_type=locked_niche,
                 variation_attempt=orig_attempt,
+                enable_outro=getattr(req, "enable_outro", True) is not False,
             )
             try:
                 from scenes.enrichment import enrich_plan_scenes
@@ -566,6 +696,7 @@ def process_video_task(req: VideoRenderRequest):
                 )
 
             check_cancelled()
+            sm.transition_to(PipelineStage.STAGE_3_DIRECTOR_PLAN, "DirectorPlan derleniyor (timeline + visual intent + audio bus)", pct=18.0)
             _log("[Director] DirectorPlan derleniyor (timeline + visual intent + audio bus)...", 18)
             director = None
             if use_director:
@@ -594,26 +725,61 @@ def process_video_task(req: VideoRenderRequest):
                 with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
                     json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
 
+            sm.transition_to(PipelineStage.STAGE_4_ORIGINALITY_GATE, "Özgünlük Kontrolü (Madde 120) ve Senaryo Kalite Kapısı", pct=25.0)
+            allow_similar = bool(
+                getattr(req, "allow_similar_script", False)
+                or getattr(req, "force_render", False)
+                or getattr(req, "allow_draft_render", False)
+            )
             is_original, similarity, matched_title = check_script_originality(
                 plan.get("full_narration", ""),
                 keyword=keyword,
                 title=plan.get("title", keyword),
                 auto_add_if_approved=False,
                 only_completed_renders=True,
+                allow_similar_script=allow_similar,
+                channel_slug=ch_paths["slug"],
             )
             if is_original:
+                if similarity >= 0.45 and allow_similar:
+                    _log(
+                        f"[QualityGate] UYARI: Senaryo benzerlik eşiğini aştı (%{similarity * 100:.1f} - '{matched_title}'), "
+                        f"ancak 'Yine De Devam Et' seçeneği aktif olduğu için render onaylandı.",
+                        25,
+                    )
                 break
             plan = None
 
         if not is_original:
-            message = (
-                f"Senaryo benzerlik eşiğini aştı (%{similarity * 100:.1f}); "
-                f"en yakın kayıt: {matched_title or 'bilinmiyor'}."
+            allow_similar = bool(
+                getattr(req, "allow_similar_script", False)
+                or getattr(req, "force_render", False)
+                or getattr(req, "allow_draft_render", False)
             )
+            if allow_similar:
+                _log(
+                    f"[QualityGate] UYARI: Senaryo benzerliği yüksek (%{similarity * 100:.1f}), "
+                    f"ancak 'Yine De Devam Et' seçeneği aktif, render devam ediyor.",
+                    25,
+                )
+            else:
+                message = (
+                    f"Senaryo benzerlik eşiğini aştı (%{similarity * 100:.1f}); "
+                    f"en yakın kayıt: {matched_title or 'bilinmiyor'}. "
+                    f"İçerik ve videolar farklıysa 'Yine De Devam Et' seçeneği ile render alabilirsiniz."
+                )
             if db_id:
                 database.update_video_status(db_id, "failed", error_message=message)
             state.broadcast_event("error", message)
             return
+
+        if isinstance(plan, dict):
+            plan.setdefault("meta", {})
+            plan["meta"]["originality"] = {
+                "similarity": round(float(similarity), 4),
+                "originality_score": round(max(0.0, (1.0 - float(similarity)) * 100.0), 1),
+                "matched_title": matched_title or "",
+            }
 
         # Strict production contract: drafts that do not meet the intended
         # 45-60s / 6-12 scene / 120-170 word shape must be regenerated rather
@@ -804,6 +970,7 @@ def process_video_task(req: VideoRenderRequest):
         check_cancelled()
         scenes = plan.get("scenes", [])
         total_s = len(scenes)
+        sm.transition_to(PipelineStage.STAGE_5_ASSET_INGESTION, f"Varlık Edinimi: {total_s} sahne için görsel klipler temin ediliyor", pct=32.0)
         _log(f"[Visual] Stok videolar aranıyor ({total_s} sahne, semantik skor)...", 30)
 
         clips = []
@@ -833,7 +1000,15 @@ def process_video_task(req: VideoRenderRequest):
         )
         if needs_split_screen:
             req.split_screen = True
-        if req.split_screen:
+        resume_visuals = sm.reusable(PipelineStage.STAGE_5_ASSET_INGESTION)
+        saved_visuals = sm.stage_artifacts(PipelineStage.STAGE_5_ASSET_INGESTION) if resume_visuals else {}
+        if resume_visuals and len(saved_visuals.get("clips") or []) != total_s:
+            resume_visuals = False
+        if resume_visuals and req.split_screen:
+            saved_gameplay = saved_visuals.get("gameplay_path") or ""
+            if not saved_gameplay or not os.path.isfile(saved_gameplay):
+                resume_visuals = False
+        if req.split_screen and not resume_visuals:
             from gameplay_pool import fetch_gameplay_clip, resolve_gameplay_category
             gp_cat = getattr(req, "gameplay_category", None) or "auto"
             resolved_cat = resolve_gameplay_category(gp_cat, locked_niche)
@@ -860,31 +1035,48 @@ def process_video_task(req: VideoRenderRequest):
                 raise RuntimeError("Split-screen için daha önce kullanılmamış oyun/parkur klibi bulunamadı.")
 
         check_cancelled()
-        _log(f"[Visual] Paralel stok fetch başlıyor ({total_s} sahne, asyncio.gather)...", 32)
-        _channel_id = getattr(req, "channel_id", None)
-        fetch_results = asyncio.run(
-            _fetch_scenes_parallel(
-                scenes, plan, proj, total_s,
-                gameplay_path=gameplay_path, channel_id=_channel_id,
+        if resume_visuals:
+            gameplay_path = saved_visuals.get("gameplay_path") or None
+            clips = []
+            for i, item in enumerate(saved_visuals.get("clips") or []):
+                entry = {
+                    "path": item.get("path"),
+                    "duration": item.get("duration") or (scenes[i].get("duration") if i < len(scenes) else 5),
+                }
+                if item.get("tail_path"):
+                    entry["tail_path"] = item["tail_path"]
+                    entry["head_duration"] = item.get("head_duration")
+                clips.append(entry)
+                if director and i < len(director.scenes):
+                    director.scenes[i].path = entry.get("path")
+            _log("[Resume] Görseller duruyor. Stok indirme atlandı.", 32)
+        else:
+            _log(f"[Visual] Paralel stok fetch başlıyor ({total_s} sahne, asyncio.gather)...", 32)
+            _channel_id = getattr(req, "channel_id", None)
+            fetch_results = asyncio.run(
+                _fetch_scenes_parallel(
+                    scenes, plan, proj, total_s,
+                    gameplay_path=gameplay_path, channel_id=_channel_id,
+                )
             )
-        )
-        clips = [None] * total_s
-        for i, clip_entry, p in sorted(fetch_results, key=lambda row: row[0]):
-            clips[i] = clip_entry
-            if director and i < len(director.scenes):
-                director.scenes[i].path = p
-            if p:
-                recent_texts.append(os.path.basename(p).lower())
-            scene = scenes[i]
-            intent = scene.get("visual_intent") or {}
-            desc = scene.get("scene_description", "")
-            progress_pct = 30 + int(((i + 1) / max(1, total_s)) * 28)
-            step_msg = f"[Visual] Sahne {i + 1}/{total_s}: {(intent.get('subject') or desc)[:40]}..."
-            state.broadcast_event("progress", {"percent": progress_pct, "step": step_msg})
-            state.broadcast_event(
-                "log",
-                f"  -> Sahne {i + 1}/{total_s}: {(desc or intent.get('subject', ''))[:50]}",
-            )
+            check_cancelled()
+            clips = [None] * total_s
+            for i, clip_entry, p in sorted(fetch_results, key=lambda row: row[0]):
+                clips[i] = clip_entry
+                if director and i < len(director.scenes):
+                    director.scenes[i].path = p
+                if p:
+                    recent_texts.append(os.path.basename(p).lower())
+                scene = scenes[i]
+                intent = scene.get("visual_intent") or {}
+                desc = scene.get("scene_description", "")
+                progress_pct = 30 + int(((i + 1) / max(1, total_s)) * 28)
+                step_msg = f"[Visual] Sahne {i + 1}/{total_s}: {(intent.get('subject') or desc)[:40]}..."
+                state.broadcast_event("progress", {"percent": progress_pct, "step": step_msg})
+                state.broadcast_event(
+                    "log",
+                    f"  -> Sahne {i + 1}/{total_s}: {(desc or intent.get('subject', ''))[:50]}",
+                )
 
         def _retry_missing_clips(max_passes=2):
             """Regen failed scene indices only (P0-03 unique clip contract)."""
@@ -896,7 +1088,12 @@ def process_video_task(req: VideoRenderRequest):
                 _log(
                     f"[Visual] Retry pass {attempt}/{max_passes}: "
                     f"{len(missing)} missing scene(s) -> indices (0-based) {missing[:16]}"
-                    + (f" ... (+{len(missing) - 16})" if len(missing) > 16 else ""),
+                    + (f" ... (+{len(missing) - 16})" if len(missing) > 16 else "")
+                    + (
+                        "; lavfi yedek açık"
+                        if procedural_on_retry_pass(attempt, max_passes)
+                        else "; stok araması"
+                    ),
                     56,
                 )
                 for i in missing:
@@ -934,7 +1131,7 @@ def process_video_task(req: VideoRenderRequest):
                             or ""
                         ),
                         channel_id=getattr(req, "channel_id", None),
-                        allow_procedural=False,
+                        allow_procedural=procedural_on_retry_pass(attempt, max_passes),
                     )
                     clips[i]["path"] = p
                     if p:
@@ -944,8 +1141,44 @@ def process_video_task(req: VideoRenderRequest):
                     else:
                         _log(f"[Visual] Retry pass {attempt}: scene {i + 1}/{total_s} still failed")
 
-        check_cancelled()
-        _retry_missing_clips(max_passes=2)
+        if not resume_visuals:
+            check_cancelled()
+            _retry_missing_clips(max_passes=2)
+            check_cancelled()
+            attach_short_clip_partners(
+                clips,
+                scenes,
+                proj,
+                niche_id=(
+                    (plan or {}).get("locked_niche")
+                    or (plan or {}).get("niche_id")
+                    or ""
+                ),
+                channel_id=getattr(req, "channel_id", None),
+                cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
+            )
+            visual_files = []
+            visual_clips = []
+            for clip in clips or []:
+                if not isinstance(clip, dict):
+                    continue
+                visual_clips.append({
+                    "path": clip.get("path"),
+                    "duration": clip.get("duration"),
+                    "tail_path": clip.get("tail_path") or "",
+                    "head_duration": clip.get("head_duration"),
+                })
+                if clip.get("path"):
+                    visual_files.append(clip["path"])
+                if clip.get("tail_path"):
+                    visual_files.append(clip["tail_path"])
+            if gameplay_path:
+                visual_files.append(gameplay_path)
+            sm.mark_done(
+                PipelineStage.STAGE_5_ASSET_INGESTION,
+                artifacts={"clips": visual_clips, "gameplay_path": gameplay_path or ""},
+                files=visual_files,
+            )
 
         # O1: Clip/plan count sync — director recompile may change scene count.
         # Trim or pad clips to match current plan so pre-audit count check is accurate.
@@ -974,7 +1207,7 @@ def process_video_task(req: VideoRenderRequest):
             from render.pipeline_audit import pre_render_audit, audit_search_queries
             _pre_audit = pre_render_audit(
                 clips,
-                audio_path=os.path.join(config.AUDIO_DIR, f"{safe}.wav"),
+                audio_path=None,
                 plan=plan,
             )
             _q_audit = audit_search_queries(clips)
@@ -1002,46 +1235,97 @@ def process_video_task(req: VideoRenderRequest):
         except Exception as _audit_err:
             _log(f"[PipelineAudit] audit skip: {_audit_err}")
 
-        # K1: Semantic mismatch re-fetch — try narration-derived queries for low-overlap scenes
-        try:
-            from render.pipeline_audit import pre_render_audit as _pa_fn
-            from scenes.enrichment import _narration_to_subject_tokens
-            _k1_audit = _pa_fn(clips, audio_path=os.path.join(config.AUDIO_DIR, f"{safe}.wav"))
-            _low_semantic = _k1_audit.get("report", {}).get("low_semantic_count", 0)
-            if _low_semantic > 0:
-                _log(f"[K1-Semantic] {_low_semantic} scene(s) low clip-narration overlap — re-fetching with narration queries")
-                for _si, _clip in enumerate(clips):
-                    from render.pipeline_audit import _semantic_overlap as _so
-                    if _so(_clip) >= 0.08:
-                        continue
-                    _narr = _clip.get("narration") or (scenes[_si].get("narration") if _si < len(scenes) else "") or ""
-                    _desc = _clip.get("scene_description") or ""
-                    _ntokens = _narration_to_subject_tokens(_narr or _desc)
-                    if not _ntokens:
-                        continue
-                    _narr_queries = [
-                        f"{' '.join(_ntokens[:2]).lower()} closeup",
-                        f"{' '.join(_ntokens[:2]).lower()} detail shot",
-                        f"{_ntokens[0].lower()} footage",
-                    ]
-                    check_cancelled()
-                    _np = fetch_scene_clip(
-                        _narr_queries, _si, proj,
-                        target_duration=_clip.get("duration", 6),
-                        scene_description=_desc,
-                        narration=_narr,
-                        cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
-                        niche_id=(plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or "",
-                        channel_id=getattr(req, "channel_id", None),
-                        allow_procedural=False,
-                    )
-                    if _np:
-                        _log(f"[K1-Semantic] Scene {_si+1} re-fetched: {os.path.basename(_np)}")
-                        clips[_si]["path"] = _np
-                        if director and _si < len(director.scenes):
-                            director.scenes[_si].path = _np
-        except Exception as _k1_err:
-            _log(f"[K1-Semantic] retry skip: {_k1_err}")
+        # K1: Retry narration mismatches using provider evidence, then block any unresolved scene.
+        from render.pipeline_audit import (
+            attach_candidate_metadata,
+            require_semantic_confidence,
+            retry_low_confidence_scenes,
+        )
+        from scenes.enrichment import _narration_to_subject_tokens
+
+        def _candidate_manifest_rows():
+            try:
+                from visuals.fetch import get_job_manifest
+                rows = get_job_manifest()
+            except Exception:
+                rows = []
+            try:
+                with open(os.path.join(proj, "source_manifest.json"), "r", encoding="utf-8") as _mf:
+                    saved_rows = json.load(_mf).get("clips", [])
+            except Exception:
+                saved_rows = []
+            merged_rows = {
+                row.get("scene_index"): row
+                for row in saved_rows
+                if isinstance(row, dict) and row.get("scene_index") is not None
+            }
+            merged_rows.update({
+                row.get("scene_index"): row
+                for row in rows
+                if isinstance(row, dict) and row.get("scene_index") is not None
+            })
+            return list(merged_rows.values())
+
+        for _si, _clip in enumerate(clips):
+            if not isinstance(_clip, dict):
+                continue
+            _scene = scenes[_si] if _si < len(scenes) else {}
+            if not _clip.get("narration"):
+                _clip["narration"] = _scene.get("narration") or ""
+            if not _clip.get("scene_description"):
+                _clip["scene_description"] = _scene.get("scene_description") or ""
+            if not _clip.get("search_queries"):
+                _clip["search_queries"] = _scene.get("search_queries") or []
+            if not _clip.get("visual_intent"):
+                _clip["visual_intent"] = _scene.get("visual_intent") or {}
+        attach_candidate_metadata(clips, _candidate_manifest_rows())
+
+        def _retry_semantic_scene(_si, _clip):
+            _narr = _clip.get("narration") or ""
+            _desc = _clip.get("scene_description") or ""
+            _ntokens = _narration_to_subject_tokens(_narr or _desc)
+            if not _ntokens:
+                _log(f"[K1-Semantic] Scene {_si + 1}: no filmable narration tokens; retry unavailable")
+                return
+            _narr_queries = [
+                f"{' '.join(_ntokens[:2]).lower()} closeup",
+                f"{' '.join(_ntokens[:2]).lower()} detail shot",
+                f"{_ntokens[0].lower()} footage",
+            ]
+            check_cancelled()
+            try:
+                _np = fetch_scene_clip(
+                    _narr_queries, _si, proj,
+                    target_duration=_clip.get("duration", 6),
+                    scene_description=_desc,
+                    narration=_narr,
+                    cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
+                    niche_id=(plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or "",
+                    channel_id=getattr(req, "channel_id", None),
+                    allow_procedural=False,
+                )
+            except Exception as _retry_err:
+                _log(f"[K1-Semantic] Scene {_si + 1} retry failed: {_retry_err}")
+                return
+            if _np:
+                _log(f"[K1-Semantic] Scene {_si + 1} re-fetched: {os.path.basename(_np)}")
+                _clip["path"] = _np
+                if director and _si < len(director.scenes):
+                    director.scenes[_si].path = _np
+                attach_candidate_metadata(clips, _candidate_manifest_rows())
+            else:
+                _log(f"[K1-Semantic] Scene {_si + 1} retry returned no clip")
+
+        _retried_scenes, _low_confidence_scenes = retry_low_confidence_scenes(
+            clips, _retry_semantic_scene, threshold=0.08,
+        )
+        if _retried_scenes:
+            _log(
+                f"[K1-Semantic] Retried scenes {[index + 1 for index in _retried_scenes]}; "
+                f"remaining low-confidence scenes {[index + 1 for index in _low_confidence_scenes]}"
+            )
+        if _low_confidence_scenes:
+            require_semantic_confidence(_low_confidence_scenes)
 
         if ok_clips == 0:
             msg = "Stok video indirilemedi."
@@ -1060,6 +1344,67 @@ def process_video_task(req: VideoRenderRequest):
                 database.update_video_status(db_id, "failed", error_message=msg)
             state.broadcast_event("error", msg)
             return
+
+        for _dup_pass in range(1, 3):
+            uniqueness = clip_uniqueness_report(clips, min_unique=total_s)
+            if uniqueness["ok"]:
+                break
+            dupes = sorted(set(
+                (uniqueness.get("duplicate_hash_indices") or [])
+                + (uniqueness.get("duplicate_path_indices") or [])
+            ))
+            if not dupes:
+                break
+            _log(
+                f"[Visual] Tekrarlı klip pass {_dup_pass}/2: "
+                f"sahneler {[i + 1 for i in dupes]} yeniden aranıyor",
+                58,
+            )
+            replaced = 0
+            for i in dupes:
+                check_cancelled()
+                scene = scenes[i] if i < len(scenes) else {}
+                intent = scene.get("visual_intent") or {}
+                from visuals.subject_lock import queries_for_scene
+                q = queries_for_scene(
+                    narration=scene.get("narration") or "",
+                    scene_description=scene.get("scene_description") or "",
+                    subject=str(intent.get("subject") or ""),
+                    existing=(
+                        intent.get("search_queries")
+                        or scene.get("search_queries")
+                        or scene.get("search_query")
+                        or []
+                    ),
+                )
+                if not q:
+                    continue
+                old = clips[i].get("path")
+                p = fetch_scene_clip(
+                    q, i, proj, target_duration=clips[i].get("duration", 6),
+                    scene_description=scene.get("scene_description", ""),
+                    narration=scene.get("narration", ""),
+                    visual_intent=intent,
+                    cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
+                    recent_texts=recent_texts,
+                    niche_id=(
+                        (plan or {}).get("locked_niche")
+                        or (plan or {}).get("niche_id")
+                        or ""
+                    ),
+                    channel_id=getattr(req, "channel_id", None),
+                    allow_procedural=procedural_on_retry_pass(_dup_pass, 2),
+                )
+                if not p or p == old:
+                    continue
+                clips[i]["path"] = p
+                replaced += 1
+                recent_texts.append(os.path.basename(p).lower())
+                if director and i < len(director.scenes):
+                    director.scenes[i].path = p
+                _log(f"[Visual] Sahne {i + 1} tekrarı değiştirildi: {os.path.basename(p)}", 58)
+            if replaced == 0:
+                break
 
         uniqueness = clip_uniqueness_report(clips, min_unique=total_s)
         if not uniqueness["ok"]:
@@ -1114,24 +1459,35 @@ def process_video_task(req: VideoRenderRequest):
             for filename, payload in artifact_payloads.items():
                 with open(os.path.join(proj, filename), "w", encoding="utf-8") as fh:
                     json.dump(payload, fh, ensure_ascii=False, indent=2)
-            publishing = {
-                "title": plan.get("title") or keyword,
-                "language": target_lang,
-                "niche_id": locked_niche,
-                "research_brief": plan.get("research_brief") or {},
-                "viewer_score": ((plan.get("meta") or {}).get("viewer_score") or {}).get("score"),
-                "ai_disclosure": disclosure,
-                "description_appendix": "\n\n".join(
-                    part for part in [
-                        credits.get("description_block", "").strip(),
-                        disclosure.get("description_paragraph", "").strip(),
-                    ] if part
-                ),
-                "credits_files": credits,
-                "policy_decision": ((plan.get("meta") or {}).get("compliance") or {}).get("niche_gate") or {},
-                "research_decision": ((plan.get("meta") or {}).get("compliance") or {}).get("research") or {},
-                "publication_decision": (plan.get("meta") or {}).get("publication") or {},
-            }
+            from compliance.publishing_package import (
+                build_publishing_package,
+                license_status_from_manifest,
+                research_gate_passed,
+            )
+            manifest_rows = get_job_manifest()
+            originality = ((plan.get("meta") or {}).get("originality") or {})
+            publishing = build_publishing_package(
+                title=plan.get("title") or keyword,
+                niche_id=locked_niche,
+                viewer_score=(plan.get("meta") or {}).get("viewer_score"),
+                manifest_items=manifest_rows,
+                research_gate_passed=research_gate_passed((plan.get("meta") or {}).get("compliance") or {}),
+                license_status=license_status_from_manifest(manifest_rows),
+                originality_score=float(originality.get("originality_score") or 0.0) if isinstance(originality, dict) else 0.0,
+                ai_disclosure=disclosure,
+            )
+            publishing["research_brief"] = plan.get("research_brief") or {}
+            publishing["credits_files"] = credits
+            publishing["policy_decision"] = ((plan.get("meta") or {}).get("compliance") or {}).get("niche_gate") or {}
+            publishing["research_decision"] = ((plan.get("meta") or {}).get("compliance") or {}).get("research") or {}
+            publishing["publication_decision"] = (plan.get("meta") or {}).get("publication") or {}
+            publishing["language"] = target_lang
+            publishing["description_appendix"] = "\n\n".join(
+                part for part in [
+                    credits.get("description_block", "").strip(),
+                    disclosure.get("description_paragraph", "").strip(),
+                ] if part
+            )
             with open(os.path.join(proj, "publishing_package.json"), "w", encoding="utf-8") as fh:
                 json.dump(publishing, fh, ensure_ascii=False, indent=2)
             _log(
@@ -1159,6 +1515,7 @@ def process_video_task(req: VideoRenderRequest):
         check_cancelled()
         lang_title = "İngilizce" if target_lang == "en" else "Türkçe"
         from tts_engine import active_tts_provider
+        sm.transition_to(PipelineStage.STAGE_6_TTS_SYNC, f"Seslendirme ve Zamanlama ({active_tts_provider()}): {lang_title} ses üretiliyor", pct=58.0)
         _log(f"[Timeline] {lang_title} Seslendirme ({active_tts_provider()})...", 62)
         audio_path = os.path.join(config.AUDIO_DIR, f"{safe}.wav")
 
@@ -1167,14 +1524,27 @@ def process_video_task(req: VideoRenderRequest):
         asmr_profile = VoiceHumanizer.get_asmr_voice_settings(niche_for_voice, keyword)
         narration_text = plan.get("full_narration") or ""
 
+        tts_restored = False
+        saved_tts = {}
+        if sm.reusable(PipelineStage.STAGE_6_TTS_SYNC):
+            saved_tts = sm.stage_artifacts(PipelineStage.STAGE_6_TTS_SYNC)
+            saved_audio = saved_tts.get("audio_path") or ""
+            saved_timings = saved_tts.get("timings") or []
+            if saved_audio and isinstance(saved_timings, list) and saved_timings:
+                audio_path = saved_audio
+                timings = saved_timings
+                tts_restored = True
+                _log("[Resume] Ses dosyası duruyor. TTS atlandı.", 62)
+
         # Post-compile narration gate — auto-repair once, then hard block
-        if director:
+        if director and not tts_restored:
             from director.quality_gate import check_narration_integrity
             from director import pre_render_score as _pre_render_score
             from scenes.narration_validate import apply_auto_repair_if_needed
 
             tts_plan, tts_fixes, _ = apply_auto_repair_if_needed(director.to_legacy_plan())
             if tts_fixes:
+                check_cancelled()
                 _log(f"[QualityGate] TTS oncesi anlatim duzeltildi: {len(tts_fixes)} fix", 60)
                 director = compile_director_plan(
                     tts_plan,
@@ -1185,6 +1555,22 @@ def process_video_task(req: VideoRenderRequest):
                 )
                 plan = director.to_legacy_plan()
                 narration_text = plan.get("full_narration") or ""
+
+            # Chapter 28.10 / youtube-shorts-pipeline: Retention Guardrails & Cliché Stripping
+            try:
+                from services.niche_guardrails import validate_script_niche_compliance
+                niche_val = validate_script_niche_compliance(
+                    narration_text,
+                    niche_id=director.niche_id if director else getattr(req, "niche", ""),
+                    lang=target_lang,
+                )
+                if not niche_val.get("compliant", True):
+                    _log(f"[NicheGuardrails] Cliché tespit edildi ({len(niche_val.get('violations', []))} adet), temizleniyor...", 60)
+                    narration_text = niche_val.get("cleaned_text", narration_text)
+                    if plan:
+                        plan["full_narration"] = narration_text
+            except Exception as ng_err:
+                _log(f"[NicheGuardrails] Denetim uyarısı: {ng_err}", 60)
 
             tts_pre = _pre_render_score(director)
             tts_block = [
@@ -1200,11 +1586,95 @@ def process_video_task(req: VideoRenderRequest):
                 state.broadcast_event("error", msg)
                 return
 
-        _, timings = generate_narration_with_timing(narration_text, audio_path, voice_profile=asmr_profile)
-        _log(f"[Timeline] TTS tamamlandı — {len(timings)} kelime zamanlaması", 68)
+        if not tts_restored:
+            sm.invalidate_from(PipelineStage.STAGE_6_TTS_SYNC)
+            _, timings = generate_narration_with_timing(narration_text, audio_path, voice_profile=asmr_profile)
+            _log(f"[Timeline] TTS tamamlandı — {len(timings)} kelime zamanlaması", 68)
 
-        if director:
+        if director and tts_restored:
+            audio_dur = float(saved_tts.get("audio_dur") or 0.0)
+            speed = float(saved_tts.get("speed") or 1.0)
+            for i, span in enumerate(saved_tts.get("scene_spans") or []):
+                if not isinstance(span, dict):
+                    continue
+                if i < len(director.scenes):
+                    director.scenes[i].duration = float(span.get("duration") or director.scenes[i].duration)
+                    director.scenes[i].t0 = float(span.get("t0") or 0.0)
+                    director.scenes[i].t1 = float(span.get("t1") or 0.0)
+                if i < len(clips) and isinstance(clips[i], dict):
+                    clips[i]["duration"] = director.scenes[i].duration if i < len(director.scenes) else span.get("duration")
+                    clips[i]["t0"] = span.get("t0")
+                    clips[i]["t1"] = span.get("t1")
+            plan = director.to_legacy_plan()
+            _log(
+                f"[Timeline] Kayıtlı TTS {audio_dur:.1f}s (speed×{speed:.2f})",
+                70,
+            )
+        elif director:
             fitted = os.path.join(config.AUDIO_DIR, f"{safe}_fitted.wav")
+
+            def _wav_seconds(path: str) -> float:
+                import wave
+                try:
+                    with wave.open(path, "rb") as w:
+                        rate = float(w.getframerate() or 0)
+                        return (w.getnframes() / rate) if rate else 0.0
+                except Exception:
+                    return 0.0
+
+            def _condense_and_retts(raw_sec: float) -> None:
+                nonlocal director, plan, narration_text, audio_path, timings, script_regen_494
+                from director.timeline import recover_overlong_narration
+                from scenes.generator import _gemini_script_circuit_open
+
+                spoken = len((narration_text or "").split())
+                _log(
+                    f"[Timeline] TTS {raw_sec:.1f}s / {spoken} kelime — doğal tempo, yerel kısaltma. Hızlandırma yok.",
+                    69,
+                )
+                if _gemini_script_circuit_open():
+                    _log("[Timeline] gemini_script açık — Gemini çağrılmadı.", 69)
+                new_plan = recover_overlong_narration(plan, audio_seconds=raw_sec)
+                new_words = len((new_plan.get("full_narration") or "").split())
+                if new_words <= 0 or new_words >= spoken:
+                    raise RuntimeError(
+                        f"Madde 494 hard-fail: yerel kısaltma {spoken} kelimeden inemedi "
+                        f"(TTS {raw_sec:.1f}s). Tek deneme."
+                    )
+                script_regen_494 = True
+                new_director = compile_director_plan(
+                    new_plan,
+                    title=keyword,
+                    niche_id=locked_niche,
+                    language=target_lang,
+                    reddit_post=getattr(req, "reddit_post", None),
+                )
+                director = new_director
+                plan = director.to_legacy_plan()
+                narration_text = plan.get("full_narration") or ""
+                if len(clips) > len(director.scenes):
+                    del clips[len(director.scenes):]
+                with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f:
+                    json.dump(plan, f, ensure_ascii=False, indent=2)
+                with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
+                    json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
+                _log(f"[Timeline] Kısaltılmış anlatım {new_words} kelime — TTS bir kez daha.", 69)
+                _, timings_new = generate_narration_with_timing(
+                    narration_text, audio_path, voice_profile=asmr_profile
+                )
+                timings = timings_new
+
+            raw_sec = _wav_seconds(audio_path)
+            if raw_sec > 60.0 and not script_regen_494:
+                try:
+                    _condense_and_retts(raw_sec)
+                except RuntimeError as cond_err:
+                    msg = str(cond_err)
+                    _log(f"[QualityGate] {msg}", 69)
+                    if db_id:
+                        database.update_video_status(db_id, "failed", error_message=msg)
+                    state.broadcast_event("error", msg)
+                    return
             try:
                 audio_path, timings, audio_dur, speed = fit_tts_to_timeline(
                     audio_path, director, word_timings=timings, output_path=fitted
@@ -1212,66 +1682,26 @@ def process_video_task(req: VideoRenderRequest):
             except RuntimeError as fit_err:
                 if "494" not in str(fit_err):
                     raise
-                # No chipmunk/fragment recovery — regen script once or hard-fail
                 if not script_regen_494:
-                    script_regen_494 = True
-                    _log(f"[Timeline] {fit_err} — senaryo bir kez yeniden üretiliyor...", 69)
-                    new_plan = generate_scenes(
-                        keyword,
-                        niche_type=locked_niche,
-                        language=target_lang,
-                        variation_attempt=1,
-                    )
-                    # TTS retry must change the word budget, not only rotate
-                    # prose. Otherwise the same 170+ word plan fails twice.
                     try:
-                        from director.schema import shorts_word_budget
-                        from scenes.narration_validate import repair_post_hook_word_budget
-
-                        regen_cap = max(96, shorts_word_budget() - 8)
-                        new_plan = repair_post_hook_word_budget(new_plan, max_words=regen_cap)
-                    except Exception:
-                        pass
-                    new_director = compile_director_plan(
-                        new_plan,
-                        title=keyword,
-                        niche_id=locked_niche,
-                        language=target_lang,
-                        reddit_post=getattr(req, "reddit_post", None),
-                    )
-                    regen_pre = pre_render_score(new_director)
-                    regen_block = [
-                        i for i in regen_pre.get("issues", [])
-                        if i.startswith("fragment") or i.startswith("low_words")
-                        or i.startswith("empty_narration") or i.startswith("no_terminal")
-                    ]
-                    if regen_block:
+                        _condense_and_retts(_wav_seconds(audio_path) or raw_sec)
+                        audio_path, timings, audio_dur, speed = fit_tts_to_timeline(
+                            audio_path, director, word_timings=timings, output_path=fitted
+                        )
+                    except RuntimeError as second_err:
                         msg = (
-                            f"Senaryoyu yeniden üretin: TTS süre bandına sığmıyor (Madde 494). "
-                            f"Anlatım sorunları: {', '.join(regen_block)}"
+                            "Senaryoyu yeniden üretin: anlatım TTS süre bandına sığmıyor (Madde 494). "
+                            + str(second_err)
                         )
                         _log(f"[QualityGate] {msg}", 69)
                         if db_id:
                             database.update_video_status(db_id, "failed", error_message=msg)
                         state.broadcast_event("error", msg)
                         return
-                    director = new_director
-                    plan = director.to_legacy_plan()
-                    narration_text = plan.get("full_narration") or ""
-                    with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f:
-                        json.dump(plan, f, ensure_ascii=False, indent=2)
-                    with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
-                        json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
-                    _, timings = generate_narration_with_timing(
-                        narration_text, audio_path, voice_profile=asmr_profile
-                    )
-                    audio_path, timings, audio_dur, speed = fit_tts_to_timeline(
-                        audio_path, director, word_timings=timings, output_path=fitted
-                    )
                 else:
                     msg = (
                         "Senaryoyu yeniden üretin: anlatım TTS süre bandına sığmıyor (Madde 494). "
-                        "Timeline'dan metni kısaltın veya yeni senaryo oluşturun."
+                        "İkinci TTS de 60s üstünde. Hızlandırma yok."
                     )
                     _log(f"[QualityGate] {msg}", 69)
                     if db_id:
@@ -1287,61 +1717,192 @@ def process_video_task(req: VideoRenderRequest):
                     clips[i]["t1"] = s.t1
             plan = director.to_legacy_plan()
             _log(
-                f"[Timeline] TTS {audio_dur:.1f}s (speed×{speed:.2f}; hız yalnızca 60s tavanı aşınca)",
+                f"[Timeline] TTS {audio_dur:.1f}s (speed×{speed:.2f}; doğal tempo, hızlandırma yok)",
                 70,
             )
 
-        # Telifsiz BGM (Pixabay / Mixkit / VoiceLab) — boş track ise otomatik
-        bgm_track = req.bgm_track or ""
-        if (not bgm_track) and getattr(config, "AUTO_FETCH_ROYALTY_FREE_BGM", True) and getattr(config, "ENABLE_BGM", True):
-            try:
-                from royalty_free_audio import fetch_royalty_free_bgm
-                mood_q = "ambient cinematic"
-                niche_hint = ""
-                if director:
-                    tone = (director.niche_profile or {}).get("tone") or director.niche_id or ""
-                    niche_hint = director.niche_id or tone or ""
-                    mood_q = f"{tone} ambient cinematic"
-                bgm_track = fetch_royalty_free_bgm(mood_q, prefer="auto", niche=niche_hint) or ""
-                if bgm_track:
-                    _log(f"[VoiceLab/RF] Telifsiz BGM secildi: {bgm_track}", 71)
-            except Exception as e:
-                print(f"  [VoiceLab/RF] Notice: {e}")
+        if not tts_restored and audio_path and os.path.isfile(audio_path):
+            scene_spans = []
+            if director:
+                scene_spans = [
+                    {"duration": s.duration, "t0": s.t0, "t1": s.t1}
+                    for s in director.scenes
+                ]
+            sm.mark_done(
+                PipelineStage.STAGE_6_TTS_SYNC,
+                artifacts={
+                    "audio_path": audio_path,
+                    "timings": timings,
+                    "audio_dur": float(audio_dur) if director else 0.0,
+                    "speed": float(speed) if director else 1.0,
+                    "scene_spans": scene_spans,
+                },
+                files=[audio_path],
+            )
 
-        # Item 190: BGM telif heuristic — riskli parça yerine güvenli fallback
-        if bgm_track:
-            try:
-                from copyright_risk import scan_audio_copyright_risk
-                from bgm_manager import get_safe_default_bgm_path
-                audio_scan = scan_audio_copyright_risk([bgm_track])
-                if not audio_scan.get("safe"):
-                    _log(f"[Copyright] BGM risk: {bgm_track} → royalty_free_ambient", 71)
-                    bgm_track = os.path.basename(get_safe_default_bgm_path())
-            except Exception:
-                pass
+        # Telifsiz BGM (Pixabay / Mixkit / VoiceLab / Catalog)
+        bgm_req = (req.bgm_track or "").strip()
+        bgm_track = ""
+        from bgm_manager import request_mutes_bgm
+        user_wants_muted = request_mutes_bgm(bgm_req, getattr(req, "enable_bgm", None))
+
+        if not user_wants_muted:
+            if bgm_req:
+                from youtube_safe_bgm_catalog import resolve_bgm_path, ensure_catalog_track
+                local_p = resolve_bgm_path(bgm_req)
+                if not local_p or not os.path.isfile(local_p) or os.path.getsize(local_p) < 2000:
+                    _log(f"[BGM] Katalog parçası indiriliyor: {bgm_req}...", 70)
+                    downloaded_fn = ensure_catalog_track(filename=bgm_req) or ensure_catalog_track(track_id=bgm_req)
+                    if downloaded_fn:
+                        bgm_track = downloaded_fn
+                        _log(f"[BGM] Katalog parçası hazır: {bgm_track}", 71)
+                    else:
+                        _log(f"[BGM] Katalog indirme başarısız ({bgm_req}), alternatif kütüphaneden seçiliyor...", 71)
+                        bgm_track = ""
+                else:
+                    bgm_track = os.path.basename(local_p)
+                    _log(f"[BGM] Seçili fon müziği doğrulandı: {bgm_track}", 71)
+
+            # Auto-fetch if not specified or failed
+            if (not bgm_track) and getattr(config, "AUTO_FETCH_ROYALTY_FREE_BGM", True) and getattr(config, "ENABLE_BGM", True):
+                try:
+                    from royalty_free_audio import fetch_royalty_free_bgm
+                    mood_q = "ambient cinematic"
+                    niche_hint = ""
+                    if director:
+                        tone = (director.niche_profile or {}).get("tone") or director.niche_id or ""
+                        niche_hint = director.niche_id or tone or ""
+                        mood_q = f"{tone} ambient cinematic"
+                    bgm_track = fetch_royalty_free_bgm(mood_q, prefer="auto", niche=niche_hint) or ""
+                    if bgm_track:
+                        _log(f"[VoiceLab/RF] Telifsiz BGM secildi: {bgm_track}", 71)
+                except Exception as e:
+                    print(f"  [VoiceLab/RF] Notice: {e}")
+
+            # Pick from catalog for niche as primary fallback
+            if (not bgm_track) and getattr(config, "ENABLE_BGM", True):
+                try:
+                    from youtube_safe_bgm_catalog import pick_catalog_bgm_for_niche
+                    niche_hint = director.niche_id if director else getattr(req, "niche", "")
+                    bgm_track = pick_catalog_bgm_for_niche(niche_id=niche_hint, query=keyword) or ""
+                    if bgm_track:
+                        _log(f"[BGM] Niş uyumlu katalog müziği seçildi: {bgm_track}", 71)
+                except Exception as e:
+                    print(f"  [BGM] Notice: {e}")
+
+            # Fallback to local default safe track
+            if (not bgm_track) and getattr(config, "ENABLE_BGM", True):
+                try:
+                    from bgm_manager import get_safe_default_bgm_path
+                    default_p = get_safe_default_bgm_path()
+                    if default_p and os.path.exists(default_p):
+                        bgm_track = os.path.basename(default_p)
+                        _log(f"[BGM] Varsayılan telifsiz ambient müzik seçildi: {bgm_track}", 71)
+                except Exception as e:
+                    print(f"  [BGM] Safe default notice: {e}")
+
+            # Item 190: BGM telif heuristic — riskli parça yerine güvenli fallback
+            if bgm_track:
+                try:
+                    from copyright_risk import scan_audio_copyright_risk
+                    from bgm_manager import get_safe_default_bgm_path
+                    audio_scan = scan_audio_copyright_risk([bgm_track])
+                    if not audio_scan.get("safe"):
+                        _log(f"[Copyright] BGM risk: {bgm_track} → royalty_free_ambient", 71)
+                        bgm_track = os.path.basename(get_safe_default_bgm_path())
+                except Exception:
+                    pass
+        else:
+            _log("[BGM] Kullanıcı tercihi: Müziksiz video render ediliyor.", 71)
 
         # ─── 5) Audio master (one-pass) ────────────────────────────────────
         check_cancelled()
-        _log("[AudioMaster] EQ + SFX bus + BGM + LUFS...", 72)
+        sm.transition_to(PipelineStage.STAGE_7_AUDIO_MASTERING, "Akustik Tasarım ve Miksaj: Sidechain ducking (-18dB) ve EBU R128 (-14 LUFS)", pct=68.0)
         mastered = os.path.join(config.AUDIO_DIR, f"{safe}_master.wav")
-        if director:
+        master_restored = sm.reusable(
+            PipelineStage.STAGE_7_AUDIO_MASTERING,
+            require=[PipelineStage.STAGE_6_TTS_SYNC],
+        )
+        if master_restored:
+            saved_master = sm.stage_artifacts(PipelineStage.STAGE_7_AUDIO_MASTERING)
+            audio_path = saved_master.get("audio_path") or audio_path
+            if isinstance(saved_master.get("timings"), list) and saved_master.get("timings"):
+                timings = saved_master["timings"]
+            _log("[Resume] Master ses duruyor. Miks atlandı.", 72)
+        elif director:
+            from director.audio_bus import apply_intro_whoosh_pref
+            director.effect_manifest = apply_intro_whoosh_pref(
+                director.effect_manifest,
+                bool(getattr(req, "enable_intro_whoosh", False)),
+            )
+            from bgm_manager import resolve_studio_audio_mix
+            mix_cfg = resolve_studio_audio_mix(
+                duck_attack_ms=getattr(req, "duck_attack_ms", None),
+                duck_release_ms=getattr(req, "duck_release_ms", None),
+                intro_blast=getattr(req, "intro_blast", None),
+                enable_intro_whoosh=bool(getattr(req, "enable_intro_whoosh", False)),
+                outro_swell_sec=getattr(req, "outro_swell_sec", None),
+                enable_outro=getattr(req, "enable_outro", True) is not False,
+                enable_outro_swell=getattr(req, "enable_outro_swell", True) is not False,
+                allow_bgm=not user_wants_muted,
+            )
+            _log(
+                f"[AudioMaster] EQ + SFX bus + BGM ({bgm_track or 'yok'}) "
+                f"duck {int(mix_cfg['duck_attack_ms'])}/{int(mix_cfg['duck_release_ms'])} ms "
+                f"blast {mix_cfg['intro_blast']:.2f} swell {mix_cfg['outro_swell_sec']:.0f}s + LUFS...",
+                72,
+            )
             audio_path = master_audio_one_pass(
                 audio_path,
                 director,
                 mastered,
-                bgm_track=bgm_track or "",
+                bgm_track="" if user_wants_muted else (bgm_track or ""),
                 bgm_volume=req.bgm_volume if req.bgm_volume is not None else 0.12,
+                allow_bgm=not user_wants_muted,
+                duck_attack_ms=mix_cfg["duck_attack_ms"],
+                duck_release_ms=mix_cfg["duck_release_ms"],
+                intro_blast=mix_cfg["intro_blast"],
+                outro_swell_sec=mix_cfg["outro_swell_sec"],
             )
             # Whoosh+Ding intro shifts timings by 0.2s if applied
-            if director.effect_manifest.get("item_112_whoosh_ding", True) and timings:
+            if director.effect_manifest.get("item_112_whoosh_ding", False) and timings:
                 for wt in timings:
                     wt["offset"] = wt.get("offset", 0.0) + 0.2
+            if audio_path and os.path.isfile(audio_path):
+                sm.mark_done(
+                    PipelineStage.STAGE_7_AUDIO_MASTERING,
+                    artifacts={"audio_path": audio_path, "timings": timings},
+                    files=[audio_path],
+                )
 
         # ─── 6) SEO ───────────────────────────────────────────────────────
         from viral_seo_agent import generate_viral_seo_metadata
         _log("[Director] Viral SEO meta üretiliyor...", 74)
         retention_meta = (plan or {}).get("retention_metadata") if isinstance(plan, dict) else None
-        seo_meta = generate_viral_seo_metadata(keyword, retention_metadata=retention_meta)
+        try:
+            from visuals.fetch import get_job_manifest
+            visual_manifest = get_job_manifest()
+        except Exception:
+            visual_manifest = []
+        script_text = ""
+        if isinstance(plan, dict):
+            script_text = plan.get("full_narration") or plan.get("script") or ""
+            if not script_text and plan.get("scenes"):
+                script_text = " ".join([
+                    str(s.get("narration", ""))
+                    for s in plan.get("scenes", [])
+                    if isinstance(s, dict) and s.get("narration")
+                ])
+
+        seo_meta = generate_viral_seo_metadata(
+            keyword,
+            source_name=locked_niche,
+            retention_metadata=retention_meta,
+            visual_manifest=visual_manifest,
+            script_context=script_text,
+            niche=locked_niche,
+            lang=target_lang,
+        )
         seo_file = os.path.join(output_root, f"{safe}_seo.json")
         try:
             with open(seo_file, "w", encoding="utf-8") as sf:
@@ -1360,22 +1921,84 @@ def process_video_task(req: VideoRenderRequest):
             _log("[FFmpegGraph] Çözünürlük: 1080p (1080x1920) — final varsayılan")
 
         sub_opts = {}
-        if req.subtitle_preset and req.subtitle_preset in SUBTITLE_PRESETS:
-            sub_opts.update(SUBTITLE_PRESETS[req.subtitle_preset])
+        sm.transition_to(PipelineStage.STAGE_8_SUBTITLE_COMPILE, "Kinetik Altyazı Derleme: Vektörel ASS şablonu ve kelime zıplamaları", pct=76.0)
+        preset_locked = bool(req.subtitle_preset and req.subtitle_preset in SUBTITLE_PRESETS)
+        if preset_locked:
+            sub_opts = merge_studio_subtitle_opts(
+                req.subtitle_preset,
+                font_size=req.subtitle_font_size,
+                y_position=req.subtitle_y_position,
+                color=req.subtitle_color,
+                highlight_color=req.subtitle_highlight_color,
+            )
         elif not req.subtitle_color and not req.subtitle_highlight_color:
             ab_opts = resolve_ab_subtitle_preset(final_variation_attempt, keyword)
             if ab_opts:
                 sub_opts.update({k: v for k, v in ab_opts.items() if k != "ab_test_variant"})
             else:
-                sub_opts.update(SUBTITLE_PRESETS.get("high_contrast_retention", SUBTITLE_PRESETS["red_fire"]))
-        if req.subtitle_color:
-            sub_opts["color"] = req.subtitle_color
-        if req.subtitle_highlight_color:
-            sub_opts["highlight_color"] = req.subtitle_highlight_color
-        if req.subtitle_font_size is not None:
-            sub_opts["font_size"] = req.subtitle_font_size
-        if req.subtitle_y_position is not None:
-            sub_opts["y_position"] = req.subtitle_y_position
+                from subtitle_generator import get_niche_subtitle_preset
+                sub_opts.update(get_niche_subtitle_preset(niche))
+            sub_opts = merge_studio_subtitle_opts(
+                "",
+                base=sub_opts,
+                font_size=req.subtitle_font_size,
+                y_position=req.subtitle_y_position,
+            )
+        else:
+            sub_opts = merge_studio_subtitle_opts(
+                "",
+                font_size=req.subtitle_font_size,
+                y_position=req.subtitle_y_position,
+                color=req.subtitle_color,
+                highlight_color=req.subtitle_highlight_color,
+            )
+        if getattr(req, "language", None):
+            sub_opts["language"] = req.language
+        if getattr(req, "whisper_align", None) is None:
+            sub_opts["whisper_align"] = bool(getattr(config, "WHISPER_ALIGN", False))
+        else:
+            sub_opts["whisper_align"] = bool(req.whisper_align)
+
+        # Extract bilingual Arabic / citation overlays for spiritual/hadith niches
+        arabic_overlays = []
+        scenes_source = (director.scenes if director else (plan or {}).get("scenes") or [])
+        running_cursor = 0.0
+        for i, sc in enumerate(scenes_source):
+            if isinstance(sc, dict):
+                ar = sc.get("arabic_text")
+                cit = sc.get("source_citation")
+                raw_t0 = sc.get("t0")
+                raw_t1 = sc.get("t1")
+                dur = float(sc.get("duration", 3.0))
+            else:
+                ar = getattr(sc, "arabic_text", None)
+                cit = getattr(sc, "source_citation", None)
+                raw_t0 = getattr(sc, "t0", None)
+                raw_t1 = getattr(sc, "t1", None)
+                dur = float(getattr(sc, "duration", 3.0))
+
+            if raw_t0 is not None and (float(raw_t0) > 0.0 or (i == 0 and raw_t1 and float(raw_t1) > 0.0)):
+                sc_t0 = float(raw_t0)
+                sc_t1 = float(raw_t1) if raw_t1 is not None else (sc_t0 + dur)
+                running_cursor = sc_t1
+            else:
+                sc_t0 = running_cursor
+                sc_t1 = running_cursor + dur
+                running_cursor += dur
+
+            if ar or cit:
+                arabic_overlays.append({
+                    "scene_index": i,
+                    "arabic_text": ar,
+                    "source_citation": cit,
+                    "start": sc_t0,
+                    "end": sc_t1,
+                })
+        if arabic_overlays:
+            sub_opts["arabic_overlays"] = arabic_overlays
+            if req.subtitle_y_position is None:
+                sub_opts["y_position"] = 0.56
+                sub_opts["allow_mid_frame"] = True
 
         # Human-craft karaoke mid-frame overrides (Discover: captions readable on mute)
         human_craft = (plan or {}).get("human_craft") if isinstance(plan, dict) else None
@@ -1383,54 +2006,152 @@ def process_video_task(req: VideoRenderRequest):
             from craft import subtitle_opts_from_craft
             craft_subs = subtitle_opts_from_craft(human_craft)
             if craft_subs:
-                # Keep user color overrides; force mid y + chunk size from craft
-                for k, v in craft_subs.items():
-                    if k in ("y_position", "max_words_per_line", "human_craft") or k not in sub_opts:
-                        sub_opts[k] = v
-                if req.subtitle_y_position is None:
-                    sub_opts["y_position"] = craft_subs.get("y_position", 0.52)
+                # Lab preset + sliders stay. Craft may set chunk size only.
+                sub_opts = merge_studio_subtitle_opts(
+                    req.subtitle_preset if preset_locked else "",
+                    base=sub_opts,
+                    font_size=req.subtitle_font_size,
+                    y_position=req.subtitle_y_position,
+                    craft_opts=craft_subs,
+                )
         except Exception:
             pass
 
         def on_compose_progress(pct, step_text="", *args, **kwargs):
             msg = step_text or kwargs.get("message") or kwargs.get("step") or ""
-            state.broadcast_event("progress", {"percent": pct, "step": str(msg)})
-            state.broadcast_event("log", f"  {msg}")
+            sm.update_progress(pct, str(msg))
 
         # ─── 7) Render (FFmpeg graph → MoviePy fallback) ───────────────────
         check_cancelled()
+        sm.transition_to(PipelineStage.STAGE_9_FFMPEG_RENDER, "FFmpeg FilterComplex Render: Tek geçişte birleştirme ve donanım hızlandırma", pct=83.0)
         _log("[FFmpegGraph] Montaj başlıyor (Madde 418)...", 78)
         output_file = os.path.join(output_root, f"{safe}.mp4")
 
-        # When director masters audio, skip duplicate SFX/BGM inside compose_video
-        if plan.get("hybrid_split_screen"):
-            req.split_screen = True
+        # Section 2.2.14 / Chapter 28.16: Gameplay / Split-screen resolution
+        is_split = bool(getattr(req, "split_screen", False) or plan.get("hybrid_split_screen") or (director and getattr(director, "niche_id", None) == "11_reddit_stories") or req.niche == "11_reddit_stories")
+        gameplay_cat = getattr(req, "gameplay_category", "auto") or "auto"
+        gameplay_path = None
+        if is_split:
+            try:
+                from services.gameplay_background_manager import GLOBAL_BACKGROUND_MANAGER
+                total_duration = max(10.0, float(locals().get("audio_dur") or 0.0) or sum(float(c.get("duration", 3.0)) for c in clips))
+                gameplay_path = GLOBAL_BACKGROUND_MANAGER.get_gameplay_clip(
+                    project_dir=proj,
+                    category=gameplay_cat,
+                    niche=director.niche_id if director else req.niche,
+                    target_duration=total_duration,
+                    cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
+                )
+                if gameplay_path:
+                    _log(f"[SplitScreen] Oynanış videosu bağlandı: {os.path.basename(gameplay_path)} ({gameplay_cat})", 80)
+            except Exception as gp_err:
+                _log(f"[SplitScreen] Oynanış paneli hazırlanamadı: {gp_err}", 80)
+                gameplay_path = None
+
+        # Reddit Post Card Overlay for AskReddit/Story niches
+        reddit_card_path = None
+        enable_rcard = bool(getattr(req, "enable_reddit_card", False))
+        if not enable_rcard and (req.niche == "11_reddit_stories" or (director and getattr(director, "niche_id", None) == "11_reddit_stories") or getattr(req, "reddit_post", None)):
+            enable_rcard = True
+        if enable_rcard:
+            try:
+                from reddit_card_renderer import generate_transparent_reddit_card_png
+                rcard_title = keyword
+                if getattr(req, "reddit_post", None) and isinstance(req.reddit_post, dict):
+                    rcard_title = req.reddit_post.get("title") or keyword
+                reddit_card_path = generate_transparent_reddit_card_png(
+                    title=rcard_title,
+                    subreddit="AskReddit" if req.niche == "11_reddit_stories" else "ShortsStories",
+                    output_path=os.path.join(output_root, f"{safe}_reddit_card.png"),
+                )
+                _log("[RedditCard] Soru kartı PNG overlay oluşturuldu.", 80)
+            except Exception as rcard_err:
+                _log(f"[RedditCard] Soru kartı oluşturulamadı: {rcard_err}", 80)
+                reddit_card_path = None
+
+        # Use final narration after timeline/length repairs; metadata stays separate.
+        from effects.hook_card import first_scene_hook
+        hook_scenes = director.scenes if director else plan.get("scenes", [])
+        if sub_opts is None:
+            sub_opts = {}
+        sub_opts["hook_card_text"] = first_scene_hook(hook_scenes, getattr(req, "hook_text", None))
+        sub_opts["disable_hook_card"] = not getattr(req, "enable_hook_card", True)
+
+        # Section 33.3 P6: Secondary emphasis overlay layer
+        emp_ass_path = None
+        if getattr(req, "enable_emphasis_card", False):
+            try:
+                from subtitle_generator import create_emphasis_overlay_ass
+                tw, th = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
+                emp_candidate_path = os.path.join(output_root, f"{safe}_emphasis.ass")
+                emp_ass_path = create_emphasis_overlay_ass(timings, emp_candidate_path, target_w=tw, target_h=th)
+            except Exception as emp_err:
+                _log(f"[Emphasis] Vurgu katmanı oluşturulamadı: {emp_err}", 80)
+                emp_ass_path = None
+
         compose_kwargs = dict(
             title=keyword,
-            bgm_track="" if director else (bgm_track or req.bgm_track),
+            bgm_track="" if (director or user_wants_muted) else (bgm_track or req.bgm_track),
             bgm_volume=req.bgm_volume,
             subtitle_opts=sub_opts,
             progress_callback=on_compose_progress,
             cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
-            split_screen=getattr(req, "split_screen", False) or bool(plan.get("hybrid_split_screen")),
+            split_screen=bool(is_split and gameplay_path),
             anti_duplicate=getattr(req, "anti_duplicate", True),
             watermark_path=getattr(req, "watermark_path", None),
             enable_ken_burns=getattr(req, "enable_ken_burns", True),
             enable_zoompan=bool(getattr(req, "enable_zoompan", False)),
+            enable_broll=bool(getattr(req, "enable_broll_insert", False)),
+            enable_broll_insert=bool(getattr(req, "enable_broll_insert", False)),
+            enable_face_center=bool(getattr(req, "enable_face_center", False)),
+            enable_emphasis_card=bool(getattr(req, "enable_emphasis_card", False) and emp_ass_path),
+            emphasis_ass_path=emp_ass_path,
             gameplay_path=gameplay_path,
+            enable_reddit_card=bool(enable_rcard and reddit_card_path),
+            reddit_card_path=reddit_card_path,
             niche_id=(director.niche_id if director else getattr(req, "niche", "")),
             retention_metadata=(plan or {}).get("retention_metadata") if isinstance(plan, dict) else None,
             hybrid_niche=(plan or {}).get("hybrid_niche", "") if isinstance(plan, dict) else "",
             hybrid_render_overlay=(plan or {}).get("hybrid_render_overlay") if isinstance(plan, dict) else None,
+            enable_native_hybrid=True,
             human_craft=human_craft,
+            enable_audio_visualizer=bool(getattr(req, "enable_audio_visualizer", False)),
+            audio_visualizer_mode=getattr(req, "audio_visualizer_mode", "line") or "line",
+            audio_visualizer_color=getattr(req, "audio_visualizer_color", "0x00D7FF") or "0x00D7FF",
+            enable_news_ticker=bool(getattr(req, "enable_news_ticker", False)),
+            news_ticker_text=getattr(req, "news_ticker_text", None),
         )
 
         from render.ffmpeg_graph import compose_via_director
 
+        # Guard: Align clips with director.scenes and recover disk paths if missing
+        if director and getattr(director, "scenes", None):
+            target_scene_count = len(director.scenes)
+            while len(clips) < target_scene_count:
+                clips.append({})
+            for _idx, _sc in enumerate(director.scenes):
+                if _idx < len(clips):
+                    c = clips[_idx]
+                    if not isinstance(c, dict):
+                        c = {}
+                        clips[_idx] = c
+                    c["duration"] = float(_sc.duration)
+                    c["t0"] = float(_sc.t0)
+                    c["t1"] = float(_sc.t1)
+                    if not c.get("path") or not os.path.exists(c["path"]):
+                        if _sc.path and os.path.exists(_sc.path):
+                            c["path"] = _sc.path
+                        else:
+                            import glob
+                            _cands = sorted(glob.glob(os.path.join(proj, f"s{_idx:03d}_*.mp4")))
+                            if _cands and os.path.exists(_cands[0]):
+                                c["path"] = _cands[0]
+                                _sc.path = _cands[0]
+
         prev_sfx = getattr(config, "ENABLE_SFX", True)
         prev_bgm = getattr(config, "ENABLE_BGM", True)
-        if director:
-            config.ENABLE_SFX = False
+        if director or user_wants_muted:
+            config.ENABLE_SFX = False if director else prev_sfx
             config.ENABLE_BGM = False
         try:
             result = compose_via_director(
@@ -1480,6 +2201,22 @@ def process_video_task(req: VideoRenderRequest):
             except Exception as _post_audit_err:
                 _log(f"[PipelineAudit] post-audit skip: {_post_audit_err}")
 
+            # Chapter 28.14 / MoneyPrinterV2: MP4 Preflight Integrity Check
+            try:
+                from services.video_preflight import verify_mp4_integrity
+                preflight = verify_mp4_integrity(result, min_duration=3.0, max_duration=70.0)
+                if not preflight.get("valid", False):
+                    pf_errs = preflight.get("errors", [])
+                    msg = f"MP4 Preflight Bütünlük Hatası: {'; '.join(pf_errs)}"
+                    _log(f"[VideoPreflight] HARD-FAIL: {msg}", 97)
+                    if db_id:
+                        database.update_video_status(db_id, "failed", error_message=msg)
+                    state.broadcast_event("error", msg)
+                    return
+                _log(f"[VideoPreflight] Doğrulandı: {preflight.get('width')}x{preflight.get('height')} @ {preflight.get('duration')}s (Ses: {preflight.get('has_audio')})", 96)
+            except Exception as pf_exc:
+                _log(f"[VideoPreflight] Preflight istisnası: {pf_exc}")
+
             if director:
                 post = post_render_score(director, result, audio_path=audio_path)
                 _log(
@@ -1526,6 +2263,7 @@ def process_video_task(req: VideoRenderRequest):
             # File-only delivery contract: policy snapshot, AI disclosure,
             # quality report, manual checklist and output checksum are written
             # before the job is marked completed.
+            sm.transition_to(PipelineStage.STAGE_10_PACKAGING, "Paketleme ve Dağıtım: Lisans künyesi, SEO künyesi ve telemetri arşivleniyor", pct=96.0)
             try:
                 from production.package import write_delivery_package
                 from production.quality import validate_script_quality
@@ -1544,6 +2282,7 @@ def process_video_task(req: VideoRenderRequest):
                     output_path=result,
                     quality_report=package_quality,
                     source_manifest=manifest_payload,
+                    seo=seo_meta if isinstance(seo_meta, dict) else {},
                 )
                 _log(
                     f"[Package] Dosya teslim paketi hazır: {', '.join(sorted(package_paths))}",
@@ -1593,6 +2332,43 @@ def process_video_task(req: VideoRenderRequest):
                     proof_path=proof_full_path if os.path.exists(proof_full_path) else None,
                 )
 
+            # Manual upload info & guide package (Items 354-410, gallery modal support)
+            try:
+                manual_pkg = {
+                    "video_file": os.path.basename(result),
+                    "title": seo_meta.get("seo_title") or plan.get("title") or keyword,
+                    "description": (
+                        seo_meta.get("seo_description")
+                        or seo_meta.get("description")
+                        or f"{keyword} #shorts\n\n📌 Kaynak & Araştırma: Bağımsız Eğitici İnceleme\n⚖️ Hakkaniyet & Katma Değer (Fair Use): Bu video eğitim ve analiz amacıyla özgün ses ve dinamik görselleştirme ile üretilmiştir."
+                    ),
+                    "tags": seo_meta.get("tags") or ["shorts", "bilgi", "viral", "trend"],
+                    "pinned_comment": seo_meta.get("pinned_comment") or "Sizce bu konudaki en şaşırtıcı detay neydi? Yorumlarda buluşalım! 👇",
+                    "rule_80_altered_synthetic": "HAYIR (Yüz klonlama veya manipülasyon yoksa etiket seçilmemeli)",
+                    "rule_83_source_reference": "Açıklamaya araştırma ve kaynak referansı eklendi.",
+                    "anti_detect_ready": True,
+                    "size_mb": size_mb,
+                    "duration": total_dur,
+                }
+                info_json_targets = {result.rsplit(".", 1)[0] + "_manual_upload_info.json"}
+                info_json_targets.add(os.path.join(config.OUTPUT_DIR, f"{safe}_manual_upload_info.json"))
+                for target_json in info_json_targets:
+                    with open(target_json, "w", encoding="utf-8") as fj:
+                        json.dump(manual_pkg, fj, ensure_ascii=False, indent=2)
+
+                guide_txt_path = result.rsplit(".", 1)[0] + "_manual_upload_guide.txt"
+                with open(guide_txt_path, "w", encoding="utf-8") as ft:
+                    ft.write(
+                        f"=== YOUTUBE SHORTS MANUEL YÜKLEME REHBERİ ===\n\n"
+                        f"📌 VİDEO BAŞLIĞI:\n{manual_pkg['title']}\n\n"
+                        f"📌 VİDEO AÇIKLAMASI:\n{manual_pkg['description']}\n\n"
+                        f"📌 VİDEO ETİKETLERİ:\n{', '.join(manual_pkg['tags'])}\n\n"
+                        f"📌 İLK YORUM (Sabitleyin):\n{manual_pkg['pinned_comment']}\n\n"
+                        f"🎬 DOSYA:\n{os.path.basename(result)} ({size_mb} MB, {total_dur:.1f}s)\n"
+                    )
+            except Exception as e_info:
+                _log(f"[Package] Manual upload info oluşturulamadı: {e_info}")
+
             # Item 120: Senaryoyu intihal DB'sine YALNIZCA başarılı render tamamlanınca ekle
             try:
                 from plagiarism_checker import add_script_to_db
@@ -1602,6 +2378,7 @@ def process_video_task(req: VideoRenderRequest):
                     title=plan.get("title", keyword),
                     video_id=db_id,
                     render_status="completed",
+                    channel_slug=ch_paths["slug"],
                 )
             except Exception as e:
                 _log(f"[Item 120] DB kayıt uyarısı: {e}")
@@ -1609,6 +2386,14 @@ def process_video_task(req: VideoRenderRequest):
             committed = commit_published_stock_ids()
             if committed:
                 _log(f"[Visual] {committed} stok ID yayın sonrası kalıcı havuza eklendi (P1-12)")
+
+            final_video_url = (
+                f"/output/channels/{ch_paths['slug']}/{os.path.basename(result)}"
+                if ch_paths["slug"] != "default"
+                else f"/output/{os.path.basename(result)}"
+            )
+            sm.save_telemetry(proj)
+            sm.complete(final_video_url)
 
             done_msg = (
                 f"🎉 Video üretimi tamamlandı! Dosya: {os.path.basename(result)} "
@@ -1621,9 +2406,7 @@ def process_video_task(req: VideoRenderRequest):
                 "project_slug": safe,
                 "keyword": keyword,
                 "filename": os.path.basename(result),
-                "url": f"/output/channels/{ch_paths['slug']}/{os.path.basename(result)}"
-                if ch_paths["slug"] != "default"
-                else f"/output/{os.path.basename(result)}",
+                "url": final_video_url,
                 "thumb_url": (
                     (
                         f"/output/channels/{ch_paths['slug']}/{safe}_thumb.jpg"
@@ -1648,6 +2431,8 @@ def process_video_task(req: VideoRenderRequest):
             })
             notify_video_ready(keyword, f"/output/{os.path.basename(result)}", total_dur)
         else:
+            sm.fail("Video birleştirme MoviePy/FFmpeg hatası nedeniyle tamamlanamadı.")
+            sm.save_telemetry(proj)
             if db_id:
                 database.update_video_status(
                     db_id, "failed",
@@ -1657,6 +2442,8 @@ def process_video_task(req: VideoRenderRequest):
             notify_render_error(keyword, "Video birleştirme MoviePy/FFmpeg hatası nedeniyle tamamlanamadı.")
 
     except (InterruptedError, asyncio.CancelledError):
+        sm.fail("Kullanıcı tarafından iptal edildi.")
+        sm.save_telemetry(locals().get("proj") or "")
         discard_job_stock_ids()
         cancel_msg = "⛔ Video üretimi kullanıcı tarafından iptal edildi."
         print(cancel_msg)
@@ -1665,6 +2452,8 @@ def process_video_task(req: VideoRenderRequest):
         if db_id:
             database.update_video_status(db_id, "cancelled", error_message="Kullanıcı tarafından iptal edildi.")
     except Exception as e:
+        sm.fail(str(e))
+        sm.save_telemetry(locals().get("proj") or "")
         discard_job_stock_ids()
         if db_id:
             database.update_video_status(db_id, "failed", error_message=str(e))
@@ -1674,6 +2463,11 @@ def process_video_task(req: VideoRenderRequest):
         traceback.print_exc()
         notify_render_error(keyword, str(e), log_snippet=tb[-600:])
     finally:
+        if slot_acquired and gate_context is not None:
+            try:
+                gate_context.__exit__(None, None, None)
+            except Exception:
+                pass
         try:
             _sweep_render_temp_files(render_job_prefix)
         except Exception:
@@ -1685,6 +2479,7 @@ def process_video_task(req: VideoRenderRequest):
         config.LANGUAGE = orig_lang
         config.TTS_VOICE = orig_voice
         config.TTS_RATE = orig_rate
+        config.TTS_SACRED_CALM = orig_sacred
         sys.stdout = old_stdout
 
 

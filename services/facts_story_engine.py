@@ -187,3 +187,32 @@ class FactsStoryEngine:
             "full_narration": full_narr,
             "procedural_fallback": True,
         }
+
+    @staticmethod
+    def create_facts_timeline_manifest(
+        script_data: Dict[str, Any],
+        voiceover_path: str,
+        background_video_path: str,
+        bgm_path: Optional[str] = None,
+        ass_subtitles_path: Optional[str] = None,
+    ) -> Any:
+        """
+        Binds ShortGPT Facts Engine scripts into ShortsVideoCreators'
+        declarative TimelineManifest architecture.
+        """
+        from director.timeline_manifest import TimelineManifest
+        manifest = TimelineManifest(target_width=1080, target_height=1920, fps=30)
+        scenes = script_data.get("scenes", [])
+        total_dur = sum(float(s.get("duration", 5.0)) for s in scenes) or 20.0
+
+        manifest.add_background_video(background_video_path, duration=total_dur)
+        manifest.add_voiceover(voiceover_path, duration=total_dur, volume=1.0)
+
+        if bgm_path:
+            manifest.add_background_music(bgm_path, duration=total_dur, volume=0.22, ducking=True)
+
+        if ass_subtitles_path:
+            manifest.add_subtitles_ass(ass_subtitles_path, duration=total_dur)
+
+        return manifest
+

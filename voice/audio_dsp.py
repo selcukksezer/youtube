@@ -222,6 +222,35 @@ def apply_audio_jitter(input_wav: str, output_wav: str, min_speed: float = 0.98,
 
 # ─── ITEM 162: Ses Normalizasyonu (EBU R128 @ -14 LUFS) ──────────────────────
 
+def parse_loudnorm_stats(stderr: str) -> Optional[dict]:
+    """NarratoAI: pull the loudnorm JSON block from ffmpeg stderr."""
+    import json
+    import re
+    blob = None
+    for match in re.finditer(r"\{[^{}]+\}", stderr or ""):
+        if "input_i" in match.group(0):
+            blob = match.group(0)
+    if not blob:
+        return None
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return None
+    required = ("input_i", "input_tp", "input_lra", "input_thresh", "target_offset")
+    if any(key not in data for key in required):
+        return None
+    return data
+
+
+def loudnorm_second_pass_filter(measured: dict, target_lufs: float, true_peak: float, lra: float) -> str:
+    return (
+        f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:"
+        f"measured_I={measured['input_i']}:measured_TP={measured['input_tp']}:"
+        f"measured_LRA={measured['input_lra']}:measured_thresh={measured['input_thresh']}:"
+        f"offset={measured['target_offset']}:linear=true"
+    )
+
+
 def normalize_ebu_r128(input_audio: str, output_audio: str, target_lufs: float = -14.0, true_peak: float = -1.5, lra: float = 11.0) -> str:
     """
     Madde 162: Ses Normalizasyonu (EBU R128).
@@ -232,10 +261,26 @@ def normalize_ebu_r128(input_audio: str, output_audio: str, target_lufs: float =
         return input_audio
 
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    measure = subprocess.run(
+        [
+            ffmpeg_exe, "-i", input_audio,
+            "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:print_format=json",
+            "-f", "null", "-",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    measured = parse_loudnorm_stats(measure.stderr or "")
+    audio_filter = (
+        loudnorm_second_pass_filter(measured, target_lufs, true_peak, lra)
+        if measured
+        else f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}"
+    )
     cmd = [
         ffmpeg_exe, "-y",
         "-i", input_audio,
-        "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}",
+        "-af", audio_filter,
         "-c:a", "pcm_s16le",
         output_audio
     ]
@@ -1061,25 +1106,27 @@ def mix_intro_punch_bgm(narration_wav: str, music_wav: str, output_wav: str,
                         ducked_volume: float = 0.14) -> str:
     """
     Madde 180: Müziğin Giriş Hacmi.
-    Videonun ilk 1.0 saniyesinde müzik %100 (blast_volume) hacimle vurarak kancayı fırlatır;
-    hemen ardından 80 milisaniye içinde akıllı ducking ile %14 (ducked_volume) seviyesine
-    inerek konuşma sesine berrak yol açar.
+    Videonun ilk 1.0 saniyesinde müzik blast_volume ile vurur.
+    Sonra yatak ara seviyesine iner. Sidechain konuşmada ducked_volume civarına kısar.
     """
     if not os.path.exists(narration_wav) or not os.path.exists(music_wav):
         return narration_wav
 
     try:
+        from bgm_manager import DUCK_SIDECHAIN, gap_volume_for_speech
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        # Giriş 1 saniyesi blast_volume, 1.0s ile 1.08s arasında ducked_volume seviyesine iniş
+        gap_vol = gap_volume_for_speech(ducked_volume)
+        # First second stays loud. Then the bed is the -6 dB gap; sidechain
+        # takes speech down to the ducked level in 80 ms.
         vol_expr = (
             f"if(lt(t\\,{intro_blast_sec})\\,{blast_volume}\\,"
-            f"max({ducked_volume}\\,{blast_volume}-({blast_volume}-{ducked_volume})*(t-{intro_blast_sec})/0.08))"
+            f"max({gap_vol:.4f}\\,{blast_volume}-({blast_volume}-{gap_vol:.4f})*(t-{intro_blast_sec})/0.08))"
         )
 
         filter_complex = (
             f"[0:a]pan=stereo|c0=0.5*c0+0.5*c1|c1=0.5*c0+0.5*c1,asplit=2[narr_sc][narr_mix];"
-            f"[1:a]volume=eval=frame:volume='{vol_expr}',stereowiden=delay=20:feedback=0.25:crossfeed=0.2:drymix=0.8[music_punched];"
-            f"[music_punched][narr_sc]sidechaincompress=threshold=0.025:ratio=12:attack=80:release=200[ducked];"
+            f"[1:a]volume=eval=frame:volume='{vol_expr}',stereowiden=delay=20:feedback=0.25:crossfeed=0.2:drymix=0.8,{VOCAL_CARVE_EQ}[music_punched];"
+            f"[music_punched][narr_sc]{DUCK_SIDECHAIN}[ducked];"
             f"[narr_mix][ducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[out]"
         )
 
@@ -1342,10 +1389,12 @@ def apply_epic_trailer_deep_voice(input_wav: str, output_wav: str,
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         sample_rate = 44100
         mod_rate = int(sample_rate * pitch_ratio)
-        tempo_comp = 1.0 / pitch_ratio
+        tempo_comp = 1.0 / max(0.01, float(pitch_ratio))
+        from services.audio_tempo_guard import build_atempo_filter_chain
+        atempo_chain = build_atempo_filter_chain(tempo_comp)
         af_chain = (
             f"asetrate={mod_rate},"
-            f"atempo={tempo_comp:.4f},"
+            f"{atempo_chain},"
             f"equalizer=f=120:t=q:w=1.2:g={bass_boost_db},"
             f"aformat=sample_rates=44100:channel_layouts=stereo"
         )
@@ -1379,9 +1428,11 @@ def apply_news_rapid_cadence(input_wav: str, output_wav: str,
 
     try:
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        from services.audio_tempo_guard import build_atempo_filter_chain
+        atempo_chain = build_atempo_filter_chain(tempo)
         af_chain = (
             f"silenceremove=stop_periods=-1:stop_duration={max_pause_sec}:stop_threshold=-35dB,"
-            f"atempo={tempo:.3f}"
+            f"{atempo_chain}"
         )
         cmd = [
             ffmpeg_exe, "-y",
@@ -1493,7 +1544,16 @@ def apply_loop_inflection_preservation(input_wav: str, output_wav: str,
     return input_wav
 
 
-# ─── ITEM 200: Ses Frekans Çakışmasını Önleme (Vocal Notch Carve EQ @ 1-3kHz) ──
+# ─── ITEM 200 / 5.2: 1-3 kHz presence carve, about -4.5 dB ──────────────
+# A single Q=1 bell at 2 kHz is -4.5 dB only at the center: 1 kHz was -1.4 dB
+# and 3 kHz was -2.6 dB. Three bells hold the band. Measured on full-scale sines:
+# 1 kHz -4.3, 2 kHz -4.6, 3 kHz -4.5. 400 Hz -0.4. 6 kHz -0.7.
+VOCAL_CARVE_EQ = (
+    "equalizer=f=1100:t=q:w=1.4:g=-4.0,"
+    "equalizer=f=2000:t=q:w=1.7:g=-2.0,"
+    "equalizer=f=2900:t=q:w=1.35:g=-3.5"
+)
+
 
 def apply_vocal_carve_eq(music_wav: str, output_wav: str,
                          notch_freq: float = 2000.0,
@@ -1501,15 +1561,17 @@ def apply_vocal_carve_eq(music_wav: str, output_wav: str,
                          q_width: float = 1.0) -> str:
     """
     Madde 200: Ses Frekans Çakışmasını Önleme (Vocal Frequency Carving).
-    Müzikteki vokal frekansları (1kHz - 3kHz aralığı, merkez 2000Hz) parametrik EQ
-    ile -4.5dB oyularak anlatıcının konuşma sesine net ve berrak bir alan açılır.
+    Default cut is the measured 1-3 kHz band. A custom freq/gain/Q stays one bell.
     """
     if not os.path.exists(music_wav):
         return music_wav
 
     try:
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        eq_filter = f"equalizer=f={notch_freq}:t=q:w={q_width}:g={notch_gain}"
+        if (float(notch_freq), float(notch_gain), float(q_width)) == (2000.0, -4.5, 1.0):
+            eq_filter = VOCAL_CARVE_EQ
+        else:
+            eq_filter = f"equalizer=f={notch_freq}:t=q:w={q_width}:g={notch_gain}"
         cmd = [
             ffmpeg_exe, "-y",
             "-i", music_wav,

@@ -6,6 +6,10 @@
 const TTS_VOICE_STORAGE_KEY = 'shortsTtsVoice';
 
 
+const LOCAL_OFFLINE_VOICES = [
+    { id: 'local:piper-tr', label: 'Piper Türkçe (çevrimdışı)', gender: 'male', quality: 'Local', native: true },
+];
+
 const STATIC_TTS_FALLBACK = {
     tr: [
         { id: 'tr-TR-AhmetNeural', label: 'Ahmet', gender: 'male', quality: 'Neural', native: true },
@@ -52,12 +56,50 @@ let elevenlabsConfigured = false;
 // 6. ALTYAZI PRESET SEÇİCİ & ANİMASYON TESTİ (Items 42 & 43)
 // ══════════════════════════════════════════════════════════════
 const SUBTITLE_LAB_KEY = 'subtitleLabSettings';
-const SUBTITLE_LAB_COLORS = {
-    capcut_yellow: { highlight: '#FFD700', glow: '0 0 15px #FFD700' },
-    cyber_green: { highlight: '#00FF66', glow: '0 0 15px #00FF66' },
-    red_fire: { highlight: '#FF3333', glow: '0 0 15px #FF3333' },
-    clean_white: { highlight: '#00D4FF', glow: '0 0 15px #00D4FF' },
-};
+let SUBTITLE_STYLE_TOKENS = null;
+
+function applySubtitleCardTokens() {
+    if (!SUBTITLE_STYLE_TOKENS) return;
+    document.querySelectorAll('.preset-card').forEach(card => {
+        const token = SUBTITLE_STYLE_TOKENS[card.getAttribute('data-preset')];
+        if (!token) return;
+        const preview = card.querySelector('.preset-preview');
+        if (!preview) return;
+        preview.style.color = token.color;
+        preview.style.background = token.preview_background || token.stroke_color;
+        preview.style.fontWeight = token.bold === false ? '400' : '800';
+        const glow = token.glow ? `0 0 10px ${token.highlight_color}` : 'none';
+        if (token.box) {
+            const box = preview.querySelector('span');
+            if (!box) return;
+            box.style.background = token.box_color || '#000000';
+            box.style.color = token.color;
+            box.style.padding = '2px 6px';
+            const inner = box.querySelector('span');
+            if (inner) {
+                inner.style.color = token.highlight_color;
+                inner.style.textShadow = glow;
+            }
+            return;
+        }
+        const hi = preview.querySelector('span');
+        if (hi) {
+            hi.style.color = token.highlight_color;
+            hi.style.textShadow = glow;
+        }
+    });
+}
+
+function loadSubtitleStyleTokens() {
+    return fetch('/static/js/subtitle-style-tokens.json?v=p5')
+        .then(response => response.json())
+        .then(data => {
+            SUBTITLE_STYLE_TOKENS = data;
+            applySubtitleCardTokens();
+            updateSubtitleSimulator();
+        })
+        .catch(() => {});
+}
 const subRangeSize = document.getElementById('sub-range-size');
 const subRangeY = document.getElementById('sub-range-y');
 const valSubSize = document.getElementById('val-sub-size');
@@ -94,9 +136,12 @@ function restoreSubtitleLabSettings() {
 
 function updateSubtitleSimulator() {
     const preset = selectSubPreset?.value || 'capcut_yellow';
-    const colors = SUBTITLE_LAB_COLORS[preset] || SUBTITLE_LAB_COLORS.capcut_yellow;
+    const token = (SUBTITLE_STYLE_TOKENS && SUBTITLE_STYLE_TOKENS[preset]) || null;
     const fontSize = parseInt(subRangeSize?.value || '54', 10);
     const yPct = parseFloat(subRangeY?.value || '0.8');
+    const highlight = token?.highlight_color || '#FFD700';
+    const baseColor = token?.color || '#FFFFFF';
+    const glow = token?.glow ? `0 0 15px ${highlight}` : 'none';
 
     if (valSubSize) valSubSize.textContent = `${fontSize} px`;
     if (valSubY) valSubY.textContent = `%${Math.round(yPct * 100)} (Alt Kısım)`;
@@ -110,13 +155,23 @@ function updateSubtitleSimulator() {
     const stageText = subStage?.querySelector('.stage-text');
     if (stageText) {
         stageText.style.fontSize = `${Math.round(fontSize * 0.44)}px`;
+        stageText.style.fontFamily = token?.font_name || 'Anton';
+        stageText.style.fontWeight = token?.bold === false ? '400' : '800';
+        stageText.style.color = baseColor;
+        if (token?.box) {
+            stageText.style.background = token.box_color || '#000000';
+            stageText.style.padding = '2px 8px';
+        } else {
+            stageText.style.background = 'transparent';
+            stageText.style.padding = '0';
+        }
     }
     subStage?.querySelectorAll('.stage-w').forEach(w => {
         if (w.classList.contains('active-word')) {
-            w.style.color = colors.highlight;
-            w.style.textShadow = colors.glow;
+            w.style.color = highlight;
+            w.style.textShadow = glow;
         } else {
-            w.style.color = '#FFFFFF';
+            w.style.color = baseColor;
             w.style.textShadow = 'none';
         }
     });
@@ -124,11 +179,20 @@ function updateSubtitleSimulator() {
     const subOverlay = document.getElementById('mockup-sub-overlay');
     if (subOverlay) {
         subOverlay.className = `mockup-subtitle-overlay preset-${preset}`;
+        subOverlay.style.color = baseColor;
+        const hi = subOverlay.querySelector('.sub-word-highlight');
+        if (hi) {
+            hi.style.color = highlight;
+            hi.style.textShadow = token?.glow ? `0 0 12px ${highlight}` : 'none';
+            hi.style.background = token?.box ? (token.box_color || '#000000') : 'transparent';
+            hi.style.padding = token?.box ? '2px 6px' : '0';
+        }
     }
 }
 
 restoreSubtitleLabSettings();
 updateSubtitleSimulator();
+loadSubtitleStyleTokens();
 
 subRangeSize?.addEventListener('input', () => {
     updateSubtitleSimulator();
@@ -159,21 +223,27 @@ selectSubPreset?.addEventListener('change', () => {
     saveSubtitleLabSettings();
 });
 
+let subtitleAnimationInterval = null;
 document.getElementById('btn-test-sub-animation')?.addEventListener('click', () => {
-    const words = document.querySelectorAll('.stage-w');
+    const words = subStage?.querySelectorAll('.stage-w');
+    if (!words?.length) return;
+    clearInterval(subtitleAnimationInterval);
     let idx = 0;
-    const interval = setInterval(() => {
+    const advance = () => {
         words.forEach(w => w.classList.remove('active-word'));
         if (idx < words.length) {
             words[idx].classList.add('active-word');
             updateSubtitleSimulator();
             idx++;
         } else {
-            clearInterval(interval);
-            words[1].classList.add('active-word');
+            clearInterval(subtitleAnimationInterval);
+            subtitleAnimationInterval = null;
+            words[Math.min(1, words.length - 1)].classList.add('active-word');
             updateSubtitleSimulator();
         }
-    }, 400);
+    };
+    advance();
+    subtitleAnimationInterval = setInterval(advance, 400);
 });
 
 
@@ -269,7 +339,7 @@ async function loadBgmList() {
         const fill = (el) => {
             if (!el) return;
             const prev = el.value;
-            el.innerHTML = '<option value="">Otomatik / yok</option>';
+            el.innerHTML = '<option value="">🎵 Otomatik (Akıllı Niş / Telifsiz Seçim)</option><option value="none">🔇 Müziksiz (Sadece Seslendirme &amp; SFX)</option>';
             detailed.forEach(t => {
                 const fn = t.filename || t;
                 const opt = document.createElement('option');
@@ -281,7 +351,6 @@ async function loadBgmList() {
             const savedBgm = restoreStudioSettings()?.bgmTrack;
             const candidate = prev || savedBgm;
             if (candidate && [...el.options].some(o => o.value === candidate)) el.value = candidate;
-            else if (detailed.some(t => (t.filename || t) === 'royalty_free_ambient.wav')) el.value = 'royalty_free_ambient.wav';
         };
         fill(select);
         fill(studioSelect);
@@ -334,6 +403,8 @@ function findVoiceMeta(voiceId) {
         ...(ttsVoiceCatalog.tr || []),
         ...(ttsVoiceCatalog.en || []),
         ...(ttsVoiceCatalog.elevenlabs || []),
+        ...(ttsVoiceCatalog.local || []),
+        ...LOCAL_OFFLINE_VOICES,
     ];
     return pools.find(v => v.id === voiceId) || null;
 }
@@ -372,6 +443,11 @@ function populateTtsVoiceSelect(_lang) {
     const elevenMeta = ttsVoiceCatalog.elevenlabs_meta || {};
 
     selectTtsVoice.innerHTML = '<option value="auto">Otomatik (konu / nişe göre)</option>';
+    const localVoices = LOCAL_OFFLINE_VOICES.slice();
+    (ttsVoiceCatalog.local || []).forEach((voice) => {
+        if (!localVoices.some((row) => row.id === voice.id)) localVoices.push(voice);
+    });
+    appendEdgeVoiceGroup(selectTtsVoice, 'Yerel (çevrimdışı)', localVoices);
     appendEdgeVoiceGroup(selectTtsVoice, 'Türkçe Edge', trVoices);
     appendEdgeVoiceGroup(selectTtsVoice, 'English Edge', enVoices);
 
@@ -441,6 +517,7 @@ async function loadTtsVoiceCatalog(forceRefresh = false) {
                     en: catalog.en || STATIC_TTS_FALLBACK.en,
                     elevenlabs: catalog.elevenlabs || [],
                     elevenlabs_meta: catalog.elevenlabs_meta || {},
+                    local: catalog.local || LOCAL_OFFLINE_VOICES,
                 };
             }
             elevenlabsConfigured = !!(catalog.elevenlabs_meta?.configured || (catalog.elevenlabs || []).length);
@@ -473,6 +550,23 @@ async function loadTtsVoiceCatalog(forceRefresh = false) {
 }
 
 selectLanguage?.addEventListener('change', () => populateTtsVoiceSelect(selectLanguage.value));
+
+function bindTwinCheckbox(primaryId, twinId) {
+    const primary = document.getElementById(primaryId);
+    const twin = document.getElementById(twinId);
+    if (!primary || !twin || primary.dataset.twinBound === '1') return;
+    primary.dataset.twinBound = '1';
+    const push = (source, dest) => {
+        dest.checked = source.checked;
+        if (typeof saveStudioSettings === 'function') saveStudioSettings();
+    };
+    primary.addEventListener('change', () => push(primary, twin));
+    twin.addEventListener('change', () => push(twin, primary));
+}
+
+bindTwinCheckbox('chk-enable-bgm', 'audio-chk-enable-bgm');
+bindTwinCheckbox('chk-enable-outro', 'audio-chk-enable-outro');
+bindTwinCheckbox('chk-intro-whoosh', 'audio-chk-intro-whoosh');
 
 chkSplitScreen?.addEventListener('change', (ev) => {
     if (ev && ev.isTrusted) {

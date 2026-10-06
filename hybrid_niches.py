@@ -1041,40 +1041,31 @@ def generate_perfect_seamless_loop_bridge(
     lang: str = "tr",
 ) -> Dict[str, Any]:
     """
-    Item 345: Kusursuz Bitiş ve Başlangıç (Perfect Seamless Loop Bridge).
+    Item 345 & Plan 7.2: Kusursuz Bitiş ve Başlangıç (Perfect Seamless Loop Bridge).
     İzleyicinin videonun nerede bittiğini fark etmeden 2 kez izlemesi için
     son cümleyi ilk cümleye kusursuz bağlar (%200 retention hedefi).
     """
-    try:
-        from viral_retention_engine import ViralRetentionEngine
-        bridge = ViralRetentionEngine.pick_loop_bridge_for_video(video_index)
-        formula = ViralRetentionEngine.get_loop_formula()
-    except ImportError:
-        bridge = "...ve tam da bu yüzden başa döndüğünüzde ilk duyduğunuz cümle:"
-        formula = {"ending": "çünkü bu sırrı ilk duyduğunuzda...", "opening": opening_hook}
-
-    opening = (opening_hook or formula.get("opening", "")).strip()
-    ending = formula.get("ending", bridge).strip()
-    if lang == "en":
-        return {
-            "opening_line": opening,
-            "closing_line": f"{ending} {opening}",
-            "loop_bridge": bridge,
-            "retention_target_pct": 200,
-            "instruction": (
-                "Last spoken line must flow seamlessly into the first frame/word so the viewer "
-                "replays without noticing the cut. Match final visual tone to opening frame."
-            ),
-        }
+    from viral_retention_engine import ViralRetentionEngine
+    res = ViralRetentionEngine.synthesize_seamless_loop(
+        opening_hook=opening_hook,
+        final_narration="",
+        video_index=video_index,
+        lang=lang,
+    )
+    instruction = (
+        "Last spoken line must flow seamlessly into the first frame/word so the viewer "
+        "replays without noticing the cut. Match final visual tone to opening frame."
+        if lang == "en"
+        else "Son konuşulan cümle ilk kare/kelimeye kusursuz bağlanmalı; izleyici kesiti fark etmeden "
+        "tekrar izlemeli. Son görsel tonu açılış karesiyle eşle."
+    )
     return {
-        "opening_line": opening,
-        "closing_line": f"{ending} {opening}",
-        "loop_bridge": bridge,
+        "opening_line": res["opening_hook"],
+        "closing_line": res["seamless_closing"],
+        "loop_bridge": res["ending_bridge"],
+        "preview_loop": res["preview_loop"],
         "retention_target_pct": 200,
-        "instruction": (
-            "Son konuşulan cümle ilk kare/kelimeye kusursuz bağlanmalı; izleyici kesiti fark etmeden "
-            "tekrar izlemeli. Son görsel tonu açılış karesiyle eşle."
-        ),
+        "instruction": instruction,
     }
 
 

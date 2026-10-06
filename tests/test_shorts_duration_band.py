@@ -21,21 +21,18 @@ class TestShortsDurationBand(unittest.TestCase):
         self.assertEqual(natural_target_duration(80), 38.0)
         self.assertEqual(natural_target_duration(200), 60.0)
 
-    def test_word_budget_fits_emergency_speed(self):
-        from director.schema import TTS_BUDGET_WPS_ELEVEN, TTS_EMERGENCY_MAX_SPEED, TTS_WORDS_PER_SEC
+    def test_word_budget_is_natural_110(self):
+        from director.schema import NATURAL_SHORTS_WORD_CAP
         from unittest import mock
         from tts_voices import ELEVENLABS_FREE_VOICES
 
-        cap_edge = int(60.0 * TTS_EMERGENCY_MAX_SPEED * TTS_WORDS_PER_SEC)
-        self.assertGreaterEqual(cap_edge, 170)
-
-        cap_eleven = int(60.0 * TTS_EMERGENCY_MAX_SPEED * TTS_BUDGET_WPS_ELEVEN)
-        # 170 words @ ~2.0 wps ElevenLabs ≈ 85s raw — must be rejected by cap
-        self.assertLess(cap_eleven, 170)
+        self.assertEqual(NATURAL_SHORTS_WORD_CAP, 110)
+        self.assertEqual(shorts_word_budget(60.0, 1.15), 110)
+        self.assertLess(shorts_word_budget(60.0, 1.35), 135)
 
         el_id = ELEVENLABS_FREE_VOICES[0]["id"]
         with mock.patch("config.TTS_VOICE", el_id):
-            self.assertEqual(shorts_word_budget(60.0, 1.15), cap_eleven)
+            self.assertEqual(shorts_word_budget(60.0, 1.15), 110)
 
     def test_compiled_150_word_plan_not_shrunk_to_48(self):
         scenes = []
@@ -50,7 +47,10 @@ class TestShortsDurationBand(unittest.TestCase):
         raw = {"title": "Hadis ve dua", "scenes": scenes, "full_narration": " ".join(FIFTEEN for _ in range(10))}
         plan = compile_director_plan(raw, title="Hadis ve dua", niche_id="10_religious_quotes")
         wc = len(plan.full_narration.split())
-        self.assertGreaterEqual(wc, 140)
+        # Condenser ceiling is 110. A sentence-completion repair may add a few words.
+        self.assertLessEqual(wc, 120)
+        self.assertGreaterEqual(wc, 48)
+        self.assertLess(wc, 150)
         total = plan.total_duration()
         self.assertGreaterEqual(total, 55.0)
         self.assertLessEqual(total, 60.0)
@@ -94,8 +94,8 @@ class TestShortsDurationBand(unittest.TestCase):
             except OSError:
                 pass
 
-    def test_fit_tts_emergency_from_72s_reaches_60(self):
-        """Pass-2 must re-fit from ORIGINAL wav (never ffmpeg in-place on fitted)."""
+    def test_fit_tts_over_60_does_not_speed_up(self):
+        """72s speech must raise Madde 494. Voice is not atempo'd."""
         words = FIFTEEN
         scenes = [
             ScenePlan(index=i, narration=words, duration=5.0, scene_description="cinematic landscape aerial")
@@ -118,14 +118,15 @@ class TestShortsDurationBand(unittest.TestCase):
             w.setframerate(fr)
             w.writeframes(b"\x00\x00" * nframes)
         try:
-            _p, _t, dur, speed = fit_tts_to_timeline(
-                path, plan, word_timings=[], output_path=fitted
-            )
-            self.assertLessEqual(dur, 60.0 * 1.05)
-            self.assertLessEqual(speed, 1.36)
-            self.assertGreaterEqual(speed, 1.15)
+            with self.assertRaises(RuntimeError) as ctx:
+                fit_tts_to_timeline(path, plan, word_timings=[], output_path=fitted)
+            self.assertIn("494", str(ctx.exception))
+            self.assertIn("Do not speed up", str(ctx.exception))
+            with wave.open(path, "rb") as w:
+                self.assertEqual(w.getnframes(), nframes)
+            self.assertFalse(os.path.isfile(fitted))
         finally:
-            for f in (path, fitted, fitted.replace(".wav", "_emergency.wav")):
+            for f in (path, fitted):
                 try:
                     os.remove(f)
                 except OSError:

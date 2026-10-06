@@ -43,7 +43,7 @@ TEMEL YAZARLIK İLKELERİ:
    - KANCA (Sahne 1, İlk 3 Saniye): Soğuk açılış (cold open). Konuyu doğrudan şaşırtıcı bir zıtlık, paradoks veya yüksek merak unsuruyla aç.
    - GELİŞME & GERİLİM (Sahne 2-5): Yüzeysel genellemeler yerine canlı, somut detaylar ve görsel uyandıran kelimeler ver.
    - DORUK NOKTASI / AYDINLANMA (Climax): Kancanın vaat ettiği asıl gerçeği veya şok edici detayı ortaya koy.
-   - DÜŞÜNDÜRÜCÜ FİNAL (Resolution): İzleyicinin zihninde yankılanacak, videoyu tekrar izletme arzusu uyandıran güçlü bir son cümleyle bitir. Mekanik çağrılar (abone ol, yorum yaz) yapma.
+   - DÜŞÜNDÜRÜCÜ FİNAL & NİŞE ÖZEL OUTRO (Resolution & CTA): İzleyicinin zihninde yankılanacak, konunun ve nişin bağlamına tam oturan zekice bir tartışma veya merak sorusuyla bitir. Mekanik çağrılar ("abone ol", "videoyu beğen") yerine nişin ruhuna uygun organik bir yorum/soru kapanışı ("Sen olsan ne yapardın?", "Bu durumu hiç fark ettin mi?", vb.) kullan.
 
 3. SAHNE VE GÖRSEL KURALLARI:
    - 6-12 sahne (konuya göre dinamik). Sahne süreleri 4-8 saniye arası dengeli.
@@ -61,7 +61,7 @@ For the given title:
 
 2. Create 6-12 scenes. TOTAL 45-60 SECONDS. Vary scene duration for the argument and visual; never use a fixed three-second template.
    Each scene:
-   - "narration": 1-2 complete English sentences (at least 12 words per scene, ideally 15-25). Do not add emojis, slogans, or mechanical engagement bait.
+   - "narration": 1-2 complete English sentences (at least 12 words per scene, ideally 15-25). Do not add emojis or cheap slogans. The final scene should close with an intelligent, niche-tailored debate question or curiosity hook inviting viewer response.
    - "scene_description": What the VIEWER SHOULD SEE, 1 English sentence. The noun is something a camera can film in that sentence (e.g. "Skyscraper glass facade flexing in wind").
    - "search_queries": 3 angles of that same noun. No generic third query.
    - "duration": 4-8 seconds. Never a fixed 3-second cut.

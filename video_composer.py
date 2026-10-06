@@ -2,7 +2,7 @@
 Video composer — MoviePy (video only) + ffmpeg (audio + karaoke subs).
 3-tier fallback: ASS karaoke → SRT styled → no subs.
 """
-import os, subprocess, platform, gc, shutil
+import os, subprocess, platform, gc, shutil, tempfile
 from moviepy.editor import VideoFileClip, ColorClip, CompositeVideoClip, concatenate_videoclips, vfx
 
 try:
@@ -15,7 +15,7 @@ except Exception:
     pass
 
 import config
-from subtitle_generator import create_karaoke_subtitles, create_srt_file
+from subtitle_generator import create_karaoke_subtitles, create_srt_file, ffmpeg_force_style_from_opts
 from bgm_manager import get_bgm_path, mix_narration_and_bgm, mix_intro_punch_bgm, align_scenes_to_bgm_beats
 from sfx_manager import add_sfx_to_narration
 from effects_engine import (
@@ -33,7 +33,7 @@ from effects_engine import (
     apply_broll_speed_boost, apply_impact_screen_shake, apply_micro_zoom_out,
     apply_particle_overlay, apply_heartbeat_zoom, apply_speaker_avatar_overlay,
     build_emoji_events_from_timings, generate_emoji_subtitle_overlay,
-    concatenate_with_scene_transitions, generate_intro_hook_card,
+    concatenate_with_scene_transitions,
     apply_alternating_motion, apply_ui_element_overlay,
     apply_dynamic_progress_bar, apply_sticky_hook_banner_overlay,
     apply_micro_animated_sticker_overlay, apply_neon_curiosity_opening_graphic,
@@ -109,7 +109,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                   enable_ken_burns=True, enable_section2_filters=True, gameplay_path=None,
                   niche_id="", audio_premastered=False, retention_metadata=None,
                   hybrid_niche="", hybrid_render_overlay=None, human_craft=None,
-                  enable_zoompan=False, **kwargs):
+                  enable_zoompan=False, enable_face_center=False, **kwargs):
     print(f"\n  [Composer] Building video with 500-Item Optimization Pipeline (Items 71-79)...")
     W, H = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
     print(f"  [Composer] Hedef Çözünürlük: {W}x{H} (Mod: {getattr(config, 'RENDER_RESOLUTION_MODE', '1080p')})", flush=True)
@@ -139,12 +139,16 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         # Force CapCut mid-frame karaoke even if caller forgot subtitle_opts merge
         try:
             from craft import subtitle_opts_from_craft
+            from subtitle_generator import merge_studio_subtitle_opts
             craft_subs = subtitle_opts_from_craft(_hc)
             subtitle_opts = dict(subtitle_opts or {})
-            for k, v in craft_subs.items():
-                if k in ("y_position", "max_words_per_line", "max_words_per_frame",
-                         "human_craft", "allow_mid_frame") or k not in subtitle_opts:
-                    subtitle_opts[k] = v
+            subtitle_opts = merge_studio_subtitle_opts(
+                "",
+                base=subtitle_opts,
+                font_size=subtitle_opts.get("font_size"),
+                y_position=subtitle_opts.get("y_position") if subtitle_opts.get("honor_y_position") else None,
+                craft_opts=craft_subs,
+            )
             print(
                 f"  [Composer] HumanCraft captions mid-frame "
                 f"y={subtitle_opts.get('y_position')} words/chunk={subtitle_opts.get('max_words_per_frame')}",
@@ -184,18 +188,25 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             mastered_audio = voice_humanizer.inject_natural_breaths(eq_audio, breaths_audio, interval_seconds=5.0)
             print("  [Composer] [VoiceHumanizer] Natural breath layer injected every ~5s (Item 141).")
 
-            intro_audio = output_path.rsplit(".", 1)[0] + "_intro112.wav"
-            from voice_humanizer import prepend_whoosh_ding_to_narration
-            mastered_audio = prepend_whoosh_ding_to_narration(mastered_audio, intro_audio)
-            if word_timings:
-                for wt in word_timings:
-                    wt["offset"] = wt.get("offset", 0.0) + 0.2
-            print("  [Composer] [VoiceHumanizer] Item 112 Whoosh+Ding intro uygulandı.")
+            enable_intro_whoosh = bool(kwargs.get("enable_intro_whoosh", False))
+            if enable_intro_whoosh:
+                intro_audio = output_path.rsplit(".", 1)[0] + "_intro112.wav"
+                from voice_humanizer import prepend_whoosh_ding_to_narration
+                prepended = prepend_whoosh_ding_to_narration(mastered_audio, intro_audio)
+                if prepended == intro_audio and os.path.exists(intro_audio):
+                    mastered_audio = intro_audio
+                    if word_timings:
+                        for wt in word_timings:
+                            wt["offset"] = wt.get("offset", 0.0) + 0.2
+                    print("  [Composer] [VoiceHumanizer] Item 112 Whoosh+Ding intro uygulandı.")
 
-            room_audio = output_path.rsplit(".", 1)[0] + "_room.wav"
-            from voice_humanizer import mix_pink_noise_into_narration
-            mastered_audio = mix_pink_noise_into_narration(mastered_audio, room_audio, noise_db=-32.0, noise_type="room")
-            print("  [Composer] [VoiceHumanizer] Light room ambience applied (Item 145).")
+            if bool(kwargs.get("enable_room_tone", False)):
+                room_audio = output_path.rsplit(".", 1)[0] + "_room.wav"
+                from voice_humanizer import mix_pink_noise_into_narration
+                mastered_audio = mix_pink_noise_into_narration(
+                    mastered_audio, room_audio, noise_db=-32.0, noise_type="room"
+                )
+                print("  [Composer] [VoiceHumanizer] Light room ambience applied (Item 145).")
 
             norm_audio = output_path.rsplit(".", 1)[0] + "_norm.wav"
             mastered_audio = voice_humanizer.normalize_ebu_r128(mastered_audio, norm_audio)
@@ -245,24 +256,14 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     total_scene_dur = sum(sc.get("duration", 7) for sc in scene_clips)
     if (not audio_premastered) and audio_dur > 2.0 and total_scene_dur > 0:
         ratio = audio_dur / total_scene_dur
-        if ratio > 1.06:
-            from voice.audio_dsp import fit_audio_to_duration
-            fitted_audio = output_path.rsplit(".", 1)[0] + "_fitted.wav"
-            prev_dur = audio_dur
-            mastered_audio, audio_dur, speed_factor = fit_audio_to_duration(
-                mastered_audio, fitted_audio, total_scene_dur, tolerance=0.06
-            )
-            if speed_factor > 1.01 and word_timings:
-                for wt in word_timings:
-                    wt["offset"] = wt.get("offset", 0.0) / speed_factor
-                    wt["duration"] = wt.get("duration", 0.0) / speed_factor
-            print(
-                f"  [Composer] Ses senaryo bütçesine uyarlandı "
-                f"({prev_dur:.1f}s → {audio_dur:.1f}s, hedef {total_scene_dur:.1f}s, ×{ratio:.2f} hızlandırıldı)."
-            )
-        elif ratio < 0.94:
+        if abs(ratio - 1.0) > 0.06:
+            # Speech stays at the TTS pace. Picture timing follows the voice.
+            # atempo here was a second 494 squeeze and made sacred shorts feel rushed.
             scale = audio_dur / total_scene_dur
-            print(f"  [Composer] Kısa ses — sahne süreleri ayarlanıyor (×{scale:.2f}, Audio: {audio_dur:.1f}s)...")
+            print(
+                f"  [Composer] Ses doğal kaldı — sahne süreleri sese göre "
+                f"(×{scale:.2f}, ses {audio_dur:.1f}s). Hızlandırma yok."
+            )
             for sc in scene_clips:
                 sc["duration"] = round(sc.get("duration", 7) * scale, 2)
 
@@ -446,7 +447,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 processed_audio = inject_room_ambience(processed_audio, crowd_audio, volume=0.08)
                 print("  [Composer] [Item 188] Oda/kalabalık ambiyansı mikslendi.")
 
-            if any(k in combined_audio for k in (
+            if bool(kwargs.get("enable_room_tone", False)) and any(k in combined_audio for k in (
                 "katedral", "cathedral", "manevi", "dini", "spiritual", "epic", "temple", "ibadet", "dua"
             )):
                 from voice.audio_dsp import apply_acoustic_reverb_chamber
@@ -583,20 +584,22 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         badge_label=badge_label,
                         enable_pip=enable_pip,
                         pip_path=pip_path,
-                        gameplay_path=gameplay_path
+                        gameplay_path=gameplay_path,
+                        enable_face_center=enable_face_center,
                     )
+                    face_centered = bool(getattr(clip_seg, "_face_centered", False))
                     # HumanCraft CapCut density: jump-cut every ~2.8s EVEN in safe mode
                     # (editing density ≠ heavy overlay). Alternating punch-in / flip.
                     if _hc and clip_seg is not None and float(getattr(clip_seg, "duration", 0) or 0) > _cut_sec + 0.05:
                         clip_seg = apply_capcut_density_cuts(
                             clip_seg, cut_sec=_cut_sec, force=True
                         )
-                    if enable_ken_burns and not enable_section2_filters:
+                    if enable_ken_burns and not enable_section2_filters and not face_centered:
                         # Item 73: Mikro-Zoom (Ken Burns Jitter 1.00x -> 1.04x)
                         clip_seg = apply_ken_burns(clip_seg, zoom_start=1.00, zoom_end=1.04)
 
                     # Item 99: Dinamik Kamera Sallantısı — tüm sahnelerde (enable_section2)
-                    if enable_section2_filters:
+                    if enable_section2_filters and not face_centered:
                         shake_intensity = 5.0 if sc.get("handheld_shake", True) else 3.5
                         clip_seg = apply_handheld_camera_shake(clip_seg, intensity=shake_intensity)
 
@@ -640,7 +643,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         )
 
                     # Item 132: Görsel Hareketi Yön Değişimi (Alternating pan/tilt motion)
-                    if enable_section2_filters:
+                    if enable_section2_filters and not face_centered:
                         clip_seg = apply_alternating_motion(clip_seg, scene_index=idx)
 
                     # Item 272: Karanlık↔parlak sahne alternasyonu
@@ -689,18 +692,6 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             combined = concatenate_with_scene_transitions(segs, transition=transition_kind, fade_dur=0.22)
         except Exception:
             combined = concatenate_videoclips(segs, method="chain")
-
-        # R10 #61: optional intro hook card prepend (non-safe mode)
-        if not getattr(config, "RENDER_SAFE_MODE", True):
-            try:
-                hook = (_mute_hook or title or "İZLE")[:48]
-                intro_dur = float((_edir.get("mute_hook_overlay_sec") or 1.0))
-                intro = generate_intro_hook_card(W, H, hook, duration=max(0.8, min(2.0, intro_dur)))
-                if intro is not None:
-                    combined = concatenate_videoclips([intro, combined], method="chain")
-                    print(f"  [Composer] Intro hook card applied (HumanCraft/R10 #61): {hook[:40]!r}")
-            except Exception as ie:
-                print(f"  [Composer] Intro card notice: {ie}")
 
         if enable_section2_filters and not getattr(config, 'RENDER_SAFE_MODE', True):
             emoji_events = build_emoji_events_from_timings(word_timings, scene_clips)
@@ -901,8 +892,13 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             progress_callback(97, "Altyazılar ve ses senkronize ediliyor...")
 
         # ALWAYS create both ASS and SRT
-        create_karaoke_subtitles(word_timings, ass, style_opts=subtitle_opts)
-        create_srt_file(word_timings, srt)
+        sub_opts = dict(subtitle_opts or {})
+        # Legacy callers can still use title; an explicit empty hook stays empty.
+        sub_opts.setdefault("hook_card_text", title)
+        if "audio_path" not in sub_opts and final_audio:
+            sub_opts["audio_path"] = final_audio
+        create_karaoke_subtitles(word_timings, ass, style_opts=sub_opts)
+        create_srt_file(word_timings, srt, audio_path=final_audio)
 
         # Final Audio Mastering Pass: Ensure volume is strictly normalized to -14 LUFS YouTube standard
         try:
@@ -916,7 +912,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             print(f"  [Composer] Final audio normalization notice: {nae}")
 
         print(f"  [Composer] Merging audio + subtitles...")
-        ok = _merge(tmp, final_audio, ass, srt, output_path)
+        ok = _merge(tmp, final_audio, ass, srt, output_path, style_opts=sub_opts)
 
         if ok and os.path.exists(output_path):
             mb = os.path.getsize(output_path) / 1048576
@@ -963,7 +959,9 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 operator = export_seo_operator_pack(
                     keyword=clean_title,
                     title=clean_title,
+                    source_name=getattr(config, "NICHE", "") or "general",
                     retention_metadata=retention_metadata,
+                    script_context=script_text,
                     lang=str(getattr(config, "LANGUAGE", "tr") or "tr"),
                     video_filename=os.path.basename(output_path),
                     thumb_path=os.path.basename(output_path.rsplit(".", 1)[0] + "_thumb.jpg"),
@@ -1144,7 +1142,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
 
 import imageio_ffmpeg
 
-def _merge(vid, aud, ass, srt, out):
+def _merge(vid, aud, ass, srt, out, style_opts=None):
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     out_dir = os.path.dirname(os.path.abspath(out))
 
@@ -1167,12 +1165,42 @@ def _merge(vid, aud, ass, srt, out):
     gpu_codec = getattr(config, "GPU_CODEC", "h264_nvenc")
     render_threads = int(getattr(config, "RENDER_THREADS", 8) or 8)
 
+    hook_temp = ""
+    hook_path = ""
+    hook_height = 0
+    hook_opts = style_opts or {}
+    hook_text = str(hook_opts.get("hook_card_text") or "").strip()
+    if hook_text and not hook_opts.get("disable_hook_card", False):
+        try:
+            from effects.hook_card import create_hook_image
+            hook_width, hook_height = getattr(
+                config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT)
+            )()
+            fd, hook_temp = tempfile.mkstemp(prefix="hook_card_", suffix=".png", dir=out_dir)
+            os.close(fd)
+            hook_path = create_hook_image(hook_text, int(hook_width), hook_temp) or ""
+            if not os.path.isfile(hook_path):
+                hook_path = ""
+        except Exception as hook_error:
+            print(f"    [Composer] Hook card notice: {hook_error}")
+            hook_path = ""
+
     def execute_ffmpeg_pass(vf_string):
         """Attempts GPU NVENC encoding first, automatically falling back to CPU multi-threading."""
+        extra_inputs = []
+        filter_args = ["-vf", vf_string]
+        if hook_path:
+            from effects.hook_card import hook_overlay_filter
+            extra_inputs = ["-loop", "1", "-t", "2.5", "-i", hook_path]
+            graph = (
+                f"[0:v]{vf_string}[hook_base];[2:v]format=rgba[hook_image];"
+                + hook_overlay_filter("hook_base", "hook_image", "hook_video", int(hook_height))
+            )
+            filter_args = ["-filter_complex", graph, "-map", "[hook_video]", "-map", "1:a:0"]
         if use_gpu and gpu_codec == "h264_nvenc":
             gpu_cmd = [
                 ffmpeg_exe, "-y", "-hwaccel", "cuda", "-i", base_vid, "-i", rel_aud,
-                "-vf", vf_string,
+                *extra_inputs, *filter_args,
                 "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
                 "-movflags", "+faststart", base_out
@@ -1186,7 +1214,7 @@ def _merge(vid, aud, ass, srt, out):
         # CPU Fallback (Multi-threaded libx264)
         cpu_cmd = [
             ffmpeg_exe, "-y", "-i", base_vid, "-i", rel_aud,
-            "-vf", vf_string,
+            *extra_inputs, *filter_args,
             "-c:v", "libx264", "-preset", "ultrafast", "-tune", "fastdecode",
             "-threads", str(render_threads), "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
@@ -1195,41 +1223,80 @@ def _merge(vid, aud, ass, srt, out):
         r = subprocess.run(cpu_cmd, cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return (r.returncode == 0 and os.path.exists(out)), r
 
-    # Try 1: ASS karaoke
-    if os.path.exists(ass) and os.path.getsize(ass) > 50:
-        vf_chain = f"{base_vf},ass={base_ass}"
-        success, r = execute_ffmpeg_pass(vf_chain)
+    try:
+        # Try 1: ASS karaoke
+        if os.path.exists(ass) and os.path.getsize(ass) > 50:
+            vf_chain = f"{base_vf},ass={base_ass}"
+            success, r = execute_ffmpeg_pass(vf_chain)
+            if success:
+                print(f"    [OK] Karaoke subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
+                return True
+            print(f"    ASS failed ({r.stderr.decode('utf-8', errors='ignore')[:150]}), trying SRT...")
+
+        # Try 2: SRT styled
+        if os.path.exists(srt) and os.path.getsize(srt) > 10:
+            force_style = ffmpeg_force_style_from_opts(style_opts or {})
+            srt_vf = (
+                f"{base_vf},subtitles={base_srt}:force_style='{force_style}'"
+            )
+            success, r = execute_ffmpeg_pass(srt_vf)
+            if success:
+                print(f"    [OK] SRT subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
+                return True
+            print(f"    SRT failed, trying no subs...")
+
+        # Try 3: No subs (apply unsharp, static grain & vignette filters)
+        success, r = execute_ffmpeg_pass(base_vf)
         if success:
-            print(f"    [OK] Karaoke subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
+            print(f"    Video created with Unsharp, Static Grain & Vignette (no subtitles, 192k AAC 48k)")
             return True
-        print(f"    ASS failed ({r.stderr.decode('utf-8', errors='ignore')[:150]}), trying SRT...")
-
-    # Try 2: SRT styled
-    if os.path.exists(srt) and os.path.getsize(srt) > 10:
-        srt_vf = (
-            f"{base_vf},subtitles={base_srt}:force_style='FontSize=28,FontName=Arial,Bold=1,"
-            f"PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,Outline=3,"
-            f"BackColour=&H80000000,BorderStyle=4,Alignment=2,MarginV=300'"
-        )
-        success, r = execute_ffmpeg_pass(srt_vf)
-        if success:
-            print(f"    [OK] SRT subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
-            return True
-        print(f"    SRT failed, trying no subs...")
-
-    # Try 3: No subs (apply unsharp, static grain & vignette filters)
-    success, r = execute_ffmpeg_pass(base_vf)
-    if success:
-        print(f"    Video created with Unsharp, Static Grain & Vignette (no subtitles, 192k AAC 48k)")
-        return True
-    return False
-    return False
+        return False
+    finally:
+        if hook_temp:
+            try:
+                os.remove(hook_temp)
+            except OSError:
+                pass
 
 
 
 
-def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_label=None, badge_icon="💡", enable_pip=False, pip_path=None, gameplay_path=None):
+def _face_centered_source(clip, path, target_w, target_h):
+    """Crop source frames before time/flip transforms so the same track stays aligned."""
+    if clip.w <= clip.h:
+        return clip, False
+    try:
+        from visuals.face_reframe import detect_face_track, face_center_at
+        track = detect_face_track(path, duration=float(clip.duration or 0.0))
+        if not track:
+            return clip, False
+        crop_w = min(int(clip.w), max(2, int(clip.h * target_w / target_h)))
+        crop_w -= crop_w % 2
+        if crop_w >= clip.w:
+            return clip, False
+
+        def follow_face(get_frame, time):
+            frame = get_frame(time)
+            left = round(frame.shape[1] * face_center_at(track, time) - crop_w / 2.0)
+            left = max(0, min(frame.shape[1] - crop_w, left))
+            left -= left % 2
+            return frame[:, left:left + crop_w]
+
+        centered = clip.fl(follow_face).resize(newsize=(target_w, target_h))
+        return centered, True
+    except Exception as error:
+        print(f"    [FaceCenter] Fit-fill fallback: {error}")
+        return clip, False
+
+
+def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_label=None, badge_icon="💡", enable_pip=False, pip_path=None, gameplay_path=None, enable_face_center=False):
     c = VideoFileClip(path, audio=False)
+    selected_gameplay = gameplay_path or os.path.join(config.ASSETS_DIR, "gameplay_loop.mp4")
+    split_active = bool(split_screen and os.path.exists(selected_gameplay))
+    face_centered = False
+    if enable_face_center:
+        panel_h = int(th * 0.58) if split_active else th
+        c, face_centered = _face_centered_source(c, path, tw, panel_h)
     # Downscale high-resolution/4K videos early to 1080p to save RAM and CPU
     if c.w > tw and c.h > th:
         c = c.resize(width=tw) if c.w >= c.h else c.resize(height=th)
@@ -1258,7 +1325,6 @@ def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_lab
 
     # Item 77: Yatay kaynakları 9:16 yaparken Akıllı Kırpma (%40 Gaussian Blur Arka Plan)
     if split_screen:
-        selected_gameplay = gameplay_path or os.path.join(config.ASSETS_DIR, "gameplay_loop.mp4")
         if os.path.exists(selected_gameplay):
             c = create_split_screen_clip(c, selected_gameplay, tw, th)
         else:
@@ -1289,6 +1355,7 @@ def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_lab
     # Item 72 & 71: Renk Derecelendirme ve pHash Gürültüsü — sadece FFmpeg merge aşamasında uygulanır
     # (RENDER_SAFE_MODE: _prep içinde bypass, _merge'deki FFmpeg filtreleri zaten var)
 
+    c._face_centered = face_centered
     return c
 
 def _fit(c, tw, th):

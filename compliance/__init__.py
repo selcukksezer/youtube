@@ -9,6 +9,50 @@ from pathlib import Path
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from .originality import (
+    check_script_originality,
+    check_script_originality_detailed,
+    register_approved_script,
+    tokenize_script,
+    calculate_jaccard_overlap,
+    DEFAULT_ORIGINALITY_THRESHOLD,
+)
+from .anti_repetition import (
+    get_diversified_fps,
+    get_rgb_color_jitter_filter,
+    get_temporal_noise_filter,
+    build_anti_repetition_filter_chain,
+    audit_anti_repetition_shield,
+    DIVERSIFIED_FPS_OPTIONS,
+)
+from .transparent_disclosure import (
+    format_visual_source_item,
+    extract_unique_providers,
+    generate_visual_sources_block,
+    build_transparent_ai_disclosure_block,
+    append_ai_disclosure_to_description,
+    PROVIDER_DISPLAY_NAMES,
+)
+from .publishing_package import (
+    build_publishing_package,
+    build_seo_meta_package,
+    validate_publishing_package_schema,
+    archive_publishing_bundle,
+    research_gate_passed,
+    license_status_from_manifest,
+)
+from .viewer_score import (
+    compute_viewer_score,
+    audit_script_virality,
+    auto_repair_script_virality,
+    calculate_hook_score,
+    calculate_rhythm_pacing_score,
+    calculate_emotional_contrast_score,
+    calculate_loop_bridge_score,
+    VIRALITY_PASS_THRESHOLD,
+    VIRALITY_REPAIR_THRESHOLD,
+)
+
 # Signals that YouTube's July 2025 "inauthentic content" policy targets
 _TEMPLATE_MARKERS = re.compile(
     r"(scene_description|placeholder|lorem ipsum|todo:|\[insert\]|"
@@ -184,9 +228,11 @@ def ai_disclosure_block(
     uses_synthetic_persona: bool = False,
     uses_ai_visual: bool = False,
     lang: str = "tr",
+    clips_or_manifest: Optional[Sequence[Dict[str, Any]]] = None,
+    include_sources: bool = False,
 ) -> Dict[str, Any]:
     """
-    Studio guidance + description paragraph.
+    Studio guidance + description paragraph + Chapter 8.3 transparent sources block.
     Realistic photoreal → recommend Studio AI survey = Yes.
     TTS + stock + original script → usually No, but we still disclose production assist.
     """
@@ -201,6 +247,21 @@ def ai_disclosure_block(
         reasons.append("synthetic_persona")
     required = bool(reasons)
     studio_ai_survey = "yes" if required else "no"
+
+    # Chapter 8.3 Transparent AI and sources block
+    transparent_res = build_transparent_ai_disclosure_block(
+        clips_or_manifest=clips_or_manifest,
+        uses_tts=uses_tts,
+        uses_ai_script=uses_ai_script,
+        uses_photoreal_ai=uses_photoreal_ai,
+        uses_altered_real_event=uses_altered_real_event,
+        uses_real_person_synthetic=uses_real_person_synthetic,
+        uses_synthetic_persona=uses_synthetic_persona,
+        uses_ai_visual=uses_ai_visual,
+        lang=lang,
+        include_sources=(clips_or_manifest is not None or include_sources),
+    )
+
     if lang == "tr":
         desc = (
             "🤖 Üretim notu: Bu Short'ta senaryo/kurgu yapay zekâ destekli hazırlanmış; "
@@ -220,6 +281,11 @@ def ai_disclosure_block(
             desc += " No realistic depiction of a real person doing something they did not do."
         if required:
             desc += " Studio AI use = Yes: " + ", ".join(reasons) + "."
+
+    # If clips/manifest was provided or sources explicitly requested, augment description_paragraph
+    if clips_or_manifest is not None or include_sources:
+        desc = transparent_res["full_disclosure_text"]
+
     return {
         "studio_ai_survey": studio_ai_survey,
         "disclosure_required": required,
@@ -228,6 +294,11 @@ def ai_disclosure_block(
         "reasons": reasons,
         "description_paragraph": desc,
         "required_if_photoreal": uses_photoreal_ai,
+        "header_text": transparent_res["header_text"],
+        "sources_text": transparent_res["sources_text"],
+        "full_disclosure_text": transparent_res["full_disclosure_text"],
+        "providers": transparent_res["providers"],
+        "sources_count": transparent_res["sources_count"],
         "inputs": {
             "uses_tts": bool(uses_tts),
             "uses_ai_script": bool(uses_ai_script),
@@ -542,6 +613,26 @@ def export_output_package(
         "compliance": _jsonable(compliance or {}),
         "viewer_score": _jsonable(viewer_score or {}),
     }
+    # Chapter 8.4 Canonical publishing package & SEO meta
+    niche_id = (compliance or {}).get("niche_id") or "general"
+    pub_pkg = build_publishing_package(
+        title=title,
+        niche_id=niche_id,
+        viewer_score=viewer_score,
+        manifest_items=manifest.get("clips") or [],
+        research_gate_passed=research_gate_passed(compliance),
+        license_status=license_status_from_manifest(manifest.get("clips") or []),
+        originality_score=float((compliance or {}).get("originality_score")) if (compliance or {}).get("originality_score") is not None else 0.0,
+        ai_disclosure=disclosure,
+    )
+    seo_meta = build_seo_meta_package(
+        title=title,
+        description=sanitize_seo_description(description),
+        tags=tags or [],
+        language=language,
+        ai_disclosure_text=disclosure.get("description_paragraph", ""),
+    )
+
     files = {
         "source_manifest": root / "source_manifest.json",
         "visual_credits": root / "visual_credits.json",
@@ -549,7 +640,11 @@ def export_output_package(
         "ai_disclosure": root / "ai_disclosure.json",
         "manual_upload_checklist": root / "manual_upload_checklist.json",
         "package_manifest": root / "package_manifest.json",
+        "publishing_package": root / "publishing_package.json",
+        "seo_meta": root / "seo_meta.json",
     }
+    files["publishing_package"].write_text(json.dumps(pub_pkg, ensure_ascii=False, indent=2), encoding="utf-8")
+    files["seo_meta"].write_text(json.dumps(seo_meta, ensure_ascii=False, indent=2), encoding="utf-8")
     files["source_manifest"].write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     files["visual_credits"].write_text(json.dumps({"credits": credits}, ensure_ascii=False, indent=2), encoding="utf-8")
     files["policy_snapshot"].write_text(json.dumps(policy_snapshot, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -129,10 +129,24 @@ def count_pool_candidates(
     return total
 
 
+def _safe_public_url(value) -> str | None:
+    """Remove query parameters and credentials from public URLs (MoneyPrinterTurbo pattern)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        from urllib.parse import urlsplit, urlunsplit
+        parsed = urlsplit(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+            return None
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    except Exception:
+        return None
+
+
 def _file_hash(p):
-    h = hashlib.md5()
+    h = hashlib.sha256()
     with open(p, "rb") as f:
-        for c in iter(lambda: f.read(8192), b""):
+        for c in iter(lambda: f.read(65536), b""):
             h.update(c)
     return h.hexdigest()
 
@@ -253,7 +267,7 @@ def slice_random_background_loop(source_video_path: str, project_dir: str,
 
 def _generate_fallback_clip(scene_index, project_dir, target_duration=7,
                             scene_description="", visual_intent=None,
-                            narration="", niche_id=""):
+                            narration="", niche_id="", include_whiteboard=True):
     """
     Intentional procedural tier when stock fails: kinetic typography first,
     then abstract cinematic gradient, then a palette color card so fetch
@@ -262,6 +276,20 @@ def _generate_fallback_clip(scene_index, project_dir, target_duration=7,
     intent = visual_intent if isinstance(visual_intent, dict) else (
         visual_intent.to_dict() if hasattr(visual_intent, "to_dict") else None
     )
+    # Whiteboard sketch option if requested or educational/explainer niche
+    if include_whiteboard and ((intent and intent.get("style") == "whiteboard") or "whiteboard" in (niche_id or "").lower()):
+        try:
+            from services.whiteboard_animator import generate_whiteboard_sketch_image, animate_whiteboard_clip
+            sketch_img = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard_sketch.jpg")
+            wb_video = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard.mp4")
+            prompt = scene_description or narration or "sketch"
+            if generate_whiteboard_sketch_image(prompt, sketch_img):
+                if animate_whiteboard_clip(sketch_img, wb_video, duration=target_duration):
+                    print(f"    [OK] [PROCEDURAL] Whiteboard animation ({target_duration}s)")
+                    return wb_video
+        except Exception as e:
+            print(f"    [PROCEDURAL] Whiteboard note: {e}")
+
     try:
         from visuals.motion_graphics import build_kinetic_clip
         path = os.path.join(project_dir, f"s{scene_index:03d}_kinetic_procedural.mp4")
@@ -458,6 +486,19 @@ def _fetch_stock_clip(queries, scene_index, project_dir, target_duration=7,
                     _job_used_ids.add(vid_key)
                     _used_hashes.add(fh)
                 print(f"    [OK] [{v['source'].upper()}] {v['fw']}x{v['fh']} {v['duration']}s score:{sc:.0f}")
+                try:
+                    from director.visual_intent import semantic_relevance_score
+                    topic_score = semantic_relevance_score(
+                        cand_text, narration or "", visual_intent,
+                    )
+                except Exception:
+                    topic_score = None
+                _record_visual_manifest(
+                    path, scene_index, v.get("source", "stock"), str(v.get("id", "")),
+                    title=str(v.get("title") or ""),
+                    tags=v.get("tags"), description=v.get("description") or "",
+                    topic_match_score=topic_score,
+                )
                 _promote_stock_to_archive(
                     channel_id, niche_id, path, queries or extended_queries,
                     source=v.get("source", "stock"), source_id=str(v.get("id", "")),
@@ -546,7 +587,7 @@ def search_and_download(queries, scene_index, project_dir, target_duration=7,
             generate_ai_clip,
             peer_failover_order,
         )
-        ai_on = ai_video_enabled()
+        ai_on = ai_video_enabled() if preferred_source not in ("stock", "pexels", "pixabay") else False
         primary = assign_visual_source(
             scene_index,
             niche_id=niche_id or "",
@@ -910,12 +951,22 @@ def _source_label_from_path(clip_path: str) -> str:
     return "ai" if "ai" in basename else "local"
 
 
-def _record_visual_manifest(clip_path: str, scene_index: int, source: str, source_id: str = "", title: str = "") -> None:
+def _record_visual_manifest(
+    clip_path: str,
+    scene_index: int,
+    source: str,
+    source_id: str = "",
+    title: str = "",
+    *,
+    tags=None,
+    description: str = "",
+    topic_match_score=None,
+) -> None:
     """Record legacy stock clips in the auditable visual credits ledger."""
     if not clip_path or not os.path.isfile(clip_path):
         return
     try:
-        from visuals.fetch import add_manifest_entry
+        from visuals.fetch import add_manifest_entry, get_job_manifest
         from visuals.license import License, LicenseInfo
         s_lower = (source or "").lower()
         if "ai" in s_lower or "pollinations" in s_lower or "flux" in s_lower or "veo" in s_lower:
@@ -931,16 +982,165 @@ def _record_visual_manifest(clip_path: str, scene_index: int, source: str, sourc
             }.get(s_lower, License.CC0)
             src_name = source or "stock"
 
-        add_manifest_entry({
+        f_hash = _file_hash(clip_path)
+        normalized_path = os.path.normcase(os.path.abspath(clip_path))
+        if any(
+            row.get("scene_index") == int(scene_index)
+            and os.path.normcase(os.path.abspath(str(row.get("path") or ""))) == normalized_path
+            for row in get_job_manifest()
+        ):
+            return
+        entry = {
             "scene_index": int(scene_index), "path": clip_path,
-            "uid": f"legacy:{src_name}:{source_id or _file_hash(clip_path)}",
+            "uid": f"legacy:{src_name}:{source_id or f_hash}",
             "source": src_name, "id": source_id,
             "title": title or os.path.basename(clip_path), "kind": "video",
-            "score": 0, "sha1": _file_hash(clip_path),
+            "score": 0, "sha1": f_hash, "sha256": f_hash,
             "license": LicenseInfo(lic, src_name, title=title or os.path.basename(clip_path)).to_dict(),
+        }
+        if tags:
+            entry["tags"] = tags
+        if description:
+            entry["description"] = description
+        if isinstance(topic_match_score, (int, float)) and not isinstance(topic_match_score, bool):
+            entry["topic_match_score"] = float(topic_match_score)
+        add_manifest_entry({
+            **entry,
         })
     except Exception as exc:
         print(f"    [VisualLedger] kayıt notu: {exc}")
+
+
+def _usable_clip(path) -> bool:
+    return bool(path) and os.path.isfile(path) and os.path.getsize(path) > 1000
+
+
+def _drop_other_clips(winner, paths):
+    for path in paths:
+        if path and path != winner and os.path.isfile(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def gather_scene_pools(
+    search_queries,
+    scene_index,
+    project_dir,
+    target_duration=7,
+    scene_description="",
+    cancel_check=None,
+    narration="",
+    visual_intent=None,
+    must_exclude=None,
+    recent_texts=None,
+    allow_custom=True,
+    niche_id="",
+    channel_id=None,
+    allow_procedural=True,
+    runners=None,
+):
+    """
+    Plan 6.1 pools in one orchestrator.
+
+    Stock providers (Pexels, Pixabay, and the extra archives) search together.
+    A stock file wins and the generators never start. short-video-maker and
+    ShortGPT ask only Pexels, one scene at a time. ai-content-studio asks only
+    Pixabay. Racing Flux and a whiteboard on every stock hit would throw away
+    a licensed clip and wait on the slowest generator.
+
+    When stock misses, Flux, procedural, and whiteboard start together.
+    Rank is Flux, then procedural, then whiteboard.
+    """
+    if cancel_check and cancel_check():
+        return None
+
+    def _stock():
+        return _fetch_stock_clip(
+            search_queries, scene_index, project_dir, target_duration,
+            scene_description=scene_description, preferred_source=None,
+            cancel_check=cancel_check, narration=narration, visual_intent=visual_intent,
+            must_exclude=must_exclude, recent_texts=recent_texts, niche_id=niche_id,
+            channel_id=channel_id,
+        )
+
+    def _flux():
+        try:
+            from services.pollinations_ai_visual import create_scene_ai_clip, pollinations_circuit_open
+            if pollinations_circuit_open():
+                return None
+            path = os.path.join(project_dir, f"s{scene_index:03d}_flux.mp4")
+            made = create_scene_ai_clip(
+                scene_description=scene_description or narration or (search_queries[0] if search_queries else "cinematic vertical"),
+                output_video_path=path,
+                duration=target_duration,
+                scene_index=scene_index,
+            )
+            return made or None
+        except Exception as exc:
+            print(f"    [POOL:flux] {exc}")
+            return None
+
+    def _procedural():
+        return _generate_fallback_clip(
+            scene_index, project_dir, target_duration,
+            scene_description=scene_description, visual_intent=visual_intent,
+            narration=narration, niche_id=niche_id, include_whiteboard=False,
+        )
+
+    def _whiteboard():
+        try:
+            from services.whiteboard_animator import create_whiteboard_scene_clip
+            path = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard.mp4")
+            return create_whiteboard_scene_clip(
+                scene_description=scene_description or narration or "whiteboard line art sketch",
+                output_video_path=path,
+                duration=target_duration,
+                scene_index=scene_index,
+            )
+        except Exception as exc:
+            print(f"    [POOL:whiteboard] {exc}")
+            return None
+
+    jobs = runners or {
+        "stock": _stock,
+        "flux": _flux,
+        "procedural": _procedural,
+        "whiteboard": _whiteboard,
+    }
+    try:
+        stock_path = jobs["stock"]()
+    except Exception as exc:
+        print(f"    [POOL:stock] {exc}")
+        stock_path = None
+    if _usable_clip(stock_path):
+        print(f"    [POOL] scene={scene_index} winner=stock")
+        return stock_path
+    if not allow_procedural:
+        print(f"    [POOL] scene={scene_index} stock miss, generators skipped")
+        return None
+    if cancel_check and cancel_check():
+        return None
+
+    from concurrent.futures import ThreadPoolExecutor
+    names = ("flux", "procedural", "whiteboard")
+    found = {}
+    with ThreadPoolExecutor(max_workers=len(names)) as pool:
+        futures = {name: pool.submit(jobs[name]) for name in names}
+        for name, fut in futures.items():
+            try:
+                found[name] = fut.result()
+            except Exception as exc:
+                print(f"    [POOL:{name}] {exc}")
+                found[name] = None
+    for name in names:
+        path = found.get(name)
+        if _usable_clip(path):
+            _drop_other_clips(path, found.values())
+            print(f"    [POOL] scene={scene_index} winner={name}")
+            return path
+    return None
 
 
 def fetch_scene_clip(
@@ -968,22 +1168,33 @@ def fetch_scene_clip(
     if isinstance(search_queries, str):
         search_queries = [search_queries]
 
-    stock_sources = ["pexels", "pixabay", "coverr", "mixkit", "videvo"]
-    primary = (preferred_source or _pick_next_source(scene_index)).lower()
-    if primary == "ai":
-        primary = stock_sources[scene_index % len(stock_sources)]
-
-    attempted = []
-
-    def _try(source_name):
-        attempted.append(source_name)
-        return search_and_download(
+    clip_path = None
+    if preferred_source:
+        clip_path = search_and_download(
             search_queries,
             scene_index,
             project_dir,
             target_duration=target_duration,
             scene_description=scene_description,
-            preferred_source=source_name,
+            preferred_source=preferred_source,
+            cancel_check=cancel_check,
+            narration=narration,
+            visual_intent=visual_intent,
+            must_exclude=must_exclude,
+            recent_texts=recent_texts,
+            allow_custom=allow_custom,
+            niche_id=niche_id or "",
+            channel_id=channel_id,
+            allow_procedural=False,
+        )
+
+    if not clip_path:
+        clip_path = gather_scene_pools(
+            search_queries,
+            scene_index,
+            project_dir,
+            target_duration=target_duration,
+            scene_description=scene_description,
             cancel_check=cancel_check,
             narration=narration,
             visual_intent=visual_intent,
@@ -995,27 +1206,8 @@ def fetch_scene_clip(
             allow_procedural=allow_procedural,
         )
 
-    clip_path = _try(primary)
-
     if not clip_path:
-        alt_order = sorted(
-            [s for s in stock_sources if s != primary],
-            key=lambda s: _SESSION_SOURCE_COUNTS.get(s, 0),
-        )
-        for alt in alt_order:
-            if cancel_check and cancel_check():
-                return None
-            print(
-                f"    [MultiSource] Scene {scene_index}: "
-                f"[{primary.upper()}] failed -> trying [{alt.upper()}]"
-            )
-            clip_path = _try(alt)
-            if clip_path:
-                break
-
-    if not clip_path:
-        tried = ", ".join(s.upper() for s in attempted)
-        print(f"    [MultiSource] Scene {scene_index}: exhausted providers ({tried})")
+        print(f"    [MultiSource] Scene {scene_index}: stock and generator pools missed")
         return None
 
     label = _source_label_from_path(clip_path)
@@ -1038,6 +1230,12 @@ def fetch_scene_clip(
             except OSError:
                 pass
             return None
+        if integrity.get("soft"):
+            print(
+                f"    [MultiSource] keep rounded frame "
+                f"{integrity.get('width')}x{integrity.get('height')}",
+                flush=True,
+            )
     except Exception:
         pass
 

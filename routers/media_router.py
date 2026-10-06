@@ -96,7 +96,9 @@ def tts_preview(req: TtsPreviewRequest):
 
 @router.post("/api/bgm/upload")
 async def upload_bgm(file: UploadFile = File(...)):
-    safe_name = os.path.basename(file.filename or "")
+    from services.path_security import safe_join, sanitize_filename
+    raw_name = os.path.basename(file.filename or "")
+    safe_name = sanitize_filename(raw_name)
     ext = os.path.splitext(safe_name)[1].lower()
     if not safe_name or ext not in ALLOWED_BGM_EXTS:
         raise HTTPException(
@@ -104,7 +106,10 @@ async def upload_bgm(file: UploadFile = File(...)):
             detail=f"Desteklenmeyen dosya formatı ({ext}). Yalnızca MP3, WAV, M4A, AAC ve OGG kabul edilir."
         )
     os.makedirs(config.BGM_DIR, exist_ok=True)
-    file_path = os.path.join(config.BGM_DIR, safe_name)
+    try:
+        file_path = safe_join(config.BGM_DIR, safe_name)
+    except Exception as path_err:
+        raise HTTPException(status_code=400, detail=f"Geçersiz dosya adı: {path_err}")
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     return {"status": "ok", "filename": safe_name}
@@ -112,10 +117,13 @@ async def upload_bgm(file: UploadFile = File(...)):
 
 @router.delete("/api/bgm/{filename}")
 def delete_bgm_track(filename: str):
+    from services.path_security import safe_join, UnsafePathError
     safe_name = os.path.basename(filename)
-    fp = os.path.realpath(os.path.join(config.BGM_DIR, safe_name))
-    bgm_dir_real = os.path.realpath(config.BGM_DIR)
-    if not fp.startswith(bgm_dir_real) or not os.path.exists(fp):
+    try:
+        fp = safe_join(config.BGM_DIR, safe_name)
+    except UnsafePathError:
+        raise HTTPException(status_code=404, detail="Geçersiz dosya yolu.")
+    if not os.path.exists(fp):
         raise HTTPException(status_code=404, detail="Müzik dosyası bulunamadı.")
     try:
         os.remove(fp)

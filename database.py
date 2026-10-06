@@ -58,6 +58,9 @@ def init_db():
         if "share_decision" not in columns:
             try: cursor.execute("ALTER TABLE videos ADD COLUMN share_decision TEXT")
             except Exception: pass
+        if "youtube_url" not in columns:
+            try: cursor.execute("ALTER TABLE videos ADD COLUMN youtube_url TEXT")
+            except Exception: pass
 
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS scenes (
@@ -208,6 +211,27 @@ def init_db():
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_blocklist_key ON stock_blocklist(block_key)")
         _seed_stock_blocklist(cursor)
+
+        # Bölüm 8.1 / Madde 120: SQLite Tabanlı Çapraz Senaryo Özgünlük Doğrulaması
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS generated_scripts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_slug TEXT DEFAULT 'default',
+                title TEXT,
+                keyword TEXT,
+                script_text TEXT NOT NULL,
+                script_hash TEXT UNIQUE,
+                niche_id TEXT,
+                word_count INTEGER,
+                similarity_score REAL DEFAULT 0.0,
+                status TEXT DEFAULT 'approved',
+                video_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scripts_channel ON generated_scripts(channel_slug, created_at DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scripts_hash ON generated_scripts(script_hash)")
+
         conn.commit()
 
 _blocklist_cache: Optional[set] = None
@@ -760,6 +784,223 @@ def maybe_schedule_encrypted_db_backup() -> Optional[str]:
         with open(marker, "w", encoding="utf-8") as fh:
             fh.write(str(now))
     return path
+
+
+def save_generated_script(
+    script_text: str,
+    title: str = "",
+    keyword: str = "",
+    channel_slug: str = "default",
+    niche_id: str = "",
+    video_id: Optional[int] = None,
+    status: str = "approved",
+    similarity_score: float = 0.0,
+) -> int:
+    """
+    Bölüm 8.1 / Madde 120: Üretilen veya onaylanan senaryoyu SQLite tablosuna kaydeder.
+    """
+    text_clean = (script_text or "").strip()
+    if not text_clean:
+        return 0
+    shash = hashlib.sha256(text_clean.lower().encode("utf-8")).hexdigest()
+    words = len(text_clean.split())
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO generated_scripts (
+                channel_slug, title, keyword, script_text, script_hash,
+                niche_id, word_count, similarity_score, status, video_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(script_hash) DO UPDATE SET
+                title=excluded.title,
+                keyword=excluded.keyword,
+                channel_slug=excluded.channel_slug,
+                similarity_score=excluded.similarity_score,
+                status=excluded.status
+            """,
+            (
+                channel_slug or "default",
+                title or "",
+                keyword or "",
+                text_clean,
+                shash,
+                niche_id or "",
+                words,
+                float(similarity_score or 0.0),
+                status or "approved",
+                video_id,
+            ),
+        )
+        conn.commit()
+        if cursor.lastrowid:
+            return cursor.lastrowid
+        cursor.execute("SELECT id FROM generated_scripts WHERE script_hash = ?", (shash,))
+        row = cursor.fetchone()
+        return row["id"] if row else 0
+
+
+def get_recent_scripts(channel_slug: str = "default", limit: int = 50) -> List[str]:
+    """
+    Bölüm 8.1 / Madde 120: Belirtilen kanal için en son üretilmiş senaryoları SQLite'tan çeker.
+    Kanal izolasyonu sağlar; 'default' veya '*' durumunda genel geçmişi döndürür.
+    Ayrıca tamamlanmış videoların sahne anlatımlarını da geriye dönük tarar.
+    """
+    scripts: List[str] = []
+    seen_hashes = set()
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        # 1. generated_scripts tablosundan çek (yalnızca onaylı ve başarısız olmayanlar)
+        if channel_slug in ("*", "all"):
+            cursor.execute(
+                """
+                SELECT g.script_text, g.script_hash
+                FROM generated_scripts g
+                LEFT JOIN videos v ON v.id = g.video_id
+                WHERE (g.status IS NULL OR g.status NOT IN ('failed', 'cancelled'))
+                  AND (v.status IS NULL OR v.status != 'failed')
+                ORDER BY g.created_at DESC LIMIT ?
+                """,
+                (limit,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT g.script_text, g.script_hash
+                FROM generated_scripts g
+                LEFT JOIN videos v ON v.id = g.video_id
+                WHERE g.channel_slug = ?
+                  AND (g.status IS NULL OR g.status NOT IN ('failed', 'cancelled'))
+                  AND (v.status IS NULL OR v.status != 'failed')
+                ORDER BY g.created_at DESC LIMIT ?
+                """,
+                (channel_slug or "default", limit),
+            )
+        for row in cursor.fetchall():
+            st = str(row["script_text"] or "").strip()
+            sh = str(row["script_hash"] or "")
+            if st and sh not in seen_hashes:
+                seen_hashes.add(sh)
+                scripts.append(st)
+
+        # 2. Eğer yeterli kayıt yoksa, tamamlanmış videoların sahnelerinden derle
+        if len(scripts) < limit:
+            rem = limit - len(scripts)
+            if channel_slug in ("*", "all"):
+                cursor.execute(
+                    """
+                    SELECT v.id, GROUP_CONCAT(s.narration, ' ') as full_text
+                    FROM videos v
+                    JOIN scenes s ON s.video_id = v.id
+                    WHERE v.status = 'completed'
+                    GROUP BY v.id
+                    ORDER BY v.created_at DESC
+                    LIMIT ?
+                    """,
+                    (rem,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT v.id, GROUP_CONCAT(s.narration, ' ') as full_text
+                    FROM videos v
+                    JOIN scenes s ON s.video_id = v.id
+                    WHERE v.channel_slug = ? AND v.status = 'completed'
+                    GROUP BY v.id
+                    ORDER BY v.created_at DESC
+                    LIMIT ?
+                    """,
+                    (channel_slug or "default", rem),
+                )
+            for row in cursor.fetchall():
+                st = str(row["full_text"] or "").strip()
+                if st:
+                    sh = hashlib.sha256(st.lower().encode("utf-8")).hexdigest()
+                    if sh not in seen_hashes:
+                        seen_hashes.add(sh)
+                        scripts.append(st)
+
+    return scripts[:limit]
+
+
+def get_script_history_detailed(channel_slug: str = "default", limit: int = 50) -> List[Dict[str, Any]]:
+    """Detaylı senaryo denetim günlüğü."""
+    records = []
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if channel_slug in ("*", "all"):
+            cursor.execute(
+                "SELECT * FROM generated_scripts ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM generated_scripts WHERE channel_slug = ? ORDER BY created_at DESC LIMIT ?",
+                (channel_slug or "default", limit),
+            )
+        for row in cursor.fetchall():
+            records.append(dict(row))
+    return records
+
+
+def update_video_published_url(video_id: int, youtube_url: str) -> bool:
+    """
+    Chapter 9.1: Updates the published YouTube/Shorts URL for an existing video record.
+    Sets status='published'.
+    """
+    if not video_id or not youtube_url:
+        return False
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE videos SET youtube_url = ?, status = 'published' WHERE id = ?",
+            (str(youtube_url).strip(), int(video_id)),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def record_published_video(
+    title: str,
+    youtube_url: str,
+    *,
+    keyword: str = "",
+    channel_slug: str = "default",
+    filename: str = "",
+    duration_seconds: float = 0.0,
+    size_mb: float = 0.0,
+) -> int:
+    """
+    Chapter 9.1: Inserts a new published video record directly into SQLite with its YouTube link.
+    """
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO videos (keyword, title, status, filename, duration_seconds, size_mb, channel_slug, youtube_url)
+            VALUES (?, ?, 'published', ?, ?, ?, ?, ?)
+            """,
+            (
+                keyword or title,
+                str(title or "Short Video").strip(),
+                filename,
+                float(duration_seconds),
+                float(size_mb),
+                channel_slug or "default",
+                str(youtube_url).strip(),
+            ),
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_video_by_id(video_id: int) -> Optional[Dict[str, Any]]:
+    """Fetches a single video record by ID."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM videos WHERE id = ?", (int(video_id),))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
 
 # Initial schema creation on module load

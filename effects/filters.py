@@ -37,11 +37,9 @@ def apply_color_jitter(clip: VideoFileClip) -> VideoFileClip:
     return apply_color_grading_jitter(clip, jitter_range=0.015)
 
 def get_color_grading_ffmpeg_filter(jitter_range: float = 0.015) -> str:
-    """Generates FFmpeg eq filter string with ±1.5% randomized gamma, contrast and saturation."""
-    gamma = 1.0 + random.uniform(-jitter_range, jitter_range)
-    contrast = 1.0 + random.uniform(-jitter_range, jitter_range)
-    sat = 1.0 + random.uniform(-jitter_range, jitter_range)
-    return f"eq=gamma={gamma:.4f}:contrast={contrast:.4f}:saturation={sat:.4f}"
+    """Generates FFmpeg eq filter string with ±1.5% randomized independent RGB gamma, contrast and saturation (Chapter 8.2)."""
+    from compliance.anti_repetition import get_rgb_color_jitter_filter
+    return get_rgb_color_jitter_filter(jitter_range=jitter_range)
 
 
 def get_scene_brightness_alternation_filter(scene_index: int, pulse_range: float = 0.10) -> str:

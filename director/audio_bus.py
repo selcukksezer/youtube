@@ -8,6 +8,26 @@ from typing import List
 from .schema import AudioEvent, DirectorPlan, ScenePlan
 
 
+def narration_bed_noise_type(manifest: dict | None) -> str | None:
+    """
+    Bathroom aecho (`noise_type=room`) only when item_145_room_ambience is on.
+    item_108 pink noise stays dry. Default manifest asks for neither room wash.
+    """
+    manifest = manifest or {}
+    if manifest.get("item_145_room_ambience"):
+        return "room"
+    if manifest.get("item_108_pink_noise"):
+        return "pink"
+    return None
+
+
+def apply_intro_whoosh_pref(manifest: dict | None, enabled: bool) -> dict:
+    """Opening whoosh/ding follows the studio checkbox. Niche defaults do not override a false flag."""
+    out = dict(manifest or {})
+    out["item_112_whoosh_ding"] = bool(enabled)
+    return out
+
+
 def _audio_rules(plan: DirectorPlan) -> dict:
     return (plan.niche_profile or {}).get("audio_rules") or {}
 
@@ -211,6 +231,11 @@ def master_audio_one_pass(
     output_path: str,
     bgm_track: str = "",
     bgm_volume: float = 0.12,
+    allow_bgm: bool = True,
+    duck_attack_ms: float = 80,
+    duck_release_ms: float = 200,
+    intro_blast: float = 0.0,
+    outro_swell_sec: float = 0.0,
 ) -> str:
     """
     Apply roadmap voice layers then intent SFX then BGM in a controlled chain.
@@ -240,22 +265,23 @@ def master_audio_one_pass(
             br = base + "_breaths.wav"
             current = voice_humanizer.inject_natural_breaths(current, br, interval_seconds=8.0)
 
-        if manifest.get("item_112_whoosh_ding", True):
+        if manifest.get("item_112_whoosh_ding", False):
             intro = base + "_intro112.wav"
             current = prepend_whoosh_ding_to_narration(current, intro)
 
-        if manifest.get("item_108_pink_noise", True) or manifest.get("item_145_room_ambience", True):
+        bed_kind = narration_bed_noise_type(manifest)
+        if bed_kind:
             room = base + "_room.wav"
-            current = mix_pink_noise_into_narration(current, room, noise_db=-32.0, noise_type="room")
+            current = mix_pink_noise_into_narration(current, room, noise_db=-32.0, noise_type=bed_kind)
 
         norm = base + "_norm.wav"
         current = voice_humanizer.normalize_ebu_r128(current, norm)
 
-        if manifest.get("item_87_sonic_watermark", True):
+        if manifest.get("item_87_sonic_watermark", False):
             sonic = base + "_sonic.wav"
             current = voice_humanizer.inject_sonic_brand_watermark(current, sonic)
 
-        if manifest.get("item_101_jitter", True):
+        if manifest.get("item_101_jitter", False):
             try:
                 jit = base + "_jitter.wav"
                 current = voice_humanizer.apply_audio_jitter(current, jit, min_speed=0.985, max_speed=1.015)
@@ -292,7 +318,7 @@ def master_audio_one_pass(
             current = inject_room_ambience(current, amb_out, volume=0.08)
             print("  [AudioMaster] [Item 188] Oda/kalabalık ambiyansı mikslendi.")
 
-        if manifest.get("item_191_reverb_chamber", True) and any(
+        if manifest.get("item_191_reverb_chamber", False) and any(
             k in combined for k in (
                 "katedral", "cathedral", "manevi", "dini", "spiritual", "epic", "temple", "ibadet", "dua"
             )
@@ -319,8 +345,8 @@ def master_audio_one_pass(
         sfx_out = base + "_sfxbus.wav"
         current = apply_audio_events_to_wav(current, plan.audio_events, sfx_out)
 
-    # BGM
-    if bgm_track or True:
+    # BGM. allow_bgm False is the studio mute switch. Empty track still auto-picks.
+    if allow_bgm:
         try:
             from bgm_manager import get_cached_bgm_path, get_bgm_path, mix_narration_and_bgm, match_bgm_track_to_niche
             chosen = bgm_track
@@ -328,10 +354,10 @@ def master_audio_one_pass(
                 hint = (plan.niche_id or "") + " " + (plan.title or "")
                 matched = match_bgm_track_to_niche(hint)
                 chosen = os.path.basename(matched) if matched else ""
-            bgm_p = get_cached_bgm_path(chosen) if chosen else get_cached_bgm_path("")
-            if chosen and not bgm_p:
-                bgm_p = get_bgm_path(chosen)
-            if bgm_p:
+            bgm_p = get_bgm_path(chosen) if chosen else None
+            if not bgm_p:
+                bgm_p = get_cached_bgm_path(chosen) if chosen else get_cached_bgm_path("")
+            if bgm_p and os.path.exists(bgm_p) and os.path.getsize(bgm_p) > 2000:
                 mixed = base + "_bgm.wav"
                 tape_stops = collect_tape_stop_times(plan)
                 current = mix_narration_and_bgm(
@@ -341,9 +367,16 @@ def master_audio_one_pass(
                     volume=bgm_volume,
                     tape_stop_times=tape_stops,
                     allow_fade_out=False,
+                    duck_attack_ms=duck_attack_ms,
+                    duck_release_ms=duck_release_ms,
+                    intro_blast=intro_blast,
+                    outro_swell_sec=outro_swell_sec,
                 )
+                print(f"  [AudioMaster] BGM mikslendi: {os.path.basename(bgm_p)} (vol={bgm_volume})")
                 if tape_stops:
                     print(f"  [AudioMaster] Tape-stop @ {len(tape_stops)} beat(s) (Item 156)")
+            else:
+                print(f"  [AudioMaster] Uyarı: BGM bulunamadı veya boyutu yetersiz: {bgm_p}")
         except Exception as e:
             print(f"  [AudioMaster] BGM notice: {e}")
 

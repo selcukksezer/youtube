@@ -72,6 +72,20 @@ _HOOK_OPENERS: Dict[str, Tuple[str, ...]] = {
     "kahraman": ("Cesur bir adım her şeyi değiştirdi:", "Beklenmedik bir hamleyle:", "Sessizce dengeleri değiştiren şey:"),
 }
 
+_HOOK_OPENERS_EN: Dict[str, Tuple[str, ...]] = {
+    "itiraf": ("Nobody admits this openly, but", "To be completely honest,", "If we are being real,"),
+    "uyarı": ("Do not overlook this:", "The moment you notice this, stop:", "Look closely and you will see:"),
+    "sayı": ("The numbers don't lie:", "One single detail is enough:", "The one thing that explains everything:"),
+    "paradoks": ("It seems totally counter-intuitive, but", "Contrary to what everyone thinks,", "Things are not what they seem:"),
+    "gizli": ("The hidden truth behind this is:", "The one detail nobody notices:", "Behind closed doors:"),
+    "soru": ("Have you ever wondered,", "What if everything you knew was wrong?", "Why is nobody talking about this?"),
+    "kanıt": ("The evidence is crystal clear:", "This is no coincidence:", "The truth is right in front of us:"),
+    "yasak": ("Nobody will ever teach you this, but", "The rule-breaking truth is:", "The closely guarded secret:"),
+    "oyun": ("Almost impossible to guess:", "Watch carefully right now:", "Watch what happens next:"),
+    "merak": ("Don't be fooled by appearances,", "When you look deeper:", "Beneath the surface lies something else:"),
+    "kahraman": ("One bold move changed everything:", "With an unexpected move:", "The quiet shift that changed the game:"),
+}
+
 _GENERIC_FILLER = re.compile(
     r"^(bunu aklında tut\.?|devamını izle\.?|takip et\.?|like and subscribe\.?|"
     r"çok önemli\.?|inanılmaz\.?|şok olacaksın\.?)$",
@@ -79,7 +93,7 @@ _GENERIC_FILLER = re.compile(
 )
 
 _SHARE_BAIT = re.compile(
-    r"[?？]|!\s*$|\b(sakın|asla|kimse|neden|kaç|kaçın|yasak|gizli|sayı|kanıt)\b",
+    r"[?？]|!\s*$|\b(sakın|asla|kimse|neden|kaç|kaçın|yasak|gizli|sayı|kanıt|stop|secret|truth|nobody|why|never|danger)\b",
     re.I,
 )
 
@@ -115,16 +129,17 @@ def mute_hook_line(title: str, angle: str, lang: str = "tr") -> str:
     """
     First-frame caption for muted autoplay — ≤10 words, claim-first.
     """
-    openers = _HOOK_OPENERS.get(angle) or _HOOK_OPENERS["soru"]
+    is_tr = (lang or "tr").lower()[:2] != "en"
+    opener_map = _HOOK_OPENERS if is_tr else _HOOK_OPENERS_EN
+    openers = opener_map.get(angle) or opener_map["soru"]
     opener = openers[hash(title + angle) % len(openers)]
     # Strip fluff from title for the claim
     claim = re.sub(r"[\"“”]", "", (title or "").strip())
-    claim = re.sub(r"\s+", " ", claim)
+    claim = re.sub(r"#\w+", "", claim)
+    claim = re.sub(r"\s+", " ", claim).strip()
     # Keep first ~6 words of topic as the payload
     words = claim.split()
-    payload = " ".join(words[:8]) if words else "bu detay"
-    if lang != "tr":
-        return f"{opener} {payload}"[:90]
+    payload = " ".join(words[:8]) if words else ("bu detay" if is_tr else "this detail")
     line = f"{opener} {payload}"
     # Hard cap ~10 words for mute readability
     parts = line.split()
@@ -151,28 +166,45 @@ def _inject_specificity(narr: str, angle: str, title: str, lang: str) -> str:
     t = _strip_generic(narr)
     if not t:
         t = mute_hook_line(title, angle, lang=lang)
+    is_tr = (lang or "tr").lower()[:2] != "en"
     # Already specific enough?
     has_digit = bool(re.search(r"\d", t))
-    has_contrast = bool(re.search(r"\b(ama|ancak|oysa|aslında|çünkü|ama)\b", t, re.I))
-    has_you = bool(re.search(r"\b(sen|siz|senin|sizin|dün|bugün)\b", t, re.I))
+    if is_tr:
+        has_contrast = bool(re.search(r"\b(ama|ancak|oysa|aslında|çünkü)\b", t, re.I))
+        has_you = bool(re.search(r"\b(sen|siz|senin|sizin|dün|bugün)\b", t, re.I))
+    else:
+        has_contrast = bool(re.search(r"\b(but|however|yet|actually|because|although)\b", t, re.I))
+        has_you = bool(re.search(r"\b(you|your|today|yesterday|we)\b", t, re.I))
     if has_digit or (has_contrast and has_you) or len(t.split()) >= 8:
         return t
-    # Angle-specific spice (Turkish)
-    spice = {
-        "itiraf": " — ve çoğu kişi bu ayrıntıyı tamamen atlıyor.",
-        "uyarı": " — bu noktada son derece dikkatli olmak gerek.",
-        "sayı": " — bütün tabloyu değiştiren asıl detay burada saklı.",
-        "paradoks": " — ilk bakışta çelişkili gelse de gerçek tam olarak bu.",
-        "gizli": " — asıl belirleyici olan da bu görünmeyen detay.",
-        "soru": " — aradığın cevap aslında hiç beklemediğin yerde saklı.",
-        "kanıt": " — tesadüf olmadığını gösteren en somut işaret de bu.",
-        "yasak": " — kimsenin yüksek sesle konuşmaya cesaret edemediği nokta.",
-        "oyun": " — dikkatli bakan biri bu kurguyu hemen fark eder.",
-        "merak": " — dışarıdan bakınca asla anlaşılamayan derin bir tarafı var.",
-        "kahraman": " — sessizce atılan en cesur adım tam da buydu.",
-    }.get(angle, " — bundan sonra olaylara bakışın tamamen değişecek.")
-    if lang != "tr":
-        spice = " — and most people completely miss this detail."
+    if is_tr:
+        spice = {
+            "itiraf": " — ve çoğu kişi bu ayrıntıyı tamamen atlıyor.",
+            "uyarı": " — bu noktada son derece dikkatli olmak gerek.",
+            "sayı": " — bütün tabloyu değiştiren asıl detay burada saklı.",
+            "paradoks": " — ilk bakışta çelişkili gelse de gerçek tam olarak bu.",
+            "gizli": " — asıl belirleyici olan da bu görünmeyen detay.",
+            "soru": " — aradığın cevap aslında hiç beklemediğin yerde saklı.",
+            "kanıt": " — tesadüf olmadığını gösteren en somut işaret de bu.",
+            "yasak": " — kimsenin yüksek sesle konuşmaya cesaret edemediği nokta.",
+            "oyun": " — dikkatli bakan biri bu kurguyu hemen fark eder.",
+            "merak": " — dışarıdan bakınca asla anlaşılamayan derin bir tarafı var.",
+            "kahraman": " — sessizce atılan en cesur adım tam da buydu.",
+        }.get(angle, " — bundan sonra olaylara bakışın tamamen değişecek.")
+    else:
+        spice = {
+            "itiraf": " — and most people completely miss this detail.",
+            "uyarı": " — you need to pay very close attention right here.",
+            "sayı": " — this single number changes the whole picture.",
+            "paradoks": " — it sounds contradictory at first, but it is true.",
+            "gizli": " — this hidden factor is what actually matters.",
+            "soru": " — the real answer lies where you least expect it.",
+            "kanıt": " — this proves it was never a coincidence.",
+            "yasak": " — the one fact nobody dares to talk about out loud.",
+            "oyun": " — once you see it, you can never unsee it.",
+            "merak": " — beneath the surface lies a deeper reality.",
+            "kahraman": " — this single quiet decision changed everything.",
+        }.get(angle, " — and it completely changes how you see reality.")
     if not t.endswith((".", "!", "?", "…")):
         t = t + "."
     return (t + spice).strip()
@@ -227,19 +259,12 @@ def _rewrite_closing_loop(scenes: List[Dict[str, Any]], hook: str, lang: str) ->
         return
     last = scenes[-1]
     narr = _strip_generic(last.get("narration") or "")
-    # Loop line ties back to hook promise
-    if lang == "tr":
-        loop = "Başa dön ve ilk anı hatırla; asıl gerçek tam orada gizliydi."
-        if hook:
-            loop = "Başa dönüp ilk cümleyle karşılaştır: Asıl yanıt tam orada duruyor."
-    else:
-        loop = "Loop it back to the beginning — the real answer was right there."
-    # A finished last sentence is the ending. "Başa dön" on top of it
-    # is a second voice. Stubs still get the loop line.
-    if len(narr.split()) >= 8:
-        last["narration"] = narr
-    else:
-        last["narration"] = loop
+    from viral_retention_engine import ViralRetentionEngine
+    last["narration"] = ViralRetentionEngine.synthesize_seamless_loop(
+        opening_hook=hook,
+        final_narration=narr,
+        lang=lang,
+    )["seamless_closing"]
     last["loop_closure"] = True
 
 
@@ -433,11 +458,21 @@ def apply_human_craft(
     niche_id = niche_id or plan.get("niche_id") or ""
     lang = language or plan.get("language") or "tr"
     angle = pick_pov_angle(title, niche_id, variation=variation)
-    hook = mute_hook_line(title, angle, lang=lang)
+    spoken_hook = ((plan.get("retention_metadata") or {}).get("opening_hook") or "").strip()
+    if spoken_hook:
+        hook = " ".join(spoken_hook.split()[:10])
+    else:
+        hook = mute_hook_line(title, angle, lang=lang)
 
-    # Five-facts speech is the facts. Other niches keep a sentence that
-    # already says something (8+ words). Only stubs get a hook or spice.
-    keep_spoken = str(niche_id).startswith("9_five")
+    # Five-facts and sacred religious/hadith niches preserve spoken text accurately.
+    # Other niches keep a sentence that already says something (8+ words). Only stubs get a hook or spice.
+    from scenes.hadith_overlay import attach_hadith_screen_text, is_sacred_niche
+
+    spoken_blob = " ".join((s.get("narration") or "") for s in scenes)
+    sacred = is_sacred_niche(str(niche_id), title, spoken_blob)
+    if sacred:
+        attach_hadith_screen_text(plan)
+    keep_spoken = str(niche_id).startswith("9_five") or sacred
     if not keep_spoken:
         opening = scenes[0]
         if len((opening.get("narration") or "").split()) >= 8:
@@ -447,6 +482,12 @@ def apply_human_craft(
         if len(scenes) > 1:
             _diversify_middles(scenes, angle, title, lang)
             _rewrite_closing_loop(scenes, hook, lang)
+    else:
+        opening = scenes[0]
+        spoken_words = (opening.get("narration") or "").split()
+        if spoken_words:
+            opening["mute_hook_line"] = " ".join(spoken_words[:8])
+        scenes[-1]["loop_closure"] = True
 
     # Cap static holds BEFORE scoring density (otherwise discovery always fails long shots)
     enforce_shot_holds(scenes, max_hold=3.5, min_hold=2.0)

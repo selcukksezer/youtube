@@ -24,7 +24,30 @@ Covers:
 """
 
 import random
+import re
 from typing import Dict, List, Any
+
+# Open conjunctions glued onto a finished line. They are not a sentence.
+_OPEN_LOOP_TAIL_RE = re.compile(
+    r"(?:\s+(?:çünkü|cunku|because|so|peki|ve tam da bu yüzden|işte bu sebeple|"
+    r"and that is why|which is why|bu yüzden|bu sebeple))\s*$",
+    re.IGNORECASE,
+)
+
+
+def _finish_spoken_line(text: str) -> str:
+    """Return one finished sentence. Drop a dangling loop conjunction."""
+    raw = (text or "").strip()
+    raw = re.sub(r"\s*başa\s+dön\b[^.!?]*", "", raw, flags=re.IGNORECASE).strip()
+    if not raw:
+        return ""
+    spoken = _OPEN_LOOP_TAIL_RE.sub("", raw).strip()
+    spoken = re.sub(r"[\s,;:]+$", "", spoken)
+    if not spoken:
+        return ""
+    if spoken[-1] not in ".!?":
+        spoken += "."
+    return spoken
 
 
 class ViralRetentionEngine:
@@ -158,33 +181,98 @@ class ViralRetentionEngine:
         return random.choice(cls.LOOP_FORMULAS)
 
     @classmethod
-    def get_diverse_loop_conjunctions(cls, min_count: int = 10) -> List[str]:
+    def get_diverse_loop_conjunctions(cls, min_count: int = 10, lang: str = "tr") -> List[str]:
         """
-        Item 137: Döngü Cümlesi Çeşitliliği.
-        Her videoda aynı döngü bağlacı ('çünkü...') kullanılmamalı,
+        Item 137: Döngü Cümlesi Çeşitliliği (TR & EN).
+        Her videoda aynı döngü bağlacı kullanılmamalı,
         en az 10 farklı bağlaç havuzdan çekilmeli ve sırayla çeşitlendirilmelidir.
         """
-        conjunctions = [
-            "...ve tam da bu yüzden asla unutmayın çünkü",
-            "...çünkü bu sırrı ilk duyduğunuzda başa dönüp diyeceksiniz ki",
-            "...ve işte evrenin tam da bu döngüsü yüzünden her şey başa dönüyor:",
-            "...peki sizce neden tarihteki en büyük liderlerin hepsi ilk kural olarak",
-            "...ve işte tam da bu sebeple ilk duyduğunuzda inanmadığınız o şey",
-            "...bu yüzden bir dahaki sefere birisi size yaklaştığında hemen hatırlayın:",
-            "...ve zaman akıp geçerken fark edeceksiniz ki her şey tam burada başlamıştı:",
-            "...ve kimsenin halka açıklamak istemediği o ilk soruya geri dönersek",
-            "...şimdi dürüstçe cevap verin, ilk saniyede gördüğünüz o detay",
-            "...bu kuralı unutanlar her zaman aynı hataya geri düşer, çünkü",
-            "...kendinize her sorduğunuzda alacağınız tek bir gerçek cevap var:",
-            "...ve işin en akıl almaz yanı, bütün bunların nedeni tam olarak şuydu:"
-        ]
+        if lang == "en":
+            conjunctions = [
+                "...and that is exactly why you must never forget that",
+                "...because the moment you hear this truth, you will realize that",
+                "...and this infinite loop of the universe is why it always begins with:",
+                "...so why do the greatest minds always start with this exact rule?",
+                "...and this is the hidden reason nobody believed at first that",
+                "...so next time you face this, remember the opening lesson:",
+                "...and as time moves forward, you discover everything started right here:",
+                "...which brings us right back to the question everyone avoids:",
+                "...now be honest: that first detail you noticed on the screen,",
+                "...forgetting this rule always brings you back to the start, because",
+                "...ask yourself this question, and the only true answer is:",
+                "...and the most unbelievable part is that the reason was right at the beginning:",
+            ]
+        else:
+            conjunctions = [
+                "...ve tam da bu yüzden asla unutmayın çünkü",
+                "...çünkü bu sırrı ilk duyduğunuzda başa dönüp diyeceksiniz ki",
+                "...ve işte evrenin tam da bu döngüsü yüzünden her şey başa dönüyor:",
+                "...peki sizce neden tarihteki en büyük liderlerin hepsi ilk kural olarak",
+                "...ve işte tam da bu sebeple ilk duyduğunuzda inanmadığınız o şey",
+                "...bu yüzden bir dahaki sefere birisi size yaklaştığında hemen hatırlayın:",
+                "...ve zaman akıp geçerken fark edeceksiniz ki her şey tam burada başlamıştı:",
+                "...ve kimsenin halka açıklamak istemediği o ilk soruya geri dönersek",
+                "...şimdi dürüstçe cevap verin, ilk saniyede gördüğünüz o detay",
+                "...bu kuralı unutanlar her zaman aynı hataya geri düşer, çünkü",
+                "...kendinize her sorduğunuzda alacağınız tek bir gerçek cevap var:",
+                "...ve işin en akıl almaz yanı, bütün bunların nedeni tam olarak şuydu:"
+            ]
         return conjunctions[:max(min_count, len(conjunctions))]
 
     @classmethod
-    def pick_loop_bridge_for_video(cls, video_index: int = 0) -> str:
-        """Item 137: Videoya özel döngüsel bağlaç seçer."""
-        pool = cls.get_diverse_loop_conjunctions()
+    def pick_loop_bridge_for_video(cls, video_index: int = 0, lang: str = "tr") -> str:
+        """Item 137 & 204: Videoya ve dile özel döngüsel bağlaç seçer."""
+        pool = cls.get_diverse_loop_conjunctions(lang=lang)
         return pool[video_index % len(pool)]
+
+    @classmethod
+    def spoken_loop_tail(cls, opening: str, lang: str = "tr", video_index: int = 0) -> str:
+        """Conjunction the opening's first words can finish. Does not repeat them."""
+        text = (opening or "").strip()
+        question = text.endswith("?") or bool(
+            re.match(r"^(neden|nasıl|nasil|peki|kim|ne|hangi|what|why|how|who)\b", text, re.I)
+        )
+        if lang == "en":
+            tails = ("so",) if question else ("because", "and that is why", "which is why")
+        else:
+            tails = ("peki",) if question else ("çünkü", "ve tam da bu yüzden", "işte bu sebeple")
+        return tails[int(video_index) % len(tails)]
+
+    @classmethod
+    def synthesize_seamless_loop(
+        cls,
+        opening_hook: str,
+        final_narration: str = "",
+        loop_formula_id: str = None,
+        video_index: int = 0,
+        lang: str = "tr",
+    ) -> Dict[str, str]:
+        """
+        Item 204 & 345 / Plan 7.2: loop metadata for the editor.
+        Spoken closing stays a finished sentence. The catalog bridge is not read aloud.
+        """
+        opening = (opening_hook or "").strip()
+        closing = (final_narration or "").strip()
+
+        formula = cls.get_loop_formula(loop_formula_id) if loop_formula_id else None
+        if (lang or "tr").lower()[:2] != "en" and formula and formula.get("ending_bridge"):
+            bridge = formula["ending_bridge"]
+        else:
+            bridge = cls.pick_loop_bridge_for_video(video_index, lang=lang)
+
+        # Catalog bridge stays in ending_bridge for the editor.
+        # Spoken audio keeps a finished sentence. Gluing "çünkü" / "because"
+        # onto it is what the listener heard as nonsense.
+        seamless_closing = _finish_spoken_line(closing)
+
+        preview = f"{seamless_closing} {opening}".strip()
+        return {
+            "seamless_closing": seamless_closing,
+            "ending_bridge": bridge,
+            "opening_hook": opening,
+            "preview_loop": preview,
+        }
+
 
     @classmethod
     def generate_cognitive_dissonance_hook(cls, topic: str, lang: str = "tr") -> str:
@@ -318,6 +406,40 @@ class ViralRetentionEngine:
         )
 
     @classmethod
+    def generate_curiosity_gap_hook(cls, topic: str, lang: str = "tr") -> str:
+        """Plan 7.1: withheld rule. No fake billionaire on a non-money topic."""
+        if lang == "en":
+            hooks = [
+                f"The one rule about {topic} that nobody says out loud.",
+                f"Do not decide on {topic} before this missing piece.",
+                f"The real part of {topic} is still ahead. Do not scroll.",
+            ]
+        else:
+            hooks = [
+                f"Kimsenin {topic} hakkında söylemediği o tek kural.",
+                f"Bunu bilmeden {topic} hakkında karar vermeyin.",
+                f"{topic} ile ilgili asıl parça daha gelmedi. Kaydırmayın.",
+            ]
+        return random.choice(hooks)
+
+    @classmethod
+    def generate_problem_agitation_hook(cls, topic: str, lang: str = "tr") -> str:
+        """Plan 7.1: the symptom is real, the assumed cause is not."""
+        if lang == "en":
+            hooks = [
+                f"If {topic} keeps wearing you down, the cause is not what you think.",
+                f"You have been fixing {topic} in the wrong place.",
+                f"The reason {topic} keeps returning is the habit everyone repeats.",
+            ]
+        else:
+            hooks = [
+                f"{topic} sizi yoruyorsa sebep düşündüğünüz şey değil.",
+                f"{topic} sorununu yanlış yerde arıyorsunuz.",
+                f"{topic} neden dönüp duruyor? Herkesin tekrarladığı o alışkanlık.",
+            ]
+        return random.choice(hooks)
+
+    @classmethod
     def generate_shocking_statistic_hook(cls, topic: str, lang: str = "tr") -> str:
         """
         Item 259: Şok Edici İstatistik Kancası — nadir yüzde / veri ile merak tetikleme.
@@ -330,8 +452,8 @@ class ViralRetentionEngine:
             ]
         else:
             templates = [
+                f"İnsanların %99'u {topic} konusunda bunu bilmeden devam ediyor.",
                 f"Dünya nüfusunun sadece %0.1'inin sahip olduğu o nadir özellik {topic} ile bağlantılı.",
-                f"Harvard araştırması: İnsanların %97'si {topic} konusunda ilk denemede yanılıyor.",
                 f"1.000 kişiden sadece 1'i {topic} hakkında bu gizli istatistiği biliyor.",
             ]
         return random.choice(templates)
@@ -648,12 +770,32 @@ class ViralRetentionEngine:
     def generate_spotted_mistake_bait(topic: str) -> str:
         """
         Generates subtle engagement bait / spotted mistake to trigger comment fights (Item 209).
+        Topic-aware: adapts to rules, facts, mysteries, products, or history.
         """
-        baits = [
-            "Not: Videodaki 2. maddedeki ufak yazım hatasını sadece dikkatli izleyiciler fark eder 👀",
-            "İpucu: 3. kuralın yılına dikkat edenler yorumlarda buluşuyor 👇",
-            "Sizce 2. kural mı daha etkili yoksa 3. kural mı? Tartışma yorumlarda başladı."
-        ]
+        t_low = (topic or "").lower()
+        if any(w in t_low for w in ("kural", "yasa", "stoa", "prensip", "ilke")):
+            baits = [
+                "İpucu: 3. kuralın mantığına dikkat edenler yorumlarda buluşuyor 👇",
+                "Sizce hangi kural hayatınızı daha hızlı değiştirebilir? Yorumlarda tartışalım.",
+                "Not: Bahsedilen maddelerden en zoru hangisi? Cevapları bekliyorum 👀",
+            ]
+        elif any(w in t_low for w in ("gizem", "bilim", "olay", "uzay", "tarih", "sır", "gerçek", "keşif")):
+            baits = [
+                "Sizce bu olaylardan hangisinin açıklaması hala insanlıktan gizleniyor? 👇",
+                "Not: 2. maddedeki gizemli detayı fark edenler yorumlara yazsın 👀",
+                "Bu teorilerden hangisi size daha inandırıcı geldi? Yorumlarda buluşalım 👇",
+            ]
+        elif any(w in t_low for w in ("ürün", "alet", "cihaz", "para", "finans", "satın")):
+            baits = [
+                "Siz olsaydınız bu listeden ilk hangisini denerdiniz? 👇",
+                "Fiyat/performans açısından sizce hangisi 1 numara? Yorumlara bekliyorum.",
+            ]
+        else:
+            baits = [
+                "Not: Videodaki en şaşırtıcı detayı sadece dikkatli izleyiciler fark eder 👀",
+                "Sizce listedeki en inanılmaz bilgi hangisiydi? Tartışma başladı 👇",
+                "Bu bilgiyi ilk kez duyanlar kaç kişi? Sayımızı görelim 👇",
+            ]
         return random.choice(baits)
 
     @classmethod

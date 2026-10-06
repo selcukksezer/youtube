@@ -226,11 +226,120 @@ document.getElementById('btn-rf-fetch-bgm')?.addEventListener('click', async () 
 
 // 12.1 CANLI YAPAY ZEKA KOTA & HIZ LİMİTİ MONİTÖRÜ (Items 62 & 69)
 // ══════════════════════════════════════════════════════════════
+let currentQuotaTab = 'all';
+let lastQuotaData = null;
+
+function renderSingleQuotaDetail(catKey) {
+    if (!lastQuotaData) return;
+    const catLabel = document.getElementById('single-view-cat-label');
+    const nameEl = document.getElementById('mini-ai-name');
+    const m1Label = document.getElementById('single-metric-1-label');
+    const m1Val = document.getElementById('mini-quota-rpm-display');
+    const m1Unit = document.getElementById('single-metric-1-unit');
+    const m1Fill = document.getElementById('mini-rpm-fill');
+    const m2Label = document.getElementById('single-metric-2-label');
+    const m2Val = document.getElementById('mini-quota-rpd-display');
+    const m2Rem = document.getElementById('mini-rpd-remaining');
+    const m2Fill = document.getElementById('mini-rpd-fill');
+
+    if (catKey === 'ai') {
+        const activeName = lastQuotaData.active_provider_name || 'Google Gemini Flash';
+        const rpmUsed = lastQuotaData.current_rpm_used || 0;
+        const rpmLimit = lastQuotaData.rpm_limit || 15;
+        const rpdUsed = lastQuotaData.daily_used || 0;
+        const rpdLimit = lastQuotaData.rpd_limit || 1500;
+        const dailyRemaining = lastQuotaData.daily_remaining !== undefined ? lastQuotaData.daily_remaining : Math.max(0, rpdLimit - rpdUsed);
+        const remStr = typeof dailyRemaining === 'number' ? dailyRemaining.toLocaleString('tr-TR') : dailyRemaining;
+
+        if (catLabel) catLabel.textContent = 'AI MOTORU';
+        if (nameEl) nameEl.textContent = activeName;
+        if (m1Label) m1Label.textContent = 'Anlık Hız';
+        if (m1Val) m1Val.textContent = lastQuotaData.is_api_key_missing ? 'Yerel' : `${rpmUsed}/${rpmLimit}`;
+        if (m1Unit) m1Unit.textContent = 'RPM';
+        if (m1Fill) {
+            const pct = rpmLimit > 0 ? Math.min(100, (rpmUsed / rpmLimit) * 100) : 0;
+            m1Fill.style.width = `${pct}%`;
+        }
+        if (m2Label) m2Label.textContent = 'Günlük İstek';
+        if (m2Val) m2Val.textContent = lastQuotaData.is_api_key_missing ? 'Sınırsız' : `${rpdUsed}/${rpdLimit.toLocaleString('tr-TR')}`;
+        if (m2Rem) m2Rem.textContent = `${remStr} kaldı`;
+        if (m2Fill) {
+            const pct = rpdLimit > 0 ? Math.min(100, (rpdUsed / rpdLimit) * 100) : 0;
+            m2Fill.style.width = `${pct}%`;
+        }
+    } else if (catKey === 'stock') {
+        const pPexels = lastQuotaData.providers?.Pexels || {};
+        const pPixabay = lastQuotaData.providers?.Pixabay || {};
+        const pexRem = pPexels.remaining_calls !== undefined ? pPexels.remaining_calls.toLocaleString('tr-TR') : '25.000';
+        const pixRem = pPixabay.remaining_calls !== undefined ? pPixabay.remaining_calls.toLocaleString('tr-TR') : '100';
+
+        if (catLabel) catLabel.textContent = 'STOK VİDEO MOTORLARI';
+        if (nameEl) nameEl.textContent = 'Pexels & Pixabay API';
+        if (m1Label) m1Label.textContent = 'Pexels Kalan';
+        if (m1Val) m1Val.textContent = `${pexRem}`;
+        if (m1Unit) m1Unit.textContent = '/ 25.000';
+        if (m1Fill) m1Fill.style.width = `${pPexels.health_pct || 85}%`;
+        if (m2Label) m2Label.textContent = 'Pixabay Kalan';
+        if (m2Val) m2Val.textContent = `${pixRem}`;
+        if (m2Rem) m2Rem.textContent = `${pPixabay.status_badge || 'Canlı'}`;
+        if (m2Fill) m2Fill.style.width = `${pPixabay.health_pct || 100}%`;
+    } else if (catKey === 'tts') {
+        const pEdge = lastQuotaData.providers?.['Edge-TTS'] || {};
+        const pEleven = lastQuotaData.providers?.ElevenLabs || {};
+
+        if (catLabel) catLabel.textContent = 'SESLENDİRME MOTORU';
+        if (nameEl) nameEl.textContent = pEleven.has_key ? 'ElevenLabs & Edge-TTS' : 'Microsoft Edge Neural TTS';
+        if (m1Label) m1Label.textContent = 'Edge-TTS';
+        if (m1Val) m1Val.textContent = 'Limitsiz';
+        if (m1Unit) m1Unit.textContent = '0 TL Stack';
+        if (m1Fill) m1Fill.style.width = '100%';
+        if (m2Label) m2Label.textContent = 'ElevenLabs';
+        if (m2Val) m2Val.textContent = pEleven.has_key && pEleven.remaining_calls !== undefined ? `${pEleven.remaining_calls.toLocaleString('tr-TR')}` : 'Yedek Mod';
+        if (m2Rem) m2Rem.textContent = pEleven.has_key ? 'karakter kaldı' : 'Edge aktif';
+        if (m2Fill) m2Fill.style.width = `${pEleven.health_pct || 100}%`;
+    } else if (catKey === 'youtube') {
+        const pYt = lastQuotaData.providers?.YouTube || {};
+        const ytUsed = pYt.daily_used || 0;
+        const ytLimit = pYt.rpd_limit || 10000;
+        const ytRem = pYt.remaining_calls !== undefined ? pYt.remaining_calls : (ytLimit - ytUsed);
+
+        if (catLabel) catLabel.textContent = 'YOUTUBE YAYIN & API';
+        if (nameEl) nameEl.textContent = pYt.has_key ? 'YouTube Data API v3' : 'Otomatik Tarayıcı Yükleyici (0 Kota)';
+        if (m1Label) m1Label.textContent = 'Günlük Kota';
+        if (m1Val) m1Val.textContent = pYt.has_key ? `${ytUsed}/${ytLimit.toLocaleString('tr-TR')}` : '0 Kota';
+        if (m1Unit) m1Unit.textContent = 'Birim';
+        if (m1Fill) m1Fill.style.width = pYt.has_key ? `${Math.min(100, (ytUsed/ytLimit)*100)}%` : '100%';
+        if (m2Label) m2Label.textContent = 'Kapasite';
+        if (m2Val) m2Val.textContent = pYt.has_key ? `${(ytRem / 1600).toFixed(1)} Video` : 'Sınırsız';
+        if (m2Rem) m2Rem.textContent = pYt.has_key ? `${ytRem.toLocaleString('tr-TR')} birim kaldı` : 'Tarayıcı modu aktif';
+        if (m2Fill) m2Fill.style.width = '100%';
+    }
+}
+
+function setQuotaTab(tabKey) {
+    currentQuotaTab = tabKey;
+    document.querySelectorAll('#ssp-quota-tabs .ssp-tab').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-quota-tab') === tabKey);
+    });
+    const allView = document.getElementById('ssp-all-quotas-view');
+    const singleView = document.getElementById('ssp-single-quota-view');
+
+    if (tabKey === 'all') {
+        if (allView) allView.style.display = 'flex';
+        if (singleView) singleView.style.display = 'none';
+    } else {
+        if (allView) allView.style.display = 'none';
+        if (singleView) singleView.style.display = 'block';
+        renderSingleQuotaDetail(tabKey);
+    }
+}
+
 async function updateAiQuotaDisplay(passedData = null) {
     if (isRendering && !passedData) return; // Render sirasinda sunucuya HTTP yuk bindirme
     try {
         const qData = passedData || await (await fetch('/api/quota/stats')).json();
         if (!qData) return;
+        lastQuotaData = qData;
 
         const activeName = qData.active_provider_name || 'Google Gemini Flash';
         const rpmUsed = qData.current_rpm_used || 0;
@@ -240,6 +349,7 @@ async function updateAiQuotaDisplay(passedData = null) {
         const dailyRemaining = qData.daily_remaining !== undefined ? qData.daily_remaining : Math.max(0, rpdLimit - rpdUsed);
         const isExhausted = qData.is_exhausted || false;
         const healthPct = qData.overall_health_pct || 100;
+        const remStr = typeof dailyRemaining === 'number' ? dailyRemaining.toLocaleString('tr-TR') : dailyRemaining;
 
         // 1. Üst Header Rozeti
         const headerSummary = document.getElementById('header-quota-summary');
@@ -266,44 +376,73 @@ async function updateAiQuotaDisplay(passedData = null) {
             }
         }
 
-        // 2. Sol Sidebar Mini Kartı
-        const miniAiName = document.getElementById('mini-ai-name');
-        const miniRpm = document.getElementById('mini-quota-rpm-display');
-        const miniRpd = document.getElementById('mini-quota-rpd-display');
-        const miniRpdRem = document.getElementById('mini-rpd-remaining');
-        const miniRpmFill = document.getElementById('mini-rpm-fill');
-        const miniRpdFill = document.getElementById('mini-rpd-fill');
-        const miniBadge = document.getElementById('mini-quota-badge');
-        const miniFill = document.getElementById('mini-quota-fill');
-        const miniReset = document.getElementById('mini-quota-reset-text');
+        // 2. Sol Sidebar Bütün Kotalar Listesi (Overview)
+        const qAiName = document.getElementById('all-q-ai-name');
+        const qAiBadge = document.getElementById('all-q-ai-badge');
+        const qAiMetric = document.getElementById('all-q-ai-metric');
+        const qAiPct = document.getElementById('all-q-ai-pct');
+        const qAiBar = document.getElementById('all-q-ai-bar');
+
+        const qStockName = document.getElementById('all-q-stock-name');
+        const qStockBadge = document.getElementById('all-q-stock-badge');
+        const qStockMetric = document.getElementById('all-q-stock-metric');
+        const qStockPct = document.getElementById('all-q-stock-pct');
+        const qStockBar = document.getElementById('all-q-stock-bar');
+
+        const qTtsName = document.getElementById('all-q-tts-name');
+        const qTtsBadge = document.getElementById('all-q-tts-badge');
+        const qTtsMetric = document.getElementById('all-q-tts-metric');
+        const qTtsPct = document.getElementById('all-q-tts-pct');
+        const qTtsBar = document.getElementById('all-q-tts-bar');
+
+        const qYtBadge = document.getElementById('all-q-yt-badge');
+        const qYtMetric = document.getElementById('all-q-yt-metric');
+        const qYtPct = document.getElementById('all-q-yt-pct');
+        const qYtBar = document.getElementById('all-q-yt-bar');
+
+        if (qAiName) qAiName.textContent = activeName;
+        if (qAiBadge) qAiBadge.textContent = qData.is_api_key_missing ? 'Yerel Mod' : `${remStr} Kaldı`;
+        if (qAiMetric) qAiMetric.textContent = qData.is_api_key_missing ? '0 TL Failsafe Aktif' : `${rpmUsed}/${rpmLimit} RPM · ${rpdUsed}/${rpdLimit.toLocaleString('tr-TR')} RPD`;
+        if (qAiPct) qAiPct.textContent = `%${healthPct}`;
+        if (qAiBar) qAiBar.style.width = `${healthPct}%`;
+
+        // Stok Provider verileri
+        const provs = qData.providers || {};
+        const pex = provs['Pexels'] || {};
+        const pix = provs['Pixabay'] || {};
+        const pexRem = pex.remaining_calls !== undefined ? pex.remaining_calls.toLocaleString('tr-TR') : '25.000';
+        const pixRem = pix.remaining_calls !== undefined ? pix.remaining_calls.toLocaleString('tr-TR') : '100';
+        const stockHealth = Math.min(pex.health_pct || 100, pix.health_pct || 100);
+
+        if (qStockBadge) qStockBadge.textContent = pex.status_badge || 'Canlı Senkron';
+        if (qStockMetric) qStockMetric.textContent = `Pexels: ${pexRem} · Pixabay: ${pixRem}`;
+        if (qStockPct) qStockPct.textContent = `%${stockHealth}`;
+        if (qStockBar) qStockBar.style.width = `${stockHealth}%`;
+
+        // TTS Provider verileri
+        const edge = provs['Edge-TTS'] || {};
+        const eleven = provs['ElevenLabs'] || {};
+        if (qTtsBadge) qTtsBadge.textContent = eleven.has_key && eleven.remaining_calls !== undefined ? `${eleven.remaining_calls.toLocaleString('tr-TR')} Kar.` : '0 TL Limitsiz';
+        if (qTtsMetric) qTtsMetric.textContent = eleven.has_key ? `ElevenLabs: ${eleven.remaining_calls?.toLocaleString('tr-TR')} kar · Edge: Hazır` : 'Edge Neural TTS (TR+EN Sınırsız)';
+        if (qTtsPct) qTtsPct.textContent = '%100';
+        if (qTtsBar) qTtsBar.style.width = '100%';
+
+        // YouTube Provider verileri
+        const yt = provs['YouTube'] || {};
+        const ytUsed = yt.daily_used || 0;
+        const ytLimit = yt.rpd_limit || 10000;
+        const ytRem = yt.remaining_calls !== undefined ? yt.remaining_calls : (ytLimit - ytUsed);
+        if (qYtBadge) qYtBadge.textContent = yt.has_key ? `${ytRem.toLocaleString('tr-TR')} Birim` : 'Tarayıcı Modu';
+        if (qYtMetric) qYtMetric.textContent = yt.has_key ? `${ytUsed}/${ytLimit.toLocaleString('tr-TR')} Birim (~${(ytRem/1600).toFixed(0)} video)` : '0 Kota (Tarayıcı Yükleyici)';
+        if (qYtPct) qYtPct.textContent = `%${yt.health_pct || 100}`;
+        if (qYtBar) qYtBar.style.width = `${yt.health_pct || 100}%`;
+
+        // 3. Sol Sidebar Tekil Detay Kartı (Aktif Tab'a göre)
+        renderSingleQuotaDetail(currentQuotaTab === 'all' ? 'ai' : currentQuotaTab);
+
+        // Sidebar render hazırlık rozeti
         const renderHint = document.getElementById('mini-render-hint');
         const renderHintText = document.getElementById('mini-render-hint-text');
-        const remStr = typeof dailyRemaining === 'number' ? dailyRemaining.toLocaleString('tr-TR') : dailyRemaining;
-
-        if (miniAiName) miniAiName.textContent = activeName;
-        if (miniRpm) miniRpm.textContent = qData.is_api_key_missing ? 'Yerel' : `${rpmUsed}/${rpmLimit}`;
-        if (miniRpd) {
-            miniRpd.textContent = qData.is_api_key_missing
-                ? 'Sınırsız'
-                : `${rpdUsed}/${rpdLimit.toLocaleString('tr-TR')}`;
-        }
-        if (miniRpdRem) {
-            miniRpdRem.textContent = qData.is_api_key_missing ? 'Yerel mod' : `${remStr} kaldı`;
-        }
-
-        if (miniRpmFill) {
-            const rpmPct = rpmLimit > 0 ? Math.min(100, (rpmUsed / rpmLimit) * 100) : 0;
-            miniRpmFill.style.width = `${rpmPct}%`;
-            miniRpmFill.classList.toggle('is-warn', rpmPct >= 80 && rpmPct < 100);
-            miniRpmFill.classList.toggle('is-danger', rpmPct >= 100);
-        }
-        if (miniRpdFill) {
-            const rpdPct = rpdLimit > 0 ? Math.min(100, (rpdUsed / rpdLimit) * 100) : 0;
-            miniRpdFill.style.width = `${rpdPct}%`;
-            miniRpdFill.classList.toggle('is-warn', rpdPct >= 80 && rpdPct < 95);
-            miniRpdFill.classList.toggle('is-danger', rpdPct >= 95);
-        }
-
         if (renderHint && renderHintText) {
             let hintText = 'Evet — üretime hazır';
             let hintClass = 'ready';
@@ -327,6 +466,9 @@ async function updateAiQuotaDisplay(passedData = null) {
             renderHint.className = `ssp-render-badge ${hintClass}`;
         }
 
+        // Sidebar footer rozeti & barı
+        const miniBadge = document.getElementById('mini-quota-badge');
+        const miniFill = document.getElementById('mini-quota-fill');
         if (miniBadge && miniFill) {
             miniBadge.className = 'ssp-status-chip';
             miniFill.className = 'quota-bar-fill';
@@ -517,10 +659,33 @@ function closeQuotaModal() {
 }
 
 document.getElementById('header-ai-quota-btn')?.addEventListener('click', openQuotaModal);
-document.getElementById('sidebar-quota-card')?.addEventListener('click', openQuotaModal);
+document.getElementById('sidebar-quota-card')?.addEventListener('click', (e) => {
+    // Sekmelere veya satır öğelerine tıklandıysa modalı açma
+    if (e.target.closest('#ssp-quota-tabs') || e.target.closest('.ssp-quota-row-item')) {
+        return;
+    }
+    openQuotaModal();
+});
 document.getElementById('btn-sidebar-quota-link')?.addEventListener('click', (e) => {
     e.stopPropagation();
     openQuotaModal();
+});
+
+// Sidebar Sekme ve Bütün Kotalar Tıklama Olayları
+document.querySelectorAll('#ssp-quota-tabs .ssp-tab').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const tab = btn.getAttribute('data-quota-tab');
+        setQuotaTab(tab);
+    });
+});
+
+document.querySelectorAll('.ssp-quota-row-item').forEach(row => {
+    row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetTab = row.getAttribute('data-switch-to');
+        if (targetTab) setQuotaTab(targetTab);
+    });
 });
 document.getElementById('btn-open-quota-modal')?.addEventListener('click', openQuotaModal);
 document.getElementById('btn-close-quota-modal')?.addEventListener('click', closeQuotaModal);

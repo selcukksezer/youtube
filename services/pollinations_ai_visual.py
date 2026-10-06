@@ -34,8 +34,28 @@ def clean_ai_prompt(prompt: str) -> str:
 import threading
 import time
 
-_POLLINATIONS_LOCK = threading.Lock()
+_POLLINATIONS_SEMAPHORE = threading.Semaphore(1)
 _LAST_REQUEST_TIME = 0.0
+_CIRCUIT_OPEN_UNTIL = 0.0
+_CONSECUTIVE_FAILURES = 0
+
+
+def pollinations_circuit_open() -> bool:
+    """Return True if Pollinations AI circuit breaker is currently open (rate-limited / erroring)."""
+    return time.time() < _CIRCUIT_OPEN_UNTIL
+
+
+def trip_pollinations_circuit(duration: float = 90.0) -> None:
+    """Trip the Pollinations AI circuit breaker to fast-fail subsequent requests."""
+    global _CIRCUIT_OPEN_UNTIL
+    _CIRCUIT_OPEN_UNTIL = time.time() + duration
+
+
+def reset_pollinations_circuit() -> None:
+    """Reset the Pollinations AI circuit breaker."""
+    global _CIRCUIT_OPEN_UNTIL, _CONSECUTIVE_FAILURES
+    _CIRCUIT_OPEN_UNTIL = 0.0
+    _CONSECUTIVE_FAILURES = 0
 
 
 def generate_ai_image(
@@ -44,32 +64,49 @@ def generate_ai_image(
     width: int = 540,
     height: int = 960,
     model: str = "flux",
-    timeout: int = 25,
+    timeout: int = 8,
 ) -> bool:
     """
     Fetch 100% free AI generated image from Pollinations.ai (Flux/SDXL).
-    Zero API key required. Uses concurrency lock and rate-limit backoff.
+    Zero API key required. Uses circuit breaker, non-blocking semaphore, and fast failover.
     """
-    global _LAST_REQUEST_TIME
-    enhanced = clean_ai_prompt(prompt)
-    encoded = urllib.parse.quote(enhanced)
-    url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&model={model}"
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-    )
+    global _LAST_REQUEST_TIME, _CONSECUTIVE_FAILURES
 
-    for attempt in range(2):
-        try:
-            with _POLLINATIONS_LOCK:
-                now = time.time()
-                elapsed = now - _LAST_REQUEST_TIME
-                if elapsed < 1.2:
-                    time.sleep(1.2 - elapsed)
-                _LAST_REQUEST_TIME = time.time()
+    if pollinations_circuit_open():
+        remaining = int(_CIRCUIT_OPEN_UNTIL - time.time())
+        print(f"    [PollinationsAI] Circuit breaker open ({remaining}s remaining) -> fast failover to stock/procedural")
+        return False
 
+    # Prevent concurrent bursts: if another request is already in-flight, fail fast so worker gets stock
+    acquired = _POLLINATIONS_SEMAPHORE.acquire(blocking=True, timeout=1.5)
+    if not acquired:
+        print("    [PollinationsAI] High concurrency detected -> fast failover to stock/procedural")
+        return False
+
+    try:
+        now = time.time()
+        elapsed = now - _LAST_REQUEST_TIME
+        if elapsed < 1.0:
+            time.sleep(1.0 - elapsed)
+        _LAST_REQUEST_TIME = time.time()
+
+        enhanced = clean_ai_prompt(prompt)
+        encoded = urllib.parse.quote(enhanced)
+
+        # Try primary model then fast turbo fallback
+        models_to_try = [model]
+        if model != "turbo":
+            models_to_try.append("turbo")
+
+        for m in models_to_try:
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&model={m}"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                },
+            )
+            try:
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     if resp.status == 200:
                         data = resp.read()
@@ -77,15 +114,24 @@ def generate_ai_image(
                             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
                             with open(output_path, "wb") as f:
                                 f.write(data)
+                            reset_pollinations_circuit()
                             return True
-        except Exception as e:
-            if "429" in str(e) and attempt == 0:
-                time.sleep(2.5)
-                continue
-            print(f"    [PollinationsAI] Image fetch notice: {e}")
-            break
+            except Exception as e:
+                err_str = str(e)
+                print(f"    [PollinationsAI] Model {m} fetch notice: {err_str}")
+                if "429" in err_str or "500" in err_str:
+                    trip_pollinations_circuit(120.0)
+                    print(f"    [PollinationsAI] Service throttled/erroring ({err_str}). Tripping circuit breaker for 120s.")
+                    return False
+                if "timed out" in err_str.lower():
+                    trip_pollinations_circuit(90.0)
+                    print(f"    [PollinationsAI] Timeout detected ({err_str}). Tripping circuit breaker for 90s.")
+                    return False
+                time.sleep(0.5)
 
-    return False
+        return False
+    finally:
+        _POLLINATIONS_SEMAPHORE.release()
 
 
 def animate_image_to_video(

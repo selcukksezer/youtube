@@ -74,15 +74,15 @@ def get_export_codec_settings(
     if not use_gpu or gpu_codec == "libx264":
         return (
             "libx264",
-            "ultrafast",
-            ["-tune", "fastdecode", "-pix_fmt", "yuv420p"],
+            "fast",
+            ["-crf", "21", "-tune", "fastdecode", "-pix_fmt", "yuv420p"],
             f"CPU libx264 (threads={getattr(config, 'RENDER_THREADS', 8)})",
         )
     if gpu_codec == "h264_nvenc":
         return (
             "h264_nvenc",
-            "p2",
-            ["-cq", "20", "-b:v", "0", "-pix_fmt", "yuv420p"],
+            "p5",
+            ["-tune", "hq", "-cq", "21", "-b:v", "0", "-spatial-aq", "1", "-temporal-aq", "1", "-pix_fmt", "yuv420p"],
             "NVIDIA NVENC",
         )
     if gpu_codec == "h264_videotoolbox":
@@ -92,12 +92,131 @@ def get_export_codec_settings(
             ["-b:v", "14M", "-allow_sw", "1", "-pix_fmt", "yuv420p"],
             "Apple VideoToolbox",
         )
+    if gpu_codec == "h264_qsv":
+        return (
+            "h264_qsv",
+            "medium",
+            ["-global_quality", "22", "-look_ahead", "1", "-pix_fmt", "yuv420p"],
+            "Intel QuickSync (QSV)",
+        )
+    if gpu_codec == "h264_amf":
+        return (
+            "h264_amf",
+            "speed",
+            ["-rc", "cqp", "-qp_i", "20", "-qp_p", "22", "-pix_fmt", "yuv420p"],
+            "AMD AMF",
+        )
+    if gpu_codec == "h264_mf":
+        return (
+            "h264_mf",
+            None,
+            ["-b:v", "12M", "-pix_fmt", "yuv420p"],
+            "Windows Media Foundation (h264_mf)",
+        )
     return (
         "libx264",
-        "ultrafast",
-        ["-tune", "fastdecode", "-pix_fmt", "yuv420p"],
+        "fast",
+        ["-crf", "21", "-tune", "fastdecode", "-pix_fmt", "yuv420p"],
         "CPU libx264",
     )
+
+
+_AVAILABLE_ENCODERS_CACHE: Optional[set] = None
+_ENCODER_PROBE_CACHE: Optional[Dict[str, bool]] = None
+
+_ENCODER_LABELS = {
+    "h264_nvenc": "NVIDIA NVENC",
+    "h264_qsv": "Intel Quick Sync",
+    "h264_amf": "AMD AMF",
+    "h264_mf": "Windows Media Foundation",
+    "h264_videotoolbox": "Apple VideoToolbox",
+    "h264_vaapi": "VAAPI",
+    "libx264": "CPU libx264",
+}
+
+
+def platform_encoder_candidates() -> List[str]:
+    system = platform.system()
+    if system == "Darwin":
+        return ["h264_videotoolbox"]
+    if system == "Windows":
+        return ["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf"]
+    return ["h264_nvenc", "h264_vaapi", "h264_qsv"]
+
+
+def _tiny_encoder_ok(ffmpeg: str, codec: str) -> bool:
+    """Five-frame null encode. A name in `ffmpeg -encoders` is not a working chip."""
+    args, _label = get_ffmpeg_vcodec_args(use_gpu=True, gpu_codec=codec)
+    cmd = [
+        ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc=duration=0.4:size=128x72:rate=15",
+        "-frames:v", "5",
+        *args,
+        "-f", "null", "-",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+    except Exception:
+        return False
+    return proc.returncode == 0
+
+
+def probe_hardware_encoders(force: bool = False) -> Dict[str, bool]:
+    """
+    NarratoAI _detect_hardware_encoding stops at the first encoder that
+    finishes a five-frame test. This keeps every encoder that passes, so
+    Quick Sync stays selectable when NVENC also works. A listed encoder
+    that fails the test is false.
+    """
+    global _ENCODER_PROBE_CACHE
+    if _ENCODER_PROBE_CACHE is not None and not force:
+        return dict(_ENCODER_PROBE_CACHE)
+    listed = get_available_ffmpeg_encoders()
+    try:
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        ffmpeg = "ffmpeg"
+    report: Dict[str, bool] = {}
+    for codec in platform_encoder_candidates():
+        if listed and codec not in listed:
+            report[codec] = False
+            continue
+        report[codec] = _tiny_encoder_ok(ffmpeg, codec)
+    report["libx264"] = True if not listed else ("libx264" in listed)
+    _ENCODER_PROBE_CACHE = report
+    return dict(report)
+
+
+def encoder_choices() -> List[Dict[str, Any]]:
+    report = probe_hardware_encoders()
+    rows = []
+    for codec in list(platform_encoder_candidates()) + ["libx264"]:
+        rows.append({
+            "id": codec,
+            "label": _ENCODER_LABELS.get(codec, codec),
+            "available": bool(report.get(codec)),
+        })
+    return rows
+
+def get_available_ffmpeg_encoders() -> set:
+    """Probes FFmpeg binary once to find compiled video encoders."""
+    global _AVAILABLE_ENCODERS_CACHE
+    if _AVAILABLE_ENCODERS_CACHE is not None:
+        return _AVAILABLE_ENCODERS_CACHE
+    encoders: set = set()
+    try:
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        res = subprocess.run([exe, "-encoders"], capture_output=True, text=True, timeout=5)
+        for line in (res.stdout or "").splitlines():
+            line_str = line.strip()
+            if line_str.startswith("V"):
+                parts = line_str.split()
+                if len(parts) >= 2:
+                    encoders.add(parts[1])
+    except Exception:
+        pass
+    _AVAILABLE_ENCODERS_CACHE = encoders
+    return encoders
 
 
 def get_ffmpeg_loglevel() -> str:
@@ -116,9 +235,62 @@ def get_ffmpeg_vcodec_args(use_gpu: Optional[bool] = None, gpu_codec: Optional[s
         args = ["-c:v", "h264_nvenc", "-preset", preset or "p4", *extra]
     elif codec == "h264_videotoolbox":
         args = ["-c:v", "h264_videotoolbox", *extra]
+    elif codec == "h264_qsv":
+        args = ["-c:v", "h264_qsv", "-preset", preset or "medium", *extra]
+    elif codec == "h264_amf":
+        args = ["-c:v", "h264_amf", "-quality", preset or "speed", *extra]
+    elif codec == "h264_mf":
+        args = ["-c:v", "h264_mf", *extra]
     else:
-        args = ["-c:v", "libx264", "-preset", preset or "veryfast", "-crf", "20"]
+        args = ["-c:v", "libx264", "-preset", preset or "fast", *extra]
     return args, label
+
+
+def get_encoder_fallback_chain(
+    use_gpu: Optional[bool] = None,
+    gpu_codec: Optional[str] = None,
+) -> List[Tuple[List[str], str]]:
+    """
+    Chapter 3.4 & Section 16.1: Hierarchical Hardware Encoder Negotiation.
+    Returns prioritized list of (vcodec_args, label) pairs.
+    If primary GPU encoder fails, engine immediately falls through to the next candidate
+    down to universal CPU libx264 without crashing or forcing an expensive MoviePy fallback.
+    """
+    use_gpu = getattr(config, "USE_GPU_ACCELERATION", True) if use_gpu is None else use_gpu
+    if not use_gpu:
+        args, label = get_ffmpeg_vcodec_args(use_gpu=False, gpu_codec="libx264")
+        return [(args, label)]
+
+    avail = get_available_ffmpeg_encoders()
+    preferred = (gpu_codec or getattr(config, "GPU_CODEC", "") or "").strip()
+    candidates = platform_encoder_candidates()
+    report = probe_hardware_encoders()
+    passed = [codec for codec in candidates if report.get(codec)]
+    compiled = [codec for codec in candidates if not avail or codec in avail]
+    pool = passed or compiled
+    # A saved codec that failed the five-frame test does not lead the chain
+    # when another encoder passed. NarratoAI drops it. We still keep the
+    # working ones instead of stopping at the first.
+    if preferred and report.get(preferred) is False and passed:
+        preferred = ""
+
+    ordered = []
+    if preferred and preferred in candidates:
+        ordered.append(preferred)
+    for codec in pool:
+        if codec not in ordered:
+            ordered.append(codec)
+
+    # Convert to args, ending always with libx264 fallback
+    chain: List[Tuple[List[str], str]] = []
+    for c in ordered:
+        args, label = get_ffmpeg_vcodec_args(use_gpu=True, gpu_codec=c)
+        chain.append((args, label))
+
+    cpu_args, cpu_label = get_ffmpeg_vcodec_args(use_gpu=False, gpu_codec="libx264")
+    chain.append((cpu_args, cpu_label))
+    return chain
+
 
 
 # ─── ITEM 416: Circuit Breaker Deseni ────────────────────────────────────────
@@ -145,7 +317,8 @@ class CircuitBreaker:
                 "state": self.STATE_CLOSED,
                 "failure_count": 0,
                 "last_failure_time": 0.0,
-                "total_calls": 0
+                "total_calls": 0,
+                "recovery_timeout": self.recovery_timeout,
             }
         return self.service_states[name]
 
@@ -153,9 +326,10 @@ class CircuitBreaker:
         """Checks whether the service circuit allows calls."""
         s = self._get_service(service_name)
         now = time.time()
+        timeout = s.get("recovery_timeout") or self.recovery_timeout
 
         if s["state"] == self.STATE_OPEN:
-            if now - s["last_failure_time"] >= self.recovery_timeout:
+            if now - s["last_failure_time"] >= timeout:
                 s["state"] = self.STATE_HALF_OPEN
                 return True
             return False
@@ -168,22 +342,91 @@ class CircuitBreaker:
         s["failure_count"] = 0
         s["state"] = self.STATE_CLOSED
 
-    def record_failure(self, service_name: str, error_msg: str = ""):
+    def record_failure(self, service_name: str, error_msg: str = "", custom_timeout: Optional[float] = None):
         """Records failure and triggers tripwire if threshold reached."""
         s = self._get_service(service_name)
         s["total_calls"] += 1
         s["failure_count"] += 1
         s["last_failure_time"] = time.time()
+        if custom_timeout is not None:
+            s["recovery_timeout"] = float(custom_timeout)
 
-        if s["failure_count"] >= self.failure_threshold:
+        # In HALF_OPEN, a single failure immediately trips back to OPEN
+        if s["state"] == self.STATE_HALF_OPEN or s["failure_count"] >= self.failure_threshold:
             s["state"] = self.STATE_OPEN
-            print(f"  [CircuitBreaker] ⚠️ '{service_name}' devresi AÇILDI ({s['failure_count']} ardışık hata). 60s yedek servise geçildi.")
+            timeout = s.get("recovery_timeout") or self.recovery_timeout
+            print(f"  [CircuitBreaker] ⚠️ '{service_name}' devresi AÇILDI ({s['failure_count']} hata). {int(timeout)}s yedek servise geçildi.")
+
+    def export_status(self) -> Dict[str, Dict[str, Any]]:
+        """Returns snapshot of all tracked services and circuit states."""
+        now = time.time()
+        res = {}
+        for name, s in self.service_states.items():
+            timeout = s.get("recovery_timeout") or self.recovery_timeout
+            remaining_cooldown = max(0.0, round(timeout - (now - s["last_failure_time"]), 1)) if s["state"] == self.STATE_OPEN else 0.0
+            res[name] = {
+                "state": s["state"],
+                "failure_count": s["failure_count"],
+                "total_calls": s["total_calls"],
+                "remaining_cooldown_sec": remaining_cooldown,
+            }
+        return res
+
+    def get_public_fallback_endpoint(self, service_name: str) -> Optional[Any]:
+        """
+        Bölüm 34.2: Retrieve zero-cost public API fallback endpoints from services.public_apis_catalog
+        when external paid/keyed APIs trip the circuit.
+        """
+        try:
+            from services.public_apis_catalog import APICategory, PUBLIC_ENDPOINTS
+            category_map = {
+                "pexels": APICategory.MEDIA_ART,
+                "pixabay": APICategory.MEDIA_ART,
+                "coverr": APICategory.MEDIA_ART,
+                "gemini": APICategory.NEWS_FACTS,
+                "ddg": APICategory.NEWS_FACTS,
+                "weather": APICategory.WEATHER_SCIENCE,
+                "quotes": APICategory.QUOTES_WISDOM,
+            }
+            cat = category_map.get(service_name.lower())
+            if cat:
+                return [ep for ep in PUBLIC_ENDPOINTS.values() if ep.category == cat and ep.is_active]
+        except Exception:
+            pass
+        return None
+
+    def execute_with_fallback(self, service_name: str, primary_fn: Any, fallback_fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Execute primary callable or redirect to public fallback if circuit is open or call fails."""
+        if not self.can_execute(service_name):
+            return fallback_fn(*args, **kwargs)
+        try:
+            res = primary_fn(*args, **kwargs)
+            self.record_success(service_name)
+            return res
+        except Exception as exc:
+            self.record_failure(service_name, error_msg=str(exc))
+            return fallback_fn(*args, **kwargs)
 
 
 circuit_breaker = CircuitBreaker()
 
 
 # ─── ITEM 424: Stok Video Çözünürlük ve Bütünlük Doğrulaması ─────────────────
+
+def is_material_resolution_acceptable(width: int, height: int) -> bool:
+    """
+    MoneyPrinterTurbo rejects a clip when either side is below 480, then
+    subtracts 10px so a WhatsApp-rounded 478x850 file still passes.
+    A true low-res frame (under 470 on either side) still fails.
+    """
+    try:
+        w = int(width)
+        h = int(height)
+    except (TypeError, ValueError):
+        return False
+    floor = 480 - 10
+    return w >= floor and h >= floor
+
 
 def verify_stock_video_integrity(video_path: str, min_duration: float = 1.0) -> Dict[str, Any]:
     """
@@ -211,21 +454,23 @@ def verify_stock_video_integrity(video_path: str, min_duration: float = 1.0) -> 
         if len(output) >= 2:
             w = int(output[0])
             h = int(output[1])
-            min_side = min(w, h)
-            if min_side < 720:
+            if not is_material_resolution_acceptable(w, h):
                 return {
                     "valid": False,
                     "width": w,
                     "height": h,
                     "aspect_ratio": "vertical" if h > w else "horizontal",
-                    "reason": f"720p altı ({w}x{h})",
+                    "reason": f"470px altı ({w}x{h})",
                 }
+            short_side = min(w, h)
+            soft = short_side < (720 - 10)
             return {
                 "valid": True,
                 "width": w,
                 "height": h,
                 "aspect_ratio": "vertical" if h > w else "horizontal",
-                "reason": "OK",
+                "soft": soft,
+                "reason": "yuvarlama payı" if soft else "OK",
             }
     except Exception as e:
         return {"valid": False, "reason": str(e)}

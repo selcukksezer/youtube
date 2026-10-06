@@ -60,6 +60,24 @@ _DEFAULT_BY_LANG_GENDER = {
     "en": {"male": "en-US-GuyNeural", "female": "en-US-JennyNeural"},
 }
 
+# Offline Piper Turkish. Not the default. Edge tr-TR-AhmetNeural stays the default.
+LOCAL_OFFLINE_VOICES: List[Dict[str, Any]] = [
+    {
+        "id": "local:piper-tr",
+        "label": "Piper Türkçe (çevrimdışı)",
+        "gender": "male",
+        "quality": "Local",
+        "native": True,
+        "provider": "piper",
+        "engine": "piper",
+        "model": "tr_TR-dfki-medium",
+    },
+]
+
+
+def is_local_offline_voice(voice_id: str) -> bool:
+    return bool(voice_id) and any(v["id"] == voice_id for v in LOCAL_OFFLINE_VOICES)
+
 _el_voice_cache: Dict[str, Any] = {
     "api_key": "",
     "voices": [],
@@ -171,6 +189,7 @@ def get_voice_catalog(force_refresh: bool = False) -> Dict[str, Any]:
     catalog: Dict[str, Any] = {
         "tr": list(EDGE_TTS_VOICE_CATALOG["tr"]),
         "en": list(EDGE_TTS_VOICE_CATALOG["en"]),
+        "local": list(LOCAL_OFFLINE_VOICES),
     }
     el_voices = list_elevenlabs_voices(force_refresh=force_refresh)
     if el_voices:
@@ -196,6 +215,8 @@ def is_valid_voice(voice_id: str, lang: Optional[str] = None) -> bool:
     """True if voice_id exists in catalog (optionally scoped to lang)."""
     if not voice_id:
         return False
+    if is_local_offline_voice(voice_id):
+        return True
     if is_elevenlabs_voice(voice_id):
         return _elevenlabs_configured() and _is_valid_elevenlabs_voice(voice_id)
     langs = [lang.lower()] if lang else list(EDGE_TTS_VOICE_CATALOG.keys())
@@ -227,6 +248,8 @@ def resolve_voice(
     When prefer_native=True (default), multilingual/fr-FR voices are skipped for auto picks.
     """
     lang = (lang or "tr").lower()
+    if voice_id and is_local_offline_voice(voice_id):
+        return voice_id
     if voice_id and is_valid_voice(voice_id, lang):
         if not prefer_native or _is_native_voice(voice_id, lang):
             return voice_id
@@ -239,6 +262,10 @@ def resolve_voice(
 
 def voice_gender_for_id(voice_id: str, lang: str = "tr") -> str:
     """Infer gender from catalog entry."""
+    if is_local_offline_voice(voice_id):
+        for entry in LOCAL_OFFLINE_VOICES:
+            if entry["id"] == voice_id:
+                return entry.get("gender", "male")
     if is_elevenlabs_voice(voice_id):
         for entry in _all_elevenlabs_entries():
             if entry["id"] == voice_id:
@@ -251,6 +278,10 @@ def voice_gender_for_id(voice_id: str, lang: str = "tr") -> str:
 
 def voice_label_for_id(voice_id: str) -> str:
     """Human label for logs/UI."""
+    if is_local_offline_voice(voice_id):
+        for entry in LOCAL_OFFLINE_VOICES:
+            if entry["id"] == voice_id:
+                return entry.get("label", voice_id)
     if is_elevenlabs_voice(voice_id):
         for entry in _all_elevenlabs_entries():
             if entry["id"] == voice_id:

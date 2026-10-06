@@ -17,8 +17,15 @@ class PollinationsVideoProvider(AIVideoProvider):
     priority = 15  # Zero-cost 0 TL fallback
 
     def is_available(self) -> bool:
-        # 100% free, requires no API key. Can be toggled with env DISABLE_POLLINATIONS=1
-        return os.getenv("DISABLE_POLLINATIONS", "").strip().lower() not in ("1", "true", "yes")
+        if os.getenv("DISABLE_POLLINATIONS", "").strip().lower() in ("1", "true", "yes"):
+            return False
+        try:
+            from services.pollinations_ai_visual import pollinations_circuit_open
+            if pollinations_circuit_open():
+                return False
+        except Exception:
+            pass
+        return True
 
     def generate(
         self,

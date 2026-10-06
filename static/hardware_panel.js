@@ -118,25 +118,30 @@
             }
         }
 
-        // 5. Codec Seçeneklerini Doldur
+        // 5. Codec listesi: beş karelik denemeyi geçen kodlayıcılar.
         const selCodec = document.getElementById('select-hw-codec');
         if (selCodec) {
+            const fallbackChoices = [
+                { id: 'h264_nvenc', label: 'NVIDIA NVENC', available: !!gpu.has_nvenc },
+                { id: 'h264_qsv', label: 'Intel Quick Sync', available: true },
+                { id: 'h264_amf', label: 'AMD AMF', available: true },
+                { id: 'h264_mf', label: 'Windows Media Foundation', available: true },
+                { id: 'libx264', label: 'CPU libx264', available: true }
+            ];
+            const choices = (specs.encoder_choices && specs.encoder_choices.length)
+                ? specs.encoder_choices
+                : fallbackChoices;
+            const current = curCfg.gpu_codec || (gpu.has_nvenc ? 'h264_nvenc' : 'libx264');
             selCodec.innerHTML = '';
-            if (gpu.has_nvenc) {
-                const optNv = document.createElement('option');
-                optNv.value = 'h264_nvenc';
-                optNv.textContent = `🚀 NVIDIA NVENC (${gpu.name} Donanım Çipi - En Hızlı)`;
-                selCodec.appendChild(optNv);
-            }
-            const optCpu = document.createElement('option');
-            optCpu.value = 'libx264';
-            optCpu.textContent = `⚡ Yazılımsal CPU (libx264 - Çoklu Çekirdek)`;
-            selCodec.appendChild(optCpu);
-
-            if (curCfg.use_gpu && gpu.has_nvenc) {
-                selCodec.value = 'h264_nvenc';
-            } else {
-                selCodec.value = 'libx264';
+            choices.forEach(function (choice) {
+                if (!choice.available && choice.id !== current && choice.id !== 'libx264') return;
+                const opt = document.createElement('option');
+                opt.value = choice.id;
+                opt.textContent = choice.available ? choice.label : (choice.label + ' (deneme geçmedi)');
+                selCodec.appendChild(opt);
+            });
+            if ([...selCodec.options].some(function (opt) { return opt.value === current; })) {
+                selCodec.value = current;
             }
         }
 
@@ -209,6 +214,23 @@
         if (selStudioSafe) {
             selStudioSafe.value = safeModeVal;
         }
+
+        // Section 33.3 P1: OpenCV face centering toggle guard
+        const chkFace = document.getElementById('chk-center-face');
+        if (chkFace) {
+            const faceUnavailable = specs.has_opencv === false;
+            chkFace.disabled = faceUnavailable;
+            if (faceUnavailable) {
+                chkFace.checked = false;
+                if (chkFace.parentElement) {
+                    chkFace.parentElement.title = 'OpenCV veya Haar cascade yok; yüz ortalama devre dışı (güvenli fallback: fit-fill).';
+                    chkFace.parentElement.style.opacity = '0.5';
+                }
+            } else if (chkFace.parentElement) {
+                chkFace.parentElement.title = 'Yatay videoda yüzü orta üçte birlik alanda tutar.';
+                chkFace.parentElement.style.opacity = '1';
+            }
+        }
     }
 
     // Otomatik Maksimum Profil Uygulama
@@ -221,7 +243,10 @@
         }
 
         try {
+            const choices = (lastSpecs && lastSpecs.encoder_choices) || [];
+            const firstHw = choices.find(function (choice) { return choice.available && choice.id !== 'libx264'; });
             const hasNvenc = lastSpecs && lastSpecs.gpu ? Boolean(lastSpecs.gpu.has_nvenc) : true;
+            const codec = firstHw ? firstHw.id : (hasNvenc ? 'h264_nvenc' : 'libx264');
             const recThreads = lastSpecs && lastSpecs.recommended_threads ? lastSpecs.recommended_threads : 8;
             const selRes = document.getElementById('select-hw-resolution')?.value || '1080p';
             const selSafeMode = (document.getElementById('select-hw-safe-mode')?.value === 'true');
@@ -230,10 +255,10 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    profile: hasNvenc ? 'ultra_gpu' : 'cpu_balanced',
+                    profile: codec !== 'libx264' ? 'ultra_gpu' : 'cpu_balanced',
                     threads: recThreads,
-                    use_gpu: hasNvenc,
-                    gpu_codec: hasNvenc ? 'h264_nvenc' : 'libx264',
+                    use_gpu: codec !== 'libx264',
+                    gpu_codec: codec,
                     fps_diversify: true,
                     resolution: selRes,
                     safe_mode: selSafeMode
@@ -267,7 +292,7 @@
         const selRes = document.getElementById('select-hw-resolution')?.value || '1080p';
         const selSafeMode = (document.getElementById('select-hw-safe-mode')?.value === 'true');
 
-        const useGpu = (selCodec === 'h264_nvenc');
+        const useGpu = (selCodec !== 'libx264');
         const fpsDiversify = (selFpsMode === 'diversify');
         const fixedFps = fpsDiversify ? 30.0 : (parseFloat(selFpsMode) || 30.0);
 

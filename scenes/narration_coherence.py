@@ -36,6 +36,71 @@ _DANGLING_SINGLE_WORD_END = frozenset({
     "olarak", "gibi", "bir", "bu", "o", "beni", "seni", "onu",
 })
 
+_TOPIC_STOP_WORDS = frozenset({
+    "acaba", "ama", "ancak", "artık", "aslında", "bana", "bazen", "bazı",
+    "belki", "ben", "beni", "benim", "bile", "bir", "biraz", "biz", "bize",
+    "bizim", "bu", "buna", "bundan", "bunun", "böyle", "çok", "çünkü", "daha",
+    "de", "defa", "diye", "en", "gibi", "hem", "her", "hiç", "için", "ile",
+    "ise", "ki", "kadar", "karşı", "kendi", "kez", "kim", "mı", "mi", "mu",
+    "mü", "nasıl", "ne", "neden", "nerede", "nereye", "niçin", "o", "ona",
+    "ondan", "onlar", "onlara", "onların", "onu", "onun", "orada", "oysa",
+    "sanki", "sen", "seni", "senin", "siz", "size", "sizin", "şey", "şu",
+    "şuna", "şunlar", "şunu", "tabii", "tam", "ve", "veya", "ya", "yani",
+    "yine",
+})
+
+_SCENE_BRIDGE_RE = re.compile(
+    r"\b(?:ama|ancak|fakat|oysa|halbuki|buna rağmen|bununla birlikte|"
+    r"bu yüzden|bu nedenle|dolayısıyla|böylece|ardından|sonrasında|sonra|"
+    r"bu sırada|öte yandan|aynı zamanda|çünkü|zira|üstelik|buna karşılık|"
+    r"dedi|diyor|söyledi|söylüyor|anlattı|aktardı|belirtti|iddia etti|"
+    r"göre|diye|sordu|cevapladı|yanıtladı|gibi(?:dir|ydi|ymiş|ymis)?|sanki|tıpkı|adeta|"
+    r"benzer|benzedi|metafor)\b",
+    re.IGNORECASE,
+)
+
+
+def _topic_words(text: str) -> set[str]:
+    normalized = normalize_narration_for_validation(text).casefold().replace("\u0307", "")
+    return {
+        word for word in re.findall(r"[a-zçğıöşü]+", normalized)
+        if len(word) >= 3 and word not in _TOPIC_STOP_WORDS
+    }
+
+
+def _is_unbridged_topic_jump(previous: str, following: str) -> bool:
+    if _SCENE_BRIDGE_RE.search(f"{previous} {following}"):
+        return False
+    previous_words = _topic_words(previous)
+    following_words = _topic_words(following)
+    return len(previous_words) >= 4 and len(following_words) >= 4 and not previous_words.intersection(following_words)
+
+
+def detect_repeated_topic_discontinuities(scenes: List[Dict[str, Any]]) -> List[str]:
+    """Return advisory messages for runs of two or more unbridged topic jumps."""
+    narrations = [(scene or {}).get("narration") or "" for scene in (scenes or [])]
+    jumps = [
+        bool(narrations[i].strip() and narrations[i + 1].strip()
+             and _is_unbridged_topic_jump(narrations[i], narrations[i + 1]))
+        for i in range(len(narrations) - 1)
+    ]
+
+    advisories: List[str] = []
+    start = 0
+    while start < len(jumps):
+        if not jumps[start]:
+            start += 1
+            continue
+        end = start
+        while end + 1 < len(jumps) and jumps[end + 1]:
+            end += 1
+        if end - start + 1 >= 2:
+            advisories.append(
+                f"Sahneler {start + 1}-{end + 2} arasında art arda konu geçişleri var; anlatım akışını gözden geçirin."
+            )
+        start = end + 1
+    return advisories
+
 
 def _last_word(text: str) -> str:
     words = (text or "").strip().split()

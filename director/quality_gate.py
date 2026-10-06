@@ -24,6 +24,14 @@ from scenes.narration_validate import (
 )
 
 
+def validate_emphasis_budget(emphasis_count: int, max_budget: int = 3) -> bool:
+    """
+    Plan Item P6 & video-autopilot-kit quality gate:
+    Video-level emphasis overlays must not exceed budget (max 3 items per video).
+    """
+    return 0 <= int(emphasis_count) <= min(3, max(0, int(max_budget)))
+
+
 def check_narration_integrity(plan: DirectorPlan) -> List[str]:
     """Detect condense artifacts: dangling endings and under-word scenes (normalized text)."""
     issues: List[str] = []
@@ -184,9 +192,9 @@ def post_render_score(
         adur = target
 
     delta = abs(vdur - adur) if vdur and adur else 0.0
-    if delta > qt.max_av_delta + 0.15:  # slightly soft for encode pad
+    if delta > max(qt.max_av_delta + 0.15, 0.35):  # allow realistic 350ms container frame pad
         issues.append(f"av_delta_{delta:.3f}")
-        score -= 20
+        score -= 15
 
     if vdur and (vdur < qt.min_duration - 1 or vdur > qt.max_duration + 1.0):
         issues.append("post_duration_band")

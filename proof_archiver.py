@@ -27,6 +27,41 @@ PROOFS_DIR = os.path.join(config.BASE_DIR, "proofs")
 os.makedirs(PROOFS_DIR, exist_ok=True)
 
 
+def _sha256_file(path: str) -> str:
+    import hashlib
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_proof_manifest(path: str, title: str, scenes: List[Dict[str, Any]], render_params: Optional[Dict[str, Any]] = None) -> str:
+    """Section 17.3: hash, license, and synthetic-voice record for a DMCA reply."""
+    assets = []
+    for scene in scenes or []:
+        clip = str(scene.get("path") or scene.get("local_path") or "")
+        license_info = scene.get("license") or {}
+        assets.append({
+            "path": clip,
+            "sha256": _sha256_file(clip) if clip and os.path.isfile(clip) else "",
+            "license": license_info.get("license") if isinstance(license_info, dict) else str(license_info or ""),
+            "source_url": scene.get("source_url") or scene.get("url") or "",
+            "provider": scene.get("source") or scene.get("provider") or "",
+        })
+    payload = {
+        "version": 1,
+        "title": title,
+        "assets": assets,
+        "ai_prompts": (render_params or {}).get("ai_prompts") or [],
+        "synthetic_voice_disclosure": True,
+    }
+    os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    return path
+
+
 class ProofArchiver:
     """Manages compliance dossiers, channel health diagnostics, and appeal materials."""
 
@@ -63,6 +98,8 @@ class ProofArchiver:
         with open(proof_file, "w", encoding="utf-8") as f:
             json.dump(dossier, f, ensure_ascii=False, indent=2)
 
+        manifest_path = os.path.join(PROOFS_DIR, f"{base_name}_proof_manifest.json")
+        write_proof_manifest(manifest_path, title, scenes, render_params)
         return proof_file
 
     @staticmethod

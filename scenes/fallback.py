@@ -101,8 +101,9 @@ def _pad_narration_to_min_words(text: str, min_words: int = 12, *, is_tr: bool =
         raw = re.sub(r"\s+B\u0075nu hafta boyunca akl\u0131nda tut\.?", ".", raw, flags=re.I)
         raw = re.sub(r"\s+Bunu\s+hafta\s+boyunca\s+aklında\s+tut\.?", ".", raw, flags=re.I)
         raw = re.sub(r"\s+Keep this in mind throughout the week\.?", ".", raw, flags=re.I)
-        raw = re.sub(r"\.{2,}", ".", raw)
-        if raw.count("'") % 2 == 1:
+        # Strip word-internal apostrophes (Turkish/English suffixes e.g. Peygamber'in, don't) before quote check
+        standalone_quotes = re.sub(r"\b\w+'[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b", "", raw)
+        if standalone_quotes.count("'") % 2 == 1:
             raw = raw + "'"
         if raw and raw[-1] not in ".!?":
             raw += "."
@@ -144,8 +145,10 @@ def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
             r"\s+Bunu\s+hafta\s+boyunca\s+aklında\s+tut\.?", ".",
             sc["narration"], flags=re.I,
         )
-        if sc["narration"].count("'") % 2 == 1:
+        standalone_q = re.sub(r"\b\w+'[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b", "", sc["narration"])
+        if standalone_q.count("'") % 2 == 1:
             sc["narration"] += "'"
+        sc["narration"] = re.sub(r"([.!?])['\"]+\.+$", r"\1'", sc["narration"])
         sc["narration"] = sc["narration"].replace(".' .", ".'").replace(".'.", ".'")
         if sc["narration"] and sc["narration"][-1] not in ".!?":
             sc["narration"] += "."
@@ -426,23 +429,31 @@ def _generate_reddit_confession_scenes(clean_title: str, combined_text: str, is_
             ("Cinematic outro scene asking viewer what they would do", ["youtube shorts interaction", "like and follow banner", "dramatic ending silhouette"])
         ]
 
+    narrations = narrations_tr if is_tr else locals().get("narrations_en", narrations_tr)
+    # Pick 10 most impactful scenes including closing question (Madde 494)
+    selected_indices = [0, 1, 2, 3, 4, 6, 7, 8, 11, 13] if len(narrations) >= 14 else list(range(min(10, len(narrations))))
+    selected_narrations = [narrations[idx] for idx in selected_indices]
+
     scenes = []
-    for i in range(14):
-        desc, queries = visuals[i]
+    for i, narr in enumerate(selected_narrations):
+        desc, queries = visuals[selected_indices[i] % len(visuals)]
         scenes.append({
             "scene_number": i + 1,
-            "narration": narrations_tr[i],
+            "narration": narr,
             "scene_description": desc,
             "search_queries": queries,
-            "duration": 3.0,
-            "mood": "mysterious" if i in (0, 2, 4) else "dramatic" if i in (1, 6, 7, 9) else "dark" if i in (3, 5, 8) else "bright" if i in (10, 11, 12) else "epic"
+            "duration": 4.8,
+            "mood": "mysterious" if i in (0, 2, 4) else "dramatic" if i in (1, 6) else "dark" if i in (3, 5) else "epic",
+            "beat_type": "hook" if i == 0 else "climax" if i == 5 else "resolution" if i == len(selected_narrations) - 1 else "conflict",
         })
 
     return {
         "title": clean_title,
         "visual_theme": "dark emotional cinematic moody confession",
-        "full_narration": " ".join(narrations_tr),
-        "scenes": scenes
+        "full_narration": " ".join(selected_narrations),
+        "scenes": scenes,
+        "niche_id": "2_reddit_confessions",
+        "procedural_fallback": True,
     }
 
 
@@ -499,22 +510,29 @@ def _generate_news_flash_scenes(clean_title: str, is_tr: bool):
         ("Dramatic sunset horizon casting long shadows over modern city", ["dramatic sunset horizon city", "urban skyline sunset golden", "cinematic future horizon"]),
         ("YouTube shorts ending screen with reflective conclusion", ["broadcast television control room monitors dimming", "journalists leaving busy newsroom dusk", "cinematic evening cityscape news tower"])
     ]
+    # Pick 10 most impactful scenes to stay within 45-55s Shorts word budget (Madde 494)
+    selected_indices = [0, 1, 2, 3, 4, 6, 7, 8, 11, 12] if len(narrations) >= 14 else list(range(min(10, len(narrations))))
+    selected_narrations = [narrations[idx] for idx in selected_indices]
+
     scenes = []
-    for i in range(14):
-        desc, queries = visuals[i]
+    for i, narr in enumerate(selected_narrations):
+        desc, queries = visuals[selected_indices[i] % len(visuals)]
         scenes.append({
             "scene_number": i + 1,
-            "narration": narrations[i],
+            "narration": narr,
             "scene_description": desc,
             "search_queries": queries,
-            "duration": 3.0,
-            "mood": "dramatic" if i in (0, 1, 2, 6, 7) else "energetic" if i in (3, 4, 8) else "mysterious" if i in (5, 9, 10) else "epic"
+            "duration": 4.8,
+            "mood": "dramatic" if i in (0, 1, 2, 6) else "energetic" if i in (3, 4) else "mysterious" if i in (5, 7) else "epic",
+            "beat_type": "hook" if i == 0 else "climax" if i == 5 else "resolution" if i == len(selected_narrations) - 1 else "conflict",
         })
     return {
         "title": clean_title if is_tr else f"Breaking News: {clean_title}",
         "visual_theme": "breaking news broadcast red amber dramatic studio",
-        "full_narration": " ".join(narrations),
-        "scenes": scenes
+        "full_narration": " ".join(selected_narrations),
+        "scenes": scenes,
+        "niche_id": "1_news_flash",
+        "procedural_fallback": True,
     }
 
 
@@ -541,13 +559,13 @@ def _build_stoic_narrations(clean_title: str, is_tr: bool, variation_seed: int =
                 "Öfkeyi bir silah sanırsın ama o elinde tuttuğun kor ateştir; önce senin elini yakar.",
                 "Bugün seni sarsan bir gerilim olduğunda nefes al; tepki vermeden önce üç saniye dur.",
                 "Epiktetos şunu hatırlatır: 'Seni inciten olayların kendisi değil, o olaylara yüklediğin anlamdır.'",
-                f"İki bin yıllık felsefe şunu öğretir: {topic} senin kontrol alanın olmayabilir; fakat duruşun tamamen senin elindedir.",
+                "İki bin yıllık felsefe şunu öğretir: Karşılaştığın bu zorluklar senin kontrol alanın olmayabilir; fakat duruşun tamamen senin elindedir.",
                 "Güne başlarken şunu hatırla: Bugün zor insanlar, belirsizlik ve kaosla karşılaşabilirsin.",
                 "Onların davranışı senin değerini değil; senin sabrını test eden bir zihinsel antrenmandır.",
                 "Gerçek disiplin, iyi hissettiğinde değil; en çok dağılmak istediğinde doğru olanı seçmektir.",
                 "Kriz anında panik yerine prosedür seç: Ne biliyorum, neyi değiştirebilirim, neyi serbest bırakmalıyım?",
                 "Zihnini eğitmezsen, algoritmalar ve kaos senin yerine karar vermeye başlar.",
-                f"Zihnini korumayı seçtiğinde, dışarıdaki hiçbir fırtına senin merkezini sarsamaz.",
+                "Kendi zihnini korumayı seçtiğinde, dışarıdaki hiçbir fırtına senin iç huzurunu ve merkezini sarsamaz.",
             ],
             [
                 f"Çoğu insan {topic} karşısında hemen bir mucize bekler; bilge insan ise önce sınırını çizer.",
@@ -712,61 +730,235 @@ def _generate_stoic_scenes(clean_title: str, is_tr: bool, variation_seed: int = 
 
 
 def _generate_religious_quotes_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0):
-    """Islamic dua/hadith fallback — mosque/Quran/prayer visuals, never stoic/Roman/idols."""
-    topic = (clean_title or "").strip() or ("Günün duası" if is_tr else "Daily prayer")
+    """Islamic hadith/quran bilingual fallback — authentic Arabic tashkeel + Turkish translation + book citations."""
+    topic = (clean_title or "").strip() or ("Günün Hadis-i Şerifi" if is_tr else "Daily Hadith")
+    variant_idx = int(variation_seed or 0) % 3
     if is_tr:
-        narrations = [
-            f"Hz. Peygamber'in en çok tekrar ettiği o dua bugün {topic} ile hayatınıza dokunabilir, dinleyin.",
-            "Bu dua sabah uyanınca okunur; kalbi yumuşatır, günü Allah'ın zikriyle açar ve içi ferahlatır.",
-            "Hadis ehli nakleder: az söz, çok sevap. Kısa dua, samimi niyetle tekrar edilince bereket büyür.",
-            "Cami avlusunda şafak ışığı varken eller açılır; dil tesbih çeker, gönül Rabbine yönelir.",
-            "Ayet mealini saygıyla oku: her harf bir kapı açar, her amin bir sığınaktır dertlere karşı.",
-            "Namazdan sonra üç kere okunan bu dua, günahı silmez iddiası değil; tevbe kapısını hatırlatır.",
-            "Sahabe bu zikri yolda, evde, uykudan önce söylerdi; sünnet olan sürekliliktir, gösteriş asla olmaz.",
-            "Kuran sayfası açık dururken acele etme; anlamı kalbe indir, sonra dili onunla konuştur.",
-            "Dua etmek şikayet değildir. Kul aczini bilir, Rabbi kerimini bilir, aradaki bağ kopmaz.",
-            "Bugün bir kez dur: ellerini kaldır, bu duayı oku, kalbindeki düğümü Allah'a bırak ve amin deyin.",
-            "Yarın aynı saatte aynı dua; alışkanlık ibadeti taşır, taş kalbi yumuşatır, evi aydınlatır.",
-            "Peki sen bu duayı kaç kez okudun? Yorumda amin yaz, döngü başa bağlansın kardeşlerim.",
+        tr_datasets = [
+            # Variant 0: Hadis-i Şerifler (Ameller Niyetlere Göredir & Ahlak - Buhari / Müslim)
+            {
+                "narrations": [
+                    f"Hazreti Peygamber'in buyurduğu ve hayatımızı baştan sona aydınlatacak o kutlu ölçüye kulak verin.",
+                    "Resulullah buyurdu: 'Ameller ancak niyetlere göredir ve herkesin niyet ettiği ne ise eline geçecek odur.'",
+                    "İhlasla yapılan küçük bir amel, samimiyetsiz yapılan dağlar kadar amelden çok daha hayırlı ve bereketlidir.",
+                    "Kim niyetini Allah'ın rızasına ve hayra bağlarsa, attığı her adımda manevi bir ferahlık bulur.",
+                    "Peygamberimiz buyurur: 'İnsanlara kolaylaştırınız, asla zorlaştırmayınız; müjdeleyiniz, insanları nefret ettirip soğutmayınız.'",
+                    "Güzel bir söz söylemek, bir gönle dokunmak ve bir tebessüm bırakmak sadaka yerine geçer.",
+                    "Sizden biriniz, kendisi için arzulayıp istediğini din kardeşi için de istemedikçe kamil bir mümin olamaz.",
+                    "Resulullah uyarır: 'Yeryüzündeki insanlara merhamet etmeyene göklerin Rabbi de merhamet etmez.'",
+                    "Dua ibadetin özüdür; samimi ve ihlaslı bir niyetle açılan eller hiçbir zaman boş çevrilmez.",
+                    "Rabbimiz şöyle buyurur: 'Bize dünyada da güzellik ver, ahirette de güzellik ver ve bizi koru.'",
+                    "Her işinde ve her daraldığın anda yalnız sonsuz kudret sahibi olan Allah'a güvenip dayan.",
+                    "Bu kutlu hadis-i şerifi hayatına rehber etmeye niyet ettiysen yoruma amin yaz, sevdiklerinle paylaş.",
+                ],
+                "arabic": [
+                    "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                    "«إِنَّمَا الأَعْمَالُ بِالنِّيَّاتِ»",
+                    "«وَإِنَّمَا لِكُلِّ امْرِئٍ مَا نَوَى»",
+                    "«فَمَنْ كَانَتْ هِجْرَتُهُ إِلَى اللَّهِ وَرَسُولِهِ»",
+                    "«يَسِّرُوا وَلَا تُعَسِّرُوا، وَبَشِّرُوا وَلَا تُنَفِّرُوا»",
+                    "«الْكَلِمَةُ الطَّيِّبَةُ صَدَقَةٌ»",
+                    "«لَا يُؤْمِنُ أَحَدُكُمْ حَتَّى يُحِبَّ لِأَخِيهِ مَا يُحِبُّ لِنَفْسِهِ»",
+                    "«مَنْ لَا يَرْحَمْ لَا يُرْحَمْ»",
+                    "«الدُّعَاءُ مُخُّ الْعِبَادَةِ»",
+                    "«رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الآخِرَةِ حَسَنَةً»",
+                    "«وَتَوَكَّلْ عَلَى الْعَزِيزِ الرَّحِيمِ»",
+                    "«سُبْحَانَ اللَّهِ وَبِحَمْدِهِ»",
+                ],
+                "citations": [
+                    "(Hadis-i Şerif - Sahih-i Buhari)",
+                    "(Buhari, Bed'ü'l-Vahy, 1)",
+                    "(Müslim, İmare, 155)",
+                    "(Buhari, İman, 41)",
+                    "(Buhari, İlim, 11)",
+                    "(Buhari, Cihad, 128)",
+                    "(Buhari, İman, 7)",
+                    "(Müslim, Fedail, 65)",
+                    "(Tirmizi, Dua, 1)",
+                    "(Bakara Suresi, 201)",
+                    "(Şuara Suresi, 217)",
+                    "(Müslim, Zikir, 26)",
+                ],
+            },
+            # Variant 1: Kur'an Ayet Mealleri (İbrahim Suresi 7, İnşirah, Rad - Şükür ve Ferahlık)
+            {
+                "narrations": [
+                    f"Ve düşünün ki Rabbiniz size şöyle ilan buyurdu, bu kutlu çağrıya kulak verin:",
+                    "Rabbiniz buyurdu: 'Eğer şükrederseniz, elbette size olan nimetimi kat kat artırıp bereketlendiririm.'",
+                    "'Ama nankörlük edip verilen nimeti inkar ederseniz, şüphesiz benim azabım çok ama çok çetindir.'",
+                    "'Bilesiniz ki, dünyada aradığınız huzur ve sükuneti kalpler ancak Allah'ı anmakla ve zikirle bulur.'",
+                    "İnşirah suresinin müjdesiyle: 'Şüphesiz her güçlük ve sıkıntıyla beraber mutlaka bir kolaylık vardır.'",
+                    "'Evet, hiç şüphe yok ki her zorluğun yanında elbette bir kolaylık daha beklemektedir.'",
+                    "'Rabbiniz şöyle buyurdu: Yalnız bana samimiyetle dua edin ki, ben de sizin dualarınıza cevap vereyim.'",
+                    "'Ey iman edenler! Sabır ve namaz ile Allah'tan yardım dileyin; çünkü Allah sabredenlerle beraberdir.'",
+                    "'Allah bize yeter, O ne güzel bir vekildir ve kulunu asla yalnız bırakmaz.'",
+                    "'Kullarım sana beni sorarlarsa şüphesiz de ki: Ben onlara şah damarından bile daha yakınım.'",
+                    "'Öyleyse siz beni anın ki ben de sizi anayım; bana şükredin ve asla nankörlük etmeyin.'",
+                    "Rabbimiz dualarımızı kabul eylesin. Kalbinden geçirdiğin hayırlı niyete bir amin de, hayra vesile ol.",
+                ],
+                "arabic": [
+                    "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                    "«وَإِذْ تَأَذَّنَ رَبُّكُمْ لَئِن شَكَرْتُمْ لَأَزِيدَنَّكُمْ»",
+                    "«وَلَئِن كَفَرْتُمْ إِنَّ عَذَابِي لَشَدِيدٌ»",
+                    "«أَلَا بِذِكْرِ اللَّهِ تَطْمَئِنُّ الْقُلُوبُ»",
+                    "«فَإِنَّ مَعَ الْعُسْرِ يُسْرًا»",
+                    "«إِنَّ مَعَ الْعُسْرِ يُسْرًا»",
+                    "«وَقَالَ رَبُّكُمُ ادْعُونِي أَسْتَجِبْ لَكُمْ»",
+                    "«إِنَّ اللَّهَ مَعَ الصَّابِرِينَ»",
+                    "«حَسْبُنَا اللَّهُ وَنِعْمَ الْوَكِيلُ»",
+                    "«وَإِذَا سَأَلَكَ عِبَادِي عَنِّي فَإِنِّي قَرِيبٌ»",
+                    "«فَاذْكُرُونِي أَذْكُرْكُمْ وَاشْكُرُوا لِي»",
+                    "«رَبَّنَا تَقَبَّلْ مِنَّا إِنَّكَ أَنتَ السَّمِيعُ الْعَلِيمُ»",
+                ],
+                "citations": [
+                    "(Kur'an-ı Kerim Meali İbrahim Suresi 7)",
+                    "(İbrahim Suresi, 7)",
+                    "(İbrahim Suresi, 7)",
+                    "(Rad Suresi, 28)",
+                    "(İnşirah Suresi, 5)",
+                    "(İnşirah Suresi, 6)",
+                    "(Mümin Suresi, 60)",
+                    "(Bakara Suresi, 153)",
+                    "(Al-i İmran Suresi, 173)",
+                    "(Bakara Suresi, 186)",
+                    "(Bakara Suresi, 152)",
+                    "(Bakara Suresi, 127)",
+                ],
+            },
+            # Variant 2: Doğruluk, Nimet ve Dua Hadisleri
+            {
+                "narrations": [
+                    f"Hz. Peygamber'in (s.a.v.) ümmetine bıraktığı bu altın öğütler bugün kalbinize şifa ve rehber olsun.",
+                    "Resulullah buyurdu: 'Bizi aldatan, insanları kandıran ve hileye başvuran kimseler asla bizden değildir.'",
+                    "'Doğruluktan ve dürüstlükten asla ayrılmayın; çünkü doğruluk insanı iyiliğe, iyilik ise cennete ulaştırır.'",
+                    "'Kalbinde hardal tanesi kadar kibir, gurur ve büyüklenme bulunan kimse cennete giremez.'",
+                    "'İki büyük nimet vardır ki insanların çoğu bunda aldanmıştır: Sağlık ve değerlendirilmeyen boş vakit.'",
+                    "'Sizin en hayırlınız Kur'an'ı hakkıyla öğrenen ve onu diğer insanlara samimiyetle öğretendir.'",
+                    "'Nerede olursan ol Allah'tan sakın ve bir hatanın peşinden hemen telafi edici bir iyilik yap.'",
+                    "'Birbirinize asla haset etmeyin, kin beslemeyin; ey Allah'ın kulları, birbirinize kardeş olun.'",
+                    "'Allah'ım! Senden dosdoğru hidayet, takva, ahlaki iffet ve kalbe gerçek bir gönül zenginliği diliyorum.'",
+                    "'Allah'ım! Bütün işlerimin temeli ve koruyucusu olan dinimi, dünyamı ve geleceğimi ıslah eyle.'",
+                    "'Allah'ım! Sen çok affedicisin, kullarını affetmeyi çok seversin, öyleyse benim günahlarımı da bağışla.'",
+                    "Bu kutlu dualara amin diyen tüm diller hayırla dolsun. Yoruma amin yazarak kardeşlerimize ulaştırın.",
+                ],
+                "arabic": [
+                    "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+                    "«مَنْ غَشَّنَا فَلَيْسَ مِنَّا»",
+                    "«عَلَيْكُمْ بِالصِّدْقِ فَإِنَّ الصِّدْقَ يَهْدِي إِلَى الْبِرِّ»",
+                    "«لَا يَدْخُلُ الْجَنَّةَ مَنْ كَانَ فِي قَلْبِهِ مِثْقَالُ ذَرَّةٍ مِنْ كِبْرٍ»",
+                    "«نِعْمَتَانِ مَغْبُونٌ فِيهِمَا كَثِيرٌ: الصِّحَّةُ وَالْفَرَاغُ»",
+                    "«خَيْرُكُمْ مَنْ تَعَلَّمَ الْقُرْآنَ وَعَلَّمَهُ»",
+                    "«اتَّقِ اللَّهَ حَيْثُمَا كُنْتَ وَأَتْبِعِ السَّيِّئَةَ الْحَسَنَةَ»",
+                    "«لَا تَحَاسَدُوا وَلَا تَبَاغَضُوا وَكُونُوا عِبَادَ اللَّهِ إِخْوَانًا»",
+                    "«اللَّهُمَّ إِنِّي أَسْأَلُكَ الْهُدَى وَالتُّقَى وَالْعَفَافَ وَالْغِنَى»",
+                    "«اللَّهُمَّ أَصْلِحْ لِي دِينِي الَّذِي هُوَ عِصْمَةُ أَمْرِي»",
+                    "«اللَّهُمَّ إِنَّكَ عَفُوٌّ تُحِبُّ الْعَفْوَ فَاعْفُ عَنِّي»",
+                    "«الْحَمْدُ لِلَّهِ رَبِّ الْعَالَمِينَ»",
+                ],
+                "citations": [
+                    "(Hadis-i Şerif - Sahih-i Müslim)",
+                    "(Müslim, İman, 164)",
+                    "(Buhari, Edeb, 69)",
+                    "(Müslim, İman, 147)",
+                    "(Buhari, Rikak, 1)",
+                    "(Buhari, Fezailü'l-Kur'an, 21)",
+                    "(Tirmizi, Birr, 55)",
+                    "(Buhari, Edeb, 57)",
+                    "(Müslim, Zikir, 72)",
+                    "(Müslim, Zikir, 71)",
+                    "(Tirmizi, Daavat, 84)",
+                    "(Fatiha Suresi, 2)",
+                ],
+            },
         ]
+        chosen = tr_datasets[variant_idx]
+        narrations = chosen["narrations"]
+        arabic_texts = chosen["arabic"]
+        citations = chosen["citations"]
     else:
-        narrations = [
-            f"The prayer the Prophet repeated most can still reshape a day around {topic}, listen closely.",
-            "This dua is recited at dawn; it softens the heart and opens the morning with remembrance of God.",
-            "Hadith scholars note: few words, great reward. A short prayer grows when the intention is sincere.",
-            "Hands rise in a mosque courtyard at first light; the tongue remembers, the chest turns to the Lord.",
-            "Read the verse meaning with respect: each letter is a door, each amin a shelter against hardship.",
-            "After prayer this dua is said three times; it is not a magic wipe, it is a door to repentance.",
-            "The companions repeated this dhikr at home and on the road; the sunnah is constancy, not display.",
-            "When a Quran page is open, do not rush; let the meaning reach the heart, then let the tongue follow.",
-            "Dua is not complaint. The servant knows his need, the Lord knows His generosity, the bond remains.",
-            "Stop once today: raise your hands, recite this prayer, leave the knot in your chest with God, and say amin.",
-            "Tomorrow the same hour, the same dua; habit carries worship, softens a hard heart, lights a home.",
-            "How many times have you read this prayer? Write amin in the comments so the loop can restart.",
+        en_variants = [
+            [
+                f"The timeless prophetic guidance regarding {topic} brings profound peace to the soul.",
+                "The Messenger of Allah said: 'Actions are judged by motives and intentions alone.'",
+                "'And every person shall have what he intended in his sincere heart.'",
+                "Whoever turns his intentions toward truth will find every small step blessed.",
+                "'Make things easy and do not make them difficult; give glad tidings and do not repel.'",
+                "'A kind word uttered with gentleness is a blessed act of charity.'",
+                "'None of you truly believes until he loves for his brother what he loves for himself.'",
+                "'He who does not show mercy to people will not be shown mercy by God.'",
+                "'Supplication is the very core of devotion and remembrance.'",
+                "'Our Lord! Grant us good in this world and good in the hereafter, and protect us.'",
+                "Place your trust in the Almighty, the Most Merciful in all circumstances.",
+                "Say amin in your heart and share this noble reminder with those you cherish.",
+            ],
+            [
+                f"And remember when your Lord proclaimed with certainty:",
+                "'If you are grateful, I will surely increase you in My favor and blessings.'",
+                "'Remember that in the remembrance of God do hearts truly find rest.'",
+                "'Indeed, with every hardship comes ease and relief.'",
+                "'Yes, with every difficulty there is certainly ease and light.'",
+                "'Your Lord says: Call upon Me; I will answer you.'",
+                "'Indeed, God is with those who remain patient and steadfast.'",
+                "'God is sufficient for us, and He is the best guardian and protector.'",
+                "'When My servants ask you concerning Me, tell them: I am indeed near.'",
+                "'So remember Me; I will remember you. Be grateful to Me.'",
+                "'Our Lord, accept this sincere supplication from us.'",
+                "May your sincere prayers be answered. Type amin in the comments.",
+            ],
         ]
+        narrations = en_variants[variant_idx % len(en_variants)]
+        arabic_texts = [
+            "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+            "«إِنَّمَا الأَعْمَالُ بِالنِّيَّاتِ»",
+            "«وَإِنَّمَا لِكُلِّ امْرِئٍ مَا نَوَى»",
+            "«فَمَنْ كَانَتْ هِجْرَتُهُ إِلَى اللَّهِ وَرَسُولِهِ»",
+            "«يَسِّرُوا وَلَا تُعَسِّرُوا، وَبَشِّرُوا وَلَا تُنَفِّرُوا»",
+            "«الْكَلِمَةُ الطَّيِّبَةُ صَدَقَةٌ»",
+            "«لَا يُؤْمِنُ أَحَدُكُمْ حَتَّى يُحِبَّ لِأَخِيهِ مَا يُحِبُّ لِنَفْسِهِ»",
+            "«مَنْ لَا يَرْحَمْ لَا يُرْحَمْ»",
+            "«الدُّعَاءُ مُخُّ الْعِبَادَةِ»",
+            "«رَبَّنَا آتِنَا فِي الدُّنْيَا حَسَنَةً وَفِي الآخِرَةِ حَسَنَةً»",
+            "«وَتَوَكَّلْ عَلَى الْعَزِيزِ الرَّحِيمِ»",
+            "«سُبْحَانَ اللَّهِ وَبِحَمْدِهِ»",
+        ]
+        citations = [
+            "(Hadith - Sahih al-Bukhari)",
+            "(Bukhari, 1)",
+            "(Muslim, 155)",
+            "(Bukhari, 41)",
+            "(Bukhari, 11)",
+            "(Bukhari, 128)",
+            "(Bukhari, 7)",
+            "(Muslim, 65)",
+            "(Tirmidhi, 1)",
+            "(Surah al-Baqarah, 201)",
+            "(Surah ash-Shu'ara, 217)",
+            "(Muslim, 26)",
+        ]
+
     visuals = [
-        ("Mosque dome catching golden sunrise light, no people facing camera",
-         ["mosque dome golden sunrise", "islamic architecture dawn", "minaret silhouette morning"]),
+        ("Majestic Kaaba Mecca holy sanctuary aerial view at sunrise, peaceful sacred atmosphere",
+         ["kaaba mecca sanctuary aerial", "grand mosque mecca dawn", "peaceful sacred sanctuary dawn"]),
         ("Open Quran pages with soft window light, no faces",
          ["open quran pages soft light", "arabic manuscript closeup", "holy book still life"]),
+        ("Mosque dome catching golden sunrise light, no people facing camera",
+         ["mosque dome golden sunrise", "islamic architecture dawn", "minaret silhouette morning"]),
         ("Prayer hands raised at dusk, cropped at wrists, respectful",
          ["prayer hands raised dusk", "open palms dua", "hands supplication sunset"]),
         ("Islamic geometric tile and gold calligraphy wall, no figurative idols",
          ["islamic geometric calligraphy", "arabesque tile pattern", "gold kufic art wall"]),
-        ("Minaret silhouette against dawn sky and crescent",
-         ["minaret silhouette dawn", "crescent moon mosque", "islamic skyline sunrise"]),
-        ("Olive grove in peaceful morning mist, Mediterranean",
-         ["olive grove peaceful morning", "mediterranean olive trees dawn", "calm orchard mist"]),
+        ("Intricate Quran manuscript golden calligraphy illumination in soft cinematic light",
+         ["quran golden calligraphy art", "islamic gold illumination manuscript", "sacred calligraphy parchment macro"]),
         ("Mosque interior lanterns glowing over empty prayer hall",
          ["mosque lantern interior glow", "prayer hall lamps", "islamic architecture interior"]),
+        ("Olive grove in peaceful morning mist, Mediterranean",
+         ["olive grove peaceful morning", "mediterranean olive trees dawn", "calm orchard mist"]),
         ("Courtyard fountain for ablution, water ripples, no faces",
          ["ablution water fountain courtyard", "mosque courtyard fountain", "wudu water closeup"]),
         ("Crescent moon above a distant mosque at night",
          ["crescent moon over mosque", "night sky islamic architecture", "ramadan night sky"]),
         ("Prayer rug still life with tasbih beads, no figurative art",
          ["prayer rug still life", "tasbih beads closeup", "islamic prayer mat detail"]),
-        ("Desert dunes at calm sunrise, empty horizon",
-         ["desert dunes sunrise calm", "golden sand sunrise aerial", "empty desert dawn"]),
         ("Close-up of Arabic calligraphy ink on paper, abstract letters only",
          ["arabic calligraphy closeup", "islamic calligraphy ink", "quranic script macro"]),
     ]
@@ -775,11 +967,18 @@ def _generate_religious_quotes_scenes(clean_title: str, is_tr: bool, variation_s
         "luminous", "calm", "warm", "contemplative",
         "hopeful", "reverent", "peaceful", "warm",
     ]
+    # Cap to 10 impactful scenes so TTS strictly stays <= 60.0s (Madde 494)
+    if len(narrations) > 10:
+        chosen_indices = list(range(9)) + [len(narrations) - 1]
+        narrations = [narrations[idx] for idx in chosen_indices]
+        arabic_texts = [arabic_texts[idx] for idx in chosen_indices if idx < len(arabic_texts)]
+        citations = [citations[idx] for idx in chosen_indices if idx < len(citations)]
+
     shift = variation_seed % len(visuals)
     scenes = []
     for i, narr in enumerate(narrations):
         desc, queries = visuals[(i + shift) % len(visuals)]
-        scenes.append({
+        scene_item = {
             "scene_number": i + 1,
             "narration": narr,
             "scene_description": desc,
@@ -787,10 +986,16 @@ def _generate_religious_quotes_scenes(clean_title: str, is_tr: bool, variation_s
             "duration": 4.5,
             "mood": moods[i % len(moods)],
             "beat_type": "hook" if i == 0 else "resolution" if i == len(narrations) - 1 else "conflict",
-        })
+        }
+        if i < len(arabic_texts):
+            scene_item["arabic_text"] = arabic_texts[i]
+        if i < len(citations):
+            scene_item["source_citation"] = citations[i]
+        scenes.append(scene_item)
+
     return {
-        "title": topic if is_tr else f"Dua: {topic}",
-        "visual_theme": "mosque quran prayer calligraphy sunrise respectful islamic",
+        "title": topic if is_tr else f"Hadith: {topic}",
+        "visual_theme": "blue silk luxury mosque quran prayer calligraphy sunrise respectful islamic",
         "full_narration": " ".join(narrations),
         "scenes": scenes,
         "niche_id": "10_religious_quotes",
@@ -799,26 +1004,63 @@ def _generate_religious_quotes_scenes(clean_title: str, is_tr: bool, variation_s
     }
 
 
-def _generate_dark_psychology_scenes(clean_title: str, is_tr: bool):
+def _generate_dark_psychology_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0):
     """
     Constructs 14-scene Dark Psychology & Body Language format (Tone: mysterious, analytical, cautionary).
+    Multi-variant enabled via variation_seed.
     """
-    narrations_tr = [
-        f"İnsanların sizden gizlediği {clean_title} arkasındaki karanlık psikolojik gerçek...",
-        "Günlük hayatta karşılaştığınız insanların birçoğu bilinçaltınıza fark ettirmeden hükmetmeye çalışır.",
-        "Manipülasyon ustaları asla doğrudan saldırmaz; en zayıf noktanızı sessizce analiz ederler.",
-        "Göz temasındaki o 3 saniyelik mikro gecikme, yalanın ve gizli niyetin ilk işaretidir.",
-        "Size kendinizi borçlu hissettirerek kontrolü ele alma taktiğine psikolojide 'Tuzak İkram' denir.",
-        "Birisi sizi sürekli övüp aniden geri çekiliyorsa, bağımlılık yaratan 'Aralıklı Pekiştirme' altındasınız.",
-        "Beden dili asla yalan söylemez; ayak uçlarının baktığı yön kişinin gitmek istediği gerçek yeri gösterir.",
-        "Özgüveninizi kırmak için yapılan gizli iğnelemeler, zihinsel sınırlarınızı test etme yöntemidir.",
-        "Bu taktikleri fark ettiğiniz anda manipülatörün üzerinizdeki tüm gücü bir anda yok olur.",
-        "Karanlık psikolojiye karşı en güçlü savunma, duygularınızla değil soğukkanlı mantığınızla tepki vermektir.",
-        "Sessizlik, bir manipülatörün en çok korktuğu ve paniklediği nihai silahtır.",
-        "Kendi sınırlarını net çizen bir insanı hiçbir psikolojik hile tuzağa düşüremez.",
-        "Gözlerinizi dört açın; çünkü algınızı yöneten kişi hayatınızı da yönetir.",
-        "Peki siz çevrenizde bu manipülasyon taktiklerinden birine maruz kaldınız mı? Yorumlarda anlatın!"
-    ]
+    var_idx = int(variation_seed or 0) % 3
+    if var_idx == 1:
+        narrations_tr = [
+            f"Kişiliğinizi sessizce ele geçiren {clean_title} ve Gaslighting manipülasyonunun anatomisi...",
+            "Birisi sürekli hafızanızı sorgulatıyor ve 'sen yanlış hatırlıyorsun' diyorsa dikkat edin.",
+            "Gaslighting ustaları gerçeği çarpıtarak kendi algılarını size tek doğru gibi kabul ettirir.",
+            "Önce güveninizi kazanıp ardından en emin olduğunuz konularda bile şüpheye düşmenizi sağlarlar.",
+            "Kendinizi sürekli özür dilerken buluyorsanız, duygusal bir kontrol ağının tam ortasındasınız demektir.",
+            "Sizi yakın çevrenizden ve ailenizden izole ederek tek bilgi kaynağı haline gelmeye çalışırlar.",
+            "Mikro mimiklerdeki yapay gülümseme ve sabit göz teması, gizli niyetin en net kanıtıdır.",
+            "Hatalarını asla kabul etmezler; suçluluk duygusunu ustalıkla sizin üzerinize yıkarlar.",
+            "Bu tuzağı bozmanın tek yolu kendi gerçekliğinize güvenmek ve söylenenleri yazılı kaydetmektir.",
+            "Manipülatör ile asla duygusal tartışmaya girmeyin; soğuk gerçekler onların en büyük kabusudur.",
+            "Sınırlarınızı net koyun: 'Ben böyle hatırlıyorum ve bu konuda tartışmayacağım' deyin.",
+            "Kendi değerini bilen bir insanı hiçbir duygusal manipülasyon köşeye sıkıştıramaz.",
+            "Farkındalık en büyük kalkandır; zihninizi kimsenin kontrol etmesine izin vermeyin.",
+            "Hayatınızda böyle bir Gaslighting tecrübesi yaşadınız mı? Yorumlarda paylaşın, konuşalım!"
+        ]
+    elif var_idx == 2:
+        narrations_tr = [
+            f"İnsanların beden diliyle açık ettiği {clean_title} arkasındaki gizli bilinçaltı sinyalleri...",
+            "Kelimeler yalan söyler ama mikro kas hareketleri ve beden postürü asla yalan söyleyemez.",
+            "Bir konuşmada kollarını kavuşturan ve ayaklarını kapıya çeviren kişi sohbetten zihnen kopmuştur.",
+            "Göz temasını aniden kesip sağ alta bakan bir zihin, genellikle duygusal bir savunma kurguluyordur.",
+            "Aynalama taktiği: Karşınızdaki kişi duruşunuzu taklit ediyorsa ya size hayrandır ya da sizi ikna etmeye çalışıyordur.",
+            "Ses tonunu aniden fısıltıya düşüren insanlar, bilinçaltınızda sahte bir samimiyet yaratmak ister.",
+            "Tuzak soru karşısında boğaz temizleme veya yakayla oynama refleksi gizli bir gerginliğin işaretidir.",
+            "Güçlü bir duruş için omuzları geriye çekmek ve doğrudan göz teması kurmak zihinsel üstünlük sağlar.",
+            "Karşı tarafın manipülatif baskısını hissettiğinizde üç saniye sessizce bekleyip konuşun.",
+            "Sessizlik baskıyı karşı tarafa geri iter ve manipülatörün paniklemesine yol açar.",
+            "Kendi enerjinizi korumak, karşınızdaki kişinin psikolojik oyunlarını tek hamlede boşa çıkarır.",
+            "Beden dilini okumayı öğrenen bir insan, girdiği her ortamda gizli lider haline gelir.",
+            "İnsanları dikkatle gözlemleyin; çünkü gerçek niyetler sözlerde değil tavırlarda gizlidir.",
+            "Siz karşınızdakinin yalan söylediğini en çok hangi hareketinden anlarsınız? Yorumlara yazın!"
+        ]
+    else:
+        narrations_tr = [
+            f"İnsanların sizden gizlediği {clean_title} arkasındaki karanlık psikolojik gerçek...",
+            "Günlük hayatta karşılaştığınız insanların birçoğu bilinçaltınıza fark ettirmeden hükmetmeye çalışır.",
+            "Manipülasyon ustaları asla doğrudan saldırmaz; en zayıf noktanızı sessizce analiz ederler.",
+            "Göz temasındaki o 3 saniyelik mikro gecikme, yalanın ve gizli niyetin ilk işaretidir.",
+            "Size kendinizi borçlu hissettirerek kontrolü ele alma taktiğine psikolojide 'Tuzak İkram' denir.",
+            "Birisi sizi sürekli övüp aniden geri çekiliyorsa, bağımlılık yaratan 'Aralıklı Pekiştirme' altındasınız.",
+            "Beden dili asla yalan söylemez; ayak uçlarının baktığı yön kişinin gitmek istediği gerçek yeri gösterir.",
+            "Özgüveninizi kırmak için yapılan gizli iğnelemeler, zihinsel sınırlarınızı test etme yöntemidir.",
+            "Bu taktikleri fark ettiğiniz anda manipülatörün üzerinizdeki tüm gücü bir anda yok olur.",
+            "Karanlık psikolojiye karşı en güçlü savunma, duygularınızla değil soğukkanlı mantığınızla tepki vermektir.",
+            "Sessizlik, bir manipülatörün en çok korktuğu ve paniklediği nihai silahtır.",
+            "Kendi sınırlarını net çizen bir insanı hiçbir psikolojik hile tuzağa düşüremez.",
+            "Gözlerinizi dört açın; çünkü algınızı yöneten kişi hayatınızı da yönetir.",
+            "Peki siz çevrenizde bu manipülasyon taktiklerinden birine maruz kaldınız mı? Yorumlarda anlatın!"
+        ]
     narrations_en = [
         f"The dark psychological reality hidden behind {clean_title} that people never talk about...",
         "In everyday life, many people subtly attempt to influence and manipulate your subconscious mind.",
@@ -852,22 +1094,29 @@ def _generate_dark_psychology_scenes(clean_title: str, is_tr: bool):
         ("Sharp piercing eyes looking through camera into viewer soul", ["piercing eye contact dark", "intense psychology stare", "warning cautionary portrait"]),
         ("Cinematic outro scene asking viewer to comment their personal stories", ["dark psychology outro banner", "subscribe comment engagement", "dramatic silhouette exit"])
     ]
+    # Pick 10 most impactful scenes including hook and outro CTA (Madde 494)
+    selected_indices = [0, 1, 2, 3, 4, 6, 7, 8, 11, 13] if len(narrations) >= 14 else list(range(min(10, len(narrations))))
+    selected_narrations = [narrations[idx] for idx in selected_indices]
+
     scenes = []
-    for i in range(14):
-        desc, queries = visuals[i]
+    for i, narr in enumerate(selected_narrations):
+        desc, queries = visuals[selected_indices[i] % len(visuals)]
         scenes.append({
             "scene_number": i + 1,
-            "narration": narrations[i],
+            "narration": narr,
             "scene_description": desc,
             "search_queries": queries,
-            "duration": 3.0,
-            "mood": "mysterious" if i in (0, 1, 3, 5, 7) else "dark" if i in (2, 4, 8, 12) else "dramatic"
+            "duration": 4.8,
+            "mood": "mysterious" if i in (0, 1, 3, 5) else "dark" if i in (2, 4, 7) else "dramatic",
+            "beat_type": "hook" if i == 0 else "climax" if i == 6 else "resolution" if i == len(selected_narrations) - 1 else "conflict",
         })
     return {
         "title": clean_title if is_tr else f"Dark Psychology: {clean_title}",
         "visual_theme": "dark psychology moody violet shadow noir",
-        "full_narration": " ".join(narrations),
-        "scenes": scenes
+        "full_narration": " ".join(selected_narrations),
+        "scenes": scenes,
+        "niche_id": "7_dark_psychology",
+        "procedural_fallback": True,
     }
 
 
@@ -952,24 +1201,30 @@ def _generate_astrology_horoscope_scenes(clean_title: str, is_tr: bool, variatio
 
     moods = ["mysterious", "calm", "bright", "epic", "energetic", "calm", "calm", "energetic",
              "dark", "calm", "energetic", "calm", "epic", "bright"]
+    # Pick 10 most impactful scenes including hook and outro CTA (Madde 494)
+    selected_indices = [0, 1, 2, 3, 4, 5, 8, 9, 11, 13] if len(narrations) >= 14 else list(range(min(10, len(narrations))))
+    selected_narrations = [narrations[idx] for idx in selected_indices]
+
     scenes = []
-    for i in range(14):
-        desc, queries = visuals[i]
+    for i, narr in enumerate(selected_narrations):
+        desc, queries = visuals[selected_indices[i] % len(visuals)]
         scenes.append({
             "scene_number": i + 1,
-            "narration": narrations[i],
+            "narration": narr,
             "scene_description": desc,
             "search_queries": queries,
-            "duration": 3.0,
-            "mood": moods[i],
-            "beat_type": "hook" if i == 0 else "climax" if i == 4 else "resolution" if i == 13 else "conflict",
+            "duration": 4.8,
+            "mood": moods[selected_indices[i] % len(moods)],
+            "beat_type": "hook" if i == 0 else "climax" if i == 4 else "resolution" if i == len(selected_narrations) - 1 else "conflict",
         })
 
     return {
         "title": topic if is_tr else f"Weekly Horoscope: {topic}",
         "visual_theme": "mystical astrology zodiac galaxy purple gold stars",
-        "full_narration": " ".join(narrations),
+        "full_narration": " ".join(selected_narrations),
         "scenes": scenes,
+        "niche_id": "18_astrology_horoscope",
+        "procedural_fallback": True,
     }
 
 
@@ -1198,7 +1453,7 @@ def _topic_bound_narrations(subject: str, is_tr: bool, family: str = "", nid: st
             "Genellikle ilk duyduğumuz bilgiler yüzeysel kalır ve asıl detayı gözden kaçırmamıza neden olur.",
             "Burada kritik nokta sadece görünen sonuç değil, o sonuca götüren görünmez adımlardır.",
             "Günlük hayatın akışı içinde küçük bir ayrıntı gibi dursa da, aslında bütün resmi baştan sona değiştirir.",
-            f"Birçok insan bu noktada yanılıyor; çünkü {subject} dediğimiz durum, derinlerdeki başka bir sebebin doğrudan sonucudur.",
+            "Birçok insan bu noktada yanılıyor; çünkü bu bahsettiğimiz durum, derinlerdeki başka bir sebebin doğrudan sonucudur.",
             "Bunu bir kez fark ettiğinizde, aynı konuya bir daha asla eski gözle bakamazsınız.",
             "İşin özü oldukça net: Yüzeysel gürültüye kapılmak yerine, asıl farkı yaratan o kilit noktaya odaklanmak gerekir.",
             "Bir dahaki sefere benzer bir iddia veya durumla karşılaştığınızda, hemen karar vermeden önce bu ayrımı hatırlayın.",
@@ -1314,7 +1569,7 @@ def _generate_procedural_fallback_scenes(
     if nid in ("6_stoic_philosophy",) or family == "stoic":
         return _finalize_fallback_plan(_generate_stoic_scenes(clean_title, is_tr, variation_seed=variation_seed), is_tr=is_tr)
     if nid == "7_dark_psychology" or family == "dark":
-        return _finalize_fallback_plan(_generate_dark_psychology_scenes(clean_title, is_tr), is_tr=is_tr)
+        return _finalize_fallback_plan(_generate_dark_psychology_scenes(clean_title, is_tr, variation_seed=variation_seed), is_tr=is_tr)
     if nid == "18_astrology_horoscope" or family == "astrology":
         return _finalize_fallback_plan(
             _generate_astrology_horoscope_scenes(clean_title, is_tr, variation_seed=variation_seed),
@@ -1322,11 +1577,11 @@ def _generate_procedural_fallback_scenes(
         )
     facts_shell = bool(re.search(r"\b(gerçek|gercek|facts|şok|sok)\b", f"{title} {clean_title}", re.I))
     if nid == "9_five_facts" and (niche_type == "9_five_facts" or facts_shell):
-        return _finalize_fallback_plan(_generate_five_fact_scenes(clean_title, is_tr), is_tr=is_tr)
+        return _finalize_fallback_plan(_generate_five_fact_scenes(clean_title, is_tr, variation_seed=variation_seed), is_tr=is_tr)
     return _finalize_fallback_plan(_generate_pack_fallback_scenes(pack, clean_title, is_tr), is_tr=is_tr)
 
 
-def _generate_five_fact_scenes(clean_title: str, is_tr: bool) -> dict:
+def _generate_five_fact_scenes(clean_title: str, is_tr: bool, variation_seed: int = 0) -> dict:
     """Five spoken facts. No title paste, no scroll warning, no fake quote."""
     topic = (clean_title or "").strip() or "5 gerçek"
     if is_tr:

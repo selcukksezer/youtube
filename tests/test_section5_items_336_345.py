@@ -45,7 +45,9 @@ class TestSection5Items336345(unittest.TestCase):
             lang="tr",
         )
         self.assertEqual(loop["retention_target_pct"], 200)
-        self.assertIn("Marcus Aurelius", loop["closing_line"])
+        self.assertNotIn("Marcus Aurelius", loop["closing_line"])
+        self.assertIn("Marcus Aurelius", loop["preview_loop"])
+        self.assertNotIn("başa dön", loop["closing_line"].lower())
         self.assertTrue(loop.get("loop_bridge"))
         bridge_en = generate_perfect_seamless_loop_bridge("The secret begins here.", lang="en")
         self.assertIn("seamlessly", bridge_en["instruction"].lower())

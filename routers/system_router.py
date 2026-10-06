@@ -623,6 +623,16 @@ def get_hardware_specifications():
     """Detects CPU, RAM, NVIDIA GPU, and NVENC capabilities, offering tailor-made profiles."""
     from hardware_detector import get_system_hardware_specs
     specs = get_system_hardware_specs()
+    try:
+        from visuals.face_reframe import _load_cascade
+        specs["has_opencv"] = _load_cascade() is not None
+    except Exception:
+        specs["has_opencv"] = False
+    try:
+        from system_resilience import encoder_choices
+        specs["encoder_choices"] = encoder_choices()
+    except Exception:
+        specs["encoder_choices"] = []
     specs["current_config"] = {
         "use_gpu": getattr(config, "USE_GPU_ACCELERATION", True),
         "gpu_codec": getattr(config, "GPU_CODEC", "h264_nvenc"),
@@ -673,7 +683,7 @@ def apply_hardware_profile(data: dict):
 
     return {
         "status": "ok",
-        "message": f"Donanım ve Render ayarları başarıyla kaydedildi! (GPU: {'h264_nvenc' if use_gpu else 'CPU libx264'}, Mod: {mode_text}, Çözünürlük: {config.RENDER_RESOLUTION_MODE} [{res_dims[0]}x{res_dims[1]}])",
+        "message": f"Donanım ve Render ayarları başarıyla kaydedildi! (Kodlayıcı: {config.GPU_CODEC}, Mod: {mode_text}, Çözünürlük: {config.RENDER_RESOLUTION_MODE} [{res_dims[0]}x{res_dims[1]}])",
         "current_config": {
             "use_gpu": config.USE_GPU_ACCELERATION,
             "gpu_codec": config.GPU_CODEC,
@@ -684,5 +694,59 @@ def apply_hardware_profile(data: dict):
             "safe_mode": config.RENDER_SAFE_MODE
         }
     }
+
+
+@router.post("/api/system/minimax-h3/start")
+def start_minimax_h3():
+    """Start local ComfyUI for MiniMax-H3. No-op when port 8188 is already open."""
+    try:
+        from services.minimax_h3_local import start_comfyui_server
+        return start_comfyui_server()
+    except Exception as exc:
+        return {"status": "failed", "spawned": False, "message": str(exc)}
+
+
+@router.get("/api/system/minimax-h3/status")
+def get_minimax_h3_status():
+    """Bölüm 34.1: Inspect local MiniMax-H3 hardware capability and server state."""
+    try:
+        from services.minimax_h3_local import assess_minimax_h3_hardware, check_local_server_status
+        hardware = assess_minimax_h3_hardware()
+        server = check_local_server_status()
+        return {
+            "status": "ok",
+            "hardware": {
+                "can_run_local": hardware.can_run_local,
+                "vram_mb": hardware.vram_mb,
+                "recommended_quantization": hardware.recommended_quantization,
+                "message": hardware.message,
+                "has_nvidia": hardware.has_nvidia,
+            },
+            "server": server,
+        }
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+@router.get("/api/system/public-apis/status")
+def get_public_apis_status():
+    """Bölüm 34.2: Inspect availability and health of public-apis catalog endpoints."""
+    try:
+        from services.public_apis_catalog import PUBLIC_ENDPOINTS
+        endpoints = [
+            {
+                "name": ep.name,
+                "category": ep.category.value,
+                "base_url": ep.base_url,
+                "description": ep.description,
+                "is_active": ep.is_active,
+                "last_status_code": ep.last_status_code,
+                "failure_count": ep.failure_count,
+            }
+            for ep in PUBLIC_ENDPOINTS.values()
+        ]
+        return {"status": "ok", "endpoints": endpoints}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
 
 

@@ -9,6 +9,7 @@
 // ══════════════════════════════════════════════════════════════
 const TAB_METADATA = {
     "studio": { title: "Hızlı Üretim Stüdyosu", desc: "Konunuzu belirleyin, 35 niş arasından seçim yapın ve tek tıkla viral Shorts üretin." },
+    "clipper": { title: "Uzun Videodan Shorts", desc: "Dosya veya URL. Örtüşen öneri düşer. Kesim 9:16 ve söz sınırında." },
     "timeline": { title: "Sahne & Kurgu Editörü", desc: "AI tarafından üretilen sahneleri, süreleri ve arama terimlerini özelleştirin." },
     "niches": { title: "35 R10 Viral Niş Kütüphanesi", desc: "En çok izlenen ve gelir getiren 35 niş şablonundan birini seçin." },
     "rss-bot": { title: "Oto-Haber & RSS Botu", desc: "Canlı haber kaynaklarını tarayıp anında 45 saniyelik Shorts'a dönüştürün." },

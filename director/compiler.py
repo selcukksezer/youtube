@@ -11,43 +11,95 @@ from .schema import (
     DirectorPlan,
     QualityThresholds,
     ScenePlan,
+    DirectorScene,
     merge_effect_manifest,
 )
 from .timeline import solve_timeline
 from .validate import validate_director_plan
 from .visual_intent import apply_visual_intents, resolve_topic_intelligence
 from .audio_bus import build_audio_events
+from visuals.mixed_visual import is_mixed_mode, mixed_scene_mode
 
 
 def _apply_beat_hints_advisory(plan: DirectorPlan) -> None:
-    """P2-21: log advisory beat grid; attach beat_hint_ms — never changes durations."""
+    """Bölüm 7.3: Snap scene cuts onto 80-120 BPM track beats with speech word-count shield."""
     if not plan.scenes:
         return
     try:
         from bgm_manager import (
-            compute_scene_beat_hints,
             get_bgm_path,
             list_bgm_tracks,
             match_bgm_track_to_niche,
+            snap_timeline_to_beat_grid,
+            normalize_bpm_to_shorts_band,
+            parse_bgm_bpm,
         )
 
         track = match_bgm_track_to_niche(plan.niche_id, list_bgm_tracks())
         bgm_path = get_bgm_path(track) if track else None
-        hints = compute_scene_beat_hints(plan.scenes, bgm_path=bgm_path)
-        for sc, hint in zip(plan.scenes, hints):
-            sc.beat_hint_ms = hint.get("beat_hint_ms")
-        if hints:
-            bpm = hints[0].get("bpm", 120.0)
-            deltas = [abs(h.get("delta_ms", 0)) for h in hints]
-            avg_delta = sum(deltas) / max(1, len(deltas))
-            cuts = ", ".join(f"{h.get('suggested_cut_ms', 0):.0f}ms" for h in hints[:4])
-            suffix = "…" if len(hints) > 4 else ""
-            print(
-                f"  [Director] Beat hints (advisory, {bpm:.0f} BPM, avg Δ{avg_delta:.0f}ms): "
-                f"[{cuts}{suffix}]"
-            )
+        
+        # 80-120 BPM hipnotik kurgu aralığına kilitlenmiş timeline beat-snapping
+        plan.scenes = snap_timeline_to_beat_grid(
+            plan.scenes,
+            bgm_path=bgm_path or "",
+            enforce_band=True,
+            min_scene_dur=1.8,
+            max_scene_dur=7.0,
+        )
+        
+        bpm = normalize_bpm_to_shorts_band(parse_bgm_bpm(bgm_path or ""))
+        plan.meta["beat_bpm"] = bpm
+        cap = float((plan.quality_thresholds.max_duration if plan.quality_thresholds else 60.0) or 60.0)
+        snapped = plan.total_duration()
+        if snapped > cap + 0.05 and plan.scenes:
+            scale = cap / snapped
+            t = 0.0
+            for scene in plan.scenes:
+                scene.duration = round(max(0.8, scene.duration * scale), 3)
+                scene.t0 = round(t, 3)
+                t = round(t + scene.duration, 3)
+                scene.t1 = t
+            drift = cap - plan.scenes[-1].t1
+            plan.scenes[-1].duration = round(plan.scenes[-1].duration + drift, 3)
+            plan.scenes[-1].t1 = round(plan.scenes[-1].t0 + plan.scenes[-1].duration, 3)
+        
+        if plan.time_map is not None:
+            plan.time_map["target_duration"] = plan.total_duration()
+            plan.time_map["beat_bpm"] = bpm
+            plan.time_map["cuts"] = [
+                {"index": s.index, "t0": s.t0, "t1": s.t1, "beat": s.beat_type}
+                for s in plan.scenes
+            ]
+        print(
+            f"  [Director] Beat snap ({bpm:.0f} BPM, 80-120 band): "
+            + ", ".join(f"{s.t1:.2f}s" for s in plan.scenes[:4])
+        )
     except Exception as exc:
         print(f"  [Director] Beat hints skipped: {exc}")
+
+
+def _apply_fact_verification(plan: DirectorPlan) -> None:
+    """Bölüm 7.4: Senaryodaki sayısal ve tarihsel iddiaları web kaynaklarıyla çapraz doğrular ve teyitsizleri arındırır."""
+    if not plan.scenes:
+        return
+    try:
+        from services.web_fact_researcher import verify_and_sanitize_scenes
+        hook = str(((plan.meta or {}).get("retention_metadata") or {}).get("opening_hook") or "")
+        cached = (plan.meta or {}).get("fact_snippets", None)
+        plan.scenes, fact_report = verify_and_sanitize_scenes(
+            plan.scenes,
+            topic=plan.title or "",
+            web_snippets=cached,
+            protect_text=hook,
+        )
+        plan.rebuild_full_narration()
+        plan.meta["fact_verification"] = fact_report
+        if fact_report.get("sanitized_count", 0) > 0:
+            print(
+                f"  [FactResearcher] Anti-hallucination: {fact_report['sanitized_count']} teyitsiz iddia güvenli forma dönüştürüldü."
+            )
+    except Exception as exc:
+        print(f"  [FactResearcher] Fact verification notice: {exc}")
 
 
 def _cleanse_scene_narrations(raw_plan: Dict[str, Any]) -> None:
@@ -64,15 +116,27 @@ def _cleanse_scene_narrations(raw_plan: Dict[str, Any]) -> None:
 
 
 def _scenes_from_legacy(raw_plan: Dict[str, Any]) -> list:
+    plan_vm = raw_plan.get("visual_mode")
     scenes = []
     for i, s in enumerate(raw_plan.get("scenes") or []):
         if isinstance(s, ScenePlan):
+            if is_mixed_mode(plan_vm) and (not s.visual_mode or is_mixed_mode(s.visual_mode)):
+                s.visual_mode = mixed_scene_mode(i)
+            elif plan_vm and not s.visual_mode:
+                s.visual_mode = plan_vm
             scenes.append(s)
             continue
         queries = s.get("search_queries")
         if not queries and s.get("search_query"):
             queries = [s["search_query"]]
-        scenes.append(ScenePlan.from_dict({**s, "search_queries": queries or []}, index=i))
+        s_data = {**s, "search_queries": queries or []}
+        if is_mixed_mode(plan_vm) and (
+            not s_data.get("visual_mode") or is_mixed_mode(s_data.get("visual_mode"))
+        ):
+            s_data["visual_mode"] = mixed_scene_mode(i)
+        elif plan_vm and not s_data.get("visual_mode"):
+            s_data["visual_mode"] = plan_vm
+        scenes.append(ScenePlan.from_dict(s_data, index=i))
     return scenes
 
 
@@ -91,8 +155,12 @@ def compile_director_plan(
     raw_plan = dict(raw_plan or {})
     title = title or raw_plan.get("title") or "Video"
     requested_niche = niche_id or raw_plan.get("niche_id") or "1_news_flash"
-    topic_intel = resolve_topic_intelligence(title, requested_niche)
-    locked_niche = topic_intel["resolved_niche"]
+    if requested_niche and requested_niche != "1_news_flash":
+        locked_niche = requested_niche
+        topic_intel = resolve_topic_intelligence(title, requested_niche)
+    else:
+        topic_intel = resolve_topic_intelligence(title, requested_niche)
+        locked_niche = topic_intel["resolved_niche"]
 
     try:
         from scenes.fallback import _generate_procedural_fallback_scenes
@@ -128,6 +196,8 @@ def compile_director_plan(
             hybrid_meta = {"hybrid_niche": hybrid_id}
     if raw_plan.get("retention_metadata"):
         hybrid_meta["retention_metadata"] = raw_plan["retention_metadata"]
+    if "fact_snippets" in raw_plan:
+        hybrid_meta["fact_snippets"] = raw_plan.get("fact_snippets") or []
     if raw_plan.get("hybrid_split_screen") and hybrid_id:
         hybrid_meta["hybrid_split_screen"] = True
 
@@ -145,6 +215,13 @@ def compile_director_plan(
         print(f"  [Director] Anlatım otomatik düzeltildi: {len(narr_fixes)} fix")
 
     niche_profile = get_niche_production_profile(locked_niche)
+    try:
+        from scenes.hadith_overlay import attach_hadith_screen_text
+        raw_plan["niche_id"] = locked_niche
+        raw_plan["title"] = title
+        attach_hadith_screen_text(raw_plan)
+    except Exception as exc:
+        print(f"  [Director] Hadis Arapça satırı eklenemedi: {exc}")
     scenes = _scenes_from_legacy(raw_plan)
 
     plan = DirectorPlan(
@@ -160,6 +237,7 @@ def compile_director_plan(
         hook_text=str(raw_plan.get("hook_text", "")),
         loop_text=str(raw_plan.get("loop_text", "")),
         reddit_post=reddit_post or raw_plan.get("reddit_post"),
+        visual_mode=raw_plan.get("visual_mode"),
         meta={
             "requested_niche": requested_niche,
             "locked_niche": locked_niche,
@@ -226,6 +304,7 @@ def compile_director_plan(
     apply_visual_intents(plan.scenes, plan.niche_id, title=plan.title)
     build_audio_events(plan)
     _apply_beat_hints_advisory(plan)
+    _apply_fact_verification(plan)
     # Always rebuild from condensed scenes (never keep stale long raw narration)
     plan.rebuild_full_narration()
     validate_director_plan(plan)

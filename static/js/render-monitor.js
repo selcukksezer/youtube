@@ -108,6 +108,20 @@ async function startRenderProcess(planToUse) {
     }
 
     const scenes = plan?.scenes || [];
+    const scriptQuality = plan?.meta?.script_quality || {};
+    if (scriptQuality.hard_fail === true) {
+        const issues = scriptQuality.issues || [];
+        const reason = issues[0] || 'Script kalite kapisi hard-fail';
+        alert(
+            'Render ENGELLENDI — senaryo kalite kapisi:\n\n• '
+            + (issues.length ? issues.join('\n• ') : reason)
+        );
+        switchTab('timeline');
+        updateRenderButtonsBlocked(true, reason);
+        showToast('Senaryo kalite hatasi — render kapali', 'warn');
+        return;
+    }
+
     if (scenes.length && !timelineReviewed && !qualityPanelGreen) {
         const proceedReview = confirm(
             'Plan henuz timeline\'da incelenmedi ve kalite paneli yesil degil.\n\n' +
@@ -185,7 +199,7 @@ async function startRenderProcess(planToUse) {
         keyword: topic,
         plan: plan,
         niche: selectNiche.value,
-        language: selectLanguage.value,
+        language: document.getElementById('btn-quick-lang-en')?.classList.contains('active') ? 'en' : (selectLanguage?.value || 'tr'),
         voice_gender: (selectTtsVoice?.value === 'auto' ? 'auto' : (findVoiceMeta(selectTtsVoice?.value)?.gender || 'male')),
         tts_voice: (selectTtsVoice?.value && selectTtsVoice.value !== 'auto') ? selectTtsVoice.value : null,
         gameplay_category: selectGameplayCategory?.value || 'auto',
@@ -201,13 +215,53 @@ async function startRenderProcess(planToUse) {
             || '0.12'
         ),
         reddit_post: selectedRedditPost,
-        split_screen: chkSplitScreen.checked,
-        anti_duplicate: chkAntiDuplicate.checked,
+        split_screen: chkSplitScreen ? !!chkSplitScreen.checked : false,
+        gameplay_category: document.getElementById('select-gameplay-category')?.value || 'auto',
+        enable_reddit_card: !!(document.getElementById('chk-reddit-card')?.checked),
+        anti_duplicate: chkAntiDuplicate ? !!chkAntiDuplicate.checked : true,
         enable_ken_burns: !!(chkKenBurns && chkKenBurns.checked),
         enable_zoompan: !!(chkZoompan && chkZoompan.checked),
         resolution: document.getElementById('select-render-resolution')?.value || '1080p',
-        visual_mode: (plan?.visual_mode || currentPlan?.visual_mode || document.getElementById('select-visual-engine')?.value || 'auto'),
-        auto_publish: !!(chkAutoPublish && chkAutoPublish.checked)
+        visual_mode: (() => {
+            const dropdownVal = document.getElementById('select-visual-engine')?.value;
+            if (dropdownVal && dropdownVal !== 'auto') {
+                if (plan && typeof plan === 'object' && dropdownVal !== 'mixed' && Array.isArray(plan.scenes)) {
+                    plan.visual_mode = dropdownVal;
+                    plan.scenes.forEach((scene) => {
+                        if (scene && typeof scene === 'object') scene.visual_mode = dropdownVal;
+                    });
+                } else if (plan && typeof plan === 'object') {
+                    plan.visual_mode = dropdownVal;
+                }
+                return dropdownVal;
+            }
+            return (plan?.visual_mode && plan.visual_mode !== 'auto') ? plan.visual_mode : (currentPlan?.visual_mode && currentPlan.visual_mode !== 'auto') ? currentPlan.visual_mode : (dropdownVal || 'auto');
+        })(),
+        auto_publish: !!(chkAutoPublish && chkAutoPublish.checked),
+        allow_similar_script: !!(document.getElementById('chk-allow-similar-script')?.checked),
+        force_render: !!(document.getElementById('chk-allow-similar-script')?.checked),
+        resume: !!(document.getElementById('chk-resume-render')?.checked),
+        whisper_align: !!(document.getElementById('chk-whisper-align')?.checked),
+        enable_intro_whoosh: !!(document.getElementById('chk-intro-whoosh')?.checked),
+        duck_attack_ms: parseInt(document.getElementById('range-duck-attack')?.value || '80', 10),
+        duck_release_ms: parseInt(document.getElementById('range-duck-release')?.value || '200', 10),
+        intro_blast: parseFloat(document.getElementById('range-bgm-blast')?.value || '0.85'),
+        outro_swell_sec: parseFloat(document.getElementById('range-outro-swell-sec')?.value || '5'),
+        enable_outro_swell: document.getElementById('audio-chk-outro-swell')
+            ? !!document.getElementById('audio-chk-outro-swell').checked
+            : true,
+        enable_bgm: document.getElementById('chk-enable-bgm')
+            ? !!document.getElementById('chk-enable-bgm').checked
+            : true,
+        enable_outro: document.getElementById('chk-enable-outro')
+            ? !!document.getElementById('chk-enable-outro').checked
+            : true,
+        enable_hook_card: document.getElementById('chk-hook-card')?.checked ?? true,
+        enable_broll_insert: !!(document.getElementById('chk-broll-insert')?.checked),
+        enable_face_center: !!(document.getElementById('chk-center-face')?.checked),
+        enable_emphasis_card: !!(document.getElementById('chk-emphasis-card')?.checked || document.getElementById('chk-emphasis-card-lab')?.checked),
+        enable_audio_visualizer: !!(document.getElementById('chk-audio-visualizer')?.checked),
+        enable_news_ticker: !!(document.getElementById('chk-news-ticker')?.checked)
     };
     if (plan && !plan.visual_mode) {
         plan.visual_mode = payload.visual_mode;
@@ -228,7 +282,22 @@ async function startRenderProcess(planToUse) {
         setCancelButtonState('cancel');
         persistCurrentPlan();
     }).catch(err => {
-        alert(err.message);
+        const msg = err.message || '';
+        const isSimErr = msg.toLowerCase().includes('benzer') || msg.toLowerCase().includes('intihal') || msg.toLowerCase().includes('originality');
+        if (isSimErr) {
+            const retry = confirm(msg + "\n\nİçerik/görseller farklı olduğu için 'Yine De Devam Et' seçeneğiyle render başlatılsın mı?");
+            if (retry) {
+                const chk = document.getElementById('chk-allow-similar-script');
+                if (chk) chk.checked = true;
+                persistentMonitor.classList.add('hidden');
+                isRendering = false;
+                setCancelButtonState('cancel');
+                setTimeout(() => launchVideoRender(), 200);
+                return;
+            }
+        } else {
+            alert(msg);
+        }
         persistentMonitor.classList.add('hidden');
         isRendering = false;
         setCancelButtonState('cancel');
@@ -256,14 +325,42 @@ function initSSE() {
     if (eventSource) eventSource.close();
     eventSource = new EventSource('/api/events');
 
+    const parseAndDispatch = (eventType, rawData) => {
+        try {
+            let data = rawData;
+            if (typeof rawData === 'string' && (rawData.startsWith('{') || rawData.startsWith('['))) {
+                try { data = JSON.parse(rawData); } catch (_) {}
+            }
+            // If data is wrapped as {type, data}, dispatch the inner type
+            if (data && typeof data === 'object' && 'type' in data && 'data' in data && !('percent' in data)) {
+                handleServerEvent(data.type, data.data);
+            } else {
+                handleServerEvent(eventType, data);
+            }
+        } catch (err) {
+            handleServerEvent(eventType, rawData);
+        }
+    };
+
     eventSource.onmessage = (e) => {
         try {
             const payload = JSON.parse(e.data);
-            handleServerEvent(payload.type, payload.data);
+            if (payload && payload.type) {
+                handleServerEvent(payload.type, payload.data);
+            } else {
+                handleServerEvent('message', payload);
+            }
         } catch (err) {
-            console.error("SSE parse error:", err);
+            handleServerEvent('log', e.data);
         }
     };
+
+    // Canonical Section 10.1 SSE event listeners
+    ['progress', 'log', 'complete', 'error'].forEach((evt) => {
+        eventSource.addEventListener(evt, (e) => {
+            parseAndDispatch(evt, e.data);
+        });
+    });
 
     eventSource.onerror = () => {
         console.warn("SSE bağlantısı yeniden kuruluyor...");
@@ -341,7 +438,7 @@ function handleServerEvent(type, data) {
 
             seoBox.classList.remove('hidden');
             try { seoBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
-            refreshFeedDistributionAdvisory(35);
+            refreshFeedDistributionAdvisory(25);
         }
 
         const durMsg = data.director?.duration
@@ -358,6 +455,13 @@ function handleServerEvent(type, data) {
         isRendering = false;
         setCancelButtonState('close');
         updateTerminalTriggers(false, 0);
+
+        const isSimErr = String(data).toLowerCase().includes('benzer') || String(data).toLowerCase().includes('intihal');
+        if (isSimErr) {
+            const btnForce = document.getElementById('btn-force-similar-script');
+            if (btnForce) btnForce.classList.remove('hidden');
+            terminalBody.textContent += `\n[İpucu] Bu senaryoyu zorla render etmek için 'Yine De Devam Et' anahtarını açın veya 'Yine De Devam Et' butonuna tıklayın.\n`;
+        }
     }
 }
 

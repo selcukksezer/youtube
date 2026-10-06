@@ -2,7 +2,7 @@
 YouTube to Shorts Viral Clipper Engine.
 Adapted and integrated from Anil-matcha/AI-Youtube-Shorts-Generator.
 Downloads long YouTube videos, extracts transcript, detects viral highlights using LLM + 8-signal scoring,
-and clips with smart OpenCV face-centering into 9:16 Shorts.
+and clips to 9:16 with one FFmpeg cover crop. Face x comes from five samples.
 """
 import os
 import re
@@ -11,8 +11,6 @@ import subprocess
 from typing import Any, Dict, List, Optional
 import yt_dlp
 import config
-from effects.smart_cropper import crop_subclip_smart
-from services.virality_evaluator import evaluate_script_virality
 
 VIRALITY_CRITERIA_PROMPT = """
 Virality signals to prioritize (ranked by impact):
@@ -227,13 +225,11 @@ class YouTubeClipperService:
 
         start = float(highlight.get("start_time", 0))
         end = float(highlight.get("end_time", 45))
-
-        cropped_clip = crop_subclip_smart(
-            source_path=source_video_path,
-            start_time=start,
-            end_time=end,
-            out_path=out_path,
-            aspect_ratio="9:16",
+        from services.highlight_clipper import cut_ranges_vertical
+        cropped_clip = cut_ranges_vertical(
+            source_video_path,
+            [(start, end)],
+            out_path,
         )
 
         # Optional audio ducking with BGM if provided

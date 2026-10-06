@@ -1,7 +1,17 @@
 """
 DirectorPlan package — production orchestration spine for the 500-item roadmap.
 """
-from .schema import DirectorPlan, ScenePlan, VisualIntent, AudioEvent, QualityThresholds, DEFAULT_EFFECT_MANIFEST
+from .schema import (
+    DirectorPlan,
+    ScenePlan,
+    DirectorScene,
+    VisualIntent,
+    AudioEvent,
+    QualityThresholds,
+    DEFAULT_EFFECT_MANIFEST,
+    SCENE_INTENTS,
+    CAMERA_DIRECTIONS,
+)
 from .compiler import compile_director_plan
 from .validate import validate_director_plan
 from .timeline import solve_timeline, fit_tts_to_timeline
@@ -10,6 +20,8 @@ from .visual_intent import (
     resolve_niche_from_topic,
     resolve_topic_intelligence,
     semantic_relevance_score,
+    classify_scene_intent,
+    assign_camera_direction,
 )
 from .audio_bus import (
     build_audio_events,
@@ -22,15 +34,20 @@ from .quality_gate import pre_render_score, post_render_score, scenes_needing_re
 __all__ = [
     "DirectorPlan",
     "ScenePlan",
+    "DirectorScene",
     "VisualIntent",
     "AudioEvent",
     "QualityThresholds",
     "DEFAULT_EFFECT_MANIFEST",
+    "SCENE_INTENTS",
+    "CAMERA_DIRECTIONS",
     "compile_director_plan",
     "validate_director_plan",
     "solve_timeline",
     "fit_tts_to_timeline",
     "apply_visual_intents",
+    "classify_scene_intent",
+    "assign_camera_direction",
     "resolve_niche_from_topic",
     "resolve_topic_intelligence",
     "semantic_relevance_score",

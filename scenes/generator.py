@@ -72,16 +72,47 @@ def _record_gemini_script_outcome(provider_name: str, model_name: str, err=None)
 
 
 def _call(client, params, *, provider_name: str = "", model_name: str = ""):
+    cache_tuple = None
+    try:
+        from services.llm_cache import GLOBAL_LLM_CACHE
+        messages = params.get("messages", [])
+        sys_msg = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
+        user_msg = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
+        target_model = params.get("model", model_name or "default")
+        cached_text = GLOBAL_LLM_CACHE.get(model=target_model, system_prompt=sys_msg, user_prompt=user_msg)
+        if cached_text:
+            class _CachedChoice:
+                def __init__(self, content):
+                    self.message = type("Msg", (), {"content": content})()
+            class _CachedResponse:
+                def __init__(self, content):
+                    self.choices = [_CachedChoice(content)]
+            return _CachedResponse(cached_text)
+        cache_tuple = (target_model, sys_msg, user_msg)
+    except Exception:
+        pass
+
     try:
         resp = client.chat.completions.create(**params)
         _record_gemini_script_outcome(provider_name, model_name)
+        if cache_tuple and resp and getattr(resp, "choices", None):
+            try:
+                from services.llm_cache import GLOBAL_LLM_CACHE
+                c_text = resp.choices[0].message.content
+                if c_text and "scenes" in c_text:
+                    GLOBAL_LLM_CACHE.set(
+                        model=cache_tuple[0],
+                        system_prompt=cache_tuple[1],
+                        user_prompt=cache_tuple[2],
+                        response_text=c_text,
+                    )
+            except Exception:
+                pass
         return resp
     except Exception as e:
         _record_gemini_script_outcome(provider_name, model_name, e)
-        # A 429/quota error is provider-wide. Retrying same request without
-        # response_format only spends another quota unit and cannot recover.
-        quota_error = any(tok in str(e) for tok in ("429", "quota", "Quota", "rate limit", "RESOURCE_EXHAUSTED"))
-        if "response_format" in params and not quota_error:
+        server_error = any(tok in str(e).lower() for tok in ("429", "503", "quota", "rate limit", "resource_exhausted", "unavailable", "timeout", "timed out"))
+        if "response_format" in params and not server_error:
             del params["response_format"]
             return client.chat.completions.create(**params)
         raise e
@@ -156,6 +187,9 @@ def generate_scenes(
     language: str = None,
     format_fingerprint: dict = None,
     variation_attempt: int = 0,
+    previous_narration: str = None,
+    force_regenerate: bool = False,
+    enable_outro: bool = True,
 ) -> dict:
     lang = language or getattr(config, "LANGUAGE", "tr")
     clean_title = sanitize_topic_title(title)
@@ -168,25 +202,36 @@ def generate_scenes(
     except Exception:
         pass
 
-    if variation_attempt > 0:
-        advance_prompt_rotation(steps=variation_attempt)
-    try:
-        from director.visual_intent import resolve_niche_from_topic
-        locked_niche = resolve_niche_from_topic(title, niche_type or "1_news_flash")
-    except Exception:
-        locked_niche = niche_type or "1_news_flash"
+    effective_var = max(1, variation_attempt) if (force_regenerate or variation_attempt > 0) else 0
+    if effective_var > 0:
+        advance_prompt_rotation(steps=effective_var)
+    if niche_type and niche_type != "1_news_flash":
+        locked_niche = niche_type
+    else:
+        try:
+            from director.visual_intent import resolve_niche_from_topic
+            locked_niche = resolve_niche_from_topic(title, niche_type or "1_news_flash")
+        except Exception:
+            locked_niche = niche_type or "1_news_flash"
     force_fb = os.environ.get("SHORTS_FORCE_PROCEDURAL_FALLBACK", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
     try:
         from niche_templates import get_niche_prompt
-        prompt = get_niche_prompt(locked_niche, title, language=lang)
+        prompt = get_niche_prompt(locked_niche, title, language=lang, enable_outro=enable_outro)
         if variation_attempt > 0:
-            prompt = (
-                prompt
-                + f"\n\nVARYASYON #{variation_attempt + 1}: '{title}' konusuna özgü benzersiz "
-                "anlatım yaz; önceki videolardaki kalıp cümleleri tekrarlama."
-            )
+            if lang == "en":
+                prompt = (
+                    prompt
+                    + f"\n\nVARIATION #{variation_attempt + 1}: Write a completely fresh, unique narrative for '{title}'. "
+                    "Do not repeat opening lines or formulaic phrasing from previous scripts."
+                )
+            else:
+                prompt = (
+                    prompt
+                    + f"\n\nVARYASYON #{variation_attempt + 1}: '{title}' konusuna özgü benzersiz "
+                    "anlatım yaz; önceki videolardaki kalıp cümleleri tekrarlama."
+                )
     except Exception:
         prompt = get_rotated_system_prompt(
             base_lang=lang, force_variant=variation_attempt % 3
@@ -206,14 +251,16 @@ def generate_scenes(
         pass
 
     # Verticals v3 Anti-Hallucination Gate (DuckDuckGo Live Web Research)
+    fact_snippets: list = []
     try:
-        from services.web_fact_researcher import format_research_prompt_context
-        fact_context = format_research_prompt_context(title, max_snippets=4)
+        from services.web_fact_researcher import format_snippet_block, research_topic_facts
+        fact_snippets = research_topic_facts(title, max_snippets=4)
+        fact_context = format_snippet_block(fact_snippets)
         if fact_context:
             prompt = prompt + "\n\n" + fact_context
             print(f"  [FactResearcher] Anti-hallucination web araştırması prompta eklendi ({title[:40]})")
     except Exception as fact_err:
-        pass
+        fact_snippets = []
 
     # Verticals v3 / Repo 10: Niche Guardrails (Visual avoid/prefer + Forbidden Phrases)
     try:
@@ -224,24 +271,75 @@ def generate_scenes(
     except Exception:
         pass
 
+    if not enable_outro:
+        if lang == "tr":
+            prompt += (
+                "\n\nOUTRO KAPALI: Son sahneye CTA, yorum sorusu veya döngü kapanışı ekleme. "
+                "Son cümle konunun son olgusu olsun.\n"
+            )
+        else:
+            prompt += (
+                "\n\nOUTRO OFF: Do not add a CTA, comment question, or loop close. "
+                "End on the last fact.\n"
+            )
+
     if lang == "en":
         user_msg = (
             f"Create a high-retention English YouTube Shorts video script for this topic: '{clean_title}'.\n"
             f"Original title context (hashtags stripped): '{title}'.\n"
             f"CRITICAL REQUIREMENT: The 'narration' field in EVERY scene MUST be written 100% in fluent, natural ENGLISH. "
-            f"Each narration MUST be at least 12 complete words (1-2 full sentences) — never mood labels, dots, or emoji-only placeholders. "
+            f"Each narration MUST be at least 15 complete words (1-2 full sentences) — never mood labels, dots, or emoji-only placeholders. "
             f"Each scene_description MUST be a concrete English visual sentence, never a placeholder. "
-            f"Do NOT output Turkish narration. Translate and adapt the topic into an immersive English script."
+            f"Do NOT output Turkish narration. Translate and adapt the topic into an immersive English script.\n"
+            f"CRITICAL LENGTH RULE: The script MUST have 8-12 scenes and a minimum of 130 words total (approx 45-60 seconds). Do NOT write short scripts."
         )
     else:
         user_msg = (
             f"Bu başlık için Türkçe YouTube Shorts senaryosu oluştur: '{clean_title}'.\n"
             f"Orijinal başlık (hashtag/emojisiz): '{title}'.\n"
-            f"KRİTİK: Her sahnenin 'narration' alanı en az 12 kelimelik TAM Türkçe cümle(ler) olmalı; "
+            f"KRİTİK: Her sahnenin 'narration' alanı en az 15 kelimelik TAM Türkçe cümle(ler) olmalı; "
             f"sadece mood etiketi, nokta veya emoji placeholder YASAK. "
             f"scene_description gerçek İngilizce görsel cümle olmalı — placeholder YASAK. "
-            f"6-12 sahne, toplam 45-60 saniye; 120-170 kelime, konu ne kadar istiyorsa o kadar, 60'ı aşma."
+            f"UZUNLUK KURALI: 8-12 sahne, toplam 45-60 saniye; MİNİMUM 130 kelime (kesin kural, 60 sn'yi aşma)."
         )
+        try:
+            from scenes.hadith_overlay import is_sacred_niche
+            if is_sacred_niche(str(locked_niche or niche_type or ""), clean_title):
+                user_msg += (
+                    "\nHadis/ayet sahnesi: her sahneye 'arabic_text' (harekeli Arapça) ve "
+                    "'source_citation' (Buhari, Müslim veya sure) yaz. "
+                    "narration yalnız Türkçe meal olsun. Arapça seslendirmeye girmez, ekranda üstte durur."
+                )
+        except Exception:
+            pass
+
+    if previous_narration and len(previous_narration.strip()) > 20:
+        prev_snip = previous_narration.strip()[:400].replace('\n', ' ')
+        if lang == "en":
+            user_msg += (
+                f"\n\n[CRITICAL VARIATION INSTRUCTION]: The user requested a brand-new script for this topic. "
+                f"The previous script text was: '{prev_snip}'. "
+                f"DO NOT repeat these sentences, the same opening hook, or the same narrative order! "
+                f"Rewrite completely from a new angle, with different facts/examples and a fresh narrative structure."
+            )
+        else:
+            user_msg += (
+                f"\n\n[KRİTİK VARYASYON TALİMATI]: Kullanıcı bu konu için yeni bir senaryo istedi. "
+                f"Önceki senaryoda yazılan metin şuydu: '{prev_snip}'. "
+                f"KESİNLİKLE bu cümleleri, aynı açılış kancasını veya aynı anlatı sıralamasını TEKRARLAMA! "
+                f"Tamamen farklı bir bakış açısı, farklı bir olay/örnek/çarpıcı bilgi ve taze bir kurgu ile baştan yaz."
+            )
+    elif effective_var > 0:
+        if lang == "en":
+            user_msg += (
+                f"\n\n[CRITICAL VARIATION #{effective_var + 1}]: A script was previously written for this topic. "
+                f"Break away from conventional tropes, write an alternative opening hook, and craft a brand-new variation with fresh facts."
+            )
+        else:
+            user_msg += (
+                f"\n\n[KRİTİK VARYASYON #{effective_var + 1}]: Bu konu için daha önce senaryo yazıldı. "
+                f"Klasik kalıpların dışına çık, alternatif bir açılış kancası ve farklı bilgiler içeren yepyeni bir varyasyon yaz."
+            )
 
     # Build fallback provider chain
     providers = []
@@ -250,7 +348,7 @@ def generate_scenes(
         providers.append((config.AI_PROVIDER, config.AI_API_KEY, config.AI_BASE_URL, config.AI_MODEL))
         # If Gemini, add lite and flash variants as instant fallbacks
         if config.AI_PROVIDER == "Gemini":
-            for alt_m in ["gemini-flash-latest", "gemini-3.8-flash", "gemini-flash-lite-latest", "gemini-3.1-flash-lite"]:
+            for alt_m in ["gemini-flash-lite-latest", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]:
                 if alt_m != config.AI_MODEL:
                     providers.append(("Gemini (" + alt_m + ")", config.AI_API_KEY, config.AI_BASE_URL, alt_m))
 
@@ -277,16 +375,18 @@ def generate_scenes(
         last_error = "SHORTS_FORCE_PROCEDURAL_FALLBACK"
 
     for provider_name, api_key, base_url, model_name in providers:
-        if ("Gemini" in provider_name or "gemma" in (model_name or "").lower()) and _gemini_script_circuit_open():
-            print(f"  [{provider_name}] gemini_script circuit OPEN — atlanıyor")
+        # Only skip primary if circuit open; let specific fallback models try
+        if provider_name == "Gemini" and _gemini_script_circuit_open():
+            print(f"  [{provider_name}] gemini_script circuit OPEN — fallback modele geçiliyor")
             continue
         print(f"  [{provider_name}] Senaryo üretiliyor: '{title}'")
         try:
             client = OpenAI(api_key=api_key, base_url=base_url)
+            call_temp = 0.88 if (effective_var > 0 or force_regenerate) else 0.7
             params = dict(
                 model=model_name,
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_msg}],
-                temperature=0.7, max_tokens=4000,
+                temperature=call_temp, max_tokens=4000,
             )
             if "Gemini" in provider_name or "OpenAI" in provider_name:
                 params["response_format"] = {"type": "json_object"}
@@ -342,7 +442,7 @@ def generate_scenes(
             title,
             niche_type=locked_niche or niche_type,
             language=lang,
-            variation_seed=variation_attempt,
+            variation_seed=effective_var,
         )
         data["procedural_fallback"] = True
 
@@ -355,12 +455,19 @@ def generate_scenes(
     if narr_issues:
         print(f"  [SceneGenerator] Kopuk cümle düzeltmesi: {narr_issues}")
         # One strict retry when provider chain still has headroom
-        retry_msg = (
-            user_msg
-            + "\n\nKRITIK: Her sahne narration alanı 1-2 TAM cümle olmalı (drama: 8-12 kelime, . ! ? ile bitmeli). "
-            "Asla yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). "
-            "Her sahne kendi başına anlamlı olmalı — fiil iki sahneye bölünmemeli."
-        )
+        if lang == "en":
+            retry_msg = (
+                user_msg
+                + "\n\nCRITICAL: Every scene narration field MUST be 1-2 COMPLETE English sentences (drama: 8-15 words, ending in . ! ?). "
+                "Never leave trailing fragments or comma splices. Narration must be 100% natural, fluent English."
+            )
+        else:
+            retry_msg = (
+                user_msg
+                + "\n\nKRITIK: Her sahne narration alanı 1-2 TAM cümle olmalı (drama: 8-12 kelime, . ! ? ile bitmeli). "
+                "Asla yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). "
+                "Her sahne kendi başına anlamlı olmalı — fiil iki sahneye bölünmemeli."
+            )
         for provider_name, api_key, base_url, model_name in providers:
             if data.get("scenes") and not any(
                 scene_narration_issues((s.get("narration") or "")) for s in data["scenes"]
@@ -459,35 +566,22 @@ def generate_scenes(
     _hook_niche = locked_niche or niche_type
     data["niche_id"] = data.get("niche_id") or _hook_niche
     data = ensure_retention_hooks_on_plan(
-        data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
+        data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt,
+        enable_outro=enable_outro,
     )
 
     # Batch D — soft word budget before Director hard condense (~60s Shorts headroom)
     data = repair_post_hook_word_budget(data, max_words=_tts_word_cap())
 
-    # Batch E — mood/query diversity linter (regenerate weak AI plans)
+    # Batch E — mood/query diversity linter
     diversity = lint_plan_diversity(data)
     data["diversity_lint"] = diversity
-    if diversity.get("weak") and not data.get("procedural_fallback"):
-        print(
-            f"  [SceneGenerator] Diversity zayıf ({diversity.get('warnings')}) — "
-            "prosedürel fallback devreye alınıyor."
-        )
-        data = _generate_procedural_fallback_scenes(
-            title,
-            niche_type=locked_niche or niche_type,
-            language=lang,
-            variation_seed=variation_attempt,
-        )
-        data["procedural_fallback"] = True
-        data = ensure_retention_hooks_on_plan(
-            data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
-        )
-        data = repair_post_hook_word_budget(data, max_words=_tts_word_cap())
+    if diversity.get("warnings"):
+        print(f"  [SceneGenerator] Diversity bildirimi: {diversity.get('warnings')}")
 
-    # Final quality gate — regenerate if hooks/budget left stub narrations
+    # Final quality gate — only fall back if narrations are genuinely stub/unusable
     if not plan_quality_usable(data.get("scenes") or []) and not data.get("procedural_fallback"):
-        print("  [SceneGenerator] Post-hook plan hâlâ zayıf — prosedürel fallback.")
+        print("  [SceneGenerator] Post-hook plan kalitesi yetersiz — prosedürel fallback.")
         data = _generate_procedural_fallback_scenes(
             title,
             niche_type=locked_niche or niche_type,
@@ -496,7 +590,8 @@ def generate_scenes(
         )
         data["procedural_fallback"] = True
         data = ensure_retention_hooks_on_plan(
-            data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt
+            data, title, lang=lang, niche_type=_hook_niche, variation_attempt=variation_attempt,
+            enable_outro=enable_outro,
         )
         data = repair_post_hook_word_budget(data, max_words=_tts_word_cap())
 
@@ -543,12 +638,19 @@ def generate_scenes(
     except Exception as craft_exc:
         print(f"  [SceneGenerator] human_craft skip: {craft_exc}")
 
+    data["language"] = lang
     try:
         from .narration_sense import repair_nonsensical_narration
-        data = repair_nonsensical_narration(data, topic=clean_title or title)
+        data = repair_nonsensical_narration(data, topic=clean_title or title, language=lang)
         total = sum(float(s.get("duration") or 3.5) for s in data.get("scenes") or [])
     except Exception as sense_exc:
         print(f"  [SceneGenerator] narration sense skip: {sense_exc}")
+
+    try:
+        from services.web_fact_researcher import scrub_unverified_claims
+        data = scrub_unverified_claims(data, fact_snippets, lang=lang)
+    except Exception as fact_scrub_exc:
+        print(f"  [FactResearcher] claim scrub skip: {fact_scrub_exc}")
 
     try:
         from services.virality_evaluator import evaluate_script_virality
@@ -562,5 +664,18 @@ def generate_scenes(
             print(f"  [ViralityAudit] Uyarılar: {audit.get('issues')}")
     except Exception as va_exc:
         print(f"  [ViralityAudit] skip: {va_exc}")
+
+    # Final guard: ensure word budget (max ~140 words for Shorts 60s headroom)
+    # and clamp scene durations between 38-60s
+    data = repair_post_hook_word_budget(data, max_words=min(145, _tts_word_cap()))
+    scenes_list = data.get("scenes") or []
+    if scenes_list:
+        total = sum(float(s.get("duration") or 4.0) for s in scenes_list)
+        target_total = max(SHORTS_MIN_DURATION, min(SHORTS_MAX_DURATION, total))
+        if total < SHORTS_MIN_DURATION or total > SHORTS_MAX_DURATION:
+            scale = target_total / max(total, 1.0)
+            for s in scenes_list:
+                s["duration"] = round(max(2.0, min(7.5, float(s.get("duration") or 4.0) * scale)), 1)
+        data["total_duration"] = round(sum(float(s.get("duration") or 0) for s in scenes_list), 2)
 
     return sanitize_plan_scene_descriptions(data)

@@ -20,7 +20,7 @@ from director.visual_intent import resolve_topic_intelligence
 from niche_templates import NICHES, get_niche_production_profile
 from research_service import extract_format_fingerprint_from_title, fetch_youtube_autocomplete_suggestions
 from trending_scanner import scan_youtube_shorts_trends
-from services.niche_topic_vault import CURATED_NICHE_TOPICS, resolve_canonical_niche
+from services.niche_topic_vault import CURATED_NICHE_TOPICS, get_curated_topics_for_niche, resolve_canonical_niche
 
 logger = logging.getLogger(__name__)
 
@@ -99,26 +99,54 @@ def _is_generic(title: str) -> bool:
     return any(re.search(pat, low, re.I) for pat in _GENERIC_PATTERNS)
 
 
-def _generate_seed_based_topics(seed_keyword: str, niche_id: str, count: int = 5) -> List[Dict[str, Any]]:
+def _generate_seed_based_topics(
+    seed_keyword: str, niche_id: str, count: int = 5, language: str = "tr"
+) -> List[Dict[str, Any]]:
     """Synthesize high-CTR viral topic candidates directly from a user seed keyword."""
-    clean = re.sub(r"[^\w\s\u00C0-\u017F-]", "", (seed_keyword or "").strip())
+    raw = (seed_keyword or "").strip()
+    raw = re.sub(r"#\w+", "", raw)
+    clean = re.sub(r"[^\w\s\u00C0-\u017F-]", "", raw).strip()
+    clean = re.sub(r"\bshorts\b", "", clean, flags=re.I).strip()
     if len(clean) < 3:
         return []
     
     # Capitalize for title casing
     words = clean.split()
     cap_seed = " ".join(w.capitalize() for w in words)
+    is_tr = (language or "tr").lower()[:2] != "en"
     
-    templates = [
-        f"{cap_seed} Hakkında Muhtemelen Bilmediğiniz 5 Şaşırtıcı Gerçek",
-        f"Kimsenin Bahsetmediği Gizli {cap_seed} Sırrı ve Doğrusu",
-        f"{cap_seed} Konusunda Çoğu İnsanın Yaptığı En Yaygın 3 Hata",
-        f"Bunu Öğrenene Kadar {cap_seed} Hakkında Bildiğiniz Her Şey Yanlıştı",
-        f"Sıfırdan Başlayanlar İçin {cap_seed} Rehberi: 3 Altın Kural",
-        f"Günde Sadece 10 Dakika Ayırarak {cap_seed} ile Sonuç Alın",
-        f"{cap_seed} ile İlgili Hayatınızı Kolaylaştıracak 3 Pratik Yöntem",
-        f"Uzmanların {cap_seed} Hakkında Asla Açıklamak İstemediği O Gerçek",
-    ]
+    if not is_tr:
+        templates = [
+            f"5 Shocking Facts About {cap_seed} You Were Never Told",
+            f"The Hidden Truth About {cap_seed} Nobody Talks About",
+            f"3 Critical Mistakes Most People Make With {cap_seed}",
+            f"The Dark Side of {cap_seed} Experts Won't Tell You",
+            f"Everything You Thought You Knew About {cap_seed} Is Completely Wrong",
+            f"The Untold Secret of {cap_seed} That Changes Everything",
+            f"How {cap_seed} Quietly Controls 99% of People Without Them Knowing",
+            f"The Beginner's Guide to {cap_seed}: 3 Golden Rules You Must Follow",
+        ]
+    elif niche_id == "10_religious_quotes":
+        templates = [
+            f"Hz. Peygamber'in {cap_seed} Hakkındaki Mucizevi Hadis-i Şerifi (Buhari)",
+            f"Kalplere Şifa Olan {cap_seed} Hadisi Şerifi ve Fazileti (Müslim)",
+            f"Resulullah'ın (s.a.v.) {cap_seed} Konusundaki Altın Öğüdü (Tirmizi)",
+            f"{cap_seed} ile İlgili Peygamberimizin Hayat Değiştiren Hadisi",
+            f"Rabbinizin Müjdesi: {cap_seed} Hakkındaki Hikmetli Ayet-i Kerime",
+            f"Zor Zamanlarda {cap_seed} İçin Okunacak En Tesirli Nebevî Dua",
+            f"Peygamber Efendimiz'in {cap_seed} Uyarısı ve Kurtarıcı Sünneti",
+        ]
+    else:
+        templates = [
+            f"{cap_seed} Hakkında Muhtemelen Bilmediğiniz 5 Şaşırtıcı Gerçek",
+            f"Kimsenin Bahsetmediği Gizli {cap_seed} Sırrı ve Doğrusu",
+            f"{cap_seed} Konusunda Çoğu İnsanın Yaptığı En Yaygın 3 Hata",
+            f"Bunu Öğrenene Kadar {cap_seed} Hakkında Bildiğiniz Her Şey Yanlıştı",
+            f"Sıfırdan Başlayanlar İçin {cap_seed} Rehberi: 3 Altın Kural",
+            f"Günde Sadece 10 Dakika Ayırarak {cap_seed} ile Sonuç Alın",
+            f"{cap_seed} ile İlgili Hayatınızı Kolaylaştıracak 3 Pratik Yöntem",
+            f"Uzmanların {cap_seed} Hakkında Asla Açıklamak İstemediği O Gerçek",
+        ]
     random.shuffle(templates)
     
     out: List[Dict[str, Any]] = []
@@ -139,6 +167,7 @@ def _score_candidate(
     context_words: Set[str],
     used: Set[str],
     extra: Optional[Dict[str, Any]] = None,
+    language: str = "tr",
 ) -> Optional[Dict[str, Any]]:
     topic = re.sub(r"\s+", " ", (title or "").strip())
     if len(topic) < 8 or len(topic) > 160:
@@ -180,7 +209,13 @@ def _score_candidate(
 
     confidence = min(99, max(50, score))
     profile = get_niche_production_profile(niche_id)
-    hook = (profile.get("hook_style") or "")[:120]
+    is_tr = (language or "tr").lower()[:2] != "en"
+    if is_tr:
+        hook = (profile.get("hook_style") or "")[:120]
+    else:
+        from niche_templates import NICHE_HOOKS_EN
+        canonical_id = resolve_canonical_niche(niche_id)
+        hook = (NICHE_HOOKS_EN.get(niche_id) or NICHE_HOOKS_EN.get(canonical_id) or "High-CTR viral curiosity hook...")[:120]
     fp = extract_format_fingerprint_from_title(topic)
 
     item: Dict[str, Any] = {
@@ -206,28 +241,46 @@ def _score_candidate(
 
 def _fetch_youtube_candidates(niche_id: str, language: str, limit: int, topic_hint: str = "") -> List[Dict[str, Any]]:
     """Fetch high-intent YouTube candidates combining Autocomplete suggestions and trends."""
-    niche = NICHES.get(niche_id, NICHES["1_news_flash"])
-    keywords = niche.get("trending_keywords") or [niche["name"]]
-    
-    # Priority query: topic_hint if provided, otherwise primary niche keyword
-    primary_query = (topic_hint or "").strip() or keywords[0]
-    if language == "en" and len(keywords) > 1 and not topic_hint:
-        primary_query = next((k for k in keywords if re.search(r"[a-zA-Z]", k)), keywords[0])
-    
-    out: List[Dict[str, Any]] = []
-
-    # 1. Live YouTube Autocomplete (real search volume queries)
     try:
+        from hybrid_niches import HYBRID_NICHES
+    except ImportError:
+        HYBRID_NICHES = {}
+    niche = HYBRID_NICHES.get(niche_id) or NICHES.get(niche_id, NICHES["1_news_flash"])
+    is_en = (language or "tr").lower().startswith("en")
+    
+    if is_en:
+        en_fallback_query = niche.get("name_en") or niche_id.split("_", 1)[-1].replace("_", " ")
+        primary_query = (topic_hint or "").strip() or en_fallback_query
+        autocomplete_queries = [primary_query]
+    else:
+        keywords = niche.get("trending_keywords") or [niche["name"]]
+        primary_query = (topic_hint or "").strip() or keywords[0]
         autocomplete_queries = [primary_query]
         if not topic_hint and len(keywords) > 1:
             autocomplete_queries.append(keywords[1])
-        
+    
+    out: List[Dict[str, Any]] = []
+
+    def _is_valid_candidate(t: str) -> bool:
+        if not t or _is_generic(t):
+            return False
+        if len(t.strip().split()) < 3 or len(t.strip()) < 15:
+            return False
+        if is_en:
+            if re.search(r"[çğıöşüÇĞİÖŞÜ]", t):
+                return False
+            if re.search(r"\b(ve|ile|bir|için|nasıl|neden|kural|sır|hakkında|tarihi|dünyanın)\b", t, re.IGNORECASE):
+                return False
+        return True
+
+    # 1. Live YouTube Autocomplete (real search volume queries)
+    try:
         seen_ac = set()
         for q in autocomplete_queries:
             raw_suggs = fetch_youtube_autocomplete_suggestions(q)
             for s in raw_suggs:
                 clean_s = s.strip()
-                if 12 <= len(clean_s) <= 100 and clean_s.lower() not in seen_ac:
+                if clean_s.lower() not in seen_ac and _is_valid_candidate(clean_s):
                     seen_ac.add(clean_s.lower())
                     title_formatted = clean_s[0].upper() + clean_s[1:]
                     out.append({
@@ -243,7 +296,7 @@ def _fetch_youtube_candidates(niche_id: str, language: str, limit: int, topic_hi
         trends = scan_youtube_shorts_trends(primary_query, time_filter="week", sort_by="views")
         for t in trends[: limit * 2]:
             t_title = t.get("title", "")
-            if t_title and not _is_generic(t_title):
+            if _is_valid_candidate(t_title):
                 out.append({
                     "title": t_title,
                     "source": SOURCE_YOUTUBE,
@@ -258,7 +311,11 @@ def _fetch_youtube_candidates(niche_id: str, language: str, limit: int, topic_hi
     return out
 
 
-def _fetch_trend_candidates(niche_id: str) -> List[Dict[str, Any]]:
+def _fetch_trend_candidates(niche_id: str, language: str = "tr") -> List[Dict[str, Any]]:
+    is_tr = (language or "tr").lower()[:2] != "en"
+    if not is_tr:
+        # Never inject Turkish RSS news or Turkish A/B hook variants in English mode
+        return []
     if niche_id == "1_news_flash":
         try:
             from rss_scanner import get_breaking_news_topics
@@ -266,7 +323,11 @@ def _fetch_trend_candidates(niche_id: str) -> List[Dict[str, Any]]:
             return [{"title": it["title"], "source": SOURCE_TREND, "viral_score": 95} for it in items if it.get("title")]
         except Exception:
             pass
-    niche = NICHES.get(niche_id, NICHES["1_news_flash"])
+    try:
+        from hybrid_niches import HYBRID_NICHES
+    except ImportError:
+        HYBRID_NICHES = {}
+    niche = HYBRID_NICHES.get(niche_id) or NICHES.get(niche_id, NICHES["1_news_flash"])
     variants = niche.get("ab_test_hook_variants") or []
     return [{"title": v, "source": SOURCE_TREND, "viral_score": 88} for v in variants if v and not _is_generic(v)]
 
@@ -288,10 +349,16 @@ def _generate_ai_candidates(
 ) -> List[Dict[str, Any]]:
     """Generate fresh AI candidates with reasoning tag stripping and graceful fallback."""
     profile = get_niche_production_profile(niche_id)
-    niche = NICHES.get(niche_id, NICHES["1_news_flash"])
+    try:
+        from hybrid_niches import HYBRID_NICHES
+    except ImportError:
+        HYBRID_NICHES = {}
+    niche = HYBRID_NICHES.get(niche_id) or NICHES.get(niche_id, NICHES["1_news_flash"])
     try:
         from google_ai_hub import generate_text
-        lang_label = "Turkish" if language == "tr" else "English"
+        is_tr = (language or "tr").lower()[:2] != "en"
+        lang_label = "Turkish" if is_tr else "English"
+        niche_display_name = profile["name"] if is_tr else (niche.get("name_en") or profile["name"])
         keywords = ", ".join((niche.get("trending_keywords") or [])[:6])
         angles = [
             "paradoxical psychological secrets or counter-intuitive realities",
@@ -304,20 +371,44 @@ def _generate_ai_candidates(
         chosen_angle = random.choice(angles)
         seed = random.randint(100, 999999)
         hint = f"\nUser direction / seed topic: {topic_hint.strip()}" if topic_hint and topic_hint.strip() else ""
-        prompt = (
-            f"Generate exactly {count + 4} unique, highly engaging YouTube Shorts video titles for niche \"{profile['name']}\".\n"
-            f"Perspective / Angle: {chosen_angle} (Seed: {seed})\n"
-            f"Language: {lang_label}\nTone: {profile['tone']}\nKeywords: {keywords}\n"
-            f"Hook reference: {niche.get('hook_style', '')}{hint}\n\n"
-            "Rules:\n"
-            "- Specific, high CTR, emotional hook or curiosity gap\n"
-            "- Under 75 characters per title, punchy and clear\n"
-            "- Do NOT use robotic cliches like 'Bu bilgiyi öğrenmeden önce'\n"
-            "- Return ONLY a JSON array of title strings, no markdown\n"
-        )
+        if niche_id == "10_religious_quotes":
+            prompt = (
+                f"Generate exactly {count + 4} unique, authentic, highly engaging YouTube Shorts video titles about Hadith (Hadis-i Şerif) and Quranic Ayah topics for niche \"{niche_display_name}\".\n"
+                f"Perspective: Sahih Hadiths (Buhari, Müslim, Tirmizi, Ebu Davud) and heart-touching Quranic Ayahs with authentic moral lessons (Seed: {seed}).\n"
+                f"Language: {lang_label}\nTone: {profile['tone']}\nKeywords: {keywords}\n"
+                f"Format requirement: Titles must cite the source book or surah in parentheses, e.g. 'Peygamber Efendimiz\\'in Ameller Niyetlere Göredir Hadisi (Buhari)'.{hint}\n\n"
+                "Rules:\n"
+                "- Authentic Islamic Hadiths and Quranic Ayahs with book reference (Buhari, Müslim, Tirmizi, etc.)\n"
+                "- High CTR, emotionally peaceful, inspiring curiosity and spiritual reflection\n"
+                "- Under 75 characters per title, punchy and clear\n"
+                "- Return ONLY a JSON array of title strings, no markdown\n"
+            )
+        else:
+            if is_tr:
+                hook_ref = niche.get("hook_style", "")
+                lang_rule = "- Sadece Türkçe dilinde başlık üret"
+                anti_cliche = "- Do NOT use robotic cliches like 'Bu bilgiyi öğrenmeden önce'"
+            else:
+                from niche_templates import NICHE_HOOKS_EN
+                canonical_id = resolve_canonical_niche(niche_id)
+                hook_ref = NICHE_HOOKS_EN.get(niche_id) or NICHE_HOOKS_EN.get(canonical_id) or "High-CTR viral curiosity hook"
+                lang_rule = "- Generate ALL titles strictly in natural fluent English. Absolutely NO Turkish words. (Note: Niche name or keywords might be in Turkish, but you must translate the concept and output ONLY English titles)"
+                anti_cliche = "- Do NOT use robotic cliches like 'Before you learn this fact'"
+            prompt = (
+                f"Generate exactly {count + 4} unique, highly engaging YouTube Shorts video titles for niche \"{niche_display_name}\".\n"
+                f"Perspective / Angle: {chosen_angle} (Seed: {seed})\n"
+                f"Language: {lang_label}\nTone: {profile['tone']}\nKeywords: {keywords}\n"
+                f"Hook reference: {hook_ref}{hint}\n\n"
+                "Rules:\n"
+                "- Specific, high CTR, emotional hook or curiosity gap\n"
+                "- Under 75 characters per title, punchy and clear\n"
+                f"{anti_cliche}\n"
+                f"{lang_rule}\n"
+                "- Return ONLY a JSON array of title strings, no markdown\n"
+            )
         ok, text = generate_text(
             prompt,
-            system=f"You are an elite YouTube Shorts viral title strategist for {profile['name']}.",
+            system=f"You are an elite YouTube Shorts viral title strategist for {niche_display_name}.",
         )
         if ok and text:
             cleaned = _clean_llm_text(text)
@@ -331,25 +422,25 @@ def _generate_ai_candidates(
                 ]
     except Exception as exc:
         logger.debug("AI topic generation notice: %s", exc)
+        return [{"title": "API Limitine Takıldı (Çok fazla istek). Lütfen 1-2 dakika bekleyip tekrar deneyin.", "source": SOURCE_AI, "viral_score": 0}]
 
-    # Resilient fallback: Return curated niche titles and seed-tailored topics
-    return _template_fallback_candidates(niche_id, topic_hint)
+    return [{"title": "Yapay zeka öneri üretemedi. (API Hatası veya Limit)", "source": SOURCE_AI, "viral_score": 0}]
 
 
-def _template_fallback_candidates(niche_id: str, topic_hint: str = "") -> List[Dict[str, Any]]:
+def _template_fallback_candidates(niche_id: str, topic_hint: str = "", language: str = "tr") -> List[Dict[str, Any]]:
     """Guaranteed rich, non-cliche candidates from curated vault and dynamic seed engine."""
     canonical_id = resolve_canonical_niche(niche_id)
     out: List[Dict[str, Any]] = []
 
     # 1. If topic hint given by user, generate dynamic framed titles
     if topic_hint and len(topic_hint.strip()) >= 3:
-        seed_cands = _generate_seed_based_topics(topic_hint.strip(), canonical_id, count=6)
+        seed_cands = _generate_seed_based_topics(topic_hint.strip(), niche_id, count=6, language=language)
         out.extend(seed_cands)
 
     # 2. Add curated high-CTR vault topics
-    vault_titles = list(CURATED_NICHE_TOPICS.get(canonical_id, []))
+    vault_titles = get_curated_topics_for_niche(niche_id, lang=language)
     if not vault_titles:
-        vault_titles = list(CURATED_NICHE_TOPICS.get("1_news_flash", []))
+        vault_titles = get_curated_topics_for_niche("1_news_flash", lang=language)
 
     random.shuffle(vault_titles)
     for t in vault_titles:
@@ -413,24 +504,10 @@ def suggest_topics(
 
     # 1. Custom user seed topics (highest priority if user typed a keyword)
     if topic_hint and len(topic_hint.strip()) >= 3:
-        raw.extend(_generate_seed_based_topics(topic_hint.strip(), canonical_niche, count=count))
+        raw.extend(_generate_seed_based_topics(topic_hint.strip(), raw_niche, count=count, language=language))
 
-    # 2. Real-time YouTube Signals (Autocomplete + Trending)
-    raw.extend(_fetch_youtube_candidates(canonical_niche, language, count, topic_hint))
-    
-    # 3. Trending & Breaking News
-    raw.extend(_fetch_trend_candidates(canonical_niche))
-
-    # 4. Reddit Viral Stories (if applicable)
-    if canonical_niche == "2_reddit_confessions":
-        raw.extend(_fetch_reddit_candidates(language, count))
-
-    # 5. AI Generation (with reasoning tag stripping and multi-angle prompts)
-    raw.extend(_generate_ai_candidates(canonical_niche, language, count, topic_hint))
-
-    # If raw candidates are still insufficient (e.g. offline/mocked), inject curated vault
-    if len(raw) < count:
-        raw.extend(_template_fallback_candidates(canonical_niche, topic_hint))
+    # 2. AI Generation (with reasoning tag stripping and multi-angle prompts)
+    raw.extend(_generate_ai_candidates(raw_niche, language, count, topic_hint))
 
     # Score and filter all candidates
     scored: List[Dict[str, Any]] = []
@@ -444,7 +521,7 @@ def suggest_topics(
             continue
         seen_titles.add(norm)
         extra = {k: v for k, v in cand.items() if k not in ("title", "source")}
-        item = _score_candidate(title, canonical_niche, cand.get("source", SOURCE_AI), context_words, used, extra)
+        item = _score_candidate(title, raw_niche, cand.get("source", SOURCE_AI), context_words, used, extra, language=language)
         if item:
             scored.append(item)
 
@@ -455,20 +532,33 @@ def suggest_topics(
 
     # In case count not met, fill from curated vault
     if len(suggestions) < count:
-        for fb in _template_fallback_candidates(canonical_niche, topic_hint):
+        for fb in _template_fallback_candidates(raw_niche, topic_hint, language=language):
             if len(suggestions) >= count:
                 break
             item = _score_candidate(
-                fb["title"], canonical_niche, SOURCE_VAULT, context_words, used, extra={"is_curated": True}
+                fb["title"], raw_niche, SOURCE_VAULT, context_words, used, extra={"is_curated": True}, language=language
             )
             if item and item["title"].casefold() not in {s["title"].casefold() for s in suggestions}:
                 suggestions.append(item)
 
-    profile = get_niche_production_profile(canonical_niche)
+    try:
+        from hybrid_niches import HYBRID_NICHES
+    except ImportError:
+        HYBRID_NICHES = {}
+    
+    niche_obj = HYBRID_NICHES.get(raw_niche) or NICHES.get(raw_niche, {})
+    profile = get_niche_production_profile(raw_niche)
+    
+    niche_display_name = (
+        niche_obj.get("name_en")
+        if language == "en" and niche_obj.get("name_en")
+        else (niche_obj.get("name") or profile.get("name", raw_niche))
+    )
+    
     return {
         "status": "ok",
-        "niche_id": canonical_niche,
-        "niche_name": profile["name"],
+        "niche_id": raw_niche,
+        "niche_name": niche_display_name,
         "language": language,
         "count": len(suggestions[:count]),
         "suggestions": suggestions[:count],

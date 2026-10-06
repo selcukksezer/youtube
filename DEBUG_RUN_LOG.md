@@ -702,27 +702,6 @@
 - düzeltme: yok
 - test: Dosya bütünlüğü doğrulandı.
 
-## static/studio-v2.html
-- durum: DONE
-- bulgu: Hafif V2 üretim masası, 4 aşamalı temiz iş akışı (Konu -> Senaryo -> Render -> Çıktı) incelendi.
-- düzeltme: yok
-- test: Section 10 testleri geçti.
-
-## static/studio-v2.js
-- durum: DONE
-- bulgu: V2 üretim arayüzü istemci scripti, `node -c` ile doğrulandı, SSE EventSource render takibi incelendi.
-- düzeltme: yok
-- test: `node -c static/studio-v2.js` ve Section 10 testleri geçti.
-
-## static/studio-v2.css
-- durum: DONE
-- bulgu: V2 çalışma alanı stilleri, tipografi ve radial arka plan tasarımı incelendi.
-- düzeltme: yok
-- test: Dosya bütünlüğü doğrulandı.
-
-
-
-
 ## anti_detect_engine.py
 - durum: DONE
 - bulgu: Anti-detect motoru ana facade modülü, profil yönetimi ve sahte bayrak temizliği doğrulandı.

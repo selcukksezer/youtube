@@ -103,7 +103,7 @@ Sıra bu dosyalara gelince dikişi ayrıca doğrula. Kopuksa düzelt:
 6. Kota: `quota_manager.py` ↔ `video_fetcher.py` ↔ `production/stock_fetcher.py` ↔ `visuals/fetch.py`.
 7. Ses: `tts_engine.py`, `tts_voices.py`, `elevenlabs_tts.py`, `voice/*` süre ve dosya adı `video_composer.py` beklentisiyle aynı.
 8. Yükleme: `youtube_uploader.py` ↔ `channel_bot/uploader.py`. Başlık, açıklama, kids bayrağı, `compliance/` aynı paketten gelsin.
-9. UI: `static/index.html` + `static/app.js` ve `static/studio-v2.html` + `static/studio-v2.js` aynı API yolunu ve gövde şeklini kullansın. Biri düğme gösterip diğeri 404 çağırıyorsa dikişi kapat.
+9. UI: `static/index.html` + `static/js/` istemcisi aynı API yolunu ve gövde şeklini kullansın. Düğme 404 çağırıyorsa dikişi kapat.
 
 ## İnceleme sırası
 
@@ -266,9 +266,6 @@ Bu sıra bağımlılık sırasıdır. Dosyayı bitirmeden sonrakine geçme. `__i
 - `static/index.html`
 - `static/app.js`
 - `static/style.css`
-- `static/studio-v2.html`
-- `static/studio-v2.js`
-- `static/studio-v2.css`
 
 Her JS fonksiyonunda `fetch` / URL ile backend route gövdesini karşılaştır.
 

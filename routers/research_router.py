@@ -81,14 +81,51 @@ def analyze_content_gaps(req: ContentGapResearchRequest):
     }
 
 
+class TopicTranslateRequest(BaseModel):
+    topic: str
+    target_lang: str = "en"
+
+
+@router.post("/api/topics/translate")
+def api_translate_topic(req: TopicTranslateRequest):
+    """Translates video topic/title between Turkish and English using fast LLM."""
+    text = (req.topic or "").strip()
+    if not text:
+        return {"status": "ok", "translated": ""}
+    target_lang = "English" if (req.target_lang or "en").lower().startswith("en") else "Turkish"
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=config.AI_API_KEY, base_url=config.AI_BASE_URL)
+        prompt = (
+            f"Translate this YouTube Shorts video title into natural, captivating, high-CTR {target_lang}. "
+            f"Return ONLY the translated title as plain text, no markdown, no quotes:\n{text}"
+        )
+        resp = client.chat.completions.create(
+            model=config.AI_MODEL or "gemini-flash-lite-latest",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=80,
+            temperature=0.3
+        )
+        translated = resp.choices[0].message.content.strip().strip('"\'')
+        return {"status": "ok", "original": text, "translated": translated, "target_lang": req.target_lang}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "translated": text}
+
+
 @router.post("/api/script/generate")
 def api_generate_script(req: ScriptGenerateRequest):
     old_lang = config.LANGUAGE
     try:
+        req_lang = (req.language or "").strip().lower() or config.LANGUAGE
         if req.language:
             config.LANGUAGE = req.language
-        topic_intel = resolve_topic_intelligence(req.keyword or "", req.niche or "1_news_flash")
-        locked_niche = topic_intel["resolved_niche"]
+        requested_niche = (req.niche or "").strip()
+        topic_intel = resolve_topic_intelligence(req.keyword or "", requested_niche or "1_news_flash")
+        # Respect user's explicit niche choice from UI
+        if requested_niche and requested_niche != "1_news_flash":
+            locked_niche = requested_niche
+        else:
+            locked_niche = topic_intel["resolved_niche"]
         if req.reddit_post and locked_niche == "2_reddit_confessions":
             source_text = f"{req.reddit_post.get('title', '')}\n{req.reddit_post.get('body', '')}"
             plan = generate_reddit_rewrite_script(source_text, lang=req.language or "tr")
@@ -97,11 +134,18 @@ def api_generate_script(req: ScriptGenerateRequest):
             fp = req.format_fingerprint
             if not fp:
                 fp = extract_format_fingerprint_from_title(req.keyword or "")
+            var_attempt = int(getattr(req, "variation_attempt", 0) or 0)
+            if getattr(req, "force_regenerate", False) and var_attempt == 0:
+                var_attempt = 1
             plan = generate_scenes(
                 req.keyword,
                 niche_type=locked_niche,
                 language=req.language or config.LANGUAGE,
                 format_fingerprint=fp,
+                variation_attempt=var_attempt,
+                previous_narration=getattr(req, "previous_narration", None),
+                force_regenerate=bool(getattr(req, "force_regenerate", False)),
+                enable_outro=getattr(req, "enable_outro", True) is not False,
             )
         plan["niche_id"] = locked_niche
         if req.format_fingerprint:
@@ -184,12 +228,13 @@ def api_generate_script(req: ScriptGenerateRequest):
                 keyword=req.keyword,
                 title=plan.get("title", req.keyword),
                 auto_add_if_approved=False,
+                channel_slug=config.channel_paths(getattr(req, "channel_id", None))["slug"],
             )
             plagiarism = {
                 "approved": is_original,
                 "similarity_pct": round(similarity * 100, 1),
                 "matched_title": matched_title,
-                "threshold_pct": 45,
+                "threshold_pct": 35,
             }
         except Exception as plag_err:
             print(f"  [ScriptGenerate] Plagiarism note: {plag_err}")

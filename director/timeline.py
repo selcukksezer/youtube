@@ -12,7 +12,7 @@ from .schema import (
     DirectorPlan,
     ScenePlan,
     QualityThresholds,
-    TTS_EMERGENCY_MAX_SPEED,
+    natural_narration_word_cap,
     natural_target_duration,
     shorts_word_budget,
 )
@@ -75,7 +75,7 @@ def _ensure_terminal(s: str) -> str:
 
 def _trim_dangling_tail(words: List[str]) -> List[str]:
     trimmed = list(words)
-    while len(trimmed) > MIN_WORDS_PER_SCENE and trimmed[-1].lower().rstrip(".,!?") in _DANGLING_END_WORDS:
+    while len(trimmed) > MIN_WORDS_PER_SENTENCE and trimmed[-1].lower().rstrip(".,!?") in _DANGLING_END_WORDS:
         trimmed.pop()
     return trimmed
 
@@ -112,8 +112,11 @@ def _shorten_sentence(text: str, max_words: int) -> str:
         return _ensure_terminal(stripped)
 
     chunk = _trim_dangling_tail(sw[:max_words])
-    if len(chunk) >= MIN_WORDS_PER_SCENE:
-        return _ensure_terminal(" ".join(chunk))
+    if len(chunk) >= MIN_WORDS_PER_SENTENCE:
+        done = _ensure_terminal(" ".join(chunk))
+        bad = set(scene_narration_issues(done))
+        if not bad & {"dangling_tail", "dangling_sentence", "fragment_ending", "fragment_sentence", "no_terminal"}:
+            return done
     return ""
 
 
@@ -145,23 +148,6 @@ def _split_narration_near_mid(text: str) -> Tuple[str, str]:
         ):
             return left, right
     return "", ""
-
-
-def _visual_pad_scene(source: ScenePlan, index: int) -> ScenePlan:
-    """Duplicate visual beat with alternate angle — narration stays on source scene."""
-    desc = source.scene_description or "cinematic dramatic reaction"
-    queries = list(source.search_queries or [])
-    alt_q = [f"{q} alternate angle" if q else "cinematic reaction cutaway" for q in queries[:3]]
-    if not alt_q:
-        alt_q = ["cinematic reaction cutaway", "dramatic closeup", "slow motion detail"]
-    return ScenePlan(
-        index=index,
-        narration="",
-        duration=max(1.2, round(source.duration * 0.35, 2)),
-        scene_description=f"Alternate angle cutaway: {desc}",
-        beat_type=source.beat_type or "conflict",
-        search_queries=alt_q,
-    )
 
 
 def _condense_narration(text: str, max_words: int) -> str:
@@ -223,6 +209,120 @@ def _scenes_narration_ok(scenes: List[ScenePlan]) -> bool:
         for s in scenes
         if (s.narration or "").strip()
     )
+
+
+# 110 spoken words cannot carry 8–14 full sentences. 4–6 scenes, or fewer
+# when the script has fewer complete sentences. Never split one sentence
+# in half to fill the count.
+SPOKEN_SCENE_MIN = 6
+SPOKEN_SCENE_MAX = 15
+_BARE_CONJUNCTIONS = frozenset({"ve", "ama", "çünkü", "cunku", "fakat"})
+
+
+def _bare_conjunction(text: str) -> bool:
+    words = [
+        w.strip(".,!?;:\"'“”").lower()
+        for w in (text or "").split()
+        if w.strip(".,!?;:\"'“”")
+    ]
+    return len(words) == 1 and words[0] in _BARE_CONJUNCTIONS
+
+
+def _clean_spoken_sentence(text: str) -> str:
+    """Keep a finished sentence. Drop a bare conjunction. Do not invent a tail."""
+    from scenes.narration_validate import _strip_dangling_clause
+
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    parts = _split_sentences(raw)
+    if not parts:
+        return ""
+    kept: List[str] = []
+    for part in parts:
+        if part[-1:] not in ".!?":
+            continue
+        cleaned, _did = _strip_dangling_clause(part)
+        cleaned = (cleaned or "").strip()
+        if not cleaned or _bare_conjunction(cleaned):
+            continue
+        done = cleaned if cleaned[-1:] in ".!?" else _ensure_terminal(cleaned)
+        bad = set(scene_narration_issues(done)) & {
+            "dangling_tail",
+            "dangling_sentence",
+            "fragment_ending",
+            "no_terminal",
+        }
+        if bad:
+            continue
+        kept.append(done)
+    return " ".join(kept)
+
+
+def _pending_spoken_ready(text: str) -> str:
+    """Return cleaned speech only when the buffer ends on a finished sentence."""
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    parts = _split_sentences(raw)
+    if not parts or parts[-1][-1:] not in ".!?":
+        return ""
+    return _clean_spoken_sentence(raw)
+
+
+def _fit_spoken_scene_count(scenes: List[ScenePlan]) -> None:
+    """
+    Merge or drop until each remaining scene is a complete spoken sentence
+    and the count is 4–6. A half sentence is not split further to hit 4.
+    """
+    units: List[Tuple[ScenePlan, str]] = []
+    pending = ""
+    pending_scene: Optional[ScenePlan] = None
+    for scene in scenes:
+        piece = (scene.narration or "").strip()
+        if not piece or _bare_conjunction(piece):
+            continue
+        pending = f"{pending} {piece}".strip() if pending else piece
+        if pending_scene is None:
+            pending_scene = scene
+        cleaned = _pending_spoken_ready(pending)
+        if cleaned:
+            units.append((pending_scene, cleaned))
+            pending = ""
+            pending_scene = None
+    if pending and pending_scene is not None:
+        cleaned = _pending_spoken_ready(pending)
+        if cleaned:
+            units.append((pending_scene, cleaned))
+    if not units:
+        return
+
+    count = len(units)
+    buckets = count if count < SPOKEN_SCENE_MIN else min(SPOKEN_SCENE_MAX, count)
+    base, extra = divmod(count, buckets)
+    grouped: List[List[Tuple[ScenePlan, str]]] = []
+    cursor = 0
+    for index in range(buckets):
+        take = base + (1 if index < extra else 0)
+        grouped.append(units[cursor:cursor + take])
+        cursor += take
+
+    fitted: List[ScenePlan] = []
+    for group in grouped:
+        if not group:
+            continue
+        head = group[0][0]
+        head.narration = " ".join(narr for _scene, narr in group if narr).strip()
+        fitted.append(head)
+    if not fitted:
+        return
+    before = len(scenes)
+    scenes[:] = fitted
+    if before != len(scenes):
+        print(
+            f"  [Timeline] Sahne sayısı söz bütçesine indi: {before} -> {len(scenes)} "
+            f"(tavan {SPOKEN_SCENE_MAX}, tam cümle)"
+        )
 
 
 def _drop_trailing_sentences_from_end(scenes: List[ScenePlan], n_words_to_drop: int) -> int:
@@ -332,7 +432,8 @@ def _apply_word_budget(scenes: List[ScenePlan], max_words: int, min_scenes: int)
 
 def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
     """
-    Enforce 38-60s budget, flexible cadence (≥8 cuts), cadence acceleration, rebuild narration.
+    Enforce 38-60s budget and a spoken scene count that fits the word cap.
+    At or under ~110 words the plan is 4–6 complete scenes, not 8–14 cuts.
     Target follows narration length — never shrink a 55s script to 48.
     """
     qt = plan.quality_thresholds or QualityThresholds()
@@ -344,33 +445,21 @@ def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
     qt.target_duration = target
     plan.quality_thresholds = qt
 
-    # Ensure minimum cadence (Item 88) — never shred narration mid-sentence
-    while len(scenes) < qt.min_scenes and scenes:
-        longest = max(scenes, key=lambda s: len((s.narration or "").split()))
-        left, right = _split_narration_near_mid(longest.narration or "")
-        if left and right:
-            longest.narration = left
-            scenes.insert(
-                scenes.index(longest) + 1,
-                ScenePlan(
-                    index=0,
-                    narration=right,
-                    duration=longest.duration,
-                    scene_description=longest.scene_description,
-                    beat_type=longest.beat_type or "conflict",
-                ),
-            )
-        else:
-            pad = _visual_pad_scene(longest, len(scenes))
-            scenes.insert(scenes.index(longest) + 1, pad)
-
     # Turkish TTS ≈ 2.3–2.6 wps; only condense when over the 60s cap (Madde 494).
+    # Drop whole scenes down to 4 before any per-scene trim. Do not split a
+    # sentence to manufacture an 8-cut cadence.
     max_words = shorts_word_budget(qt.max_duration, qt.max_audio_speed)
     total_w = _scene_word_count(scenes)
     if total_w <= max_words and _scenes_narration_ok(scenes):
         pass  # validated plan — preserve user-authored narrations
     elif total_w > max_words:
-        _apply_word_budget(scenes, max_words, qt.min_scenes)
+        _apply_word_budget(scenes, max_words, SPOKEN_SCENE_MIN)
+
+    if _scene_word_count(scenes) <= max_words:
+        _fit_spoken_scene_count(scenes)
+        spoken_n = len(scenes)
+        floor = spoken_n if spoken_n < SPOKEN_SCENE_MIN else SPOKEN_SCENE_MIN
+        qt.min_scenes = min(qt.min_scenes, max(1, floor))
 
     # Cadence acceleration (Item 266)
     try:
@@ -416,6 +505,147 @@ def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
     return plan
 
 
+def _plan_dict_word_count(scenes: List[dict]) -> int:
+    return sum(len((s.get("narration") or "").split()) for s in scenes)
+
+
+def _settle_spoken_sentence(text: str, max_words: int) -> str:
+    """Finish or drop a clipped clause. Never return a dangling tail."""
+    from scenes.narration_validate import (
+        _append_minimal_completion,
+        _strip_dangling_clause,
+        scene_narration_issues,
+    )
+
+    text = (text or "").strip()
+    if not text or max_words <= 0:
+        return ""
+    if len(text.split()) <= max_words and not scene_narration_issues(text):
+        return text
+
+    kept: List[str] = []
+    count = 0
+    for part in _split_sentences(text):
+        cand = _ensure_terminal(part)
+        pw = len(cand.split())
+        if count + pw > max_words:
+            break
+        if scene_narration_issues(cand):
+            break
+        kept.append(cand)
+        count += pw
+    if kept:
+        return " ".join(kept)
+
+    short = _shorten_sentence(text, max_words)
+    if short and not scene_narration_issues(short) and len(short.split()) <= max_words:
+        return short
+    if short:
+        finished = _append_minimal_completion(short)
+        if (
+            finished
+            and not scene_narration_issues(finished)
+            and len(finished.split()) <= max_words
+        ):
+            return finished
+    stripped, _did = _strip_dangling_clause(text)
+    stripped = _ensure_terminal(stripped) if stripped else ""
+    if stripped and not scene_narration_issues(stripped) and len(stripped.split()) <= max_words:
+        return stripped
+    return ""
+
+
+def condense_plan_narration(plan: dict, max_words: int) -> dict:
+    """
+    Shorten a legacy plan to max_words. No network.
+    Already-short narration is copied unchanged.
+    A clipped clause is finished or dropped.
+    """
+    import copy
+
+    out = copy.deepcopy(plan or {})
+    scenes = [s for s in (out.get("scenes") or []) if isinstance(s, dict)]
+    if _plan_dict_word_count(scenes) <= max_words:
+        out["scenes"] = scenes
+        out["full_narration"] = " ".join(
+            (s.get("narration") or "").strip() for s in scenes if (s.get("narration") or "").strip()
+        )
+        return out
+
+    flat: List[Tuple[int, str]] = []
+    for i, scene in enumerate(scenes):
+        parts = _split_sentences(scene.get("narration") or "")
+        if not parts and (scene.get("narration") or "").strip():
+            parts = [(scene.get("narration") or "").strip()]
+        for part in parts:
+            flat.append((i, _ensure_terminal(part)))
+
+    kept_by_scene: Dict[int, List[str]] = {i: [] for i in range(len(scenes))}
+    count = 0
+    for idx, sent in flat:
+        cleaned = _settle_spoken_sentence(sent, max_words - count)
+        if not cleaned:
+            continue
+        pw = len(cleaned.split())
+        if count + pw > max_words:
+            break
+        kept_by_scene[idx].append(cleaned)
+        count += pw
+
+    new_scenes: List[dict] = []
+    for i, scene in enumerate(scenes):
+        narr = " ".join(kept_by_scene[i]).strip()
+        if not narr:
+            continue
+        narr = _settle_spoken_sentence(narr, len(narr.split()))
+        if not narr:
+            continue
+        row = dict(scene)
+        row["narration"] = narr
+        new_scenes.append(row)
+
+    guard = 0
+    while _plan_dict_word_count(new_scenes) > max_words and new_scenes and guard < 40:
+        guard += 1
+        last = new_scenes[-1]
+        parts = _split_sentences(last.get("narration") or "")
+        if len(parts) > 1:
+            last["narration"] = " ".join(_ensure_terminal(p) for p in parts[:-1])
+            continue
+        if len(new_scenes) > 1:
+            new_scenes.pop()
+            continue
+        last["narration"] = _settle_spoken_sentence(last.get("narration") or "", max_words)
+        break
+
+    out["scenes"] = new_scenes
+    out["full_narration"] = " ".join(
+        (s.get("narration") or "").strip() for s in new_scenes if (s.get("narration") or "").strip()
+    )
+    out["word_budget_494"] = {
+        "max": max_words,
+        "words": _plan_dict_word_count(new_scenes),
+    }
+    return out
+
+
+def recover_overlong_narration(plan: dict, *, audio_seconds: float) -> dict:
+    """
+    First over-long TTS recovery. Condenses. Does not raise Madde 494.
+    Does not call Gemini. One shot — the caller runs TTS once after this.
+    """
+    scenes = [s for s in ((plan or {}).get("scenes") or []) if isinstance(s, dict)]
+    words = _plan_dict_word_count(scenes)
+    if not words and (plan or {}).get("full_narration"):
+        words = len(str(plan.get("full_narration") or "").split())
+    cap = natural_narration_word_cap(words, audio_seconds)
+    if words <= cap:
+        import copy
+        intact = copy.deepcopy(plan or {})
+        return intact
+    return condense_plan_narration(plan, cap)
+
+
 def fit_tts_to_timeline(
     audio_path: str,
     plan: DirectorPlan,
@@ -425,19 +655,16 @@ def fit_tts_to_timeline(
     """
     Fit narration audio to scene budget.
     Returns (audio_path, timings, audio_dur, speed_factor).
-    Preferred speed ≤ quality_thresholds.max_audio_speed; emergency budget lock
-    may go up to 1.35 so final Shorts stay inside max_duration (Item 494).
-    If even 1.35× cannot fit the 60s cap, raises RuntimeError (hard-fail —
-    never publish a 76s stretched Shorts). Natural TTS ≤ 60s is never sped up.
+    Natural pace only. Speech over the 60s cap is not sped up (no 1.35×).
+    The caller condenses narration and runs TTS once. A second over-long
+    take raises RuntimeError (Madde 494).
     """
     import wave
     import os
 
     qt = plan.quality_thresholds
-    # Hard ceiling keeps videos inside Shorts band even when TTS overruns
     budget_ceiling = min(max(qt.max_duration, 60.0), 60.0)
-    out = output_path or audio_path
-    emergency_max_speed = TTS_EMERGENCY_MAX_SPEED
+    _ = output_path
 
     try:
         with wave.open(audio_path, "rb") as w:
@@ -452,72 +679,50 @@ def fit_tts_to_timeline(
         if dur <= 2.0 or not plan.scenes:
             return
         scale = dur / max(plan.total_duration(), 0.01)
+        scaled = [round(s.duration * scale, 3) for s in plan.scenes]
+        bpm = float((plan.meta or {}).get("beat_bpm") or 100.0)
+        try:
+            from bgm_manager import snap_durations_to_bpm
+            scaled = snap_durations_to_bpm(scaled, bpm, total=dur)
+        except Exception:
+            pass
         t = 0.0
-        for s in plan.scenes:
-            s.duration = round(s.duration * scale, 3)
+        for s, dur_s in zip(plan.scenes, scaled):
+            s.duration = dur_s
             s.t0 = round(t, 3)
             t = round(t + s.duration, 3)
-            s.t1 = t
+            s.t1 = round(t, 3)
+            s.beat_hint_ms = round(s.t1 * 1000.0, 1)
 
-    # Natural TTS that already fits Shorts cap: never speed up to 42/45/48.
-    if audio_dur <= qt.max_duration * 1.02:
+    # Natural TTS inside the Shorts cap: never speed up.
+    if audio_dur <= budget_ceiling + 0.5:
         _rescale_scenes_to(audio_dur)
         return audio_path, word_timings or [], audio_dur, 1.0
 
-    ratio = audio_dur / max(qt.max_duration, 0.01)
-    if ratio > 1.0:
-        from voice.audio_dsp import fit_audio_to_duration
-        fitted = out if out != audio_path else audio_path.replace(".wav", "_fitted.wav")
+    cap_words = natural_narration_word_cap(max_duration=budget_ceiling)
+    raise RuntimeError(
+        f"Madde 494 hard-fail: TTS {audio_dur:.1f}s > {budget_ceiling:.0f}s at natural pace. "
+        f"Condense narration (≤{cap_words} words) and re-render. Do not speed up."
+    )
 
-        # Hard-fail early: raw TTS so long that 1.35× still exceeds Shorts band
-        min_possible = audio_dur / emergency_max_speed
-        if min_possible > budget_ceiling * 1.02:
-            raise RuntimeError(
-                f"Madde 494 hard-fail: TTS {audio_dur:.1f}s — even ×{emergency_max_speed} "
-                f"yields ~{min_possible:.1f}s > {budget_ceiling:.0f}s. "
-                f"Condense narration (≤~{shorts_word_budget(qt.max_duration, qt.max_audio_speed)} words) and re-render."
-            )
 
-        # Pass 1: preferred pace (Item 175-aligned ceiling)
-        speed = min(ratio, qt.max_audio_speed)
-        target_for_fit = audio_dur / speed
-        path, new_dur, used = fit_audio_to_duration(audio_path, fitted, target_for_fit, tolerance=0.04)
+def snap_scenes_to_beat_hints(
+    scenes: List[ScenePlan],
+    bgm_path: str = "",
+    bpm: Optional[float] = None,
+    min_scene_dur: float = 1.8,
+    max_scene_dur: float = 7.0,
+) -> List[ScenePlan]:
+    """
+    Bölüm 7.3: Timeline sahnelerini 80-120 BPM aralığındaki müzik ritim vuruşlarına kilitler.
+    """
+    from bgm_manager import snap_timeline_to_beat_grid
+    return snap_timeline_to_beat_grid(
+        scenes,
+        bgm_path=bgm_path,
+        bpm=bpm,
+        min_scene_dur=min_scene_dur,
+        max_scene_dur=max_scene_dur,
+        enforce_band=True,
+    )
 
-        # Pass 2: if still outside Shorts band, emergency speed toward budget_ceiling
-        # Always re-fit from the ORIGINAL wav — never ffmpeg in-place (path==fitted).
-        if new_dur > budget_ceiling * 1.02:
-            need_from_raw = audio_dur / budget_ceiling
-            emergency_out = fitted.replace(".wav", "_emergency.wav")
-            if need_from_raw <= emergency_max_speed + 0.01:
-                path, new_dur, _used2 = fit_audio_to_duration(
-                    audio_path, emergency_out, budget_ceiling, tolerance=0.04
-                )
-            else:
-                cap_target = audio_dur / emergency_max_speed
-                path, new_dur, _used2 = fit_audio_to_duration(
-                    audio_path, emergency_out, cap_target, tolerance=0.04
-                )
-            used = audio_dur / max(new_dur, 0.01)
-            print(
-                f"  [Timeline] Budget lock emergency speed×{used:.2f} "
-                f"-> {new_dur:.1f}s (hedef <={budget_ceiling:.0f}s, Madde 494)"
-            )
-
-        if new_dur > budget_ceiling * 1.05:
-            raise RuntimeError(
-                f"Madde 494 hard-fail: fitted audio {new_dur:.1f}s still outside "
-                f"{qt.min_duration}-{budget_ceiling:.0f}s band (speed×{used:.2f}). "
-                f"Refuse publish — re-condense script."
-            )
-
-        if word_timings and used > 1.01:
-            for wt in word_timings:
-                wt["offset"] = wt.get("offset", 0.0) / used
-                wt["duration"] = wt.get("duration", 0.0) / used
-        # Rescale scene durations to final audio (Item 129 ±0.05)
-        _rescale_scenes_to(new_dur)
-        return path, word_timings or [], new_dur, used
-
-    # Audio shorter than scenes — shrink scenes to audio
-    _rescale_scenes_to(audio_dur)
-    return audio_path, word_timings or [], audio_dur, 1.0

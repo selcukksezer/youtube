@@ -52,18 +52,46 @@ def catalog_meta() -> Dict[str, Any]:
     }
 
 
+def _clean_track_query(val: str) -> str:
+    s = str(val or "").strip()
+    s = re.sub(r"\s*\(indirilecek\)\s*", "", s, flags=re.I).strip()
+    return os.path.basename(s.replace("\\", "/"))
+
+
 def _track_by_id(track_id: str) -> Optional[Dict[str, Any]]:
-    tid = (track_id or "").strip()
+    clean = _clean_track_query(track_id)
+    if not clean:
+        return None
     for t in load_catalog():
-        if t.get("id") == tid or t.get("filename") == tid:
+        if t.get("id") == clean or t.get("filename") == clean:
             return t
-    return None
+    return track_by_filename(track_id)
 
 
 def track_by_filename(filename: str) -> Optional[Dict[str, Any]]:
-    fn = os.path.basename(filename or "")
-    for t in load_catalog():
-        if t.get("filename") == fn:
+    clean = _clean_track_query(filename)
+    if not clean:
+        return None
+    catalog = load_catalog()
+    # 1. Exact filename match
+    for t in catalog:
+        if t.get("filename") == clean:
+            return t
+    # 2. Exact id match
+    for t in catalog:
+        if t.get("id") == clean:
+            return t
+    # 3. Exact title or display label match (case-insensitive)
+    clean_lower = clean.lower()
+    for t in catalog:
+        title = str(t.get("title") or "").strip().lower()
+        mood = str(t.get("mood") or "").strip().lower()
+        if clean_lower in (title, f"{title} ({mood})"):
+            return t
+    # 4. Partial / fuzzy match in title
+    for t in catalog:
+        title = str(t.get("title") or "").strip().lower()
+        if title and (title in clean_lower or clean_lower in title):
             return t
     return None
 
@@ -184,6 +212,8 @@ def ensure_catalog_track(track_id: str = "", filename: str = "") -> Optional[str
     """Download catalog track into BGM_DIR; return filename."""
     _ensure_dirs()
     t = _track_by_id(track_id) if track_id else track_by_filename(filename)
+    if not t and (track_id or filename):
+        t = track_by_filename(track_id or filename)
     if not t:
         return None
 
@@ -201,23 +231,30 @@ def ensure_catalog_track(track_id: str = "", filename: str = "") -> Optional[str
 
 
 def get_studio_track_path(filename: str) -> Optional[str]:
-    safe = os.path.basename(filename)
+    safe = _clean_track_query(filename)
     fp = os.path.join(YOUTUBE_STUDIO_DIR, safe)
-    if os.path.isfile(fp):
+    if os.path.isfile(fp) and os.path.getsize(fp) > 2000:
         return fp
     return None
 
 
 def resolve_bgm_path(track_name: str) -> Optional[str]:
-    """Resolve filename to full path (bgm/ or bgm/youtube_studio/)."""
+    """Resolve filename/title to full path (bgm/ or bgm/youtube_studio/ or download if catalog)."""
     if not track_name:
         return None
-    base = os.path.join(config.BGM_DIR, os.path.basename(track_name))
-    if os.path.isfile(base):
+    clean = _clean_track_query(track_name)
+    base = os.path.join(config.BGM_DIR, clean)
+    if os.path.isfile(base) and os.path.getsize(base) > 2000:
         return base
     studio = get_studio_track_path(track_name)
-    if studio:
+    if studio and os.path.isfile(studio) and os.path.getsize(studio) > 2000:
         return studio
+    # Attempt catalog match and auto-download if not yet local
+    fn = ensure_catalog_track(filename=track_name)
+    if fn:
+        dest = os.path.join(config.BGM_DIR, fn)
+        if os.path.isfile(dest) and os.path.getsize(dest) > 2000:
+            return dest
     return None
 
 

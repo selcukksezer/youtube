@@ -45,6 +45,12 @@ def _any_key_present() -> bool:
         pass
     # 0 TL Free Provider: Pollinations (Verticalls v3 Ken Burns adaptation)
     if os.getenv("DISABLE_POLLINATIONS", "").strip().lower() not in ("1", "true", "yes"):
+        try:
+            from services.pollinations_ai_visual import pollinations_circuit_open
+            if pollinations_circuit_open():
+                return False
+        except Exception:
+            pass
         return True
     return False
 

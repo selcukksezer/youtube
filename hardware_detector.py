@@ -13,14 +13,16 @@ from typing import Dict, Any, Optional
 def get_cpu_thermal_state() -> Dict[str, Any]:
     """
     Item 450: CPU sıcaklık / thermal throttle sinyali.
-    macOS: powermetrics SMC (best-effort); Linux: thermal_zone0; fallback: unknown.
+    macOS: powermetrics SMC; Linux: thermal_zone0; Windows: WMI MSAcpi_ThermalZoneTemperature or Win32_Processor LoadPercentage.
     """
     temp_c: Optional[float] = None
+    cpu_load_pct: Optional[float] = None
     source = "unknown"
     throttle = False
 
     try:
-        if platform.system() == "Darwin":
+        sys_plat = platform.system()
+        if sys_plat == "Darwin":
             res = subprocess.run(
                 ["powermetrics", "--samplers", "smc", "-n", "1", "-i", "1"],
                 capture_output=True, text=True, timeout=4,
@@ -35,19 +37,53 @@ def get_cpu_thermal_state() -> Dict[str, Any]:
                                 temp_c = float(num)
                                 source = "powermetrics_smc"
                                 break
-        elif platform.system() == "Linux":
+        elif sys_plat == "Linux":
             zone = "/sys/class/thermal/thermal_zone0/temp"
             if os.path.isfile(zone):
                 raw = int(open(zone, encoding="utf-8").read().strip())
                 temp_c = round(raw / 1000.0, 1)
                 source = "thermal_zone0"
+        elif sys_plat == "Windows":
+            # 1. Direct WMI MSAcpi_ThermalZoneTemperature (tenths of Kelvin: (T - 2732) / 10)
+            try:
+                res = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command",
+                     "Get-CimInstance MSAcpi_ThermalZoneTemperature -Namespace root/wmi -ErrorAction SilentlyContinue | Select-Object -ExpandProperty CurrentTemperature"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    val = float(res.stdout.strip().split()[0])
+                    if val > 2732:
+                        temp_c = round((val - 2732) / 10.0, 1)
+                        source = "wmi_acpi_thermal"
+            except Exception:
+                pass
+
+            # 2. Windows CPU Load fallback if temperature is unavailable
+            if temp_c is None:
+                try:
+                    res_load = subprocess.run(
+                        ["powershell", "-NoProfile", "-Command",
+                         "Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average | Select-Object -ExpandProperty Average"],
+                        capture_output=True, text=True, timeout=3,
+                    )
+                    if res_load.returncode == 0 and res_load.stdout.strip():
+                        cpu_load_pct = float(res_load.stdout.strip())
+                        source = "wmi_processor_load"
+                except Exception:
+                    pass
     except Exception:
         pass
 
     if temp_c is not None:
         throttle = temp_c >= 85.0
+    elif cpu_load_pct is not None:
+        # If CPU is pinned at >=95% load before render, recommend thermal throttle
+        throttle = cpu_load_pct >= 95.0
+
     return {
         "temperature_c": temp_c,
+        "cpu_load_pct": cpu_load_pct,
         "source": source,
         "thermal_throttle_recommended": throttle,
         "max_safe_c": 85.0,

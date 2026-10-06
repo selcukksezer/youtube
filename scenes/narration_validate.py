@@ -28,9 +28,9 @@ _DANGLING_END_WORDS = frozenset({
     "ve", "ama", "çünkü", "için", "ise", "ile", "bir", "bu", "o", "senin", "kendi",
     "olan", "gibi", "de", "da", "hiçbir", "asla", "derin", "burada", "tam", "olarak",
     "içindeki", "icindeki", "ateşi", "atesi", "zehri", "kaleyi", "yelkenini", "şeye", "seye",
-    "dertlerle", "marcus", "hiçbir", "hicbir", "ise", "gelecek", "onlara", "değil", "degil",
+    "dertlerle", "marcus", "hiçbir", "hicbir", "gelecek", "onlara",
     "kusuru", "bozan", "ruhunu", "imparator", "kaleni", "iç", "ic", "en", "üst", "ust",
-    "yolun", "kendisidir", "fani", "boş", "bos", "her", "şey", "sey", "kural",
+    "yolun", "fani", "boş", "bos", "her", "şey", "sey", "kural",
 })
 
 _MOOD_LABEL_RE = re.compile(
@@ -60,7 +60,7 @@ _TAIL_COMPLETIONS = {
 
 _FRAGMENT_ENDING_RE = re.compile(
     r"(?:çünkü|asla|ama|ve|için|senin|kendi|ise|derin|olan|hiçbir|burada|"
-    r"şeye|kaleyi|ateşi|yelkenini|zehri|dertlerle|onlara|değil|degil|kusuru|"
+    r"şeye|kaleyi|ateşi|yelkenini|zehri|dertlerle|onlara|kusuru|"
     r"bozan|ruhunu|imparator|kaleni|Marcus)\.\s*$",
     re.IGNORECASE,
 )
@@ -92,8 +92,10 @@ def normalize_narration_for_validation(text: str) -> str:
 
 
 def _split_sentences(text: str) -> List[str]:
-    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
-    return [p.strip() for p in parts if p.strip()]
+    # Protect common abbreviations like Hz., s.a.v., Dr., Prof., vb., vs. from false sentence splits
+    safe = re.sub(r"\b(Hz|hz|Dr|dr|Prof|prof|vb|vs)\.", lambda m: m.group(1) + "\u200b", (text or "").strip())
+    parts = re.split(r"(?<=[.!?])\s+", safe)
+    return [p.replace("\u200b", ".").strip() for p in parts if p.strip()]
 
 
 def _ensure_terminal(s: str) -> str:
@@ -544,7 +546,7 @@ def repair_post_hook_word_budget(plan: Dict[str, Any], max_words: int = 172) -> 
         if len(words) <= MIN_WORDS_PER_SCENE:
             break
         candidate = " ".join(words[:-1]).strip()
-        if scene_narration_usable(candidate):
+        if scene_narration_usable(candidate) and not scene_narration_issues(candidate):
             scenes_out[idx]["narration"] = candidate
         else:
             break
@@ -556,7 +558,7 @@ def repair_post_hook_word_budget(plan: Dict[str, Any], max_words: int = 172) -> 
             words = (sc.get("narration") or "").split()
             if len(words) > share + 2:
                 candidate = _ensure_terminal(" ".join(words[:share]).strip())
-                if scene_narration_usable(candidate):
+                if scene_narration_usable(candidate) and not scene_narration_issues(candidate):
                     sc["narration"] = candidate
 
     after = _scene_word_total(scenes_out)

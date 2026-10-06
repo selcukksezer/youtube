@@ -57,7 +57,8 @@ class TestDirectorPlan(unittest.TestCase):
         raw = _sample_raw_plan()
         plan = compile_director_plan(raw, title=raw["title"], niche_id="13_mystery_paranormal")
         self.assertEqual(plan.niche_id, "6_stoic_philosophy")
-        self.assertGreaterEqual(len(plan.scenes), 8)
+        self.assertGreaterEqual(len(plan.scenes), 4)
+        self.assertLessEqual(len(plan.scenes), 6)
         self.assertGreaterEqual(plan.total_duration(), 38.0)
         self.assertLessEqual(plan.total_duration(), 60.0)
         for s in plan.scenes:
@@ -108,9 +109,9 @@ class TestDirectorPlan(unittest.TestCase):
             scenes.append(ScenePlan(index=i, narration=f"Kural {i}", duration=3.0, t0=i*3, t1=(i+1)*3))
         plan = DirectorPlan(title="Quiz", niche_id="9_five_facts", scenes=scenes)
         plan = solve_timeline(plan)
-        # force one quiz
-        plan.scenes[2].beat_type = "quiz"
-        plan.scenes[2].narration = "Tahmin et doğru cevap nedir?"
+        self.assertGreaterEqual(len(plan.scenes), 1)
+        plan.scenes[0].beat_type = "quiz"
+        plan.scenes[0].narration = "Tahmin et doğru cevap nedir?"
         build_audio_events(plan)
         clocks = [e for e in plan.audio_events if e.sound == "clock_tick"]
         self.assertGreaterEqual(len(clocks), 1)
@@ -334,7 +335,8 @@ class TestDirectorPlan(unittest.TestCase):
             "scenes": scenes,
         }
         plan = compile_director_plan(raw, title=raw["title"], niche_id="6_stoic_philosophy")
-        self.assertGreaterEqual(len(plan.scenes), 8)
+        self.assertGreaterEqual(len(plan.scenes), 4)
+        self.assertLessEqual(len(plan.scenes), 6)
         for i in range(1, len(plan.scenes)):
             prev = plan.scenes[i - 1]
             curr = plan.scenes[i]
@@ -388,11 +390,12 @@ class TestDirectorPlan(unittest.TestCase):
     def test_bgm_ducking_sidechain_in_mix_p1_11(self):
         """P1-11: mix_narration_and_bgm uses 80ms/200ms narration sidechain ducking."""
         import inspect
-        from bgm_manager import mix_narration_and_bgm
+        from bgm_manager import DUCK_SIDECHAIN, mix_narration_and_bgm
         src = inspect.getsource(mix_narration_and_bgm)
-        self.assertIn("sidechaincompress", src)
-        self.assertIn("attack=80", src)
-        self.assertIn("release=200", src)
+        self.assertIn("DUCK_SIDECHAIN", src)
+        self.assertIn("sidechaincompress", DUCK_SIDECHAIN)
+        self.assertIn("attack=80", DUCK_SIDECHAIN)
+        self.assertIn("release=200", DUCK_SIDECHAIN)
 
     def test_marcus_breaking_news_plan_preserves_narration(self):
         """User 14-scene Marcus breaking-news plan must not be shredded on compile."""
@@ -545,6 +548,23 @@ class TestFFmpegGraphHelpers(unittest.TestCase):
             0, 3.0, 1080, 1920, 0, enable_ken_burns=False, enable_zoompan=True,
         )
         self.assertIn("zoompan=", zoom)
+        self.assertIn("1+0.12*", zoom)
+        pan = build_scene_filter_chain(
+            0, 3.0, 1080, 1920, 1, enable_ken_burns=False, enable_zoompan=True,
+        )
+        self.assertIn("z='1.12'", pan)
+        pull = build_scene_filter_chain(
+            0, 3.0, 1080, 1920, 2, enable_ken_burns=False, enable_zoompan=True,
+        )
+        self.assertIn("1+cos", pull)
+        padded = build_scene_filter_chain(
+            0, 3.0, 1080, 1920, 0, enable_ken_burns=False, pad_seconds=1.2,
+        )
+        self.assertIn("tpad=stop_mode=clone:stop_duration=1.200", padded)
+        shifted = build_scene_filter_chain(
+            0, 3.0, 1080, 1920, 0, enable_ken_burns=False, crop_x=120,
+        )
+        self.assertIn("crop=1080:1920:x=120", shifted)
         look = get_look_filters(1080, 1920, anti_duplicate=True)
         self.assertIn("unsharp", look)
         self.assertIn("eq=", look)

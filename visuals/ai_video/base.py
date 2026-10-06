@@ -31,6 +31,7 @@ class AIVideoResult:
             "prompt": self.prompt,
             "seed": self.seed,
             "cached": self.cached,
+            "native_audio": bool(self.raw.get("native_audio")),
             "license": self.license or {
                 "license": "ai_generated",
                 "source": self.provider,
