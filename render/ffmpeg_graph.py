@@ -41,6 +41,22 @@ def _probe_has_audio(path: str) -> bool:
         return False
 
 
+def _probe_audio_duration(ffmpeg: str, audio_path: str) -> float:
+    """Return audio duration in seconds, or -1.0 when probing fails."""
+    try:
+        proc = subprocess.run(
+            [ffmpeg, "-i", audio_path, "-hide_banner"],
+            stderr=subprocess.PIPE, stdout=subprocess.PIPE, timeout=15,
+        )
+        text = (proc.stderr or b"").decode("utf-8", errors="replace")
+        m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", text)
+        if m:
+            return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+    except Exception:
+        pass
+    return -1.0
+
+
 def align_even_dimension(value: int) -> int:
     """H.264 macroblocks require even width and height."""
     size = int(value)
@@ -1145,27 +1161,21 @@ def render_with_ffmpeg_graph(
 
     # K2: Probe audio duration — use explicit -t instead of -shortest.
     _clip_total = sum(float(c.get("duration", 3.0)) for c in valid)
-    _audio_dur = -1.0
-    try:
-        _ap_probe = subprocess.run(
-            [ffmpeg, "-i", audio_path, "-hide_banner"],
-            stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True, timeout=15,
-        )
-        _m = re.search(r"Duration:\s*(\d+):(\d+):([\d.]+)", _ap_probe.stderr or "")
-        if _m:
-            _audio_dur = int(_m.group(1)) * 3600 + int(_m.group(2)) * 60 + float(_m.group(3))
-    except Exception:
-        pass
+    _audio_dur = _probe_audio_duration(ffmpeg, audio_path)
     if _audio_dur > 0:
         _t_limit = min(_audio_dur, _clip_total) + 0.5  # 0.5s buffer for rounding
-        av_clamp = ["-t", f"{_t_limit:.3f}"]
         print(
             f"  [FFmpegGraph] K2-AV: audio={_audio_dur:.2f}s clips={_clip_total:.2f}s "
             f"→ encode limit={_t_limit:.2f}s",
             flush=True,
         )
     else:
-        av_clamp = ["-shortest"]
+        _t_limit = _clip_total + 0.5
+        print(
+            f"  [FFmpegGraph] K2-AV: audio probe failed → limit=clips+0.5={_t_limit:.2f}s",
+            flush=True,
+        )
+    av_clamp = ["-t", f"{_t_limit:.3f}"]
 
     if enable_zoompan:
         print("  [FFmpegGraph] zoompan AÇIK — bu geçiş render süresini uzatır", flush=True)

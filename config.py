@@ -143,7 +143,8 @@ HIGGSFIELD_GENERATE_AUDIO = os.getenv("HIGGSFIELD_GENERATE_AUDIO", "false").lowe
 USE_AI_VIDEO = os.getenv("USE_AI_VIDEO", "").lower()  # "", "true", "false"
 VISUAL_MIX_AI = float(os.getenv("VISUAL_MIX_AI", "0.4") or 0.4)
 VISUAL_MIX_STOCK = float(os.getenv("VISUAL_MIX_STOCK", "0.4") or 0.4)
-VISUAL_MIX_PROCEDURAL = float(os.getenv("VISUAL_MIX_PROCEDURAL", "0.2") or 0.2)
+VISUAL_MIX_PROCEDURAL = float(os.getenv("VISUAL_MIX_PROCEDURAL", "0") or 0)
+ALLOW_PROCEDURAL_VISUALS = os.getenv("ALLOW_PROCEDURAL_VISUALS", "").lower() in ("1", "true", "yes", "on")
 VISUAL_MIX_SEED = os.getenv("VISUAL_MIX_SEED", "")
 
 # ══════════════════════════════════════════════════════════════

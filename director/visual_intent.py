@@ -533,7 +533,7 @@ TOPIC_NICHE_LOCK: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"tercih et|would you rather", re.I), "4_would_you_rather"),
     (re.compile(r"bayrak|ülke tahmin|hangi ülke", re.I), "5_guess_flag_country"),
     (re.compile(r"paranormal|ufo|bermuda|51\.\s*bölge|gizem.*korku", re.I), "13_mystery_paranormal"),
-    (re.compile(r"kripto|bitcoin|borsa|altın|hisse|dolar|enflasyon", re.I), "8_crypto_market"),
+    (re.compile(r"kripto|bitcoin|borsa|altın fiyat|gram altın|ons altın|altın piyasa|hisse|dolar|enflasyon", re.I), "8_crypto_market"),
     (re.compile(r"karanlık psikoloji|manipülasyon|dark psychology", re.I), "7_dark_psychology"),
     (re.compile(r"transfer|futbol|premier league|şampiyonlar ligi|mbappe|messi", re.I), "15_football_transfers"),
     (re.compile(r"son dakika|\bflaş\b|\bhaber\b|deprem|\bkaza\b|trafik", re.I), "1_news_flash"),
@@ -743,6 +743,16 @@ def resolve_topic_intelligence(title: str, niche_id: str) -> Dict[str, Any]:
                 "hybrid_niche": hybrid,
                 "locked": locked != requested,
             }
+    if requested == "10_religious_quotes" and re.search(
+        r"\bhz\b|hazret|peygamber|ayet|hadis|dua\b|allah|islam|sabır|tevekkül", text, re.I
+    ):
+        return {
+            "resolved_niche": requested,
+            "requested_niche": requested,
+            "match_method": "requested_religious",
+            "hybrid_niche": None,
+            "locked": False,
+        }
     alias = _match_aliases(text)
     if alias:
         hybrid, _ = _detect_hybrid_niche(text)

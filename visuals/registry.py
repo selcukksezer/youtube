@@ -15,6 +15,64 @@ _CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", 
 _CACHE_TTL = 6 * 3600  # 6h
 _used_uids: Set[str] = set()
 
+# Cross-job memory so consecutive videos do not reuse the same stock assets.
+_RECENT_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "recent_visual_uids.json")
+_RECENT_MAX = 400
+_recent_uids: Optional[List[str]] = None
+_RECENT_PENALTY = 0.35
+
+# Provider cooldown after 429 / timeout so one flaky API cannot stall every scene.
+_cooldowns: Dict[str, float] = {}
+_fail_counts: Dict[str, int] = {}
+_COOLDOWN_429 = 180.0
+_COOLDOWN_TIMEOUT = 90.0
+
+
+def _load_recent() -> List[str]:
+    global _recent_uids
+    if _recent_uids is None:
+        try:
+            with open(_RECENT_FILE, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            _recent_uids = [str(x) for x in data][-_RECENT_MAX:]
+        except Exception:
+            _recent_uids = []
+    return _recent_uids
+
+
+def _persist_recent(uid: str) -> None:
+    rec = _load_recent()
+    if uid in rec:
+        rec.remove(uid)
+    rec.append(uid)
+    del rec[:-_RECENT_MAX]
+    try:
+        os.makedirs(os.path.dirname(_RECENT_FILE), exist_ok=True)
+        with open(_RECENT_FILE, "w", encoding="utf-8") as fh:
+            json.dump(rec, fh)
+    except Exception:
+        pass
+
+
+def is_recent(uid: str) -> bool:
+    return bool(uid) and uid in _load_recent()
+
+
+def provider_cooling_down(key: str) -> bool:
+    return time.time() < _cooldowns.get(key, 0.0)
+
+
+def _note_failure(key: str, exc: Exception) -> None:
+    text = str(exc).lower()
+    if "429" in text or "too many requests" in text or "rate limit" in text:
+        _cooldowns[key] = time.time() + _COOLDOWN_429
+        return
+    if "timed out" in text or "timeout" in text:
+        _fail_counts[key] = _fail_counts.get(key, 0) + 1
+        if _fail_counts[key] >= 2:
+            _cooldowns[key] = time.time() + _COOLDOWN_TIMEOUT
+            _fail_counts[key] = 0
+
 
 def reset_used() -> None:
     _used_uids.clear()
@@ -23,6 +81,7 @@ def reset_used() -> None:
 def mark_used(uid: str) -> None:
     if uid:
         _used_uids.add(uid)
+        _persist_recent(uid)
 
 
 def is_used(uid: str) -> bool:
@@ -44,8 +103,8 @@ def ordered_providers(niche_id: str = "") -> List[ProviderSpec]:
     pref = preferred_sources(niche_id)
     # Map palette keys → provider keys
     alias = {
-        "pexels": ["pexels"],
-        "pixabay": ["pixabay"],
+        "pexels": ["pexels", "pexels_img"],
+        "pixabay": ["pixabay", "pixabay_img"],
         "coverr": ["coverr"],
         "wikimedia": ["wikimedia", "wikimedia_img"],
         "nasa": ["nasa", "nasa_img"],
@@ -69,6 +128,8 @@ def ordered_providers(niche_id: str = "") -> List[ProviderSpec]:
         if spec.families and family not in spec.families and family != "general":
             continue
         if not provider_available(spec):
+            continue
+        if provider_cooling_down(spec.key):
             continue
         out.append(spec)
     return out
@@ -131,6 +192,7 @@ def search_provider(spec: ProviderSpec, query: str, per_page: int = 10) -> List[
     except TypeError:
         results = spec.fn(query)
     except Exception as exc:
+        _note_failure(spec.key, exc)
         print(f"    [visuals:{spec.key}] {exc}")
         return []
     safe = [c for c in results if c.license and is_commercial_safe(c.license.license)]
@@ -223,9 +285,11 @@ def score_candidate(
     )
     c.matched_terms = matched_tokens
     # provider prior
-    spec = PROVIDERS.get(c.source) or PROVIDERS.get(c.source.replace("_img", ""))
+    spec = PROVIDERS.get(c.source) or PROVIDERS.get(c.source.replace("_img", "")) or PROVIDERS.get(f"{c.source}_img")
     if spec:
         score *= spec.weight
+    if is_recent(c.uid):
+        score *= _RECENT_PENALTY
     return score
 
 

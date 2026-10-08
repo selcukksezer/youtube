@@ -272,7 +272,16 @@ def _generate_fallback_clip(scene_index, project_dir, target_duration=7,
     Intentional procedural tier when stock fails: kinetic typography first,
     then abstract cinematic gradient, then a palette color card so fetch
     cannot stall. Never "Gorsel Bulunamadi".
+
+    Disabled by default: synthetic placeholder visuals are not wanted in
+    finished videos. Set config.ALLOW_PROCEDURAL_VISUALS = True to re-enable.
     """
+    try:
+        import config as _cfg
+        if not getattr(_cfg, "ALLOW_PROCEDURAL_VISUALS", False):
+            return None
+    except Exception:
+        return None
     intent = visual_intent if isinstance(visual_intent, dict) else (
         visual_intent.to_dict() if hasattr(visual_intent, "to_dict") else None
     )
@@ -1090,6 +1099,8 @@ def gather_scene_pools(
         )
 
     def _whiteboard():
+        if not getattr(config, "ALLOW_PROCEDURAL_VISUALS", False):
+            return None
         try:
             from services.whiteboard_animator import create_whiteboard_scene_clip
             path = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard.mp4")

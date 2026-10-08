@@ -73,3 +73,5 @@ data/ai_video_cache/
 scratch/
 scratch_*.py
 PIPELINE_AUDIT_REPORT.json
+
+data/recent_visual_uids.json

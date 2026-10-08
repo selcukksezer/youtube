@@ -336,8 +336,8 @@ def create_whiteboard_scene_clip(
 ) -> Optional[str]:
     """
     1-shot helper to create a whiteboard drawing video clip for a scene.
-    Tries AI sketch generation first; falls back to procedural hand-drawn sketch.
-    NEVER fails or creates a blank screen.
+    AI sketch only. When generation fails (rate limit, offline) returns None so the
+    caller falls back to real stock footage; no synthetic placeholder is produced.
     """
     trans = WHITEBOARD_TRANSITIONS[scene_index % len(WHITEBOARD_TRANSITIONS)]
     with tempfile.NamedTemporaryFile(suffix="_sketch.jpg", delete=False) as tmp:
@@ -346,12 +346,7 @@ def create_whiteboard_scene_clip(
     try:
         ok_sketch = generate_whiteboard_sketch_image(scene_description, tmp_sketch)
         if not ok_sketch:
-            # Reliable procedural drawing fallback with hand-drawn icon & layout
-            draw_procedural_whiteboard_sketch(
-                prompt=scene_description,
-                output_path=tmp_sketch,
-                scene_index=scene_index,
-            )
+            return None
 
         ok_clip = animate_whiteboard_clip(
             sketch_image_path=tmp_sketch,

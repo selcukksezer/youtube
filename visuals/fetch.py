@@ -306,6 +306,41 @@ def _normalize_clip(
     return dst
 
 
+_K1_HARD_FLOOR = 0.03
+
+_FAMILY_GENERIC = {
+    "religious": ["mosque architecture", "prayer light", "ancient manuscript", "sunrise sky clouds"],
+    "history": ["ancient ruins", "old map", "historic architecture"],
+    "mystery": ["dark forest fog", "night sky", "abandoned building"],
+    "nature": ["nature landscape", "ocean waves", "mountain sky"],
+    "general": ["cinematic landscape", "city skyline", "sky clouds timelapse"],
+}
+
+
+def _procedural_enabled() -> bool:
+    return os.getenv("ALLOW_PROCEDURAL_VISUALS", "").lower() in ("1", "true", "yes", "on")
+
+
+def _broaden_queries(qlist: List[str], niche_id: str, narration: str = "") -> List[str]:
+    """Shorter / more generic variants of the failed queries plus family-level themes."""
+    out: List[str] = []
+    for q in qlist:
+        words = [w for w in str(q).split() if len(w) > 2]
+        if len(words) > 2:
+            out.append(" ".join(words[:2]))
+            out.append(" ".join(words[-2:]))
+        elif words:
+            out.append(words[0])
+    out.extend(_FAMILY_GENERIC.get(family_for_niche(niche_id), _FAMILY_GENERIC["general"]))
+    seen, res = set(), []
+    for q in out:
+        k = q.lower()
+        if k not in seen:
+            seen.add(k)
+            res.append(q)
+    return res[:6]
+
+
 def fetch_open_visual(
     queries: Optional[List[str]] = None,
     *,
@@ -318,6 +353,7 @@ def fetch_open_visual(
     visual_intent: Optional[dict] = None,
     allow_procedural: bool = True,
     caption_text: str = "",
+    _expanded: bool = False,
 ) -> Optional[str]:
     """
     Primary entry: license-safe multi-source fetch.
@@ -335,7 +371,9 @@ def fetch_open_visual(
         )
 
     # 6.1 Whiteboard Canvas Animator option
-    if (intent and intent.get("style") == "whiteboard") or "whiteboard" in (niche_id or "").lower():
+    if os.getenv("ALLOW_PROCEDURAL_VISUALS", "").lower() in ("1", "true", "yes", "on") and (
+        (intent and intent.get("style") == "whiteboard") or "whiteboard" in (niche_id or "").lower()
+    ):
         try:
             from services.whiteboard_animator import generate_whiteboard_sketch_image, animate_whiteboard_clip
             sketch_img = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard_sketch.jpg")
@@ -365,7 +403,7 @@ def fetch_open_visual(
 
     providers = ordered_providers(niche_id)
     if not providers:
-        print("    [visuals] no providers available (keys missing?) → procedural")
+        print("    [visuals] no providers available (keys missing?)")
 
     # 6.1 Parallel multi-provider search orchestration
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -430,7 +468,7 @@ def fetch_open_visual(
         f_hash = _file_hash(norm)
 
         # 6.5 K1-Semantic narrative relevance validation (< 8% triggers narrative re-fetch)
-        if cand.topic_match_score < 0.08 and len(narration.strip().split()) >= 3:
+        if not _expanded and cand.topic_match_score < 0.08 and len(narration.strip().split()) >= 3:
             print(f"    [visuals:k1] Candidate score ({cand.topic_match_score:.2f}) < 0.08 threshold, triggering K1 re-fetch...")
             from .query_builder import build_shot_queries
             narrative_queries = build_shot_queries(
@@ -491,14 +529,13 @@ def fetch_open_visual(
                 if better_found:
                     break
 
-            if cand.topic_match_score < 0.08 and not better_found:
-                if allow_procedural:
-                    print(f"    [visuals:k1] Candidate below 8% match and no stock match found; falling back to procedural.")
-                    try:
-                        os.remove(norm)
-                    except OSError:
-                        pass
-                    break
+            if cand.topic_match_score < _K1_HARD_FLOOR and not better_found:
+                print(f"    [visuals:k1] Candidate {cand.topic_match_score:.2f} unrelated; trying next candidate.")
+                try:
+                    os.remove(norm)
+                except OSError:
+                    pass
+                continue
 
         if not claim_job_asset(cand.uid, f_hash or ""):
             print(f"    [visuals:dedup] Duplicate clip detected via SHA-256 ({(f_hash or '')[:8]}), skipping.")
@@ -604,7 +641,22 @@ def fetch_open_visual(
     except Exception as exc:
         print(f"    [visuals:public_apis_fallback] {exc}")
 
-    if not allow_procedural:
+    # Broaden queries once before giving up; real footage beats any placeholder.
+    if not _expanded:
+        wide = [q for q in _broaden_queries(qlist, niche_id, narration) if q not in qlist]
+        if wide:
+            print(f"    [visuals] stock miss, retrying with broader queries: {wide[:4]}")
+            got = fetch_open_visual(
+                wide, scene_index=scene_index, project_dir=project_dir,
+                target_duration=target_duration, narration=narration,
+                scene_description=scene_description, niche_id=niche_id,
+                visual_intent=visual_intent, allow_procedural=allow_procedural,
+                caption_text=caption_text, _expanded=True,
+            )
+            if got:
+                return got
+
+    if not (allow_procedural and _procedural_enabled()):
         return None
 
     # 6.6 Kinetic procedural (intentional typography)

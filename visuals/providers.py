@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import html
 import os
+import random
 import re
 from dataclasses import dataclass, field, asdict
 from typing import Callable, Dict, List, Optional
@@ -31,6 +32,11 @@ TIMEOUT = 8
 
 _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
+
+
+def _rand_page() -> int:
+    # Page 1 stays dominant for relevance; pages 2-3 break the "same top hits" loop.
+    return random.choices([1, 2, 3], weights=[3, 2, 1])[0]
 
 
 def _env(name: str) -> str:
@@ -129,7 +135,7 @@ def search_pexels(query: str, per_page: int = 12) -> List[Candidate]:
         headers={"Authorization": key},
         # No orientation lock. Real subject footage is usually 16:9.
         # visuals.fetch crops it to 9:16, the same reframe ViewMade does.
-        params={"query": query, "per_page": min(max(per_page, 1), 15), "size": "medium"},
+        params={"query": query, "per_page": min(max(per_page, 1), 15), "size": "medium", "page": _rand_page()},
         timeout=TIMEOUT,
     )
     r.raise_for_status()
@@ -158,7 +164,8 @@ def search_pixabay(query: str, per_page: int = 12) -> List[Candidate]:
         return []
     r = _session.get(
         "https://pixabay.com/api/videos/",
-        params={"key": key, "q": query, "video_type": "film", "per_page": max(3, per_page), "safesearch": "true"},
+        params={"key": key, "q": query, "video_type": "film", "per_page": max(3, per_page), "safesearch": "true",
+                "page": _rand_page()},
         timeout=TIMEOUT,
     )
     r.raise_for_status()
@@ -349,7 +356,7 @@ _OV_OK = {"cc0", "by", "pdm"}
 
 def search_openverse(query: str, per_page: int = 10) -> List[Candidate]:
     params = {"q": query, "license": "cc0,by,pdm", "page_size": per_page, "mature": "false"}
-    r = _session.get(_OV_API, params=params, timeout=TIMEOUT)
+    r = _session.get(_OV_API, params=params, timeout=4)
     if r.status_code == 429:
         raise RuntimeError("openverse rate limit (anonymous) — cached results only")
     r.raise_for_status()
@@ -424,6 +431,103 @@ def search_archive_org(query: str, per_page: int = 6) -> List[Candidate]:
     return out
 
 
+# ─── Pexels / Pixabay photos (same keys, Ken Burns on images) ────────────────
+
+def search_pexels_images(query: str, per_page: int = 10) -> List[Candidate]:
+    key = _env("PEXELS_API_KEY")
+    if not key:
+        return []
+    r = _session.get(
+        "https://api.pexels.com/v1/search",
+        headers={"Authorization": key},
+        params={"query": query, "per_page": min(max(per_page, 1), 15), "page": _rand_page()},
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    out: List[Candidate] = []
+    for p in r.json().get("photos", []):
+        src = p.get("src") or {}
+        url = src.get("large2x") or src.get("large") or src.get("original")
+        if not url:
+            continue
+        out.append(Candidate(
+            source="pexels", id=f"pxi_{p['id']}", url=url, kind="image",
+            width=int(p.get("width") or 0), height=int(p.get("height") or 0),
+            title=str(p.get("alt") or ""), thumbnail=src.get("medium", ""),
+            contributor=f"pexels:{p.get('photographer_id', '')}",
+            license=LicenseInfo(License.PEXELS, "pexels", author=str(p.get("photographer", "")),
+                                source_url=p.get("url", ""), license_url="https://www.pexels.com/license/",
+                                raw="Pexels License"),
+        ))
+    return out
+
+
+def search_pixabay_images(query: str, per_page: int = 10) -> List[Candidate]:
+    key = _env("PIXABAY_API_KEY")
+    if not key:
+        return []
+    r = _session.get(
+        "https://pixabay.com/api/",
+        params={"key": key, "q": query, "image_type": "photo", "per_page": max(3, per_page),
+                "safesearch": "true", "page": _rand_page(), "min_width": 1000},
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    out: List[Candidate] = []
+    for v in r.json().get("hits", []):
+        url = v.get("largeImageURL") or v.get("webformatURL")
+        if not url:
+            continue
+        out.append(Candidate(
+            source="pixabay", id=f"pbi_{v['id']}", url=url, kind="image",
+            width=int(v.get("imageWidth") or 0), height=int(v.get("imageHeight") or 0),
+            tags=[t.strip() for t in str(v.get("tags", "")).split(",") if t.strip()],
+            thumbnail=v.get("previewURL", ""), contributor=f"contributor:{str(v.get('user', '')).lower()}",
+            license=LicenseInfo(License.PIXABAY, "pixabay", author=str(v.get("user", "")),
+                                source_url=v.get("pageURL", ""),
+                                license_url="https://pixabay.com/service/license-summary/",
+                                raw="Pixabay Content License"),
+        ))
+    return out
+
+
+# ─── Met Museum Open Access (keyless, CC0 images) ────────────────────────────
+
+_MET_API = "https://collectionapi.metmuseum.org/public/collection/v1"
+
+
+def search_met_images(query: str, per_page: int = 6) -> List[Candidate]:
+    r = _session.get(f"{_MET_API}/search", params={"q": query, "hasImages": "true", "isPublicDomain": "true"},
+                     timeout=TIMEOUT)
+    r.raise_for_status()
+    ids = list((r.json() or {}).get("objectIDs") or [])
+    random.shuffle(ids)
+    out: List[Candidate] = []
+    for oid in ids[: max(per_page, 1) * 2]:
+        if len(out) >= per_page:
+            break
+        try:
+            o = _session.get(f"{_MET_API}/objects/{oid}", timeout=TIMEOUT).json()
+        except Exception:
+            continue
+        url = o.get("primaryImage")
+        if not url or not o.get("isPublicDomain"):
+            continue
+        title = str(o.get("title") or "")
+        out.append(Candidate(
+            source="met", id=f"met_{oid}", url=url, kind="image", width=1600, height=1600,
+            title=title,
+            tags=[str(t.get("term", "")).lower() for t in (o.get("tags") or [])][:12]
+                 + [str(o.get("culture") or "").lower(), str(o.get("objectName") or "").lower()],
+            thumbnail=o.get("primaryImageSmall", ""), contributor="met:openaccess",
+            license=LicenseInfo(License.CC0, "met", title=title, author=str(o.get("artistDisplayName") or ""),
+                                source_url=str(o.get("objectURL") or ""),
+                                license_url="https://www.metmuseum.org/about-the-met/policies-and-documents/open-access",
+                                raw="Met Open Access CC0"),
+        ))
+    return out
+
+
 # ─── Provider registry table ─────────────────────────────────────────────────
 
 @dataclass
@@ -446,4 +550,7 @@ PROVIDERS: Dict[str, ProviderSpec] = {
     "nasa_img": ProviderSpec("nasa_img", search_nasa_images, "image", None, 0.6, ["mystery", "astrology", "science"]),
     "openverse": ProviderSpec("openverse", search_openverse, "image", None, 0.5),
     "archive_org": ProviderSpec("archive_org", search_archive_org, "video", None, 0.45, ["history", "news"]),
+    "pexels_img": ProviderSpec("pexels_img", search_pexels_images, "image", "PEXELS_API_KEY", 0.7),
+    "pixabay_img": ProviderSpec("pixabay_img", search_pixabay_images, "image", "PIXABAY_API_KEY", 0.65),
+    "met_img": ProviderSpec("met_img", search_met_images, "image", None, 0.55, ["religious", "history", "mystery", "general"]),
 }

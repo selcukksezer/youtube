@@ -144,6 +144,47 @@ class TestFFmpegRender(unittest.TestCase):
         # Look for Duration: 00:00:03.xx
         self.assertIn("Duration: 00:00:03.", stderr)
 
+    # ─── K2: Probe sonucu -t sınırı, asla -shortest ───
+    def _captured_cmds(self, probe_dur):
+        from unittest import mock
+        import render.ffmpeg_graph as fg
+
+        cmds = []
+
+        class _FakeProc:
+            def __init__(self, cmd):
+                cmds.append(cmd)
+                self.stdout = iter(())
+                self.stderr = iter(())
+                self.returncode = 1
+
+            def __getattr__(self, name):
+                raise RuntimeError("stop")
+
+        clips = [{"path": self.sample_clip, "duration": 3.0, "scene_index": 0}]
+        out = os.path.join(self.test_dir, "k2.mp4")
+        with mock.patch.object(fg, "_probe_audio_duration", return_value=probe_dur), \
+             mock.patch.object(fg.subprocess, "Popen", side_effect=lambda cmd, *a, **k: _FakeProc(cmd)):
+            try:
+                render_with_ffmpeg_graph(clips=clips, audio_path=self.sample_audio, output_path=out)
+            except Exception:
+                pass
+        return [c for c in cmds if "-filter_complex" in c]
+
+    def test_k2_probe_success_uses_t_limit(self):
+        cmds = self._captured_cmds(2.0)
+        self.assertTrue(cmds, "no ffmpeg command captured")
+        for c in cmds:
+            self.assertNotIn("-shortest", c)
+            self.assertEqual(c[c.index("-t") + 1], "2.500")
+
+    def test_k2_probe_failure_uses_clip_total_limit(self):
+        cmds = self._captured_cmds(-1.0)
+        self.assertTrue(cmds, "no ffmpeg command captured")
+        for c in cmds:
+            self.assertNotIn("-shortest", c)
+            self.assertEqual(c[c.index("-t") + 1], "3.500")
+
     # ─── 18.3 Test 3: Bellek Sızıntısı ve Tracemalloc Doğrulaması ───
     def test_tracemalloc_memory_leak_bounds(self):
         """18.3: Sequential rendering heap allocation must remain bounded (< 5MB delta)."""
