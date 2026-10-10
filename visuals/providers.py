@@ -130,29 +130,46 @@ def search_pexels(query: str, per_page: int = 12) -> List[Candidate]:
     key = _env("PEXELS_API_KEY")
     if not key:
         return []
-    r = _session.get(
-        "https://api.pexels.com/videos/search",
-        headers={"Authorization": key},
-        # No orientation lock. Real subject footage is usually 16:9.
-        # visuals.fetch crops it to 9:16, the same reframe ViewMade does.
-        params={"query": query, "per_page": min(max(per_page, 1), 15), "size": "medium", "page": _rand_page()},
-        timeout=TIMEOUT,
-    )
-    r.raise_for_status()
-    out: List[Candidate] = []
-    for v in r.json().get("videos", []):
-        f = _pick_pexels_file(v.get("video_files", []))
-        if not f:
-            continue
-        user = v.get("user") or {}
-        out.append(Candidate(
-            source="pexels", id=f"px_{v['id']}", url=f["link"], kind="video",
-            width=int(f.get("width") or v.get("width") or 0), height=int(f.get("height") or v.get("height") or 0),
-            duration=float(v.get("duration") or 0), title=str(v.get("url", "")).rstrip("/").split("/")[-1].replace("-", " "),
-            thumbnail=v.get("image", ""), contributor=f"pexels:{user.get('id','')}",
-            license=LicenseInfo(License.PEXELS, "pexels", author=str(user.get("name", "")), source_url=v.get("url", ""),
-                                license_url="https://www.pexels.com/license/", raw="Pexels License"),
-        ))
+    portrait_first = os.environ.get("PEXELS_PORTRAIT_FIRST", "1").lower() in ("1", "true", "yes", "on")
+
+    def _do(orientation: Optional[str] = None) -> List[Candidate]:
+        params = {"query": query, "per_page": min(max(per_page, 1), 15), "size": "medium", "page": _rand_page()}
+        # Portrait-first: 16:9 -> 9:16 crop throws away ~70% of pixels.
+        # Asking Pexels for vertical footage directly keeps the full frame.
+        if orientation:
+            params["orientation"] = orientation
+        r = _session.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": key},
+            params=params,
+            timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        out: List[Candidate] = []
+        for v in r.json().get("videos", []):
+            f = _pick_pexels_file(v.get("video_files", []))
+            if not f:
+                continue
+            user = v.get("user") or {}
+            out.append(Candidate(
+                source="pexels", id=f"px_{v['id']}", url=f["link"], kind="video",
+                width=int(f.get("width") or v.get("width") or 0), height=int(f.get("height") or v.get("height") or 0),
+                duration=float(v.get("duration") or 0), title=str(v.get("url", "")).rstrip("/").split("/")[-1].replace("-", " "),
+                thumbnail=v.get("image", ""), contributor=f"pexels:{user.get('id','')}",
+                license=LicenseInfo(License.PEXELS, "pexels", author=str(user.get("name", "")), source_url=v.get("url", ""),
+                                    license_url="https://www.pexels.com/license/", raw="Pexels License"),
+            ))
+        return out
+
+    out = _do("portrait") if portrait_first else _do()
+    if portrait_first and len(out) < 4:
+        # Thin portrait catalog for this query: widen to any orientation
+        # rather than starving the scene. Dedupe by id, portrait first.
+        seen = {c.id for c in out}
+        for c in _do():
+            if c.id not in seen:
+                seen.add(c.id)
+                out.append(c)
     return out
 
 

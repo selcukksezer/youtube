@@ -16,7 +16,7 @@ from .license import License, LicenseInfo, attribution_line, is_commercial_safe
 from .palettes import family_for_niche
 from .providers import Candidate
 from .query_builder import build_shot_queries
-from .registry import is_used, mark_used, ordered_providers, reset_used, score_candidate, search_provider
+from .registry import is_used, mark_used, ordered_providers, reset_used, score_candidate, search_provider, tfidf_rerank
 
 from urllib.parse import urlsplit, urlunsplit
 
@@ -308,6 +308,40 @@ def _normalize_clip(
 
 _K1_HARD_FLOOR = 0.03
 
+# 6.6 Visual diversity between consecutive scenes (dHash, zero-cost).
+# Two normalized 9:16 clips with hamming distance < _DHASH_MIN_DIST are
+# near-duplicates to the viewer (same stock footage family, same framing).
+# Only near-duplicates are rejected; legitimately similar subjects still pass.
+_DHASH_MIN_DIST = 8
+_SCENE_DHASH: Dict[tuple, int] = {}
+
+
+def _frame_dhash(path: str) -> Optional[int]:
+    """64-bit difference hash of one mid-clip frame. Pure ffmpeg, no new deps."""
+    try:
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        res = subprocess.run(
+            [ffmpeg, "-loglevel", "error", "-ss", "1", "-i", path,
+             "-vframes", "1", "-vf", "scale=9:8",
+             "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+        )
+        px = res.stdout or b""
+        if len(px) < 72:
+            return None
+        h = 0
+        for y in range(8):
+            row = y * 9
+            for x in range(8):
+                h = (h << 1) | (1 if px[row + x] > px[row + x + 1] else 0)
+        return h
+    except Exception:
+        return None
+
+
+def _hamming(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
 _FAMILY_GENERIC = {
     "religious": ["mosque architecture", "prayer light", "ancient manuscript", "sunrise sky clouds"],
     "history": ["ancient ruins", "old map", "historic architecture"],
@@ -432,6 +466,9 @@ def fetch_open_visual(
                     if sc > 0:
                         scored.append((sc, c, query))
 
+    # TF-IDF rerank: rare discriminative terms ("mosque", "qibla") outrank
+    # corpus filler ("cinematic video shot"). Zero-cost, no new deps.
+    scored = tfidf_rerank(scored, " ".join(active_queries), narration=narration)
     scored.sort(key=lambda x: x[0], reverse=True)
     for sc, cand, query in scored[:15]:
         if not cand.license or not is_commercial_safe(cand.license.license):
@@ -544,6 +581,19 @@ def fetch_open_visual(
             except OSError:
                 pass
             continue
+
+        # 6.6 Visual diversity: reject near-duplicate frames vs previous scene.
+        dh = _frame_dhash(norm)
+        prev_dh = _SCENE_DHASH.get((project_dir, scene_index - 1))
+        if dh is not None and prev_dh is not None and _hamming(dh, prev_dh) < _DHASH_MIN_DIST:
+            print(f"    [visuals:diversity] too similar to scene {scene_index - 1} frame, trying next candidate.")
+            try:
+                os.remove(norm)
+            except OSError:
+                pass
+            continue
+        if dh is not None:
+            _SCENE_DHASH[(project_dir, scene_index)] = dh
 
         entry = {
             "scene_index": scene_index,

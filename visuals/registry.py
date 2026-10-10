@@ -293,6 +293,73 @@ def score_candidate(
     return score
 
 
+def tfidf_rerank(
+    scored: List[tuple],
+    query: str,
+    narration: str = "",
+    bonus: float = 30.0,
+) -> List[tuple]:
+    """Pure-Python TF-IDF cosine rerank over scored (score, candidate, query) triples.
+
+    Zero-cost semantic signal: the raw token-overlap in score_candidate treats
+    every token equally, so "cinematic video shot" (corpus filler) counts as
+    much as "mosque" or "qibla".  TF-IDF weights rare, discriminative terms
+    higher, which is exactly what distinguishes the right clip from a generic
+    cutaway.  No ML deps, no API calls — IDF is computed from the candidate
+    corpus itself, so the "vocabulary" adapts per scene.
+
+    Adds bonus * cosine(ref, doc) to each score and records the cosine in
+    semantic_evidence.  The existing score_candidate gate logic (subject lock,
+    K1 floor) is untouched.
+    """
+    if not scored:
+        return scored
+    try:
+        import math
+        ref_tokens = re_tokens(query) + re_tokens(narration)
+        if not ref_tokens:
+            return scored
+        docs = []
+        for _sc, c, _q in scored:
+            docs.append(re_tokens(getattr(c, "text", "") or ""))
+        # document frequency over candidate corpus
+        n_docs = len(docs)
+        df: dict = {}
+        for toks in docs:
+            for t in set(toks):
+                df[t] = df.get(t, 0) + 1
+        idf = {t: math.log((n_docs + 1) / (d + 1)) + 1.0 for t, d in df.items()}
+
+        def _vec(toks):
+            tf: dict = {}
+            for t in toks:
+                tf[t] = tf.get(t, 0) + 1
+            n = max(1, len(toks))
+            return {t: (cnt / n) * idf[t] for t, cnt in tf.items() if t in idf}
+
+        ref_vec = _vec(ref_tokens)
+        ref_norm = math.sqrt(sum(v * v for v in ref_vec.values()))
+        if ref_norm <= 0:
+            return scored
+        out = []
+        for (sc, c, q), toks in zip(scored, docs):
+            dv = _vec(toks)
+            dot = sum(ref_vec.get(t, 0.0) * v for t, v in dv.items())
+            d_norm = math.sqrt(sum(v * v for v in dv.values()))
+            cos = dot / (ref_norm * d_norm) if d_norm > 0 else 0.0
+            cos = max(0.0, min(1.0, cos))
+            try:
+                ev = c.semantic_evidence if isinstance(c.semantic_evidence, dict) else {}
+                ev["tfidf_cosine"] = round(cos, 4)
+                c.semantic_evidence = ev
+            except Exception:
+                pass
+            out.append((sc + bonus * cos, c, q))
+        return out
+    except Exception:
+        return scored
+
+
 def re_tokens(text: str) -> List[str]:
     import re
     return [t for t in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}", (text or "").lower()) if t not in {

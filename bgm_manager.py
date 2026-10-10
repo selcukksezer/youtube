@@ -164,6 +164,15 @@ def get_bgm_path(track_name):
     """Returns full path of a BGM track if it exists, auto-downloading catalog tracks if needed."""
     if not track_name:
         return None
+    # Resolve UI labels / catalog ids to the real filename FIRST — the
+    # security validator below only accepts actual audio filenames.
+    try:
+        from youtube_safe_bgm_catalog import track_by_filename
+        meta = track_by_filename(track_name)
+        if meta and meta.get("filename"):
+            track_name = meta["filename"]
+    except Exception:
+        pass
     try:
         from services.bgm_security import validate_bgm_filename, MAX_BGM_UPLOAD_BYTES
         base_name = os.path.basename(track_name.replace("\\", "/"))

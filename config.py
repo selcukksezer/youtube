@@ -107,7 +107,9 @@ LUMA_API_KEY = (
     or os.getenv("LUMAAI_API_KEY", "")
     or os.getenv("LUMA_KEY", "")
 )
-USE_OPENAI_SORA = os.getenv("USE_OPENAI_SORA", "true").lower() not in ("0", "false", "no", "off")
+# NB: Sora v1/videos endpoint shut down 2026-09-24 — keep OFF by default
+# to avoid a guaranteed 404 + failover delay on every call.
+USE_OPENAI_SORA = os.getenv("USE_OPENAI_SORA", "false").lower() not in ("0", "false", "no", "off")
 AI_VIDEO_CLIP_MAX_SEC = float(os.getenv("AI_VIDEO_CLIP_MAX_SEC", "5") or 5)
 AI_VIDEO_STYLE_PRESET = os.getenv("AI_VIDEO_STYLE_PRESET", "")  # kids_cartoon auto for niche 36
 

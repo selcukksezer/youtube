@@ -1014,6 +1014,12 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 algorithm_reset = operator.get("algorithm_reset_guidance") or {}
                 traffic_advisory = operator.get("traffic_sources_advisory") or {}
                 momentum_advisory = operator.get("channel_momentum_advisory") or {}
+
+                def _pct(v, default=80.0):
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return default
                 end_screen = operator.get("end_screen_guidance") or {}
                 competitor_brief = operator.get("competitor_analysis") or {}
                 contact_guidance = operator.get("channel_contact") or {}
@@ -1042,7 +1048,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         f"🔄 ALGORİTMA RESET (Item 394):\n{algorithm_reset.get('rule', '')}\n"
                         f"{algorithm_reset.get('action', '')}\n\n"
                         f"📊 TRAFİK KAYNAKLARI (Items 406-409):\n{traffic_advisory.get('diagnosis', '')}\n"
-                        f"Shorts Feed hedef: ≥%{traffic_advisory.get('shorts_feed_target_pct', 80):.0f}\n\n"
+                        f"Shorts Feed hedef: ≥%{(_pct(traffic_advisory.get('shorts_feed_target_pct', 80))):.0f}\n\n"
                         f"⏳ SABIR EŞİĞİ (Item 410):\n{momentum_advisory.get('message', '')}\n\n"
                         f"🔗 END SCREEN / LINK (Item 392):\n{end_screen.get('end_screen_action', '')}\n\n"
                         f"🎯 RAKİP ANALİZİ (Item 395):\n{competitor_brief.get('action', '')}\n\n"
@@ -1290,6 +1296,12 @@ def _face_centered_source(clip, path, target_w, target_h):
 
 
 def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_label=None, badge_icon="💡", enable_pip=False, pip_path=None, gameplay_path=None, enable_face_center=False):
+    try:
+        dur = float(dur)
+    except (TypeError, ValueError):
+        dur = 3.0
+    if dur <= 0:
+        dur = 3.0
     c = VideoFileClip(path, audio=False)
     selected_gameplay = gameplay_path or os.path.join(config.ASSETS_DIR, "gameplay_loop.mp4")
     split_active = bool(split_screen and os.path.exists(selected_gameplay))

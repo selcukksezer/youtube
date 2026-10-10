@@ -60,8 +60,33 @@ def _narration_tokens(clip: Dict[str, Any]) -> set:
     return _expand_tokens_with_translations(_tokenize(clip.get("narration") or ""))
 
 
+def _attach_row(clip: Dict[str, Any], row: Dict[str, Any]) -> None:
+    """Copy provider evidence fields from a manifest row onto a clip."""
+    topic_score = row.get("topic_match_score")
+    if isinstance(topic_score, (int, float)) and not isinstance(topic_score, bool):
+        clip["candidate_topic_match_score"] = float(topic_score)
+    evidence = row.get("semantic_evidence")
+    if isinstance(evidence, dict):
+        clip["candidate_semantic_evidence"] = evidence
+    for source_key, target_key in (
+        ("title", "candidate_title"), ("tags", "candidate_tags"),
+        ("description", "candidate_description"),
+        ("matched_terms", "candidate_matched_terms"),
+    ):
+        if row.get(source_key):
+            clip[target_key] = row[source_key]
+
+
 def attach_candidate_metadata(clips: List[Dict[str, Any]], manifest_rows: List[Dict[str, Any]]) -> None:
-    """Attach provider evidence only when the manifest row belongs to this scene and path."""
+    """Attach provider evidence only when the manifest row belongs to this scene and path.
+
+    add_manifest_entry() keeps at most one row per scene_index, so the row for
+    a scene always represents that scene's latest fetch. Path equality is the
+    primary match; a basename fallback covers bookkeeping drift (separator /
+    case / normalization differences between the fetch-time path and the
+    clip path), which previously caused fetch-approved clips to score 0.0 and
+    HARD-FAIL the audit on a false negative.
+    """
     rows_by_scene = {
         row.get("scene_index"): row
         for row in manifest_rows
@@ -78,24 +103,21 @@ def attach_candidate_metadata(clips: List[Dict[str, Any]], manifest_rows: List[D
             clip.pop(key, None)
         row = rows_by_scene.get(index)
         if not row or not clip.get("path") or not row.get("path"):
+            if isinstance(clip, dict) and clip.get("path"):
+                print(f"[PipelineAudit] WARN scene={index + 1}: no manifest row; "
+                      f"clip={clip.get('path')}")
             continue
         clip_path = os.path.normcase(os.path.abspath(str(clip["path"])))
         row_path = os.path.normcase(os.path.abspath(str(row["path"])))
         if clip_path != row_path:
-            continue
-        topic_score = row.get("topic_match_score")
-        if isinstance(topic_score, (int, float)) and not isinstance(topic_score, bool):
-            clip["candidate_topic_match_score"] = float(topic_score)
-        evidence = row.get("semantic_evidence")
-        if isinstance(evidence, dict):
-            clip["candidate_semantic_evidence"] = evidence
-        for source_key, target_key in (
-            ("title", "candidate_title"), ("tags", "candidate_tags"),
-            ("description", "candidate_description"),
-            ("matched_terms", "candidate_matched_terms"),
-        ):
-            if row.get(source_key):
-                clip[target_key] = row[source_key]
+            # Fallback: same file name, different directory bookkeeping.
+            if os.path.basename(clip_path) != os.path.basename(row_path):
+                print(f"[PipelineAudit] WARN scene={index + 1}: path drift, "
+                      f"skipping metadata (clip={clip_path} row={row_path})")
+                continue
+            print(f"[PipelineAudit] WARN scene={index + 1}: path drift, "
+                  f"attaching by basename (clip={clip_path} row={row_path})")
+        _attach_row(clip, row)
 
 
 def _semantic_overlap(clip: Dict[str, Any]) -> float:

@@ -29,18 +29,23 @@ class VideoEngine:
         )
         report = self.verify(path or output_path)
         if not report["ok"]:
-            raise RuntimeError(report["error"])
+            raise RuntimeError(report.get("error", "verification failed"))
         return {"path": path, "verification": report}
 
     def verify(self, path: str) -> Dict[str, Any]:
         if not path or not os.path.isfile(path) or os.path.getsize(path) < 100_000:
             return {"ok": False, "error": "render output is missing or too small"}
-        ffprobe = imageio_ffmpeg.get_ffmpeg_exe()
+        ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
         try:
-            result = subprocess.run([ffprobe, "-i", path, "-hide_banner"], capture_output=True, text=True, timeout=30)
+            # NB: `ffmpeg -i` with no output file always exits non-zero; the
+            # stream info is still printed to stderr, so judge by that.
+            result = subprocess.run([ffmpeg, "-i", path, "-hide_banner"], capture_output=True, text=True, timeout=30)
             text = result.stderr or ""
             has_video = "Video:" in text
             has_audio = "Audio:" in text
-            return {"ok": result.returncode == 0 and has_video and has_audio, "has_video": has_video, "has_audio": has_audio, "bytes": os.path.getsize(path)}
+            if has_video and has_audio:
+                return {"ok": True, "has_video": True, "has_audio": True, "bytes": os.path.getsize(path)}
+            return {"ok": False, "error": "render output is missing video/audio stream",
+                    "has_video": has_video, "has_audio": has_audio, "bytes": os.path.getsize(path)}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}

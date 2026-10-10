@@ -803,6 +803,9 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
         edge_error = edge_err
         edge_result = None
     finally:
+        # Restore the narrator voice even if a segment raised mid-loop;
+        # otherwise later renders in the same process silently use the quote voice.
+        config.TTS_VOICE = narrator_voice
         shutil.rmtree(temp_dir, ignore_errors=True)
     if edge_error is not None:
         if gemini_blocked:

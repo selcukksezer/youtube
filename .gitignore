@@ -75,3 +75,4 @@ scratch_*.py
 PIPELINE_AUDIT_REPORT.json
 
 data/recent_visual_uids.json
+cache/

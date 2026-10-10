@@ -149,7 +149,7 @@ class QuotaTracker:
             self._load_persistent_usage()
 
     def _save_persistent_usage(self):
-        """Saves current usage counts to disk."""
+        """Saves current usage counts to disk (atomic write)."""
         try:
             today = self._today_str()
             data = {
@@ -158,12 +158,16 @@ class QuotaTracker:
                 "token_totals": self.token_totals,
                 "last_updated": datetime.now().isoformat()
             }
-            with open(USAGE_FILE, "w", encoding="utf-8") as f:
+            tmp_path = USAGE_FILE + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, USAGE_FILE)
         except Exception as e:
-            pass
+            print(f"[Quota] UYARI: kota dosyası yazılamadı: {e}")
 
-    def record_call(self, provider: str):
+    def record_call(self, provider: str, units: int = 1):
+        """Records one billable call. `units` = quota units consumed
+        (YouTube Data API: search=100, upload=1600; others default 1)."""
         self._check_and_rollover_day()
         prov = str(provider or "Gemini").capitalize()
         # Edge-TTS vs için formatlama
@@ -184,7 +188,7 @@ class QuotaTracker:
         elif prov.lower() == "pixabay":
             prov = "Pixabay"
 
-        self.usage_counts[prov] = self.usage_counts.get(prov, 0) + 1
+        self.usage_counts[prov] = self.usage_counts.get(prov, 0) + max(1, int(units or 1))
         now = time.time()
         if prov not in self.call_timestamps:
             self.call_timestamps[prov] = []
@@ -289,10 +293,12 @@ class QuotaTracker:
                     reset_val = resp.headers.get("X-Ratelimit-Reset")
                     live_results["Pexels"] = {
                         "online": True,
+                        # NB: Pexels X-Ratelimit-* headers are HOURLY, not daily.
                         "limit": int(limit) if limit and limit.isdigit() else 25000,
+                        "limit_period": "hourly",
                         "remaining": int(remaining) if remaining and remaining.isdigit() else None,
                         "reset": reset_val,
-                        "status_note": f"Canlı Senkronize ({remaining} Kalan)" if remaining else "Canlı & Aktif"
+                        "status_note": f"Canlı Senkronize (saatlik {remaining} kalan)" if remaining else "Canlı & Aktif"
                     }
             except urllib.error.HTTPError as e:
                 live_results["Pexels"] = {
@@ -475,16 +481,20 @@ class QuotaTracker:
             rpm_limit = limits.get("rpm_limit", 15)
             rpd_limit = limits.get("rpd_limit", 1500)
 
-            # Override with live remaining if available from official API headers
+            # Override with live remaining if available from official API headers.
+            # NB: never let an HOURLY limit (e.g. Pexels X-Ratelimit-Limit)
+            # overwrite the DAILY rpd_limit.
             live_remaining = live_data.get("remaining")
             live_limit = live_data.get("limit")
-            if live_limit is not None and live_limit > 0:
+            if live_limit is not None and live_limit > 0 and live_data.get("limit_period") != "hourly":
                 rpd_limit = live_limit
 
-            if live_remaining is not None:
+            if live_remaining is not None and live_data.get("limit_period") != "hourly":
                 remaining_calls = live_remaining
                 used_effective = max(0, rpd_limit - live_remaining)
             else:
+                # Hourly live data (e.g. Pexels) must not be mixed into the
+                # daily budget math; use locally tracked daily usage instead.
                 remaining_calls = max(0, rpd_limit - daily_used)
                 used_effective = daily_used
 

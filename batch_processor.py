@@ -45,9 +45,9 @@ class BatchQueueManager:
                     jobs.append({
                         "id": f"batch_{int(time.time()*1000)}_{len(jobs)}",
                         "topic": topic.strip(),
-                        "niche": row.get("niche", "1_news_flash").strip(),
-                        "language": row.get("language", "tr").strip(),
-                        "split_screen": row.get("split_screen", "").lower() in ("true", "1", "yes"),
+                        "niche": (row.get("niche") or "1_news_flash").strip(),
+                        "language": (row.get("language") or "tr").strip(),
+                        "split_screen": (row.get("split_screen") or "").lower() in ("true", "1", "yes"),
                         "status": "queued",
                         "created_at": time.time()
                     })

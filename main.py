@@ -12,7 +12,9 @@ def sanitize(n):
     tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
     n = n.translate(tr_map)
     c = re.sub(r'[^\w\s-]', '', n)
-    return re.sub(r'\s+', '_', c.strip())[:80]
+    c = re.sub(r'\s+', '_', c.strip())[:80]
+    # Keyword was only emoji/symbols -> avoid writing into ASSETS_DIR root
+    return c or f"untitled_{int(time.time())}"
 
 
 def load_keywords():

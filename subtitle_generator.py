@@ -865,7 +865,7 @@ def create_srt_file(timings, path, max_dur=9999.0, audio_path: str = None):
         else:
             e = natural_end
         e = min(e, max_dur)
-        if e - s < 0.2: e = s + 0.3
+        if e - s < 0.2: e = min(s + 0.3, max_dur)
         lines += [str(idx), f"{_st(s)} --> {_st(e)}", " ".join(w["text"] for w in g), ""]
         idx += 1
     with open(path, "w", encoding="utf-8") as f:

@@ -12,7 +12,10 @@ from typing import Any, Dict, List, Optional, Sequence
 import config
 
 _INDEX_NAME = "index.json"
-_ROTATION_WINDOW = int(os.getenv("CHANNEL_BROLL_ROTATION", "12"))
+try:
+    _ROTATION_WINDOW = int(os.getenv("CHANNEL_BROLL_ROTATION", "12"))
+except (TypeError, ValueError):
+    _ROTATION_WINDOW = 12
 _EXTS = (".mp4", ".mov", ".webm", ".mkv")
 
 
