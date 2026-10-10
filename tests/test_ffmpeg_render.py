@@ -30,18 +30,33 @@ def _get_ffmpeg_pids():
             if "ffmpeg" in (p.info["name"] or "").lower()
         }
     except ImportError:
-        out = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True,
-        )
+        import sys
         pids = set()
-        for line in out.stdout.splitlines():
-            parts = [p.strip(' "') for p in line.split(",")]
-            if parts and "ffmpeg" in parts[0].lower():
-                try:
-                    pids.add(int(parts[1]))
-                except (ValueError, IndexError):
-                    pass
+        try:
+            if sys.platform == "win32":
+                out = subprocess.run(
+                    ["tasklist", "/FO", "CSV", "/NH"],
+                    capture_output=True, text=True,
+                )
+                for line in out.stdout.splitlines():
+                    parts = [p.strip(' "') for p in line.split(",")]
+                    if parts and "ffmpeg" in parts[0].lower():
+                        try:
+                            pids.add(int(parts[1]))
+                        except (ValueError, IndexError):
+                            pass
+            else:
+                out = subprocess.run(
+                    ["pgrep", "-x", "ffmpeg"],
+                    capture_output=True, text=True,
+                )
+                for line in out.stdout.splitlines():
+                    try:
+                        pids.add(int(line.strip()))
+                    except ValueError:
+                        pass
+        except FileNotFoundError:
+            pass
         return pids
 
 
