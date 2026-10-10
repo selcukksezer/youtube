@@ -44,13 +44,25 @@ class TestChapter3FFmpegNativeGraph(unittest.TestCase):
         self.assertIn("overlay=(W-w)/2:(H-h)/2", chain)
 
     def test_3_4_hardware_acceleration_negotiation(self):
-        """3.4: Fallback chain contains GPU encoders and terminates with libx264."""
+        """3.4: Fallback chain terminates with libx264; working GPU encoders lead it."""
+        from system_resilience import probe_hardware_encoders
+
         chain = get_encoder_fallback_chain(use_gpu=True)
-        self.assertTrue(len(chain) >= 2)
+        self.assertTrue(len(chain) >= 1)
         # Last candidate must always be CPU libx264
         last_args, last_label = chain[-1]
         self.assertIn("libx264", last_args)
         self.assertIn("CPU", last_label)
+
+        # Any hardware encoder that passes the five-frame probe must appear
+        # ahead of the CPU fallback (on GPU-less machines the chain is libx264-only)
+        report = probe_hardware_encoders()
+        working_hw = [c for c, ok in report.items() if ok and c != "libx264"]
+        for codec in working_hw:
+            self.assertTrue(
+                any(codec in args for args, _label in chain[:-1]),
+                f"{codec} probed OK but missing from the fallback chain",
+            )
 
         # Probed encoders set is non-empty
         encoders = get_available_ffmpeg_encoders()
@@ -112,6 +124,17 @@ class TestChapter3FFmpegNativeGraph(unittest.TestCase):
             0, 3.0, 1080, 1920, 0, enable_ken_burns=False, color_filter=filt,
         )
         self.assertTrue(chain.startswith(f"[0:v]{filt},trim="))
+
+    def test_3_8_clip_duration_guard(self):
+        """3.8: None/empty/non-numeric scene durations fall back to 3.0s, never crash."""
+        self.assertEqual(ffmpeg_graph._clip_dur({"duration": None}), 3.0)
+        self.assertEqual(ffmpeg_graph._clip_dur({"duration": ""}), 3.0)
+        self.assertEqual(ffmpeg_graph._clip_dur({"duration": "auto"}), 3.0)
+        self.assertEqual(ffmpeg_graph._clip_dur({"duration": -2}), 3.0)
+        self.assertEqual(ffmpeg_graph._clip_dur({"duration": 0}), 3.0)
+        self.assertEqual(ffmpeg_graph._clip_dur({"duration": "4.5"}), 4.5)
+        self.assertEqual(ffmpeg_graph._clip_dur({"duration": 7}), 7.0)
+        self.assertEqual(ffmpeg_graph._clip_dur({}), 3.0)
 
 
 if __name__ == "__main__":

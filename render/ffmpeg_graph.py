@@ -65,6 +65,15 @@ def align_even_dimension(value: int) -> int:
     return size - (size % 2)
 
 
+def _clip_dur(clip: Dict[str, Any], default: float = 3.0) -> float:
+    """Scene duration guard: a None/"" /non-numeric duration must not crash the render."""
+    try:
+        dur = float(clip.get("duration", default) or default)
+    except (TypeError, ValueError):
+        dur = default
+    return dur if dur > 0 else default
+
+
 def gameplay_start_seconds(clip_duration: float, need: float, scene_index: int = 0) -> float:
     """RedditVideoMakerBot / Chapter 28.16: Non-repetitive safe gameplay interval with history tracking."""
     try:
@@ -214,7 +223,7 @@ def _plan_cutaways(
         cursor = 0.0
         for clip in clips:
             starts.append(cursor)
-            cursor += float(clip.get("duration") or 3.0)
+            cursor += _clip_dur(clip)
         for cue in cues:
             raw_start = float(cue.start_offset)
             dur = max(2.0, min(3.2, float(cue.end_offset) - raw_start))
@@ -224,7 +233,7 @@ def _plan_cutaways(
                 continue
             donor = None
             for idx, clip in enumerate(clips):
-                scene_end = starts[idx] + float(clip.get("duration") or 3.0)
+                scene_end = starts[idx] + _clip_dur(clip)
                 if end <= starts[idx] or start >= scene_end:
                     donor = clip.get("path")
                     break
@@ -830,7 +839,7 @@ def render_with_ffmpeg_graph(
     for i, clip in enumerate(valid):
         if cancel_check and cancel_check():
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
-        dur = float(clip.get("duration", 3.0))
+        dur = _clip_dur(clip)
         media_dur = _probe_duration(clip.get("path"))
         pad_seconds = 0.0
         tail_index = None
