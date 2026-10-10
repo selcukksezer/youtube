@@ -215,7 +215,7 @@ def _scenes_narration_ok(scenes: List[ScenePlan]) -> bool:
 # when the script has fewer complete sentences. Never split one sentence
 # in half to fill the count.
 SPOKEN_SCENE_MIN = 6
-SPOKEN_SCENE_MAX = 15
+SPOKEN_SCENE_MAX = 6
 _BARE_CONJUNCTIONS = frozenset({"ve", "ama", "çünkü", "cunku", "fakat"})
 
 
@@ -725,4 +725,3 @@ def snap_scenes_to_beat_hints(
         max_scene_dur=max_scene_dur,
         enforce_band=True,
     )
-

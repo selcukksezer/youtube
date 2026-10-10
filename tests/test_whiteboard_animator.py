@@ -4,9 +4,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from services.whiteboard_animator import (
+    _whiteboard_theme,
+    _wrap_whiteboard_text,
     animate_whiteboard_clip,
     create_whiteboard_scene_clip,
     draw_procedural_whiteboard_sketch,
@@ -14,6 +16,30 @@ from services.whiteboard_animator import (
 
 
 class WhiteboardAnimatorTests(unittest.TestCase):
+    def test_theme_detection_uses_normalized_whole_words(self):
+        self.assertEqual(_whiteboard_theme("This is only a story about a decision"), "general")
+        self.assertEqual(_whiteboard_theme("İş yatırımı ve finansal karar"), "finance")
+        self.assertEqual(_whiteboard_theme("Telefonumdaki gizli mesaj"), "phone")
+
+    def test_wrapped_text_fits_width_and_truncates_long_words(self):
+        image = Image.new("RGB", (120, 40), "white")
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.load_default()
+
+        lines = _wrap_whiteboard_text(
+            draw,
+            "Averylongunbrokenword that must fit on this small board",
+            font,
+            max_width=90,
+            max_lines=2,
+        )
+
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[-1].endswith("…"))
+        for line in lines:
+            bounds = draw.textbbox((0, 0), line, font=font)
+            self.assertLessEqual(bounds[2] - bounds[0], 90)
+
     def test_procedural_sketches_are_scene_specific(self):
         with tempfile.TemporaryDirectory() as directory:
             phone_path = os.path.join(directory, "phone.jpg")

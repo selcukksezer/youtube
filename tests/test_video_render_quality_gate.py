@@ -98,6 +98,24 @@ class TestVideoRenderQualityGate(unittest.TestCase):
         process_task.assert_called_once()
         self.assertTrue(state.is_rendering_active)
 
+    def test_plan_validation_returns_story_quality_advisories(self):
+        response = self.client.post(
+            "/api/plan/validate",
+            json={
+                "title": _valid_plan()["title"],
+                "niche": "6_stoic_philosophy",
+                "language": "tr",
+                "plan": _valid_plan(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        story_quality = response.json()["script_quality"]["story_quality"]
+        self.assertIn("opening_title_overlap", story_quality)
+        self.assertIn("repeated_narration_pairs", story_quality)
+        self.assertIn("numeric_source_check", story_quality)
+        self.assertIn("ending_style", story_quality)
+
 
 if __name__ == "__main__":
     unittest.main()

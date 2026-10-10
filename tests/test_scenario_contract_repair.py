@@ -7,12 +7,13 @@ import pytest
 from production.quality import validate_script_quality
 from scenes.fallback import _generate_procedural_fallback_scenes
 from director.compiler import compile_director_plan
+from director.schema import shorts_word_budget
 
 
 def test_stoic_fallback_meets_production_contract():
     """
-    Verify that Stoic procedural fallback generates scenes matching
-    the 45-60s duration and 120-170 word count without hard-failing quality gates.
+    Verify that the fallback fits the natural TTS word budget and duration
+    without hard-failing quality gates; 120+ words remain an advisory target.
     """
     topic = "Marcus Aurelius'un Öfkeyi Yok Eden 3 Stoacı Kuralı"
     plan = _generate_procedural_fallback_scenes(topic, niche_type="6_stoic_philosophy", language="tr")
@@ -36,7 +37,12 @@ def test_stoic_fallback_meets_production_contract():
     assert quality["duration"] >= 45.0
     assert quality["duration"] <= 60.25
     assert 6 <= quality["scene_count"] <= 12
-    assert 120 <= quality["word_count"] <= 170
+    assert 85 <= quality["word_count"] <= shorts_word_budget()
+    if quality["word_count"] < 120:
+        assert any(
+            warning.startswith("word_count_below_optimal:")
+            for warning in quality["warnings"]
+        )
 
 
 def test_quality_gate_advisory_vs_hard_fail():
@@ -164,4 +170,3 @@ def test_word_count_111_and_fillers_do_not_hard_fail():
     assert report["action"] == "RENDER_ALLOWED"
     # Warnings should mention the filler advisory, not block rendering
     assert any("mechanical_filler" in w for w in report.get("warnings", []))
-

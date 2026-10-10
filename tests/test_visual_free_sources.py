@@ -59,6 +59,8 @@ def test_broaden_queries_and_expansion(tmp_path, monkeypatch):
         return []
     monkeypatch.setattr(fetch, "ordered_providers", fake_providers)
     monkeypatch.setattr(fetch, "_procedural_enabled", lambda: False)
+    monkeypatch.setattr("services.public_apis_catalog.fetch_openverse_media", lambda *a, **k: [])
+    monkeypatch.setattr("services.public_apis_catalog.fetch_met_museum_artworks", lambda *a, **k: [])
     out = fetch.fetch_open_visual(["a b c d"], project_dir=str(tmp_path), narration="x y z w",
                                   niche_id="10_religious_quotes", allow_procedural=True)
     assert out is None

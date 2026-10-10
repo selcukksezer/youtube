@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -23,6 +24,7 @@ from urllib.parse import urlsplit, urlunsplit
 USER_AGENT = "youtubeoto-shorts/1.0 (license-aware fetch)"
 _job_manifest: List[Dict[str, Any]] = []
 _job_file_hashes: set = set()
+_provider_search_attempts: List[Dict[str, Any]] = []
 _claim_lock = threading.Lock()
 
 
@@ -40,14 +42,70 @@ def _safe_public_url(value: Any) -> Optional[str]:
 
 
 def reset_job_manifest() -> None:
-    global _job_manifest, _job_file_hashes
+    global _job_manifest, _job_file_hashes, _provider_search_attempts
     _job_manifest = []
     _job_file_hashes = set()
+    _provider_search_attempts = []
     reset_used()
 
 
 def get_job_manifest() -> List[Dict[str, Any]]:
     return list(_job_manifest)
+
+
+def _record_provider_search(
+    provider: str,
+    scene_index: int,
+    query_index: int,
+    elapsed_ms: float,
+    result_count: int,
+    error: str = "",
+) -> None:
+    attempt = {
+        "provider": provider,
+        "scene": scene_index + 1,
+        "query_index": query_index + 1,
+        "elapsed_ms": round(max(0.0, elapsed_ms), 1),
+        "result_count": max(0, result_count),
+        "error": error or None,
+    }
+    with _claim_lock:
+        _provider_search_attempts.append(attempt)
+
+
+def get_job_provider_diagnostics() -> Dict[str, Any]:
+    """Summarize provider search wall times without persisting search text."""
+    with _claim_lock:
+        attempts = list(_provider_search_attempts)
+    providers: Dict[str, Dict[str, Any]] = {}
+    for attempt in attempts:
+        provider = attempt["provider"]
+        summary = providers.setdefault(provider, {
+            "searches": 0,
+            "total_ms": 0.0,
+            "max_ms": 0.0,
+            "results": 0,
+            "empty_searches": 0,
+            "errors": 0,
+        })
+        duration = float(attempt["elapsed_ms"])
+        summary["searches"] += 1
+        summary["total_ms"] += duration
+        summary["max_ms"] = max(summary["max_ms"], duration)
+        summary["results"] += int(attempt["result_count"])
+        summary["empty_searches"] += int(attempt["result_count"] == 0 and not attempt["error"])
+        summary["errors"] += int(bool(attempt["error"]))
+    for summary in providers.values():
+        summary["total_ms"] = round(summary["total_ms"], 1)
+        summary["avg_ms"] = round(summary["total_ms"] / summary["searches"], 1)
+        summary["max_ms"] = round(summary["max_ms"], 1)
+    return {
+        "searches": len(attempts),
+        "providers": providers,
+        "slowest_searches": sorted(
+            attempts, key=lambda item: item["elapsed_ms"], reverse=True
+        )[:5],
+    }
 
 
 def asset_already_claimed(uid: str = "", file_hash: str = "") -> bool:
@@ -409,11 +467,25 @@ def fetch_open_visual(
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def _search_spec(spec, q, qi_idx):
+        started = time.perf_counter()
+        result_count = 0
+        error = ""
         try:
-            return search_provider(spec, q, per_page=8), q, qi_idx
+            candidates = search_provider(spec, q, per_page=8)
+            result_count = len(candidates)
         except Exception as exc:
             print(f"    [visuals:{spec.key}] {exc}")
-            return [], q, qi_idx
+            candidates = []
+            error = type(exc).__name__
+        _record_provider_search(
+            spec.key,
+            scene_index,
+            qi_idx,
+            (time.perf_counter() - started) * 1000,
+            result_count,
+            error,
+        )
+        return candidates, q, qi_idx
 
     scored: List[tuple] = []
     active_queries = qlist[:5]

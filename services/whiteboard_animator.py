@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import tempfile
+import unicodedata
 from typing import Optional
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageFont
@@ -22,6 +23,83 @@ import config
 
 WHITEBOARD_TRANSITIONS = ["wipeleft", "wiperight", "wipedown", "radial"]
 MARKER_HAND_PATH = os.path.join(config.BASE_DIR, "assets", "whiteboard", "marker_hand.png")
+
+
+def _normalize_whiteboard_text(text: str) -> str:
+    text = (text or "").casefold().translate(str.maketrans({
+        "ı": "i", "İ": "i", "ş": "s", "ğ": "g", "ç": "c", "ö": "o", "ü": "u",
+    }))
+    text = unicodedata.normalize("NFKD", text)
+    return " ".join(re.findall(r"[a-z0-9]+", "".join(
+        char for char in text if not unicodedata.combining(char)
+    )))
+
+
+def _whiteboard_theme(text: str) -> str:
+    words = _normalize_whiteboard_text(text).split()
+    themes = (
+        ("phone", ("telefon", "telefonu", "telefonundaki", "mesaj", "whatsapp", "smartphone", "phone", "chat")),
+        ("wedding", ("dugun", "nikah", "wedding", "marriage")),
+        ("evidence", ("kanit", "belge", "dosya", "evidence", "document", "secret", "gizli", "record")),
+        ("faith", ("hadis", "ayet", "dua", "allah", "peygamber", "islam", "din", "kuran", "namaz", "cennet", "quran", "prayer", "mosque")),
+        ("finance", ("para", "zengin", "milyon", "dolar", "kazan", "finans", "yatirim", "satis", "bitcoin", "kripto", "borsa", "money", "finance", "investment", "revenue", "profit", "business", "stock market", "chart")),
+        ("ideas", ("bilgi", "beyin", "akil", "fikir", "ogren", "arastirma", "bilim", "sir", "idea", "learning", "research", "science", "knowledge", "think")),
+        ("heart", ("kalp", "ask", "saglik", "sevgi", "iliski", "ruh", "heart", "love", "health", "relationship")),
+    )
+    ranked = []
+    for priority, (theme, phrases) in enumerate(themes):
+        matches = [
+            phrase for phrase in phrases
+            if any(
+                all(
+                    word == expected or (len(expected) >= 4 and word.startswith(expected))
+                    for word, expected in zip(words[start:start + len(phrase.split())], phrase.split())
+                )
+                for start in range(max(0, len(words) - len(phrase.split()) + 1))
+            )
+        ]
+        if matches:
+            ranked.append((len(matches), max(len(phrase.split()) for phrase in matches), -priority, theme))
+    return max(ranked)[-1] if ranked else "general"
+
+
+def _wrap_whiteboard_text(draw, text: str, font, max_width: int, max_lines: int) -> list[str]:
+    words = str(text or "").split()
+    if not words:
+        return []
+
+    def fits(value: str) -> bool:
+        bounds = draw.textbbox((0, 0), value, font=font)
+        return bounds[2] - bounds[0] <= max_width
+
+    lines = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if fits(candidate):
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+            current = ""
+        fragment = ""
+        for char in word:
+            if fragment and not fits(fragment + char):
+                lines.append(fragment)
+                fragment = char
+            else:
+                fragment += char
+        current = fragment
+    if current:
+        lines.append(current)
+
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        final = lines[-1]
+        while final and not fits(f"{final}…"):
+            final = final[:-1].rstrip()
+        lines[-1] = (final + "…") if final else "…"
+    return lines
 
 
 def ensure_marker_hand_asset() -> str:
@@ -142,6 +220,10 @@ def draw_procedural_whiteboard_sketch(
                     break
                 except Exception:
                     pass
+        if font_large is None:
+            font_large = ImageFont.load_default()
+            font_mid = font_large
+            font_sm = font_large
 
         # 2. Derive board text and drawing cues from this scene's narration.
         source_text = narration.strip() or prompt or ""
@@ -151,45 +233,64 @@ def draw_procedural_whiteboard_sketch(
         stop_words = {
             "ama", "artık", "ben", "benim", "bunu", "bir", "bu", "da", "de",
             "diye", "en", "ve", "için", "ile", "çok", "the", "and", "but",
-            "for", "with", "that", "this", "was", "were", "my",
+            "for", "with", "that", "this", "was", "were", "my", "ben", "bana",
+            "sana", "sen", "onu", "ona", "onun", "şu", "çok", "daha", "sonra",
+            "önce", "çünkü", "gibi", "olarak", "kadar", "ise", "olan", "oldu",
+            "oluyor", "yaptım", "yapmak", "when", "then", "from", "have", "has",
+            "had", "you", "your", "they", "them", "their",
         }
         concepts = [word for word in words if word.casefold() not in stop_words]
         title_words = concepts[:3] if concepts else ["ÖNEMLİ", "BİLGİ"]
         clean_title = " ".join(title_words).upper()
         clean_sub = " ".join(concepts[3:7]).capitalize() if len(concepts) > 3 else ""
 
-        # Title highlighter doodle box
-        title_y = 190
-        draw.polygon(
-            [(50, title_y - 20), (width - 50, title_y - 25), (width - 45, title_y + 35), (55, title_y + 40)],
+        # Keep the heading legible on narrow boards and long narration fragments.
+        title_lines = _wrap_whiteboard_text(draw, clean_title, font_large, width - 104, 2)
+        title_line_height = max(34, draw.textbbox((0, 0), "Ag", font=font_large)[3] + 8)
+        title_top = 130
+        title_height = max(48, len(title_lines) * title_line_height + 18)
+        draw.rounded_rectangle(
+            [38, title_top, width - 38, title_top + title_height],
+            radius=12,
             fill=highlight_yellow,
         )
-        draw.text((width // 2, title_y + 5), clean_title, fill=ink_color, font=font_large, anchor="mm")
-        if clean_sub:
-            draw.text((width // 2, title_y + 60), clean_sub, fill=accent_ink, font=font_mid, anchor="mm")
+        for line_index, line in enumerate(title_lines):
+            draw.text(
+                (width // 2, title_top + 9 + line_index * title_line_height),
+                line, fill=ink_color, font=font_large, anchor="mt",
+            )
+        subtitle_lines = _wrap_whiteboard_text(draw, clean_sub, font_mid, width - 104, 2)
+        subtitle_top = title_top + title_height + 12
+        subtitle_line_height = max(26, draw.textbbox((0, 0), "Ag", font=font_mid)[3] + 7)
+        for line_index, line in enumerate(subtitle_lines):
+            draw.text(
+                (width // 2, subtitle_top + line_index * subtitle_line_height),
+                line, fill=accent_ink, font=font_mid, anchor="mt",
+            )
 
         # 3. Domain-specific Hand-Drawn Doodle Icon in center
-        p_lower = f"{prompt} {source_text}".lower()
-        cx, cy = width // 2, 420
+        theme = _whiteboard_theme(f"{prompt} {source_text}")
+        cx = width // 2
+        cy = min(500, max(400, subtitle_top + len(subtitle_lines) * subtitle_line_height + 145))
 
-        if any(k in p_lower for k in ("telefon", "mesaj", "whatsapp", "smartphone", "phone", "chat")):
+        if theme == "phone":
             draw.rounded_rectangle([cx - 52, cy - 105, cx + 52, cy + 105], radius=14, outline=ink_color, width=5)
             draw.line([(cx - 28, cy - 73), (cx + 28, cy - 73)], fill=accent_ink, width=4)
             draw.rounded_rectangle([cx - 29, cy - 44, cx + 30, cy - 6], radius=10, outline=accent_ink, width=3)
             draw.rounded_rectangle([cx - 30, cy + 9, cx + 30, cy + 52], radius=10, outline=ink_color, width=3)
             draw.ellipse([cx - 7, cy + 76, cx + 7, cy + 90], outline=ink_color, width=3)
-        elif any(k in p_lower for k in ("düğün", "nikah", "wedding", "marriage")):
+        elif theme == "wedding":
             draw.ellipse([cx - 85, cy - 30, cx + 10, cy + 65], outline=accent_ink, width=6)
             draw.ellipse([cx - 10, cy - 30, cx + 85, cy + 65], outline=ink_color, width=6)
             draw.line([(cx - 110, cy + 100), (cx + 110, cy + 100)], fill=ink_color, width=4)
             draw.arc([cx - 34, cy - 110, cx + 34, cy - 42], start=210, end=330, fill=accent_ink, width=4)
-        elif any(k in p_lower for k in ("kanıt", "belge", "dosya", "evidence", "document", "secret", "gizli")):
+        elif theme == "evidence":
             draw.rectangle([cx - 72, cy - 95, cx + 44, cy + 70], outline=ink_color, width=4)
             for line_y in (cy - 55, cy - 25, cy + 5):
                 draw.line([(cx - 48, line_y), (cx + 18, line_y)], fill=accent_ink, width=4)
             draw.ellipse([cx + 10, cy + 10, cx + 92, cy + 92], outline=accent_ink, width=7)
             draw.line([(cx + 78, cy + 78), (cx + 120, cy + 120)], fill=ink_color, width=9)
-        elif any(k in p_lower for k in ("hadis", "ayet", "dua", "allah", "peygamber", "islam", "din", "kuran", "namaz", "cennet")):
+        elif theme == "faith":
             # Islamic / Hadith: Open Holy Book / Rahle with Crescent Star
             draw.arc([cx - 90, cy - 50, cx, cy + 20], start=200, end=350, fill=ink_color, width=4)
             draw.arc([cx, cy - 50, cx + 90, cy + 20], start=190, end=340, fill=ink_color, width=4)
@@ -205,7 +306,7 @@ def draw_procedural_whiteboard_sketch(
             draw.arc([cx - 35, cy - 130, cx + 15, cy - 80], start=45, end=315, fill=accent_ink, width=4)
             draw.arc([cx - 25, cy - 126, cx + 15, cy - 84], start=45, end=315, fill=(252, 252, 254), width=4)
             draw.ellipse([cx + 15, cy - 108, cx + 23, cy - 100], fill=accent_ink)
-        elif any(k in p_lower for k in ("para", "zengin", "milyon", "dolar", "kazan", "is", "finans", "yatirim", "satis")):
+        elif theme == "finance":
             # Finance / Growth Bar Chart & Arrow
             draw.line([(cx - 110, cy + 60), (cx + 110, cy + 60)], fill=ink_color, width=4)
             draw.line([(cx - 110, cy + 60), (cx - 110, cy - 70)], fill=ink_color, width=4)
@@ -214,7 +315,7 @@ def draw_procedural_whiteboard_sketch(
             draw.rectangle([cx + 5, cy - 45, cx + 30, cy + 60], fill=(219, 234, 254), outline=accent_ink, width=3)
             draw.line([(cx - 95, cy + 30), (cx - 25, cy), (cx + 25, cy - 55), (cx + 80, cy - 90)], fill=accent_ink, width=5)
             draw.polygon([(cx + 85, cy - 95), (cx + 60, cy - 90), (cx + 75, cy - 65)], fill=accent_ink)
-        elif any(k in p_lower for k in ("bilgi", "beyin", "akil", "fikir", "ogren", "arastirma", "bilim", "sir")):
+        elif theme == "ideas":
             # Idea Lightbulb with Rays
             draw.arc([cx - 55, cy - 100, cx + 55, cy + 10], start=140, end=400, fill=accent_ink, width=4)
             draw.line([(cx - 40, cy - 15), (cx - 28, cy + 40)], fill=accent_ink, width=4)
@@ -224,7 +325,7 @@ def draw_procedural_whiteboard_sketch(
             draw.line([(cx, cy - 125), (cx, cy - 110)], fill=accent_ink, width=4)
             draw.line([(cx - 75, cy - 85), (cx - 60, cy - 70)], fill=accent_ink, width=4)
             draw.line([(cx + 75, cy - 85), (cx + 60, cy - 70)], fill=accent_ink, width=4)
-        elif any(k in p_lower for k in ("kalp", "ask", "saglik", "sevgi", "iliski", "ruh")):
+        elif theme == "heart":
             # Heart with Pulse Wave
             draw.arc([cx - 70, cy - 80, cx, cy - 10], start=180, end=360, fill=(225, 29, 72), width=5)
             draw.arc([cx, cy - 80, cx + 70, cy - 10], start=180, end=360, fill=(225, 29, 72), width=5)
@@ -237,7 +338,7 @@ def draw_procedural_whiteboard_sketch(
             draw.line([(cx - 30, cy - 10), (cx - 10, cy + 15), (cx + 35, cy - 35)], fill=ink_color, width=6)
 
         # 4. Scene-specific whiteboard notes
-        y_bullets = 580
+        y_bullets = max(610, cy + 155)
         note_words = concepts[7:]
         bullet_items = [
             " ".join(note_words[i:i + 4])
@@ -245,14 +346,27 @@ def draw_procedural_whiteboard_sketch(
             if note_words[i:i + 4]
         ]
         for b in bullet_items:
+            lines = _wrap_whiteboard_text(draw, b, font_sm, width - 154, 2)
+            line_height = max(23, draw.textbbox((0, 0), "Ag", font=font_sm)[3] + 5)
+            row_height = max(42, len(lines) * line_height + 8)
+            if y_bullets + row_height > height - 72:
+                break
             # Bullet checkbox doodle
             draw.rectangle([65, y_bullets - 5, 85, y_bullets + 15], outline=accent_ink, width=2)
             draw.line([(68, y_bullets + 5), (75, y_bullets + 13), (88, y_bullets - 8)], fill=accent_ink, width=3)
-            draw.text((100, y_bullets + 5), b, fill=ink_color, font=font_sm, anchor="lm")
-            y_bullets += 48
+            for line_index, line in enumerate(lines):
+                draw.text(
+                    (100, y_bullets + 5 + line_index * line_height),
+                    line, fill=ink_color, font=font_sm, anchor="lm",
+                )
+            y_bullets += row_height
 
         # Decorative doodle underline
-        draw.arc([width // 2 - 120, y_bullets + 15, width // 2 + 120, y_bullets + 55], start=10, end=170, fill=accent_ink, width=3)
+        underline_y = min(y_bullets + 15, height - 55)
+        draw.arc(
+            [width // 2 - 120, underline_y, width // 2 + 120, underline_y + 40],
+            start=10, end=170, fill=accent_ink, width=3,
+        )
 
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         img.save(output_path, "JPEG", quality=92)

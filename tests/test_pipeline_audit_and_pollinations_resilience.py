@@ -3,6 +3,7 @@ Unit tests for Pipeline Audit bilingual semantic matching, audio duration probe 
 and Pollinations AI circuit breaker resilience.
 """
 import os
+import io
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -11,6 +12,7 @@ from render.pipeline_audit import (
     pre_render_audit,
     audit_search_queries,
     _semantic_overlap,
+    audit_visual_frames,
     _clip_name_tokens,
     _narration_tokens,
     attach_candidate_metadata,
@@ -52,14 +54,35 @@ class TestPipelineAuditResilience(unittest.TestCase):
         self.assertGreater(score, 0.0)
 
     def test_semantic_overlap_verified_clip_has_perfect_score(self):
-        """Only provider candidate topic evidence can bypass lexical mismatch."""
+        """Provider evidence remains a confidence score instead of becoming binary."""
         clip = {
             "path": "s001_pexels_9999.mp4",
             "candidate_topic_match_score": 0.95,
             "narration": "Farkli dilde seslendirme",
         }
         score = _semantic_overlap(clip)
-        self.assertEqual(score, 1.0)
+        self.assertEqual(score, 0.95)
+
+    def test_low_provider_score_is_not_promoted_to_perfect_match(self):
+        clip = {
+            "candidate_topic_match_score": 0.08,
+            "candidate_semantic_evidence": {
+                "subject_match": True,
+                "text_overlap": 0.08,
+            },
+            "narration": "Bitcoin madenciliği uzmanlaşmış bilgisayarlarla yapılır",
+        }
+        self.assertEqual(_semantic_overlap(clip), 0.08)
+
+    def test_visual_verification_score_is_preserved_without_semantic_dict(self):
+        clip = {
+            "candidate_source": "openverse",
+            "candidate_title": "A selected visual candidate",
+            "candidate_topic_match_score": 0.4,
+            "candidate_visual_verification_score": 0.7,
+            "narration": "Uzun anlatım metni farklı kelimeler içerir",
+        }
+        self.assertEqual(_semantic_overlap(clip), 0.7)
 
     def test_existing_mismatched_file_and_query_do_not_count_as_semantic_evidence(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -91,12 +114,14 @@ class TestPipelineAuditResilience(unittest.TestCase):
             lambda index, clip: clip.update({
                 "path": "matched.mp4",
                 "candidate_topic_match_score": 0.72,
+                "candidate_title": "Bitcoin mining footage",
             }),
         )
         self.assertEqual(retried, [0])
         self.assertEqual(remaining, [])
 
         clips[0]["candidate_topic_match_score"] = 0.01
+        clips[0]["candidate_title"] = "unrelated ocean waves"
         retried, remaining = retry_low_confidence_scenes(clips, lambda _index, _clip: None)
         self.assertEqual(retried, [0])
         self.assertEqual(remaining, [0])
@@ -116,10 +141,16 @@ class TestPipelineAuditResilience(unittest.TestCase):
                 "scene_index": 0,
                 "path": clip_file.name,
                 "topic_match_score": 0.72,
-                "title": "unrelated provider title",
+                "visual_verification_score": 0.72,
+                "semantic_evidence": {
+                    "subject_match": True,
+                    "text_overlap": 0.72,
+                },
+                "title": "Bitcoin mining farm footage",
             }])
             self.assertEqual(clip["candidate_topic_match_score"], 0.72)
-            self.assertEqual(_semantic_overlap(clip), 1.0)
+            self.assertEqual(clip["candidate_visual_verification_score"], 0.72)
+            self.assertEqual(_semantic_overlap(clip), 0.72)
 
             attach_candidate_metadata([clip], [{
                 "scene_index": 0,
@@ -129,6 +160,103 @@ class TestPipelineAuditResilience(unittest.TestCase):
             }])
             self.assertNotIn("candidate_topic_match_score", clip)
             self.assertEqual(_semantic_overlap(clip), 0.0)
+
+    def test_pre_render_report_lists_poor_matches_and_missing_scene_numbers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            valid_path = os.path.join(temp_dir, "stock.mp4")
+            with open(valid_path, "wb") as clip_file:
+                clip_file.write(b"x" * 2048)
+            clips = [
+                {
+                    "path": None,
+                    "duration": 5.0,
+                    "narration": "Açıklayıcı sahne anlatımı",
+                },
+                {
+                    "path": valid_path,
+                    "duration": 5.0,
+                    "narration": "Bitcoin madenciliği uzmanlaşmış bilgisayarlarla yapılır",
+                    "candidate_title": "Unrelated ocean waves",
+                    "candidate_matched_terms": ["ocean"],
+                    "candidate_source": "pexels",
+                    "candidate_topic_match_score": 0.07,
+                    "candidate_semantic_evidence": {
+                        "subject_match": True,
+                        "text_overlap": 0.07,
+                    },
+                },
+                *[
+                    {
+                        "path": valid_path,
+                        "duration": 5.0,
+                        "narration": f"Valid scene narration {index}",
+                        "candidate_topic_match_score": 0.8,
+                    }
+                    for index in range(3)
+                ],
+            ]
+
+            report = pre_render_audit(clips, audio_path=None)
+
+        scene_matches = report["report"]["scene_matches"]
+        self.assertEqual(report["report"]["missing_scene_indices"], [1])
+        self.assertEqual(scene_matches[1]["candidate"], "Unrelated ocean waves")
+        self.assertEqual(scene_matches[1]["matched_terms"], ["ocean"])
+        self.assertEqual(report["report"]["stock_scene_count"], 1)
+        self.assertEqual(report["report"]["avg_stock_semantic_score"], 0.07)
+        self.assertEqual(report["report"]["low_stock_match_count"], 1)
+        self.assertTrue(any(warning.startswith("semantic_mismatch:") for warning in report["warnings"]))
+        self.assertIn("stock_match_low_confidence_scenes:2", report["warnings"])
+        self.assertIn("missing_visual_scenes:1", report["warnings"])
+
+    def test_visual_frame_audit_stays_local_and_reports_appearance_only(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video_path = os.path.join(temp_dir, "scene.mp4")
+            with open(video_path, "wb") as handle:
+                handle.write(b"video")
+            frame_buffer = io.BytesIO()
+            Image.new("RGB", (240, 320), (0, 0, 0)).save(frame_buffer, format="PNG")
+            completed = type(
+                "Completed",
+                (),
+                {"returncode": 0, "stdout": frame_buffer.getvalue(), "stderr": b""},
+            )()
+            contact_sheet = os.path.join(temp_dir, "visual_audit.jpg")
+            clips = [
+                {
+                    "path": video_path,
+                    "duration": 5.0,
+                    "narration": "A useful stock scene",
+                    "candidate_title": "Candidate title",
+                    "candidate_source": "pexels",
+                    "candidate_topic_match_score": 0.06,
+                    "candidate_matched_terms": ["scene"],
+                },
+                {
+                    "path": video_path,
+                    "duration": 5.0,
+                    "narration": "Another narration",
+                    "candidate_source": "pexels",
+                },
+            ]
+
+            with patch("render.pipeline_audit.subprocess.run", return_value=completed) as run:
+                report = audit_visual_frames(clips, contact_sheet)
+
+            self.assertEqual(run.call_count, 2)
+            self.assertIn("pipe:1", run.call_args.args[0])
+            self.assertTrue(os.path.isfile(contact_sheet))
+
+        self.assertTrue(report["available"])
+        self.assertEqual(report["sampled_scene_count"], 2)
+        self.assertEqual(report["scenes"][0]["candidate"], "Candidate title")
+        self.assertEqual(report["scenes"][0]["source"], "pexels")
+        self.assertEqual(report["scenes"][0]["metadata_score"], 0.06)
+        self.assertIn("visual_frame_near_black:scene_1", report["warnings"])
+        self.assertIn("visual_frames_near_duplicate:1-2", report["warnings"])
+        self.assertIn("semantic content not verified", report["evidence_scope"])
 
     def test_credible_candidate_title_passes_without_mutating_valid_clip(self):
         clip = {

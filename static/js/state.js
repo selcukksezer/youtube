@@ -559,9 +559,10 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     const continuityAdvisories = Array.isArray(validation.scene_continuity_advisories)
         ? validation.scene_continuity_advisories
         : [];
+    const storyWarnings = validation.script_quality?.story_quality?.warnings || [];
     if (advisoryGroup && advisoriesEl) {
         advisoriesEl.replaceChildren();
-        continuityAdvisories.forEach(advisory => {
+        [...continuityAdvisories, ...storyWarnings.map(formatQualityGateIssue)].forEach(advisory => {
             const item = document.createElement('li');
             item.textContent = String(advisory);
             advisoriesEl.appendChild(item);
@@ -761,9 +762,60 @@ function formatQualityGateIssue(issue) {
     return map[issue] || issue.replace(/_/g, ' ');
 }
 
+function formatPipelineAuditWarning(warning) {
+    const text = String(warning || '');
+    const sceneWarnings = [];
+    const addSceneWarning = (sceneNumber, message) => {
+        const scene = Number(sceneNumber);
+        if (Number.isInteger(scene) && scene > 0) {
+            sceneWarnings.push({ scene, message });
+        }
+    };
+
+    const frameWarning = text.match(/^visual_frame_(near_black|unavailable):scene_(\d+)/);
+    if (frameWarning) {
+        addSceneWarning(
+            frameWarning[2],
+            frameWarning[1] === 'near_black' ? 'Örnek kare çok karanlık' : 'Örnek kare alınamadı'
+        );
+    }
+    const stockMatches = text.match(/^stock_match_low_confidence_scenes:(.+)$/);
+    if (stockMatches) {
+        stockMatches[1].split(',').forEach(scene =>
+            addSceneWarning(scene, 'Stok metadata eşleşme puanı düşük')
+        );
+    }
+    const duplicatePairs = text.match(/^visual_frames_near_duplicate:(.+)$/);
+    if (duplicatePairs) {
+        duplicatePairs[1].split(',').forEach(pair => {
+            const [left, right] = pair.split('-');
+            addSceneWarning(left, `Örnek kare Sahne ${right} ile benzer`);
+            addSceneWarning(right, `Örnek kare Sahne ${left} ile benzer`);
+        });
+    }
+    if (text.startsWith('semantic_mismatch:')) {
+        [...text.matchAll(/scene\[(\d+)\]score=([\d.]+)/g)].forEach(match =>
+            addSceneWarning(match[1], `Metin/metadata eşleşmesi düşük (${Math.round(Number(match[2]) * 100)}%)`)
+        );
+    }
+
+    if (!sceneWarnings.length) {
+        return `<li>${escapeHtml(text.replace(/_/g, ' '))}</li>`;
+    }
+    return sceneWarnings.map(({ scene, message }) =>
+        `<li><button type="button" class="qg-scene-jump" data-scene-number="${scene}">Sahne ${scene}</button>: ${escapeHtml(message)}</li>`
+    ).join('');
+}
+
 function renderQualityGateCard(qg, { compact = false } = {}) {
     if (!qg) return '';
     const post = qg.post || qg;
+    const pipelineAudit = qg.pipeline_audit || {};
+    const auditReport = pipelineAudit.report || {};
+    const signalReport = auditReport.signal_analysis || {};
+    const preRenderReport = pipelineAudit.pre_render?.report || {};
+    const visualFrameAudit = preRenderReport.visual_frame_audit || {};
+    const renderDiagnostics = qg.render_diagnostics || {};
     const ok = post.ok !== false;
     const score = post.score != null ? post.score : (qg.score != null ? qg.score : '—');
     const dur = post.video_duration != null
@@ -785,15 +837,91 @@ function renderQualityGateCard(qg, { compact = false } = {}) {
             return `<li>${escapeHtml(formatQualityGateIssue(i))}${link}</li>`;
         }).join('')}</ul>`
         : '<span class="studio-qg-clean">Sorun yok</span>';
+    const metrics = [
+        auditReport.resolution,
+        auditReport.fps != null ? `${Number(auditReport.fps).toFixed(2)} FPS` : '',
+        signalReport.peak_volume_dbfs != null ? `Ses tepesi ${Number(signalReport.peak_volume_dbfs).toFixed(1)} dBFS` : '',
+    ].filter(Boolean);
+    if (preRenderReport.avg_stock_semantic_score != null) {
+        metrics.push(
+            `Stok eşleşme ${Math.round(Number(preRenderReport.avg_stock_semantic_score) * 100)}%` +
+            ` · düşük ${preRenderReport.low_stock_match_count || 0}` +
+            ` · stok sahne ${preRenderReport.stock_scene_count || 0}`
+        );
+    }
+    if (visualFrameAudit.available) {
+        metrics.push(
+            `Örnek kare ${visualFrameAudit.sampled_scene_count || 0}/${visualFrameAudit.scene_count || 0}`
+        );
+    }
+    const telemetry = renderDiagnostics.pipeline || {};
+    if (telemetry.total_duration_sec != null) {
+        metrics.push(`Pipeline ${Number(telemetry.total_duration_sec).toFixed(1)}sn`);
+    }
+    const stageRows = telemetry.stages || [];
+    const slowestStage = stageRows.reduce((slowest, stage) =>
+        !slowest || Number(stage.duration_sec || 0) > Number(slowest.duration_sec || 0)
+            ? stage
+            : slowest
+    , null);
+    if (slowestStage) {
+        metrics.push(
+            `En uzun aşama ${slowestStage.name}: ${Number(slowestStage.duration_sec || 0).toFixed(1)}sn`
+        );
+    }
+    const providerRows = Object.entries(renderDiagnostics.provider_search?.providers || {});
+    const slowestProvider = providerRows.sort(
+        (left, right) => Number(right[1].max_ms || 0) - Number(left[1].max_ms || 0)
+    )[0];
+    if (slowestProvider) {
+        metrics.push(
+            `En yavaş stok arama ${slowestProvider[0]}: ${Number(slowestProvider[1].max_ms || 0).toFixed(0)}ms`
+        );
+    }
+    const metricHtml = metrics.length
+        ? `<span class="studio-qg-meta">Render: ${metrics.map(escapeHtml).join(' · ')}</span>`
+        : '';
+    const auditWarnings = pipelineAudit.warnings || [];
+    const auditWarningHtml = auditWarnings.length
+        ? `<ul class="studio-qg-issues">${auditWarnings.map(warning =>
+            formatPipelineAuditWarning(warning)
+        ).join('')}</ul>`
+        : '';
+    const visualAuditLink = visualFrameAudit.contact_sheet_written && visualFrameAudit.url
+        ? `<a href="${escapeHtml(visualFrameAudit.url)}" target="_blank" rel="noopener noreferrer">Sahne örnek karelerini incele</a>`
+        : '';
     return `
         <div class="studio-qg-card ${ok ? '' : 'is-fail'}">
             <strong class="${statusClass}">Kalite Kapısı: ${statusText}</strong>
             <span class="studio-qg-meta">skor ${score} · süre ${dur}</span>
+            ${metricHtml}
+            ${visualAuditLink ? `<span class="studio-qg-meta">${visualAuditLink}</span>` : ''}
             ${issueHtml}
+            ${auditWarningHtml}
         </div>`;
 }
 
 document.addEventListener('click', (e) => {
+    const sceneButton = e.target.closest('.qg-scene-jump');
+    if (sceneButton) {
+        e.preventDefault();
+        const sceneNumber = Number(sceneButton.getAttribute('data-scene-number'));
+        if (!Number.isInteger(sceneNumber) || sceneNumber < 1) return;
+        switchTab('timeline');
+        window.setTimeout(() => {
+            const sceneCard = document.querySelector(
+                `.scene-item-card[data-scene-idx="${sceneNumber - 1}"]`
+            );
+            if (!sceneCard) {
+                showToast('Bu sahnenin düzenleme planı şu an açık değil.', 'warn');
+                return;
+            }
+            sceneCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            sceneCard.classList.add('qg-scene-highlight');
+            window.setTimeout(() => sceneCard.classList.remove('qg-scene-highlight'), 1800);
+        }, 80);
+        return;
+    }
     const link = e.target.closest('.qg-roadmap-link');
     if (!link) return;
     e.preventDefault();
@@ -938,7 +1066,8 @@ async function postPlanGate(path, plan, { autoRepair = true } = {}) {
             repaired: !!data.repaired,
             fixes: data.fixes || [],
             pre_render_score: data.pre_render_score,
-            scene_continuity_advisories: data.scene_continuity_advisories || []
+            scene_continuity_advisories: data.scene_continuity_advisories || [],
+            script_quality: data.script_quality || {}
         };
     }
     return {
@@ -948,7 +1077,8 @@ async function postPlanGate(path, plan, { autoRepair = true } = {}) {
         repaired: !!data.repaired,
         fixes: data.fixes || [],
         pre_render_score: data.pre_render_score,
-        scene_continuity_advisories: data.scene_continuity_advisories || []
+        scene_continuity_advisories: data.scene_continuity_advisories || [],
+        script_quality: data.script_quality || {}
     };
 }
 

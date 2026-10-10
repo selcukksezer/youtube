@@ -23,6 +23,20 @@ _FILLER_RE = re.compile(
     r"yorumlarda paylaşın|yorumlarda paylasin|like atın|abone olun)\b",
     re.I,
 )
+_TOKEN_RE = re.compile(r"[\wçğıöşüÇĞİÖŞÜ'-]+")
+_STORY_STOPWORDS = {
+    "ama", "artık", "ben", "bir", "bu", "da", "de", "diye", "en", "ile",
+    "için", "ve", "the", "and", "but", "for", "with", "that", "this",
+}
+_NUMBER_WITH_UNIT_RE = re.compile(
+    r"\b(\d+(?:[.,]\d+)?)\s*(%|yıl|years?|gün|days?|saat|hours?|dakika|"
+    r"minutes?|milyon|million|km|metre|meters?)\b",
+    re.I,
+)
+_AUDIENCE_PROMPT_RE = re.compile(
+    r"\?|yorum(?:larda|lara)?|siz olsaydınız|ne düşünüyorsunuz|what would you do|comment",
+    re.I,
+)
 
 
 def _words(value: Any) -> List[str]:
@@ -38,6 +52,112 @@ def _scene_fingerprint(scene: Dict[str, Any]) -> str:
         str(scene.get("scene_description") or ""),
         " ".join(str(q) for q in (scene.get("search_queries") or [])[:2]),
     ]))
+
+
+def _source_evidence_text(plan: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    reddit_post = plan.get("reddit_post")
+    if isinstance(reddit_post, dict):
+        parts.extend(str(reddit_post.get(key) or "") for key in ("title", "body", "selftext"))
+
+    snippets = plan.get("fact_snippets") or []
+    if isinstance(snippets, list):
+        for snippet in snippets:
+            if isinstance(snippet, str):
+                parts.append(snippet)
+            elif isinstance(snippet, dict):
+                parts.extend(
+                    str(snippet.get(key) or "")
+                    for key in ("title", "text", "snippet", "description", "content")
+                )
+    return " ".join(parts)
+
+
+def _story_quality_checks(plan: Dict[str, Any], scenes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    warnings: List[str] = []
+    title_tokens = {
+        token.casefold()
+        for token in _TOKEN_RE.findall(str(plan.get("title") or ""))
+        if len(token) > 2 and token.casefold() not in _STORY_STOPWORDS
+    }
+    opening_sentence = re.split(
+        r"(?<=[.!?])\s+",
+        str(scenes[0].get("narration") or ""),
+        maxsplit=1,
+    )[0] if scenes else ""
+    hook_tokens = {
+        token.casefold()
+        for token in _TOKEN_RE.findall(opening_sentence)
+        if token.casefold() not in _STORY_STOPWORDS
+    } if scenes else set()
+    title_overlap = len(title_tokens & hook_tokens) / len(title_tokens) if title_tokens else 0.0
+    if len(title_tokens) >= 5 and title_overlap >= 0.8:
+        warnings.append(f"opening_repeats_title:{title_overlap:.2f}")
+
+    repeated_pairs = []
+    scene_tokens = [
+        {
+            token.casefold()
+            for token in _TOKEN_RE.findall(str(scene.get("narration") or ""))
+            if token.casefold() not in _STORY_STOPWORDS
+        }
+        for scene in scenes
+    ]
+    for left in range(len(scene_tokens)):
+        for right in range(left + 1, len(scene_tokens)):
+            a, b = scene_tokens[left], scene_tokens[right]
+            if len(a) < 7 or len(b) < 7:
+                continue
+            similarity = len(a & b) / len(a | b) if (a | b) else 0.0
+            if similarity >= 0.8:
+                repeated_pairs.append([left, right])
+    if repeated_pairs:
+        warnings.append(
+            "repeated_narration_scenes:"
+            + ",".join(f"{left + 1}-{right + 1}" for left, right in repeated_pairs[:10])
+        )
+
+    source_text = _source_evidence_text(plan).casefold()
+    source_claims = {
+        (match.group(2).casefold(), match.group(1).replace(",", "."))
+        for match in _NUMBER_WITH_UNIT_RE.finditer(source_text)
+    }
+    unsupported_claims = []
+    conflicting_claims = []
+    if source_text:
+        source_values_by_unit: Dict[str, set[str]] = {}
+        for unit, value in source_claims:
+            source_values_by_unit.setdefault(unit, set()).add(value)
+        for index, scene in enumerate(scenes):
+            narration = str(scene.get("narration") or "")
+            for match in _NUMBER_WITH_UNIT_RE.finditer(narration):
+                unit = match.group(2).casefold()
+                value = match.group(1).replace(",", ".")
+                claim = f"{index + 1}:{value}{unit}"
+                if (unit, value) not in source_claims:
+                    unsupported_claims.append(claim)
+                    if source_values_by_unit.get(unit):
+                        conflicting_claims.append(claim)
+        if unsupported_claims:
+            warnings.append("numeric_claims_not_in_source:" + ",".join(unsupported_claims[:10]))
+        if conflicting_claims:
+            warnings.append("numeric_source_conflicts:" + ",".join(conflicting_claims[:10]))
+
+    final_narration = str(scenes[-1].get("narration") or "").strip() if scenes else ""
+    has_viewer_prompt = bool(_AUDIENCE_PROMPT_RE.search(final_narration))
+    ending_style = "viewer_prompt" if has_viewer_prompt else "statement" if final_narration else "missing"
+    if ending_style == "missing":
+        warnings.append("ending_scene_missing")
+    elif ending_style == "statement" and len(_words(final_narration)) < ADVISORY_SCENE_WORDS:
+        warnings.append("ending_is_brief_statement")
+
+    return {
+        "warnings": warnings,
+        "opening_title_overlap": round(title_overlap, 3),
+        "repeated_narration_pairs": repeated_pairs[:10],
+        "numeric_source_check": "numeric claims only" if source_text else "source text unavailable",
+        "ending_style": ending_style,
+    }
 
 
 def validate_script_quality(plan: Dict[str, Any], *, channel_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -103,6 +223,9 @@ def validate_script_quality(plan: Dict[str, Any], *, channel_profile: Optional[D
     if duration < 50:
         warnings.append("shorter_than_viewmade_style_default")
 
+    story_quality = _story_quality_checks(plan, scenes)
+    warnings.extend(story_quality["warnings"])
+
     hard = bool(issues)
     return {
         "ok": not hard,
@@ -110,6 +233,7 @@ def validate_script_quality(plan: Dict[str, Any], *, channel_profile: Optional[D
         "hard_fail": hard,
         "issues": issues,
         "warnings": warnings,
+        "story_quality": story_quality,
         "duration": round(duration, 3),
         "scene_count": len(scenes),
         "word_count": len(words),
@@ -151,4 +275,3 @@ def build_policy_snapshot(*, ai_disclosure_required: bool = False, sources: Opti
             "factual_claims_need_independent_evidence": True,
         },
     }
-

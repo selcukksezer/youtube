@@ -364,6 +364,7 @@ def _plan_gate_result(
 
     plan_out = sanitize_plan_scene_descriptions(plan_out or {})
     scene_continuity_advisories = detect_repeated_topic_discontinuities(plan_out.get("scenes") or [])
+    script_quality = validate_script_quality(plan_out)
 
     integrity = check_narration_integrity(director)
     pre = pre_render_score(director)
@@ -379,6 +380,7 @@ def _plan_gate_result(
         "fixes": fixes,
         "narration_integrity": integrity,
         "scene_continuity_advisories": scene_continuity_advisories,
+        "script_quality": script_quality,
         "pre_render_score": pre,
         "plan": plan_out,
         "plan_narration_ok": plan_narration_ok(plan_out),
@@ -434,6 +436,7 @@ def repair_plan(req: PlanRepairRequest):
             "narration_ok": gate["narration_ok"],
             "narration_integrity": gate["narration_integrity"],
             "scene_continuity_advisories": gate["scene_continuity_advisories"],
+            "script_quality": gate["script_quality"],
             "pre_render_score": gate["pre_render_score"],
             "plan_narration_ok": plan_narration_ok(gate["plan"]),
         }
@@ -765,4 +768,3 @@ def api_speaker_layout(payload: Dict[str, Any]):
         "speaker_distribution": res.speaker_distribution,
         "explanation": res.explanation,
     }
-

@@ -174,7 +174,7 @@ TTS_EMERGENCY_MAX_SPEED = 1.35
 TTS_BUDGET_WPS_ELEVEN = 1.92
 # Charon / Edge-TR measured ~1.9 wps (179 words → 94s). 60s natural ≈ 110 words.
 NATURAL_TTS_WPS = 1.9
-NATURAL_SHORTS_WORD_CAP = 160
+NATURAL_SHORTS_WORD_CAP = 110
 
 
 def _effective_tts_budget_wps() -> float:
@@ -198,7 +198,7 @@ def natural_target_duration(
 ) -> float:
     """Content-driven Shorts length. Floor 38, cap 60 — 48 is not a magnet."""
     natural = max(0, int(word_count or 0)) / max(float(wps) or TTS_WORDS_PER_SEC, 0.1)
-    return round(min(float(max_d), natural), 2)
+    return round(min(float(max_d), max(float(min_d), natural)), 2)
 
 
 def shorts_word_budget(max_duration: float = 60.0, max_audio_speed: float = 1.15) -> int:

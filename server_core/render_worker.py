@@ -740,6 +740,16 @@ def process_video_task(req: VideoRenderRequest):
             script_quality = validate_script_quality(plan or {})
             plan.setdefault("meta", {})
             plan["meta"]["script_quality"] = script_quality
+            for warning in script_quality.get("warnings") or []:
+                if warning.startswith((
+                    "opening_repeats_title",
+                    "repeated_narration_scenes",
+                    "numeric_claims_not_in_source",
+                    "numeric_source_conflicts",
+                    "ending_is_brief_statement",
+                    "ending_scene_missing",
+                )):
+                    _log(f"[QualityGate] Senaryo uyarısı: {warning}", 24)
 
             if script_quality.get("hard_fail") and not getattr(req, "allow_draft_render", False):
                 # Attempt auto-repair before aborting
@@ -1162,15 +1172,8 @@ def process_video_task(req: VideoRenderRequest):
                 plan=plan,
             )
             _q_audit = audit_search_queries(clips)
-            for _w in _pre_audit.get("warnings") or []:
-                _log(f"[PipelineAudit] WARN: {_w}")
             for _e in _pre_audit.get("errors") or []:
                 _log(f"[PipelineAudit] ERROR: {_e}", 58)
-            if _q_audit.get("issue_count", 0) > 0:
-                _log(
-                    f"[PipelineAudit] Search query issues: "
-                    f"{_q_audit['issue_count']} scenes have generic/empty/off-topic queries"
-                )
             import json as _json
             with open(os.path.join(proj, "pipeline_audit_pre.json"), "w", encoding="utf-8") as _af:
                 _json.dump({"pre_render": _pre_audit, "query_audit": _q_audit}, _af, ensure_ascii=False, indent=2)
@@ -1192,7 +1195,6 @@ def process_video_task(req: VideoRenderRequest):
             require_semantic_confidence,
             retry_low_confidence_scenes,
         )
-        from scenes.enrichment import _narration_to_subject_tokens
 
         def _candidate_manifest_rows():
             try:
@@ -1234,15 +1236,19 @@ def process_video_task(req: VideoRenderRequest):
         def _retry_semantic_scene(_si, _clip):
             _narr = _clip.get("narration") or ""
             _desc = _clip.get("scene_description") or ""
-            _ntokens = _narration_to_subject_tokens(_narr or _desc)
-            if not _ntokens:
-                _log(f"[K1-Semantic] Scene {_si + 1}: no filmable narration tokens; retry unavailable")
+            _scene = scenes[_si] if _si < len(scenes) else {}
+            _intent = _clip.get("visual_intent") or _scene.get("visual_intent") or {}
+            from visuals.query_builder import build_shot_queries
+            _narr_queries = build_shot_queries(
+                narration=_narr,
+                scene_description=_desc,
+                niche_id=(plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or "",
+                visual_intent=_intent,
+                max_queries=3,
+            )
+            if not _narr_queries:
+                _log(f"[K1-Semantic] Scene {_si + 1}: no scene-specific stock queries; retry unavailable")
                 return
-            _narr_queries = [
-                f"{' '.join(_ntokens[:2]).lower()} closeup",
-                f"{' '.join(_ntokens[:2]).lower()} detail shot",
-                f"{_ntokens[0].lower()} footage",
-            ]
             check_cancelled()
             try:
                 _np = fetch_scene_clip(
@@ -1277,6 +1283,40 @@ def process_video_task(req: VideoRenderRequest):
             )
         if _low_confidence_scenes:
             require_semantic_confidence(_low_confidence_scenes)
+
+        # Refresh after semantic retries so the final report reflects the selected assets.
+        try:
+            from render.pipeline_audit import (
+                audit_visual_frames,
+                pre_render_audit,
+                audit_search_queries,
+            )
+            _pre_audit = pre_render_audit(clips, audio_path=None, plan=plan)
+            _q_audit = audit_search_queries(clips)
+            _visual_audit_path = os.path.join(output_root, f"{safe}_visual_audit.jpg")
+            _visual_frame_audit = audit_visual_frames(clips, _visual_audit_path)
+            _visual_audit_slug = ch_paths["slug"]
+            _visual_frame_audit["url"] = (
+                f"/output/channels/{_visual_audit_slug}/{os.path.basename(_visual_audit_path)}"
+                if _visual_audit_slug != "default"
+                else f"/output/{os.path.basename(_visual_audit_path)}"
+            )
+            _pre_audit["report"]["visual_frame_audit"] = _visual_frame_audit
+            _pre_audit["warnings"].extend(_visual_frame_audit.get("warnings") or [])
+            for _w in _pre_audit.get("warnings") or []:
+                _log(f"[PipelineAudit] WARN: {_w}")
+            if _q_audit.get("issue_count", 0) > 0:
+                _log(
+                    f"[PipelineAudit] Search query issues: "
+                    f"{_q_audit['issue_count']} scenes have generic/empty/off-topic queries"
+                )
+            with open(os.path.join(proj, "pipeline_audit_pre.json"), "w", encoding="utf-8") as _af:
+                json.dump(
+                    {"pre_render": _pre_audit, "query_audit": _q_audit},
+                    _af, ensure_ascii=False, indent=2,
+                )
+        except Exception as _audit_err:
+            _log(f"[PipelineAudit] final visual audit failed: {_audit_err}", 58)
 
         if ok_clips == 0:
             msg = "Stok video indirilemedi."
@@ -2136,6 +2176,17 @@ def process_video_task(req: VideoRenderRequest):
                     _log(f"[PipelineAudit] Post-WARN: {_pw}")
                 for _pe in _post_audit.get("errors") or []:
                     _log(f"[PipelineAudit] Post-ERROR: {_pe}", 97)
+                _audit_report = _post_audit.get("report") or {}
+                _signal_report = _audit_report.get("signal_analysis") or {}
+                _log(
+                    "[PipelineAudit] Render metrics: "
+                    f"{_audit_report.get('resolution') or 'çözünürlük yok'} "
+                    f"@ {_audit_report.get('fps') or 'FPS yok'} FPS, "
+                    f"süre={_audit_report.get('video_duration')}s, "
+                    f"siyah aralık={len(_signal_report.get('black_intervals') or [])}, "
+                    f"sessizlik={len(_signal_report.get('silence_intervals') or [])}, "
+                    f"ses tepe={_signal_report.get('peak_volume_dbfs')} dBFS"
+                )
                 with open(os.path.join(proj, "pipeline_audit_post.json"), "w", encoding="utf-8") as _paf:
                     json.dump(_post_audit, _paf, ensure_ascii=False, indent=2)
                 if not _post_audit["ok"]:
@@ -2343,8 +2394,42 @@ def process_video_task(req: VideoRenderRequest):
                 if ch_paths["slug"] != "default"
                 else f"/output/{os.path.basename(result)}"
             )
-            sm.save_telemetry(proj)
             sm.complete(final_video_url)
+            sm.save_telemetry(proj)
+            from visuals.fetch import get_job_provider_diagnostics
+            _render_diagnostics = {
+                "pipeline": sm.export_telemetry(),
+                "provider_search": get_job_provider_diagnostics(),
+            }
+            try:
+                with open(os.path.join(proj, "render_diagnostics.json"), "w", encoding="utf-8") as _df:
+                    json.dump(_render_diagnostics, _df, ensure_ascii=False, indent=2)
+            except OSError as _diagnostics_err:
+                _log(f"[RenderPerf] Diagnostics could not be saved: {_diagnostics_err}")
+            _pipeline_stages = _render_diagnostics["pipeline"].get("stages") or []
+            _slowest_stage = max(
+                _pipeline_stages,
+                key=lambda item: float(item.get("duration_sec") or 0),
+                default=None,
+            )
+            _log(
+                f"[RenderPerf] total={_render_diagnostics['pipeline'].get('total_duration_sec')}s"
+                + (
+                    f" longest={_slowest_stage.get('name')} "
+                    f"{_slowest_stage.get('duration_sec')}s"
+                    if _slowest_stage else ""
+                )
+            )
+            for _provider, _stats in sorted(
+                _render_diagnostics["provider_search"]["providers"].items(),
+                key=lambda item: item[1]["total_ms"],
+                reverse=True,
+            ):
+                _log(
+                    f"[RenderPerf] provider={_provider} searches={_stats['searches']} "
+                    f"avg={_stats['avg_ms']}ms max={_stats['max_ms']}ms "
+                    f"results={_stats['results']} empty={_stats['empty_searches']}"
+                )
 
             done_msg = (
                 f"🎉 Video üretimi tamamlandı! Dosya: {os.path.basename(result)} "
@@ -2373,6 +2458,14 @@ def process_video_task(req: VideoRenderRequest):
                 "quality_gate": {
                     "pre": pre_result,
                     "post": locals().get("post") or {},
+                    "pipeline_audit": {
+                        **(locals().get("_post_audit") or {}),
+                        "pre_render": locals().get("_pre_audit") or {},
+                        "warnings": list(
+                            (locals().get("_pre_audit") or {}).get("warnings") or []
+                        ) + list((locals().get("_post_audit") or {}).get("warnings") or []),
+                    },
+                    "render_diagnostics": locals().get("_render_diagnostics") or {},
                 },
                 "director": {
                     "niche_id": director.niche_id if director else req.niche,
