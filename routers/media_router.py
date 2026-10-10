@@ -490,6 +490,7 @@ def api_generate_ai_scene_visual(payload: dict):
 def api_whiteboard_preview(payload: dict):
     """Generates a whiteboard line-art sketch animation clip with FFmpeg wipe reveal."""
     prompt = str(payload.get("scene_description") or payload.get("prompt") or "").strip()
+    narration = str(payload.get("narration") or "").strip()
     duration = float(payload.get("duration") or 4.0)
     scene_idx = int(payload.get("scene_index") or 0)
 
@@ -507,6 +508,7 @@ def api_whiteboard_preview(payload: dict):
             output_video_path=clip_file,
             duration=duration,
             scene_index=scene_idx,
+            narration=narration,
         )
         if not path or not os.path.exists(path):
             raise RuntimeError("Whiteboard çizim motoru klip oluşturamadı.")
@@ -628,5 +630,4 @@ def api_syndication_crosspost(payload: dict):
             results["postbridge"] = {"error": str(e)}
 
     return {"status": "ok", "results": results}
-
 

@@ -206,38 +206,6 @@ async def sse_events(request: Request):
             "X-Accel-Buffering": "no"
         }
     )
-
-
-@router.post("/api/project/clear_stock_cache")
-async def clear_stock_cache(request: Request):
-    """
-    Clears cached stock video files from project asset directory when switching to MiniMax-H3.
-    """
-    import re
-    try:
-        data = await request.json()
-        topic = data.get("topic") or data.get("project_slug") or ""
-        if not topic:
-            return {"status": "ok", "deleted_count": 0}
-
-        safe_slug = re.sub(r'[\/:*?"<>| ]', '_', topic)[:60].strip('_')
-        proj_dir = os.path.join(config.BASE_DIR, "assets", safe_slug)
-        deleted_count = 0
-        if os.path.exists(proj_dir):
-            for fname in os.listdir(proj_dir):
-                fl = fname.lower()
-                if (fl.endswith(".mp4") or fl.endswith(".webm")) and any(k in fl for k in ("pexels", "pixabay", "stock", "source")):
-                    fp = os.path.join(proj_dir, fname)
-                    try:
-                        os.remove(fp)
-                        deleted_count += 1
-                    except Exception:
-                        pass
-        return {"status": "ok", "deleted_count": deleted_count}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
-
-
 @router.get("/api/gallery")
 def get_gallery():
     if not os.path.exists(config.OUTPUT_DIR):
@@ -575,12 +543,6 @@ def cancel_render():
         state.current_render_state["cancel_requested"] = True
         state.current_render_state["cancel_notified"] = True
         state.broadcast_event("log", "[Sistem] Kullanıcı tarafından render iptal isteği gönderildi.")
-        try:
-            from visuals.ai_video.providers.minimax_h3 import comfy_base_url
-            import requests
-            requests.post(f"{comfy_base_url()}/interrupt", timeout=1.5)
-        except Exception:
-            pass
         return {"status": "ok", "message": "Render iptal isteği alındı.", "active": True}
 
     state.current_render_state["cancel_requested"] = False
@@ -803,5 +765,4 @@ def api_speaker_layout(payload: Dict[str, Any]):
         "speaker_distribution": res.speaker_distribution,
         "explanation": res.explanation,
     }
-
 

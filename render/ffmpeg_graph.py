@@ -1122,17 +1122,17 @@ def render_with_ffmpeg_graph(
                     card_width=int(W * 0.88),
                 )
             if rcard_png and os.path.exists(rcard_png):
-                cmd.extend(["-loop", "1", "-t", "4.0", "-i", rcard_png])
+                card_duration = sum(float(c.get("duration", 3.0)) for c in valid) + 0.5
+                cmd.extend(["-loop", "1", "-t", f"{card_duration:.3f}", "-i", rcard_png])
                 rcard_input = next_input
                 next_input += 1
                 filter_parts.append(
                     f"[{rcard_input}:v]format=rgba,"
-                    f"fade=t=in:st=0:d=0.35:alpha=1,"
-                    f"fade=t=out:st=3.2:d=0.35:alpha=1[rcard_faded]"
+                    f"fade=t=in:st=0:d=0.35:alpha=1[rcard_faded]"
                 )
                 filter_parts.append(
                     f"[{picture}][rcard_faded]overlay=x=(W-w)/2:y={int(H * 0.28)}:"
-                    f"enable='between(t,0,3.6)':eof_action=pass:repeatlast=0[vrcard]"
+                    f"enable='between(t,0,{card_duration:.3f})':eof_action=pass:repeatlast=0[vrcard]"
                 )
                 picture = "vrcard"
                 print("  [FFmpegGraph] Reddit question card overlay active", flush=True)

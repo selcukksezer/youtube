@@ -10,7 +10,7 @@ Keyless (public, CC0 / public domain / CC-BY only):
   wikimedia  Wikimedia Commons  video (webm/ogv/mp4) + bitmap images
   nasa       NASA Image & Video Library (public domain)
   openverse  Openverse (CC0 / BY / PDM images) — low anonymous rate limit, cached hard
-  archive_org Internet Archive — ONLY Prelinger + NASA collections (public domain films)
+  archive_org Internet Archive — any collection, filtered to Public Domain / CC0 media
 
 Never: YouTube rips, share-alike, non-commercial, no-derivative material.
 """
@@ -382,14 +382,13 @@ def search_openverse(query: str, per_page: int = 10) -> List[Candidate]:
     return out
 
 
-# ─── Internet Archive (Prelinger / NASA collections only) ────────────────────
+# ─── Internet Archive (strict Public Domain / CC0 filter) ────────────────────
 
 _IA_SEARCH = "https://archive.org/advancedsearch.php"
-_IA_COLLECTIONS = "(collection:prelinger OR collection:nasa)"
 
 
 def search_archive_org(query: str, per_page: int = 6) -> List[Candidate]:
-    q = f"mediatype:movies AND {_IA_COLLECTIONS} AND ({query})"
+    q = f"mediatype:movies AND ({query})"
     params = {"q": q, "fl[]": ["identifier", "title", "licenseurl", "creator", "description"], "rows": per_page, "output": "json"}
     r = _session.get(_IA_SEARCH, params=params, timeout=TIMEOUT)
     r.raise_for_status()
@@ -400,8 +399,8 @@ def search_archive_org(query: str, per_page: int = 6) -> List[Candidate]:
         if not ident:
             continue
         lic_url = str(d.get("licenseurl") or "")
-        # Collection membership is not a license. Some archive items in these
-        # collections retain rights or carry incomplete metadata.
+        # Archive collection membership is not a license; require explicit
+        # Public Domain or CC0 metadata for every result.
         lic = parse_cc_license(lic_url) if lic_url else License.UNKNOWN
         if lic not in (License.PUBLIC_DOMAIN, License.CC0):
             continue
@@ -549,7 +548,7 @@ PROVIDERS: Dict[str, ProviderSpec] = {
     "nasa": ProviderSpec("nasa", search_nasa, "video", None, 0.75, ["mystery", "astrology", "science", "general", "news"]),
     "nasa_img": ProviderSpec("nasa_img", search_nasa_images, "image", None, 0.6, ["mystery", "astrology", "science"]),
     "openverse": ProviderSpec("openverse", search_openverse, "image", None, 0.5),
-    "archive_org": ProviderSpec("archive_org", search_archive_org, "video", None, 0.45, ["history", "news"]),
+    "archive_org": ProviderSpec("archive_org", search_archive_org, "video", None, 0.45),
     "pexels_img": ProviderSpec("pexels_img", search_pexels_images, "image", "PEXELS_API_KEY", 0.7),
     "pixabay_img": ProviderSpec("pixabay_img", search_pixabay_images, "image", "PIXABAY_API_KEY", 0.65),
     "met_img": ProviderSpec("met_img", search_met_images, "image", None, 0.55, ["religious", "history", "mystery", "general"]),

@@ -1,14 +1,14 @@
 """Optional mixed visual engine. Off unless the studio dropdown is mixed.
 
-Rotation per scene index: stock, local MiniMax-H3, Flux.
-auto, flux, whiteboard, and minimax_h3 keep their existing single-engine behavior.
+Rotation per scene index: stock, Flux.
+auto, flux, and whiteboard keep their existing single-engine behavior.
 """
 from __future__ import annotations
 
 from typing import Any, Optional
 
 MIXED_ALIASES = frozenset({"mixed", "karisik", "karışık"})
-MIXED_ROTATION = ("stock", "minimax_h3", "flux")
+MIXED_ROTATION = ("stock", "flux")
 
 
 def is_mixed_mode(mode: Optional[str]) -> bool:

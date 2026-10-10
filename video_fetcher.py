@@ -1109,6 +1109,7 @@ def gather_scene_pools(
                 output_video_path=path,
                 duration=target_duration,
                 scene_index=scene_index,
+                narration=narration,
             )
         except Exception as exc:
             print(f"    [POOL:whiteboard] {exc}")

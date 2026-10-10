@@ -92,11 +92,6 @@ PIAPI_KEY = os.getenv("PIAPI_KEY", "") or os.getenv("PIAPI_API_KEY", "")
 LOCAL_AI_VIDEO_URL = os.getenv("LOCAL_AI_VIDEO_URL", "")  # ComfyUI / self-host Wan proxy
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")  # optional paid Hailuo
 MINIMAX_GROUP_ID = os.getenv("MINIMAX_GROUP_ID", "")
-# Optional local MiniMax-H3. Unused unless the studio visual engine is set to minimax_h3.
-# ComfyUI on this PC is the real path. SGLang 30010 is used only when already up.
-MINIMAX_H3_COMFY_URL = os.getenv("MINIMAX_H3_COMFY_URL", "http://127.0.0.1:8188")
-MINIMAX_H3_LOCAL_URL = os.getenv("MINIMAX_H3_LOCAL_URL", "http://127.0.0.1:30010")
-MINIMAX_H3_MODEL = os.getenv("MINIMAX_H3_MODEL", "MiniMaxAI/MiniMax-H3")
 RUNWAYML_API_SECRET = (
     os.getenv("RUNWAYML_API_SECRET", "")
     or os.getenv("RUNWAY_API_KEY", "")

@@ -1,11 +1,4 @@
-"""
-Comprehensive Test Suite for Bölüm 34:
-- Local MiniMax-H3 Architecture (services/minimax_h3_local.py)
-- Public APIs Integration Catalog (services/public_apis_catalog.py)
-- System Resilience Circuit Breaker Fallback (system_resilience.py)
-- Visuals Fetch Public Media Fallback (visuals/fetch.py)
-- FastAPI System Router Endpoints
-"""
+"""Public API fallback catalog and system endpoint tests."""
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -20,11 +13,6 @@ from services.public_apis_catalog import (
     fetch_wikidata_claims,
     fetch_wikipedia_summary,
     get_category_endpoints,
-)
-from services.minimax_h3_local import (
-    assess_minimax_h3_hardware,
-    check_local_server_status,
-    generate_local_minimax_h3,
 )
 from system_resilience import CircuitBreaker
 
@@ -119,59 +107,11 @@ class TestPublicAPIsCatalog(unittest.TestCase):
         self.assertTrue(any(e.name == "openverse_images" for e in eps))
 
 
-class TestMiniMaxH3Local(unittest.TestCase):
-    def test_assess_hardware_nvidia_vram_profiles(self):
-        # 1. High VRAM (16GB+) -> FP16
-        with patch("hardware_detector.get_gpu_info", return_value={"has_nvidia": True, "vram_mb": 24000}):
-            suit = assess_minimax_h3_hardware()
-            self.assertTrue(suit.can_run_local)
-            self.assertEqual(suit.recommended_quantization, "fp16")
-
-        # 2. Mid VRAM (8-16GB) -> 4bit
-        with patch("hardware_detector.get_gpu_info", return_value={"has_nvidia": True, "vram_mb": 8192}):
-            suit = assess_minimax_h3_hardware()
-            self.assertTrue(suit.can_run_local)
-            self.assertEqual(suit.recommended_quantization, "4bit")
-
-        # 3. Low VRAM (<8GB) -> cannot run, safe fallback
-        with patch("hardware_detector.get_gpu_info", return_value={"has_nvidia": True, "vram_mb": 4096}):
-            suit = assess_minimax_h3_hardware()
-            self.assertFalse(suit.can_run_local)
-            self.assertIn("VRAM yetersiz", suit.message)
-
-        # 4. No NVIDIA -> cannot run
-        with patch("hardware_detector.get_gpu_info", return_value={"has_nvidia": False, "vram_mb": 0}):
-            suit = assess_minimax_h3_hardware()
-            self.assertFalse(suit.can_run_local)
-            self.assertIn("NVIDIA GPU tespit edilemedi", suit.message)
-
-    def test_local_server_status_offline_graceful(self):
-        with patch("services.minimax_h3_local.comfy_port_open", return_value=False), \
-                patch("services.minimax_h3_local._comfy_proc", None):
-            st = check_local_server_status()
-            self.assertFalse(st["is_running"])
-            self.assertEqual(st["phase"], "offline")
-
-    def test_generate_local_graceful_when_server_offline(self):
-        with patch("services.minimax_h3_local.assess_minimax_h3_hardware", return_value=MagicMock(can_run_local=True)), \
-             patch("services.minimax_h3_local.check_local_server_status", return_value={"is_running": False, "server_url": "http://127.0.0.1:30010"}):
-            out = generate_local_minimax_h3("Test prompt", "test.mp4")
-            self.assertIsNone(out)
-
-
-class TestSystemRoutesPublicAndMiniMax(unittest.TestCase):
+class TestSystemRoutesPublic(unittest.TestCase):
     def setUp(self):
         from fastapi.testclient import TestClient
         from server import app
         self.client = TestClient(app)
-
-    def test_minimax_h3_status_endpoint(self):
-        resp = self.client.get("/api/system/minimax-h3/status")
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data.get("status"), "ok")
-        self.assertIn("hardware", data)
-        self.assertIn("server", data)
 
     def test_public_apis_status_endpoint(self):
         resp = self.client.get("/api/system/public-apis/status")
@@ -179,6 +119,10 @@ class TestSystemRoutesPublicAndMiniMax(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data.get("status"), "ok")
         self.assertGreaterEqual(len(data.get("endpoints", [])), 7)
+
+    def test_removed_local_video_engine_routes_are_not_registered(self):
+        self.assertEqual(self.client.get("/api/system/minimax-h3/status").status_code, 404)
+        self.assertEqual(self.client.post("/api/system/minimax-h3/start").status_code, 404)
 
 
 if __name__ == "__main__":

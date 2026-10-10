@@ -696,38 +696,6 @@ def apply_hardware_profile(data: dict):
     }
 
 
-@router.post("/api/system/minimax-h3/start")
-def start_minimax_h3():
-    """Start local ComfyUI for MiniMax-H3. No-op when port 8188 is already open."""
-    try:
-        from services.minimax_h3_local import start_comfyui_server
-        return start_comfyui_server()
-    except Exception as exc:
-        return {"status": "failed", "spawned": False, "message": str(exc)}
-
-
-@router.get("/api/system/minimax-h3/status")
-def get_minimax_h3_status():
-    """Bölüm 34.1: Inspect local MiniMax-H3 hardware capability and server state."""
-    try:
-        from services.minimax_h3_local import assess_minimax_h3_hardware, check_local_server_status
-        hardware = assess_minimax_h3_hardware()
-        server = check_local_server_status()
-        return {
-            "status": "ok",
-            "hardware": {
-                "can_run_local": hardware.can_run_local,
-                "vram_mb": hardware.vram_mb,
-                "recommended_quantization": hardware.recommended_quantization,
-                "message": hardware.message,
-                "has_nvidia": hardware.has_nvidia,
-            },
-            "server": server,
-        }
-    except Exception as exc:
-        return {"status": "error", "detail": str(exc)}
-
-
 @router.get("/api/system/public-apis/status")
 def get_public_apis_status():
     """Bölüm 34.2: Inspect availability and health of public-apis catalog endpoints."""
@@ -748,5 +716,4 @@ def get_public_apis_status():
         return {"status": "ok", "endpoints": endpoints}
     except Exception as exc:
         return {"status": "error", "detail": str(exc)}
-
 

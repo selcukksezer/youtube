@@ -139,20 +139,7 @@ def _veo_render_allowed() -> bool:
 
 
 def _sweep_render_temp_files(job_prefix: str = "") -> None:
-    """P3-35: post-render sweep of ffgraph temp dirs and job intermediate WAVs."""
-    import shutil
-    import tempfile
-
-    try:
-        tmp_root = tempfile.gettempdir()
-        for name in os.listdir(tmp_root):
-            if name.startswith("ffgraph_"):
-                path = os.path.join(tmp_root, name)
-                if os.path.isdir(path):
-                    shutil.rmtree(path, ignore_errors=True)
-    except Exception:
-        pass
-
+    """Remove this job's intermediate WAVs; FFmpeg graph owns its temp dirs."""
     if not job_prefix:
         return
     audio_dir = getattr(config, "AUDIO_DIR", "")
@@ -175,7 +162,7 @@ def _stamp_visual_mode(plan, selected) -> None:
     from visuals.mixed_visual import apply_selected_visual_mode, is_mixed_mode
 
     if plan and is_mixed_mode(selected):
-        _log("[Visual] Karışık mod: sahneler sırayla stok, yerel MiniMax-H3, Flux")
+        _log("[Visual] Karışık mod: sahneler sırayla stok ve Flux")
     apply_selected_visual_mode(plan, selected)
 
 
@@ -231,8 +218,6 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         cand_name = os.path.basename(local_candidate).lower()
         if visual_mode in ("whiteboard", "sketch", "cizim") and "whiteboard" not in cand_name:
             p = None
-        elif visual_mode in ("minimax_h3", "minimax-h3", "h3") and ("minimax" not in cand_name and "h3" not in cand_name):
-            p = None
         else:
             p = local_candidate
             _log(f"[Visual] Sahne #{i+1}: Önceden üretilen yerel klip kullanılıyor: {os.path.basename(p)}")
@@ -246,42 +231,8 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
             output_video_path=wb_path,
             duration=d,
             scene_index=i,
+            narration=narr,
         )
-
-    if not p and visual_mode in ("minimax_h3", "minimax-h3", "h3"):
-        from visuals.ai_video.providers.minimax_h3 import comfy_base_url, generate_local_h3_clip
-        _log(f"[MiniMax-H3] Sahne #{i+1}: ComfyUI kuyruğu ({comfy_base_url()})")
-        h3_path = os.path.join(proj, f"s{i:03d}_minimax_h3.mp4")
-
-        # 8GB VRAM (RTX 3070) safe resolution: 512x896 with VAEDecodeTiled (tile_size=256)
-        _low_vram = False
-        try:
-            from hardware_detector import get_gpu_info
-            _low_vram = float(get_gpu_info().get("vram_gb", 0) or 0) <= 10.0
-        except Exception:
-            pass
-
-        from visuals.ai_video.providers.minimax_h3 import h3_frame_length
-        # Dynamic length matching scene duration (73..124 frames = ~3.0s..5.2s)
-        target_frames = h3_frame_length(d, min_seconds=3.0)
-        if _low_vram:
-            target_frames = min(124, max(73, target_frames))
-
-        p = generate_local_h3_clip(
-            desc or narr or (q[0] if q else "cinematic vertical scene"),
-            h3_path,
-            duration=d,
-            aspect="9:16",
-            scene_label=f"Sahne #{i+1}",
-            cancel_check=_is_cancelled,
-            width=512 if _low_vram else 768,
-            height=896 if _low_vram else 1344,
-            length=target_frames,
-        )
-        if _is_cancelled():
-            return i, None, None
-        if not p:
-            _log(f"[MiniMax-H3] Sahne #{i+1}: yerel sunucu cevap vermedi, mevcut stok hattı sürüyor")
 
     if not p and (
         visual_mode in ("pollinations", "flux", "0tl_ai", "flux_ai", "pollinations_ai")

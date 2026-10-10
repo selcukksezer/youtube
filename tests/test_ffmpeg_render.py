@@ -145,7 +145,7 @@ class TestFFmpegRender(unittest.TestCase):
         self.assertIn("Duration: 00:00:03.", stderr)
 
     # ─── K2: Probe sonucu -t sınırı, asla -shortest ───
-    def _captured_cmds(self, probe_dur):
+    def _captured_cmds(self, probe_dur, **render_kwargs):
         from unittest import mock
         import render.ffmpeg_graph as fg
 
@@ -166,7 +166,12 @@ class TestFFmpegRender(unittest.TestCase):
         with mock.patch.object(fg, "_probe_audio_duration", return_value=probe_dur), \
              mock.patch.object(fg.subprocess, "Popen", side_effect=lambda cmd, *a, **k: _FakeProc(cmd)):
             try:
-                render_with_ffmpeg_graph(clips=clips, audio_path=self.sample_audio, output_path=out)
+                render_with_ffmpeg_graph(
+                    clips=clips,
+                    audio_path=self.sample_audio,
+                    output_path=out,
+                    **render_kwargs,
+                )
             except Exception:
                 pass
         return [c for c in cmds if "-filter_complex" in c]
@@ -184,6 +189,19 @@ class TestFFmpegRender(unittest.TestCase):
         for c in cmds:
             self.assertNotIn("-shortest", c)
             self.assertEqual(c[c.index("-t") + 1], "3.500")
+
+    def test_reddit_card_is_enabled_for_the_full_clip_timeline(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as card:
+            cmds = self._captured_cmds(
+                -1.0,
+                enable_reddit_card=True,
+                reddit_card_path=card.name,
+            )
+        self.assertTrue(cmds, "no ffmpeg command captured")
+        graphs = [c[c.index("-filter_complex") + 1] for c in cmds]
+        self.assertTrue(any("between(t,0,3.500)" in graph for graph in graphs))
+        self.assertTrue(any("fade=t=in:st=0:d=0.35:alpha=1" in graph for graph in graphs))
+        self.assertTrue(all("fade=t=out" not in graph for graph in graphs))
 
     # ─── 18.3 Test 3: Bellek Sızıntısı ve Tracemalloc Doğrulaması ───
     def test_tracemalloc_memory_leak_bounds(self):

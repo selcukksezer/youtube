@@ -313,6 +313,23 @@ def generate_scenes(
         except Exception:
             pass
 
+    if lang == "en":
+        user_msg += (
+            "\n\nNARRATIVE FLOW: Treat all scene narrations as one continuous spoken script, not separate summaries. "
+            "Each scene must add a distinct new beat and connect naturally to what came before. "
+            "Do not reintroduce the topic or restate a previous fact in every scene. "
+            "Vary sentence openings and rhythm; avoid repeated transitions, rhetorical templates, and filler. "
+            "Use numbered phrasing only when the topic genuinely calls for a list."
+        )
+    else:
+        user_msg += (
+            "\n\nANLATIM AKIŞI: Tüm sahne anlatımlarını ayrı özetler gibi değil, tek ve doğal bir konuşma metninin "
+            "ardışık parçaları olarak yaz. Her sahne yeni bir fikir veya gelişme eklesin ve önceki sahneye "
+            "doğal biçimde bağlansın. Her sahnede konuyu yeniden tanıtma veya önceki bilgiyi tekrarlama. "
+            "Cümle başlangıçlarını ve ritmi çeşitlendir; aynı geçişleri, soru kalıplarını ve dolgu ifadelerini "
+            "tekrarlama. Numaralı anlatımı yalnızca konu gerçekten liste gerektiriyorsa kullan."
+        )
+
     if previous_narration and len(previous_narration.strip()) > 20:
         prev_snip = previous_narration.strip()[:400].replace('\n', ' ')
         if lang == "en":

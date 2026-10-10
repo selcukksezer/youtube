@@ -72,6 +72,13 @@ class TestVideoRenderQualityGate(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 422)
+        detail = response.json()["detail"]
+        self.assertEqual(detail["message"], "Senaryo üretim kalite kapısından geçemedi.")
+        self.assertTrue(detail["script_quality"]["hard_fail"])
+        self.assertTrue(any(
+            issue.startswith("word_count_out_of_band:")
+            for issue in detail["script_quality"]["issues"]
+        ))
         process_task.assert_not_called()
         self.assertFalse(state.is_rendering_active)
         lock_acquired = state.render_lock.acquire(blocking=False)

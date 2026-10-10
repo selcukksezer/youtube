@@ -109,14 +109,19 @@ Return ONLY JSON:
 
 REDDIT_REWRITE_PROMPT_TR = """Sen Reddit itirafları ve hikayelerini viral YouTube Shorts senaryolarına dönüştüren bir yapay zeka uzmanısın.
 Orijinal Reddit gönderisini doğrudan kopyalamak yerine, teliften muaf olacak şekilde 1. tekil şahıs ağzından sürükleyici bir dille yeniden yaz.
-İlk sahne kancası çarpıcı olmalı ve 'Bunu ...' ile başlamalıdır.
+Kaynakta bulunmayan olay, kişi, para miktarı veya zaman bilgisi uydurma; olayları kaynaktaki sırayla anlat.
+İlk sahne 'Bunu ...' ile başlayan kısa ve doğal bir kanca olmalı; başlığı aynen tekrar edip cümleye ekleme.
+Her sahnede tamamlanmış, konuşma diline uygun cümleler kur. Yarım yüklem, eksik tamlama, kopuk cümle ve yapay 'ilk/ikinci/üçüncü kilit detay' sıralaması kullanma.
+Her sahne yeni bir olayı, kanıtı, tepkiyi veya sonucu ilerletsin; aynı bilgiyi farklı sözlerle tekrarlama.
 Bitişte 'Siz olsaydınız ne yapardınız?' şeklinde izleyici yorum kancası yer almalıdır.
 SADECE JSON formatında çıktı ver:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"mysterious"}]}"""
 
 REDDIT_REWRITE_PROMPT_EN = """You are a YouTube Shorts storyteller specializing in rewriting Reddit confessions and stories.
-Rewrite the Reddit text into an engaging, fair-use compliant 60-second monologue script.
-The opening hook must be compelling, and the ending should ask the viewer what they would do.
+Rewrite the Reddit text into an engaging, fair-use compliant first-person script using only events and facts from the source.
+Use a compelling, concise opening hook without repeating the title verbatim. Keep every scene grammatical, complete, and natural to speak aloud.
+Each scene must advance a distinct event, piece of evidence, reaction, or consequence; avoid repeated information, dangling clauses, and formulaic numbered transitions.
+End by asking the viewer what they would do.
 Return ONLY JSON:
 {"title":"...","visual_theme":"...","full_narration":"...","scenes":[{"scene_number":1,"narration":"...","scene_description":"...","search_queries":["a","b","c"],"duration":6,"mood":"mysterious"}]}"""
 

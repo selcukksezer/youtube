@@ -2,6 +2,8 @@
 Specialized script generators: Counter-Argument Dialectics and Reddit Story Rewriting.
 """
 
+import math
+import re
 from typing import Union, Dict, Any
 import config
 from .prompts import (
@@ -11,6 +13,72 @@ from .prompts import (
     REDDIT_REWRITE_PROMPT_EN
 )
 from .fallback import _generate_procedural_fallback_scenes
+
+
+_REDDIT_FRAGMENT_ENDING_RE = re.compile(
+    r"(?:\b(?:etmek|olmak|bulmak|yapmak|görmek|öğrenmek|anlamak)\s*[.!?]?|"
+    r"\bgözler(?:i)?\s+önüne\s*[.!?]?)$",
+    re.IGNORECASE,
+)
+_REDDIT_UNFINISHED_POSSESSIVE_RE = re.compile(
+    r"\b(?:sakladığı|gizlediği|bulduğu|okuduğu|gördüğü|incelediği)\s+"
+    r"\w+(?:\s+\w+)?(?:ların|lerin)\s*[.!?]?$",
+    re.IGNORECASE,
+)
+_REDDIT_NUMBERED_FILLER_RE = re.compile(
+    r"\b(?:ilk|ikinci|üçüncü|dördüncü)\b.{0,28}\b(?:detay|nokta|bulgu|işaret)\b",
+    re.IGNORECASE,
+)
+_REDDIT_TITLE_STOPWORDS = {
+    "ama", "artık", "bunu", "bir", "bu", "da", "de", "etmek", "için", "ile",
+    "ve", "var", "ben", "the", "and", "for", "with", "was", "were", "my",
+}
+
+
+def _reddit_script_issues(plan: Dict[str, Any]) -> list[str]:
+    """Reject Reddit scripts with obvious title echoes, fragments, or template repetition."""
+    from .narration_validate import normalize_narration_for_validation, scene_narration_issues
+
+    scenes = plan.get("scenes") or []
+    if len(scenes) < 8:
+        return ["too_few_scenes"]
+
+    issues = []
+    for index, scene in enumerate(scenes):
+        narration = normalize_narration_for_validation(str(scene.get("narration") or ""))
+        scene_issues = scene_narration_issues(narration, normalized=True)
+        if scene_issues:
+            issues.append(f"scene_{index + 1}:{'|'.join(scene_issues)}")
+        if _REDDIT_FRAGMENT_ENDING_RE.search(narration):
+            issues.append(f"scene_{index + 1}:incomplete_clause")
+        if _REDDIT_UNFINISHED_POSSESSIVE_RE.search(narration):
+            issues.append(f"scene_{index + 1}:unfinished_possessive")
+
+    narration = " ".join(
+        normalize_narration_for_validation(str(scene.get("narration") or ""))
+        for scene in scenes
+    )
+    if len(_REDDIT_NUMBERED_FILLER_RE.findall(narration)) > 1:
+        issues.append("repetitive_numbered_filler")
+
+    title = str(plan.get("title") or "")
+    title_words = {
+        word.casefold()
+        for word in re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿĞğİıŞşÜüÇç]+", title)
+        if len(word) > 2 and word.casefold() not in _REDDIT_TITLE_STOPWORDS
+    }
+    if title_words and scenes:
+        hook_words = {
+            word.casefold()
+            for word in re.findall(
+                r"[A-Za-zÀ-ÖØ-öø-ÿĞğİıŞşÜüÇç]+",
+                str(scenes[0].get("narration") or ""),
+            )
+        }
+        overlap = len(title_words & hook_words)
+        if len(title_words) >= 5 and overlap / len(title_words) >= 0.6:
+            issues.append("hook_repeats_title")
+    return issues
 
 
 def generate_counter_argument_script(topic: str, lang: str = "tr") -> Dict[str, Any]:
@@ -99,19 +167,39 @@ def generate_reddit_rewrite_script(source: Union[str, Dict[str, Any]], lang: str
         for provider_name, api_key, base_url, model_name in providers:
             try:
                 client = OpenAI(api_key=api_key, base_url=base_url)
-                params = dict(
-                    model=model_name,
-                    messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_msg}],
-                    temperature=0.7, max_tokens=4000
-                )
-                if "Gemini" in provider_name or "OpenAI" in provider_name:
-                    params["response_format"] = {"type": "json_object"}
-                resp = _call(client, params)
-                raw = resp.choices[0].message.content.strip()
-                data = _clean_json(raw)
-                if data and "scenes" in data and len(data["scenes"]) >= 8:
+                retry_message = user_msg
+                for attempt in range(2):
+                    params = dict(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": prompt},
+                            {"role": "user", "content": retry_message},
+                        ],
+                        temperature=0.7 if attempt == 0 else 0.4,
+                        max_tokens=4000,
+                    )
+                    if "Gemini" in provider_name or "OpenAI" in provider_name:
+                        params["response_format"] = {"type": "json_object"}
+                    resp = _call(client, params)
+                    raw = resp.choices[0].message.content.strip()
+                    data = _clean_json(raw)
+                    if not data or "scenes" not in data or len(data["scenes"]) < 8:
+                        break
+
                     data["title"] = title or data.get("title", "Reddit Hikayesi")
-                    return data
+                    issues = _reddit_script_issues(data)
+                    if not issues:
+                        return data
+                    print(
+                        f"  [Reddit Script] AI taslağı reddedildi ({', '.join(issues)}); "
+                        f"düzeltme denemesi {attempt + 1}/2"
+                    )
+                    if attempt == 0:
+                        retry_message = (
+                            f"{user_msg}\n\nÖnceki taslak şu kalite sorunları nedeniyle reddedildi: "
+                            f"{', '.join(issues)}. Kaynağı yeniden incele, cümleleri tamamla ve yalnızca "
+                            "düzeltilmiş JSON senaryoyu döndür."
+                        )
             except Exception:
                 continue
     except Exception:

@@ -1,4 +1,4 @@
-"""Mixed visual mode rotates stock, local MiniMax-H3, and Flux."""
+"""Mixed visual mode rotates stock footage and Flux."""
 import unittest
 
 from director.compiler import _scenes_from_legacy
@@ -20,7 +20,7 @@ class MixedVisualModeTests(unittest.TestCase):
         self.assertEqual(plan["visual_mode"], "mixed")
         self.assertEqual(
             [scene["visual_mode"] for scene in plan["scenes"]],
-            ["stock", "minimax_h3", "flux", "stock"],
+            ["stock", "flux", "stock", "flux"],
         )
 
     def test_single_engine_does_not_overwrite_existing_scene(self):
@@ -48,7 +48,7 @@ class MixedVisualModeTests(unittest.TestCase):
         })
         self.assertEqual(
             [scene.visual_mode for scene in scenes],
-            ["stock", "minimax_h3", "flux", "whiteboard"],
+            ["stock", "flux", "stock", "whiteboard"],
         )
 
 

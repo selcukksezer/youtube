@@ -9,16 +9,14 @@ ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 class TestStudioDropdownAndWhoosh(unittest.TestCase):
-    def test_visual_dropdown_includes_minimax_h3_and_mixed(self):
+    def test_visual_dropdown_includes_supported_engines(self):
         html = open(os.path.join(ROOT, "static", "index.html"), encoding="utf-8").read()
         select_at = html.find('id="select-visual-engine"')
         self.assertGreater(select_at, 0)
         block = html[select_at:select_at + 1200]
-        for value in ("auto", "flux", "whiteboard", "minimax_h3", "mixed"):
+        for value in ("auto", "flux", "whiteboard", "mixed"):
             self.assertIn(f'value="{value}"', block)
-        self.assertIn('id="btn-start-minimax-h3"', html)
-        self.assertIn("http://127.0.0.1:8188", html)
-        self.assertIn("start_comfy.bat", html)
+        self.assertNotIn("MiniMax-H3", html)
         self.assertNotIn("speech-2.8-hd", html)
         js = open(os.path.join(ROOT, "static", "js", "render-monitor.js"), encoding="utf-8").read()
         self.assertIn("dropdownVal !== 'auto'", js)

@@ -576,21 +576,8 @@
                                         </option>
                                         <option value="whiteboard">✏️ Whiteboard Çizim Modu (El Çizim Line-Art
                                             Animasyonu)</option>
-                                        <option value="minimax_h3">🎥 MiniMax-H3 yerel (bu bilgisayar, sesli video)
-                                        </option>
-                                        <option value="mixed">🔀 Karışık (stok + MiniMax-H3 + Flux)</option>
+                                        <option value="mixed">🔀 Karışık (stok + Flux)</option>
                                     </select>
-                                    <button type="button" id="btn-start-minimax-h3" class="btn btn-sm"
-                                        style="white-space:nowrap; background:#1e293b; color:#e2e8f0; border:1px solid rgba(168,85,247,.45); border-radius:8px; padding:8px 10px;">ComfyUI
-                                        başlat</button>
-                                </div>
-                                <small id="minimax-h3-help" style="color:#94a3b8;font-size:11px;">Varsayılan stok hattı
-                                    durur. MiniMax-H3 yalnız kendi seçeneğinde veya karışık modda çalışır. Klip yolu
-                                    ComfyUI http://127.0.0.1:8188 (F:\MiniMax-H3\start_comfy.bat). Kapalıysa yandaki
-                                    düğme sunucuyu başlatır; uygulama açılışında kendiliğinden açılmaz. SGLang
-                                    http://127.0.0.1:30010 yalnız zaten açıksa ek yoldur. Karışık mod sahneleri sırayla
-                                    stok, yerel MiniMax-H3 ve Flux yapar.</small>
-                                <div id="minimax-h3-start-state" style="font-size:11px; color:#c4b5fd; margin-top:4px;">
                                 </div>
                             </div>
                             <div id="public-apis-fallback" class="mt-3" data-role="fallback-only"
@@ -3608,55 +3595,6 @@
     <!-- BİLDİRİM TOAST ALANI -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script>
-        (function () {
-            const btn = document.getElementById('btn-start-minimax-h3');
-            const state = document.getElementById('minimax-h3-start-state');
-            if (!btn || !state) return;
-            const labels = {
-                up: 'ComfyUI açık · http://127.0.0.1:8188',
-                starting: 'ComfyUI başlıyor…',
-                failed: 'ComfyUI başlamadı',
-                offline: 'ComfyUI kapalı'
-            };
-            function paint(phase) {
-                state.textContent = labels[phase] || phase;
-                btn.disabled = phase === 'starting';
-            }
-            async function refresh() {
-                try {
-                    const response = await fetch('/api/system/minimax-h3/status');
-                    const data = await response.json();
-                    const server = data.server || {};
-                    const phase = server.phase || (server.is_running ? 'up' : 'offline');
-                    paint(phase);
-                    return phase;
-                } catch (err) {
-                    paint('failed');
-                    return 'failed';
-                }
-            }
-            btn.addEventListener('click', async () => {
-                paint('starting');
-                try {
-                    const response = await fetch('/api/system/minimax-h3/start', { method: 'POST' });
-                    const data = await response.json();
-                    paint(data.status || 'failed');
-                } catch (err) {
-                    paint('failed');
-                    return;
-                }
-                const started = Date.now();
-                const timer = setInterval(async () => {
-                    const phase = await refresh();
-                    if (phase === 'up' || phase === 'failed' || Date.now() - started > 180000) {
-                        clearInterval(timer);
-                    }
-                }, 4000);
-            });
-            refresh();
-        })();
-    </script>
     <script src="/static/hardware_panel.js?v=5.2"></script>
     <!-- Modular Application Engines -->
     <script src="/static/js/state.js?v=6.3"></script>

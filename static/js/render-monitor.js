@@ -72,6 +72,50 @@ function showTerminalAndDock() {
     if (terminalBody) terminalBody.scrollTop = terminalBody.scrollHeight;
 }
 
+function formatRenderErrorDetail(detail) {
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) return detail.map(String).join('\n');
+    if (!detail || typeof detail !== 'object') return 'Render başlatılamadı.';
+
+    const lines = [];
+    if (detail.message) lines.push(String(detail.message));
+
+    const quality = detail.script_quality;
+    if (quality && typeof quality === 'object') {
+        const limits = quality.limits || {};
+        const summary = [];
+        if (Number.isFinite(quality.duration)) summary.push(`Süre: ${quality.duration.toFixed(1)} sn`);
+        if (Number.isFinite(quality.word_count)) {
+            summary.push(`Kelime: ${quality.word_count} (gerekli: ${limits.min_words ?? 85}-${limits.max_words ?? 195})`);
+        }
+        if (Number.isFinite(quality.scene_count)) {
+            summary.push(`Sahne: ${quality.scene_count} (hedef: ${limits.min_scenes ?? 6}-${limits.max_scenes ?? 12}; en az 4 gerekli)`);
+        }
+        if (summary.length) lines.push(summary.join(' · '));
+
+        const issueMessages = (quality.issues || []).map(issue => {
+            const value = String(issue);
+            let match = value.match(/^duration_out_of_band:(\d+(?:\.\d+)?)$/);
+            if (match) return `Toplam süre ${match[1]} sn; 38-65 sn aralığında olmalı.`;
+            match = value.match(/^word_count_out_of_band(?::(\d+))?$/);
+            if (match) return `Toplam kelime sayısı 85-195 aralığında olmalı${match[1] ? ` (mevcut: ${match[1]})` : ''}.`;
+            match = value.match(/^scene_count_out_of_band:(\d+)$/);
+            if (match) return `Sahne sayısı en az 4 olmalı (mevcut: ${match[1]}).`;
+            match = value.match(/^scene_(\d+)_words_below_(\d+)$/);
+            if (match) return `${Number(match[1]) + 1}. sahnenin anlatımı en az ${match[2]} kelime olmalı.`;
+            match = value.match(/^scene_(\d+)_visual_description_invalid$/);
+            if (match) return `${Number(match[1]) + 1}. sahnenin görsel açıklaması eksik veya geçersiz.`;
+            match = value.match(/^scene_(\d+)_queries_insufficient$/);
+            if (match) return `${Number(match[1]) + 1}. sahne için en az 2 arama terimi gerekli.`;
+            if (value === 'scenes_missing') return 'Senaryoda sahne bulunamadı.';
+            return value;
+        });
+        if (issueMessages.length) lines.push(`Düzeltilmesi gerekenler:\n• ${issueMessages.join('\n• ')}`);
+    }
+
+    return lines.length ? lines.join('\n\n') : JSON.stringify(detail, null, 2);
+}
+
 
 
 // 10. CANLI SSE İZLEME & RENDER BORU HATTI
@@ -273,7 +317,9 @@ async function startRenderProcess(planToUse) {
         body: JSON.stringify(payload)
     }).then(res => {
         if (!res.ok) {
-            return res.json().then(d => { throw new Error(d.detail || 'Render baslatilamadi'); });
+            return res.json().then(d => {
+                throw new Error(formatRenderErrorDetail(d.detail || d.message));
+            });
         }
         showToast(plan?.scenes?.length
             ? 'Render basladi — timeline senaryosu kullaniliyor'
@@ -634,4 +680,3 @@ btnCancelRender?.addEventListener('click', async () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-

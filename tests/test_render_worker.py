@@ -182,13 +182,13 @@ class TestVeoSparsePolicy(unittest.TestCase):
         mock_cb.can_execute.return_value = False
         self.assertTrue(_veo_circuit_open())
 
-    def test_sweep_render_temp_files_p3_35(self):
+    def test_sweep_render_temp_files_preserves_active_ffgraph_jobs(self):
         with tempfile.TemporaryDirectory() as tmp:
             ffgraph = os.path.join(tmp, "ffgraph_test123")
             os.makedirs(ffgraph)
             with patch("tempfile.gettempdir", return_value=tmp):
                 _sweep_render_temp_files("")
-            self.assertFalse(os.path.exists(ffgraph))
+            self.assertTrue(os.path.isdir(ffgraph))
 
 
 class TestGeminiCircuitStockOnly(unittest.TestCase):

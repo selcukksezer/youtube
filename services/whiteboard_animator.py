@@ -10,7 +10,6 @@ Simulates hand-drawn whiteboard animations:
 
 from __future__ import annotations
 
-import math
 import os
 import re
 import subprocess
@@ -101,6 +100,7 @@ def draw_procedural_whiteboard_sketch(
     width: int = 540,
     height: int = 960,
     scene_index: int = 0,
+    narration: str = "",
 ) -> bool:
     """
     Offline 100% reliable procedural whiteboard generator with domain-specific doodles
@@ -118,7 +118,12 @@ def draw_procedural_whiteboard_sketch(
         draw.line([(width - 36, height - 12), (width - 12, height - 12), (width - 12, height - 36)], fill=(148, 163, 184), width=4)
 
         ink_color = (20, 25, 40)
-        accent_ink = (29, 78, 216)
+        accent_ink = (
+            (29, 78, 216),
+            (14, 116, 144),
+            (109, 40, 217),
+            (190, 24, 93),
+        )[scene_index % 4]
         highlight_yellow = (254, 240, 138)
 
         # Load fonts
@@ -138,13 +143,20 @@ def draw_procedural_whiteboard_sketch(
                 except Exception:
                     pass
 
-        # 2. Extract title & concepts from prompt / narration
-        clean_text = re.sub(r"[^\w\s-]", " ", prompt or "")
+        # 2. Derive board text and drawing cues from this scene's narration.
+        source_text = narration.strip() or prompt or ""
+        clean_text = re.sub(r"[^\w\s-]", " ", source_text)
         clean_text = re.sub(r"\s+", " ", clean_text).strip()
         words = clean_text.split()
-        title_words = words[:4] if words else ["ÖNEMLİ", "BİLGİ"]
+        stop_words = {
+            "ama", "artık", "ben", "benim", "bunu", "bir", "bu", "da", "de",
+            "diye", "en", "ve", "için", "ile", "çok", "the", "and", "but",
+            "for", "with", "that", "this", "was", "were", "my",
+        }
+        concepts = [word for word in words if word.casefold() not in stop_words]
+        title_words = concepts[:3] if concepts else ["ÖNEMLİ", "BİLGİ"]
         clean_title = " ".join(title_words).upper()
-        clean_sub = " ".join(words[4:10]).capitalize() if len(words) > 4 else ""
+        clean_sub = " ".join(concepts[3:7]).capitalize() if len(concepts) > 3 else ""
 
         # Title highlighter doodle box
         title_y = 190
@@ -157,10 +169,27 @@ def draw_procedural_whiteboard_sketch(
             draw.text((width // 2, title_y + 60), clean_sub, fill=accent_ink, font=font_mid, anchor="mm")
 
         # 3. Domain-specific Hand-Drawn Doodle Icon in center
-        p_lower = prompt.lower()
+        p_lower = f"{prompt} {source_text}".lower()
         cx, cy = width // 2, 420
 
-        if any(k in p_lower for k in ("hadis", "ayet", "dua", "allah", "peygamber", "islam", "din", "kuran", "namaz", "cennet")):
+        if any(k in p_lower for k in ("telefon", "mesaj", "whatsapp", "smartphone", "phone", "chat")):
+            draw.rounded_rectangle([cx - 52, cy - 105, cx + 52, cy + 105], radius=14, outline=ink_color, width=5)
+            draw.line([(cx - 28, cy - 73), (cx + 28, cy - 73)], fill=accent_ink, width=4)
+            draw.rounded_rectangle([cx - 29, cy - 44, cx + 30, cy - 6], radius=10, outline=accent_ink, width=3)
+            draw.rounded_rectangle([cx - 30, cy + 9, cx + 30, cy + 52], radius=10, outline=ink_color, width=3)
+            draw.ellipse([cx - 7, cy + 76, cx + 7, cy + 90], outline=ink_color, width=3)
+        elif any(k in p_lower for k in ("düğün", "nikah", "wedding", "marriage")):
+            draw.ellipse([cx - 85, cy - 30, cx + 10, cy + 65], outline=accent_ink, width=6)
+            draw.ellipse([cx - 10, cy - 30, cx + 85, cy + 65], outline=ink_color, width=6)
+            draw.line([(cx - 110, cy + 100), (cx + 110, cy + 100)], fill=ink_color, width=4)
+            draw.arc([cx - 34, cy - 110, cx + 34, cy - 42], start=210, end=330, fill=accent_ink, width=4)
+        elif any(k in p_lower for k in ("kanıt", "belge", "dosya", "evidence", "document", "secret", "gizli")):
+            draw.rectangle([cx - 72, cy - 95, cx + 44, cy + 70], outline=ink_color, width=4)
+            for line_y in (cy - 55, cy - 25, cy + 5):
+                draw.line([(cx - 48, line_y), (cx + 18, line_y)], fill=accent_ink, width=4)
+            draw.ellipse([cx + 10, cy + 10, cx + 92, cy + 92], outline=accent_ink, width=7)
+            draw.line([(cx + 78, cy + 78), (cx + 120, cy + 120)], fill=ink_color, width=9)
+        elif any(k in p_lower for k in ("hadis", "ayet", "dua", "allah", "peygamber", "islam", "din", "kuran", "namaz", "cennet")):
             # Islamic / Hadith: Open Holy Book / Rahle with Crescent Star
             draw.arc([cx - 90, cy - 50, cx, cy + 20], start=200, end=350, fill=ink_color, width=4)
             draw.arc([cx, cy - 50, cx + 90, cy + 20], start=190, end=340, fill=ink_color, width=4)
@@ -207,18 +236,19 @@ def draw_procedural_whiteboard_sketch(
             draw.ellipse([cx - 70, cy - 80, cx + 70, cy + 60], outline=accent_ink, width=4)
             draw.line([(cx - 30, cy - 10), (cx - 10, cy + 15), (cx + 35, cy - 35)], fill=ink_color, width=6)
 
-        # 4. Whiteboard Bullet Points / Sketch Notes
+        # 4. Scene-specific whiteboard notes
         y_bullets = 580
+        note_words = concepts[7:]
         bullet_items = [
-            f"Sahne #{scene_index + 1} Detay Çizimi",
-            "Kinetik Kalem & Çizim Akışı",
-            "Önemli Vurgular & Mealler",
+            " ".join(note_words[i:i + 4])
+            for i in range(0, min(len(note_words), 12), 4)
+            if note_words[i:i + 4]
         ]
         for b in bullet_items:
             # Bullet checkbox doodle
             draw.rectangle([65, y_bullets - 5, 85, y_bullets + 15], outline=accent_ink, width=2)
             draw.line([(68, y_bullets + 5), (75, y_bullets + 13), (88, y_bullets - 8)], fill=accent_ink, width=3)
-            draw.text((100, y_bullets + 5), b, fill=ink_color, font=font_mid, anchor="lm")
+            draw.text((100, y_bullets + 5), b, fill=ink_color, font=font_sm, anchor="lm")
             y_bullets += 48
 
         # Decorative doodle underline
@@ -298,10 +328,11 @@ def animate_whiteboard_clip(
     x_hand = f"if(lt(t,{start_offset:.2f}), -250, if(lt(t,{end_offset:.2f}), {wipe_x_expr}, {slide_out_x}))"
     y_hand = f"if(lt(t,{start_offset:.2f}), 340, if(lt(t,{end_offset:.2f}), 320 + 35*sin(18*t), {slide_out_y}))"
 
+    transition = transition_style if transition_style in WHITEBOARD_TRANSITIONS else WHITEBOARD_TRANSITIONS[0]
     filter_complex = (
         f"[0:v]scale={width}:{height},setsar=1[bg];"
         f"[1:v]scale={width}:{height},setsar=1[fg];"
-        f"[bg][fg]xfade=transition=wipeleft:duration={draw_dur:.2f}:offset={start_offset:.2f},setsar=1[wiped];"
+        f"[bg][fg]xfade=transition={transition}:duration={draw_dur:.2f}:offset={start_offset:.2f},setsar=1[wiped];"
         f"[2:v]scale=180:270[hand];"
         f"[wiped][hand]overlay=x='{x_hand}':y='{y_hand}':enable='between(t,{start_offset * 0.8:.2f},{end_offset + 0.6:.2f})'[final]"
     )
@@ -333,18 +364,26 @@ def create_whiteboard_scene_clip(
     output_video_path: str,
     duration: float = 4.0,
     scene_index: int = 0,
+    narration: str = "",
 ) -> Optional[str]:
     """
     1-shot helper to create a whiteboard drawing video clip for a scene.
-    AI sketch only. When generation fails (rate limit, offline) returns None so the
-    caller falls back to real stock footage; no synthetic placeholder is produced.
+    Prefer AI line art, then draw a deterministic, scene-specific whiteboard offline.
     """
     trans = WHITEBOARD_TRANSITIONS[scene_index % len(WHITEBOARD_TRANSITIONS)]
     with tempfile.NamedTemporaryFile(suffix="_sketch.jpg", delete=False) as tmp:
         tmp_sketch = tmp.name
 
     try:
-        ok_sketch = generate_whiteboard_sketch_image(scene_description, tmp_sketch)
+        prompt = f"Scene: {scene_description}\nNarration: {narration}".strip()
+        ok_sketch = generate_whiteboard_sketch_image(prompt, tmp_sketch)
+        if not ok_sketch:
+            ok_sketch = draw_procedural_whiteboard_sketch(
+                scene_description,
+                tmp_sketch,
+                scene_index=scene_index,
+                narration=narration,
+            )
         if not ok_sketch:
             return None
 
