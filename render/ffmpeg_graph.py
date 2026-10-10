@@ -954,7 +954,7 @@ def render_with_ffmpeg_graph(
     filter_parts.append(f"{concat_in}concat=n={n}:v=1:a=0[vcat]")
 
     look = get_look_filters(W, H, anti_duplicate=anti_duplicate)
-    total_dur = max(0.1, sum(float(c.get("duration", 3.0)) for c in valid))
+    total_dur = max(0.1, sum(_clip_dur(c) for c in valid))
     prog = (
         f"drawbox=x=0:y=ih-6:w='iw*min(1\\,t/{total_dur:.3f})':"
         f"h=6:color=0x00E5FF@0.9:t=fill"
@@ -1169,7 +1169,7 @@ def render_with_ffmpeg_graph(
     fps = output_fps
 
     # K2: Probe audio duration — use explicit -t instead of -shortest.
-    _clip_total = sum(float(c.get("duration", 3.0)) for c in valid)
+    _clip_total = sum(_clip_dur(c) for c in valid)
     _audio_dur = _probe_audio_duration(ffmpeg, audio_path)
     if _audio_dur > 0:
         _t_limit = min(_audio_dur, _clip_total) + 0.5  # 0.5s buffer for rounding

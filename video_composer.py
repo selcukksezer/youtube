@@ -64,6 +64,16 @@ def cleanup_stray_ffmpeg_processes():
     except Exception:
         pass
 
+
+def _scene_dur(scene, default=7.0):
+    """Scene duration guard: None/empty/non-numeric durations must not crash overlay math."""
+    try:
+        dur = float(scene.get("duration", default) or default)
+    except (TypeError, ValueError):
+        dur = default
+    return dur if dur > 0 else default
+
+
 class MoviePyProgressLogger(ProgressBarLogger):
     def __init__(self, callback=None, cancel_check=None):
         super().__init__(init_state=None, bars=None, ignored_bars=None, logged_bars='all', min_time_interval=0, ignore_bars_under=0)
@@ -308,9 +318,9 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         "correct", "wrong", "kazand", "kaybett", "bilemedin"
                     ))
                     if is_q and not is_ans:
-                        gap_insert_at = elapsed_gap + float(sc.get("duration", 7.0)) * 0.9
+                        gap_insert_at = elapsed_gap + _scene_dur(sc) * 0.9
                         break
-                    elapsed_gap += float(sc.get("duration", 7.0))
+                    elapsed_gap += _scene_dur(sc)
                 if gap_insert_at is not None:
                     gap_audio = output_path.rsplit(".", 1)[0] + "_quiz_gap.wav"
                     processed_audio = inject_quiz_thinking_gap(
@@ -326,14 +336,14 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                     if "?" in narr_254 and sc_idx + 1 < len(scene_clips):
                         next_narr = str(scene_clips[sc_idx + 1].get("narration", ""))
                         if next_narr and "?" not in next_narr[:20]:
-                            gap_at = elapsed_254 + float(sc.get("duration", 7.0)) * 0.92
+                            gap_at = elapsed_254 + _scene_dur(sc) * 0.92
                             tension_audio = output_path.rsplit(".", 1)[0] + "_tension_gap.wav"
                             processed_audio = inject_pre_answer_tension_gap(
                                 processed_audio, tension_audio, gap_seconds=0.5, insert_at_sec=gap_at
                             )
                             print(f"  [Composer] [Item 254] Pre-answer tension gap (0.5s) t={gap_at:.2f}s eklendi.")
                             break
-                    elapsed_254 += float(sc.get("duration", 7.0))
+                    elapsed_254 += _scene_dur(sc)
 
                 elapsed_q = 0.0
                 for sc in scene_clips:
@@ -349,7 +359,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                         processed_audio = inject_quiz_buzzer(processed_audio, buzz_out, timestamp_sec=elapsed_q + 0.15, volume=0.45)
                         print(f"  [Composer] [Item 168] Quiz yanlış cevaba 120Hz testere dişi 'Buzzer' SFX mikslendi (t={elapsed_q+0.15:.2f}s).")
                         break
-                    elapsed_q += float(sc.get("duration", 7.0))
+                    elapsed_q += _scene_dur(sc)
             # Madde 176: Gizem/antik nişte cümle sonuna 0.3s reverse reverb
             has_mystery = any(
                 any(k in str(sc.get(key, "")).lower() for k in ("gizem", "mystery", "antik", "esrarengiz", "legend", "sırr"))
@@ -400,7 +410,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 for phrase in SHOCK_CUE_PHRASES:
                     if phrase in narr_q:
                         shock_times.append(round(elapsed_shock + 0.35, 3))
-                elapsed_shock += float(sc.get("duration", 7.0))
+                elapsed_shock += _scene_dur(sc)
             if shock_times:
                 shock_audio = output_path.rsplit(".", 1)[0] + "_shock_silence.wav"
                 processed_audio = voice_humanizer.apply_shock_silence_cut(processed_audio, shock_audio, shock_times, silence_sec=0.20)
@@ -513,7 +523,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 scene_text = " ".join(str(scene.get(key, "")) for key in ("narration", "scene_description")).lower()
                 if any(term in scene_text for term in ("ama", "fakat", "tersine", "ancak")):
                     tape_stop_times.append(elapsed)
-                elapsed += float(scene.get("duration", 0.0))
+                elapsed += _scene_dur(scene, 0.0)
             
             # Item 180: İlk 1s müzik %100 vuruşu + anında ducking; Item 166: fade-out yok
             punch_audio = output_path.rsplit(".", 1)[0] + "_intro_punch.wav"
@@ -701,7 +711,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 )
                 if emoji_overlay:
                     combined = CompositeVideoClip([combined, emoji_overlay], size=(W, H))
-                    combined.duration = sum(float(sc.get("duration", 3.0)) for sc in scene_clips)
+                    combined.duration = sum(_scene_dur(sc, 3.0) for sc in scene_clips)
             combined = apply_heartbeat_zoom(combined, bpm=60.0)
             combined = apply_particle_overlay(combined, particle_type="spark", particle_count=30)
             combined = apply_speaker_avatar_overlay(combined, avatar_size=96)
@@ -1418,7 +1428,11 @@ def enforce_av_duration_sync(video_path: str, output_path: str,
         audio_dur = None
         for s in streams:
             codec_type = s.get("codec_type", "")
-            dur = float(s.get("duration", 0) or 0)
+            try:
+                # ffprobe reports "duration": "N/A" for some streams (e.g. images)
+                dur = float(s.get("duration", 0) or 0)
+            except (TypeError, ValueError):
+                dur = 0.0
             if codec_type == "video" and dur > 0:
                 video_dur = dur
             elif codec_type == "audio" and dur > 0:
