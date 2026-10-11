@@ -13,6 +13,8 @@ from scenes.fallback import (
     _topic_is_crypto_market,
 )
 from scenes.narration_validate import (
+    MAX_SCENE_COUNT,
+    MIN_SCENE_COUNT,
     MIN_WORDS_PER_SCENE,
     plan_narration_usable,
     plan_quality_usable,
@@ -166,8 +168,16 @@ class TestCryptoScenarioGeneration(unittest.TestCase):
             language="tr",
         )
         scenes = plan["scenes"]
-        self.assertGreaterEqual(len(scenes), 8)
+        self.assertGreaterEqual(len(scenes), MIN_SCENE_COUNT)
+        self.assertLessEqual(len(scenes), MAX_SCENE_COUNT)
         self.assertTrue(plan_quality_usable(scenes))
+        director = compile_director_plan(
+            plan,
+            title=topic,
+            niche_id="18_astrology_horoscope",
+            language="tr",
+        )
+        self.assertEqual(len(director.scenes), 6)
         moods = {s.get("mood") for s in scenes}
         self.assertGreater(len(moods), 1)
         primary_queries = [s["search_queries"][0] for s in scenes]

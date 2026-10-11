@@ -1,4 +1,5 @@
 """Provider registry package."""
+from .agnes import AgnesVideoProvider
 from .fal import FalVideoProvider
 from .huggingface import HuggingFaceVideoProvider
 from .replicate import ReplicateVideoProvider
@@ -16,6 +17,7 @@ from .pollinations import PollinationsVideoProvider
 
 ALL_PROVIDER_CLASSES = (
     LocalVideoProvider,
+    AgnesVideoProvider,
     PollinationsVideoProvider,
     HeliosVideoProvider,
     FalVideoProvider,
@@ -33,6 +35,7 @@ ALL_PROVIDER_CLASSES = (
 
 __all__ = [
     "ALL_PROVIDER_CLASSES",
+    "AgnesVideoProvider",
     "LocalVideoProvider",
     "PollinationsVideoProvider",
     "HeliosVideoProvider",

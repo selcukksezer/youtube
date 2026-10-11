@@ -46,9 +46,32 @@ GAMEPLAY_CATEGORIES: Dict[str, List[str]] = {
         "temple run style gameplay",
         "arcade runner game screen",
     ],
+    "minecraft_parkour": [
+        "minecraft parkour gameplay",
+        "minecraft parkour map run",
+        "minecraft obstacle course gameplay",
+    ],
+    "gta_car_ramp": [
+        "GTA V car ramp stunt gameplay",
+        "GTA 5 mega ramp car stunt",
+        "GTA V vehicle stunt jump gameplay",
+    ],
+    "asmr_kinetic_sand": [
+        "kinetic sand cutting ASMR",
+        "kinetic sand molding satisfying",
+        "colored kinetic sand cutting close up",
+    ],
 }
 
-_ROTATABLE = [k for k in GAMEPLAY_CATEGORIES if k != "auto"]
+# Keep automatic niche/hash rotation stable; the newer categories are explicit
+# UI choices and should not reshuffle existing automatic selections.
+_ROTATABLE = [
+    "mobile_game",
+    "soap_cutting",
+    "satisfying",
+    "parkour",
+    "subway_surfers_style",
+]
 
 _NICHE_CATEGORY_HINTS: Dict[str, str] = {
     "3_split_gameplay": "subway_surfers_style",
@@ -145,6 +168,9 @@ def list_categories() -> List[Dict[str, str]]:
         "satisfying": "Satisfying / Rahatlatıcı",
         "parkour": "Parkour Oyunu",
         "subway_surfers_style": "Subway Surfers / Runner",
+        "minecraft_parkour": "Minecraft Parkur",
+        "gta_car_ramp": "GTA V Dublör / Araba Rampası",
+        "asmr_kinetic_sand": "Kinetik Kum / ASMR",
     }
     return [{"id": k, "label": labels.get(k, k)} for k in GAMEPLAY_CATEGORIES]
 

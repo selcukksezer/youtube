@@ -153,7 +153,14 @@ def test_composer_passes_face_setting_and_keeps_global_camera_off_tracked_faces(
     clip._face_centered = tracked
     prep = Mock(return_value=clip)
     monkeypatch.setattr(composer, "_prep", prep)
-    monkeypatch.setattr(composer, "cleanup_stray_ffmpeg_processes", lambda: None)
+    taskkill_calls = []
+    original_run = composer.subprocess.run
+    def guard_global_ffmpeg_kill(command, *args, **kwargs):
+        if isinstance(command, str) and command.startswith("taskkill"):
+            taskkill_calls.append(command)
+            return Mock(returncode=0)
+        return original_run(command, *args, **kwargs)
+    monkeypatch.setattr(composer.subprocess, "run", guard_global_ffmpeg_kill)
     monkeypatch.setattr(composer.config, "ENABLE_SFX", False)
     monkeypatch.setattr(composer.config, "ENABLE_BGM", False)
     monkeypatch.setattr(composer.config, "get_target_resolution", lambda: (90, 160))
@@ -168,6 +175,7 @@ def test_composer_passes_face_setting_and_keeps_global_camera_off_tracked_faces(
             raise ScenePrepared
     with pytest.raises(ScenePrepared):
         composer.compose_video([{"path": str(path), "duration": 1.0}], str(tmp_path / "voice.wav"), [], str(tmp_path / "out.mp4"), audio_premastered=True, enable_face_center=True, enable_section2_filters=section2, progress_callback=progress)
+    assert not taskkill_calls
     assert prep.call_args.kwargs["enable_face_center"] is True
     assert camera_calls["apply_ken_burns"].call_count == int(not tracked and not section2)
     assert camera_calls["apply_handheld_camera_shake"].call_count == int(not tracked and section2)

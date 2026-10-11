@@ -7,6 +7,8 @@ import time
 import unittest
 from unittest.mock import patch
 
+import config
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from director.quality_gate import (
@@ -19,13 +21,100 @@ from render.ffmpeg_graph import render_with_ffmpeg_graph
 from server_core.render_worker import (
     _fetch_scenes_parallel,
     _fetch_single_scene_visual,
+    _compose_with_retry,
     _gemini_image_circuit_open,
+    _get_render_thread_limits,
+    _quality_report_allows_render,
     _veo_circuit_open,
     _veo_render_allowed,
     _sweep_render_temp_files,
 )
 from system_resilience import verify_stock_video_integrity
-from video_fetcher import fetch_scene_clip, reset_session_source_counts
+from video_fetcher import (
+    fetch_scene_clip,
+    fetch_selected_stock_video,
+    reset_session_source_counts,
+)
+
+
+class TestScriptQualityGate(unittest.TestCase):
+    def test_thermal_thread_limits_are_render_local(self):
+        with patch.object(config, "RENDER_THREADS", 8), \
+            patch.object(config, "FFMPEG_THREADS", 6):
+            self.assertEqual(_get_render_thread_limits(), (8, 6))
+            self.assertEqual(
+                _get_render_thread_limits({"thermal_throttle_recommended": True}),
+                (4, 4),
+            )
+            self.assertEqual(config.RENDER_THREADS, 8)
+            self.assertEqual(config.FFMPEG_THREADS, 6)
+
+    def test_hard_fail_report_cannot_be_softened_by_issue_name(self):
+        for issue in (
+            "word_count_out_of_band:84",
+            "duration_out_of_band:37.99",
+            "scene_0_words_below_7",
+            "scene_0_queries_insufficient",
+            "scene_0_visual_description_invalid",
+        ):
+            with self.subTest(issue=issue):
+                self.assertFalse(
+                    _quality_report_allows_render(
+                        {"hard_fail": True, "issues": [issue]}
+                    )
+                )
+
+    def test_advisory_report_remains_renderable(self):
+        self.assertTrue(
+            _quality_report_allows_render(
+                {"hard_fail": False, "warnings": ["word_count_above_optimal:111"]}
+            )
+        )
+
+    def test_explicit_draft_override_remains_available(self):
+        self.assertTrue(
+            _quality_report_allows_render(
+                {"hard_fail": True, "issues": ["word_count_out_of_band:84"]},
+                allow_draft_render=True,
+            )
+        )
+
+
+class TestWorkflowRenderRetryIntegration(unittest.TestCase):
+    def test_composition_retries_isolated_output_then_forces_cpu(self):
+        with tempfile.TemporaryDirectory() as temp_dir, \
+            patch.object(config, "USE_GPU_ACCELERATION", True, create=True):
+            output_path = os.path.join(temp_dir, "render.mp4")
+            calls = []
+            progress_values = []
+
+            def compose(_clips, _audio_path, _word_timings, attempt_path, *,
+                        use_gpu_override, progress_callback):
+                self.assertEqual(_clips, [])
+                self.assertEqual(_audio_path, "audio.wav")
+                self.assertEqual(_word_timings, [])
+                calls.append((attempt_path, use_gpu_override))
+                progress_callback(90 if len(calls) == 1 else 80)
+                with open(attempt_path, "wb") as output:
+                    output.write(b"PARTIAL" if len(calls) == 1 else b"RENDERED_VIDEO")
+                return "" if len(calls) == 1 else attempt_path
+
+            result = _compose_with_retry(
+                compose, [], "audio.wav", [], output_path,
+                progress_callback=progress_values.append,
+            )
+
+            self.assertEqual(result, output_path)
+            self.assertEqual(progress_values, [90.0, 90.0])
+            self.assertEqual(
+                calls,
+                [
+                    (os.path.join(temp_dir, "render.attempt-001.mp4"), True),
+                    (os.path.join(temp_dir, "render.attempt-002.mp4"), False),
+                ],
+            )
+            with open(output_path, "rb") as rendered:
+                self.assertEqual(rendered.read(), b"RENDERED_VIDEO")
 
 
 class TestMultiSourceFetch(unittest.TestCase):
@@ -212,6 +301,154 @@ class TestGeminiCircuitStockOnly(unittest.TestCase):
     def test_gemini_circuit_open_helper_p1_17(self, mock_cb):
         mock_cb.can_execute.return_value = False
         self.assertTrue(_gemini_image_circuit_open())
+
+
+class TestSelectedSceneStockVideo(unittest.TestCase):
+    @patch("server_core.render_worker.fetch_scene_clip")
+    @patch("server_core.render_worker.fetch_selected_stock_video")
+    def test_existing_local_selected_video_keeps_priority(self, mock_selected, mock_search):
+        with tempfile.TemporaryDirectory() as project_dir:
+            local_path = os.path.join(project_dir, "selected.mp4")
+            with open(local_path, "wb") as clip_file:
+                clip_file.write(b"selected local clip")
+            scene = {
+                "duration": 4.0,
+                "selected_video": {"path": local_path},
+            }
+
+            index, clip, path = _fetch_single_scene_visual(0, scene, {}, project_dir, 4)
+
+        self.assertEqual((index, path), (0, local_path))
+        self.assertEqual(clip["path"], local_path)
+        mock_selected.assert_not_called()
+        mock_search.assert_not_called()
+
+    @patch("server_core.render_worker.fetch_scene_clip", return_value="/tmp/search.mp4")
+    @patch("server_core.render_worker.fetch_selected_stock_video", return_value="/tmp/selected.mp4")
+    def test_remote_selected_video_is_used_before_stock_search(self, mock_selected, mock_search):
+        scene = {
+            "duration": 4.0,
+            "search_queries": ["unrelated query"],
+            "scene_description": "selected subject",
+            "selected_video": {
+                "id": "px_12345",
+                "source": "pexels",
+                "kind": "video",
+                "url": "https://videos.pexels.com/video-files/12345/video.mp4",
+            },
+        }
+
+        index, clip, path = _fetch_single_scene_visual(0, scene, {}, "/tmp", 4)
+
+        self.assertEqual((index, path), (0, "/tmp/selected.mp4"))
+        self.assertEqual(clip["path"], "/tmp/selected.mp4")
+        mock_selected.assert_called_once()
+        mock_search.assert_not_called()
+
+    @patch("server_core.render_worker._gemini_image_circuit_open", return_value=True)
+    @patch("server_core.render_worker.fetch_scene_clip", return_value="/tmp/search.mp4")
+    def test_nonvideo_selection_falls_back_to_scene_search(self, mock_search, _circuit):
+        scene = {
+            "duration": 4.0,
+            "search_queries": ["mosque sunrise"],
+            "scene_description": "mosque at sunrise",
+            "selected_video": {
+                "id": "ov_123",
+                "source": "openverse",
+                "kind": "image",
+                "url": "https://example.com/image.jpg",
+            },
+        }
+
+        _index, _clip, path = _fetch_single_scene_visual(0, scene, {}, "/tmp", 4)
+
+        self.assertEqual(path, "/tmp/search.mp4")
+        mock_search.assert_called_once()
+
+    def test_image_selection_is_rejected_without_downloading(self):
+        with patch("video_fetcher.requests.get") as mock_get:
+            result = fetch_selected_stock_video(
+                {
+                    "id": "ov_123",
+                    "source": "openverse",
+                    "kind": "image",
+                    "url": "https://example.com/image.jpg",
+                },
+                0,
+                tempfile.gettempdir(),
+            )
+
+        self.assertIsNone(result)
+        mock_get.assert_not_called()
+
+    def test_untrusted_selected_video_url_is_rejected_without_downloading(self):
+        with patch("video_fetcher.requests.get") as mock_get:
+            result = fetch_selected_stock_video(
+                {
+                    "id": "px_123",
+                    "source": "pexels",
+                    "kind": "video",
+                    "url": "https://example.com/video.mp4",
+                },
+                0,
+                tempfile.gettempdir(),
+            )
+
+        self.assertIsNone(result)
+        mock_get.assert_not_called()
+
+    @patch("visuals.fetch.add_manifest_entry")
+    @patch("system_resilience.verify_stock_video_integrity", return_value={"valid": True})
+    @patch("database.record_source_asset")
+    @patch("database.source_asset_was_used", return_value=False)
+    @patch("database.is_stock_blocklisted", return_value=False)
+    def test_downloads_selected_video_and_records_license_manifest(
+        self, _blocklisted, _already_used, mock_record_source,
+        _integrity, mock_manifest,
+    ):
+        class FakeResponse:
+            status_code = 200
+            is_redirect = False
+            headers = {"Content-Length": "12000"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def raise_for_status(self):
+                return None
+
+            def iter_content(self, _chunk_size):
+                yield b"x" * 12000
+
+        with tempfile.TemporaryDirectory() as project_dir, patch(
+            "video_fetcher.requests.get", return_value=FakeResponse()
+        ) as mock_get:
+            result = fetch_selected_stock_video(
+                {
+                    "id": "px_123",
+                    "source": "pexels",
+                    "kind": "video",
+                    "url": "https://videos.pexels.com/video-files/123/video.mp4",
+                    "title": "Selected stock clip",
+                    "source_url": "https://www.pexels.com/video/123/",
+                },
+                2,
+                project_dir,
+                target_duration=4,
+            )
+
+            self.assertTrue(result and os.path.isfile(result))
+            mock_get.assert_called_once()
+            self.assertFalse(mock_get.call_args.kwargs["allow_redirects"])
+            manifest = mock_manifest.call_args.args[0]
+            self.assertEqual(manifest["source"], "pexels")
+            self.assertEqual(manifest["source_url"], "https://www.pexels.com/video/123/")
+            self.assertEqual(manifest["license"]["license"], "pexels")
+            self.assertTrue(manifest["sha256"])
+            mock_record_source.assert_called_once()
 
 
 class TestFfprobeIntegrity(unittest.TestCase):

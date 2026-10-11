@@ -4,7 +4,7 @@ from unittest.mock import patch
 from compliance import evaluate_plan_compliance, publication_decision, research_quality_gate
 from production.schemas import LicenseRecord, SourceManifest, VisualCandidate
 from research_service import build_topic_research_brief
-from scenes.fallback import _pad_narration_to_min_words
+from scenes.fallback import _clean_fallback_narration, _finalize_fallback_plan
 from visuals.registry import score_candidate
 from visuals.providers import Candidate
 from visuals.license import License, LicenseInfo
@@ -112,11 +112,41 @@ class TestQualityPolicyPipeline(unittest.TestCase):
         with self.assertRaises(ValueError):
             SourceManifest(clips=[clip, clip])
 
-    def test_fallback_removes_mechanical_cta_and_emoji(self):
-        text = _pad_narration_to_min_words("Bu bilgi önemli. 🚨 Yorumlarda paylaşın ve takipte kalın!", min_words=6)
+    def test_fallback_removes_mechanical_cta_and_emoji_without_padding(self):
+        text = _clean_fallback_narration("Bu bilgi önemli. 🚨 Yorumlarda paylaşın ve takipte kalın!")
+        self.assertEqual(text, "Bu bilgi önemli.")
         self.assertNotIn("🚨", text)
         self.assertNotIn("yorumlarda paylaşın", text.casefold())
         self.assertNotIn("takipte kalın", text.casefold())
+
+    def test_fallback_merges_short_scenes_without_invented_padding(self):
+        first = "Piyasa bugün beklenenden çok daha hızlı değişti."
+        second = "Yatırımcılar yeni veriyi dikkatle izledi ve pozisyonlarını yeniden değerlendirdi."
+        plan = _finalize_fallback_plan({
+            "scenes": [
+                {
+                    "narration": first,
+                    "scene_description": "Stock market board",
+                    "search_queries": ["stock market board"],
+                    "duration": 3.0,
+                },
+                {
+                    "narration": second,
+                    "scene_description": "Trading desk",
+                    "search_queries": ["trading desk"],
+                    "duration": 3.0,
+                },
+            ]
+        })
+
+        self.assertEqual(len(plan["scenes"]), 1)
+        merged = plan["scenes"][0]
+        self.assertEqual(merged["narration"], f"{first} {second}")
+        self.assertIn("Stock market board", merged["scene_description"])
+        self.assertIn("Trading desk", merged["scene_description"])
+        self.assertEqual(merged["search_queries"], ["stock market board", "trading desk"])
+        self.assertNotIn("iddianın kaynağını kontrol et", merged["narration"].casefold())
+        self.assertNotIn("anlatının geri kalanını anlamak", merged["narration"].casefold())
 
     def test_risk_sensitive_niche_requires_human_review(self):
         decision = publication_decision(

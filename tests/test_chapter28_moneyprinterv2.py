@@ -11,7 +11,6 @@ import json
 import os
 import shutil
 import tempfile
-import time
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -55,6 +54,25 @@ class TestMoneyPrinterV2LLMCache(unittest.TestCase):
         # Different user prompt
         self.assertIsNone(self.cache.get(model, sys_p, "User 2"))
 
+    def test_corrupt_cache_entry_is_logged_as_miss(self):
+        key = self.cache._hash_key("gpt-4o", "System", "User")
+        cache_path = os.path.join(self.test_dir, f"{key}.json")
+        with open(cache_path, "w", encoding="utf-8") as cache_file:
+            cache_file.write("{invalid json")
+
+        with self.assertLogs("services.llm_cache", level="WARNING") as captured:
+            self.assertIsNone(self.cache.get("gpt-4o", "System", "User"))
+
+        self.assertEqual(self.cache.misses, 1)
+        self.assertIn("Failed to read LLM cache entry", captured.output[0])
+
+    def test_cache_write_failure_is_logged_without_raising(self):
+        with patch("services.llm_cache.os.replace", side_effect=OSError("disk unavailable")):
+            with self.assertLogs("services.llm_cache", level="WARNING") as captured:
+                self.cache.set("gpt-4o", "System", "User", "Response")
+
+        self.assertIn("Failed to write LLM cache entry", captured.output[0])
+
 
 class TestMoneyPrinterV2VideoPreflight(unittest.TestCase):
     def test_missing_file_fails_preflight(self):
@@ -62,10 +80,7 @@ class TestMoneyPrinterV2VideoPreflight(unittest.TestCase):
         self.assertFalse(res["valid"])
         self.assertIn("File not found", res["errors"][0])
 
-    @patch("os.path.exists", return_value=True)
-    @patch("os.path.getsize", return_value=1024 * 1024)
-    @patch("subprocess.run")
-    def test_valid_vertical_video_passes(self, mock_run, mock_size, mock_exists):
+    def test_valid_vertical_video_passes(self):
         fake_probe = {
             "format": {"duration": "35.5"},
             "streams": [
@@ -73,9 +88,10 @@ class TestMoneyPrinterV2VideoPreflight(unittest.TestCase):
                 {"codec_type": "audio", "codec_name": "aac"},
             ]
         }
-        mock_run.return_value = MagicMock(stdout=json.dumps(fake_probe), returncode=0)
-
-        res = verify_mp4_integrity("video.mp4")
+        with patch("os.path.exists", return_value=True), \
+             patch("os.path.getsize", return_value=1024 * 1024), \
+             patch("subprocess.run", return_value=MagicMock(stdout=json.dumps(fake_probe), returncode=0)):
+            res = verify_mp4_integrity("video.mp4")
         self.assertTrue(res["valid"])
         self.assertEqual(res["duration"], 35.5)
         self.assertEqual(res["width"], 1080)
@@ -83,10 +99,7 @@ class TestMoneyPrinterV2VideoPreflight(unittest.TestCase):
         self.assertTrue(res["has_audio"])
         self.assertEqual(len(res["errors"]), 0)
 
-    @patch("os.path.exists", return_value=True)
-    @patch("os.path.getsize", return_value=1024 * 1024)
-    @patch("subprocess.run")
-    def test_landscape_orientation_fails(self, mock_run, mock_size, mock_exists):
+    def test_landscape_orientation_fails(self):
         fake_probe = {
             "format": {"duration": "20.0"},
             "streams": [
@@ -94,25 +107,24 @@ class TestMoneyPrinterV2VideoPreflight(unittest.TestCase):
                 {"codec_type": "audio", "codec_name": "aac"},
             ]
         }
-        mock_run.return_value = MagicMock(stdout=json.dumps(fake_probe), returncode=0)
-
-        res = verify_mp4_integrity("landscape.mp4")
+        with patch("os.path.exists", return_value=True), \
+             patch("os.path.getsize", return_value=1024 * 1024), \
+             patch("subprocess.run", return_value=MagicMock(stdout=json.dumps(fake_probe), returncode=0)):
+            res = verify_mp4_integrity("landscape.mp4")
         self.assertFalse(res["valid"])
         self.assertTrue(any("landscape" in e.lower() for e in res["errors"]))
 
-    @patch("os.path.exists", return_value=True)
-    @patch("os.path.getsize", return_value=1024 * 1024)
-    @patch("subprocess.run")
-    def test_missing_audio_fails(self, mock_run, mock_size, mock_exists):
+    def test_missing_audio_fails(self):
         fake_probe = {
             "format": {"duration": "25.0"},
             "streams": [
                 {"codec_type": "video", "width": 1080, "height": 1920},
             ]
         }
-        mock_run.return_value = MagicMock(stdout=json.dumps(fake_probe), returncode=0)
-
-        res = verify_mp4_integrity("silent.mp4")
+        with patch("os.path.exists", return_value=True), \
+             patch("os.path.getsize", return_value=1024 * 1024), \
+             patch("subprocess.run", return_value=MagicMock(stdout=json.dumps(fake_probe), returncode=0)):
+            res = verify_mp4_integrity("silent.mp4")
         self.assertFalse(res["valid"])
         self.assertFalse(res["has_audio"])
         self.assertTrue(any("Missing audio track" in e for e in res["errors"]))

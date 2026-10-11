@@ -138,8 +138,17 @@ class TestScenarioBatchG(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         scenes = (data.get("plan") or {}).get("scenes") or []
-        self.assertGreaterEqual(len(scenes), 8)
+        from director.schema import shorts_word_budget
+
+        self.assertEqual(len(scenes), 6)
+        self.assertLessEqual(
+            sum(len((scene.get("narration") or "").split()) for scene in scenes),
+            shorts_word_budget(),
+        )
         self.assertTrue(plan_quality_usable(scenes))
+        user_prompt = mock_call.call_args_list[0].args[1]["messages"][1]["content"]
+        self.assertIn("Tam 6 konuşma sahnesi yaz", user_prompt)
+        self.assertIn(f"{shorts_word_budget()} kelimeyi ASLA aşmasın", user_prompt)
 
 
 if __name__ == "__main__":

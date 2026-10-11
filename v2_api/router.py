@@ -113,18 +113,41 @@ def validate_project(project_id: str):
 
 def _run_job(job_id: str, project_id: str, req: VideoRenderRequest):
     state.active_render_job_id = job_id
-    database.update_render_job(job_id, status="rendering", step="Başlatılıyor")
+    worker_started = False
+    gate_released = False
     try:
-        process_video_task(req)
+        job = database.get_render_job(job_id)
+        if not job:
+            raise RuntimeError(f"Render işi bulunamadı: {job_id}")
+        if job["status"] == "cancelling" or state.current_render_state.get("cancel_requested"):
+            database.update_render_job(job_id, status="cancelled", step="İptal edildi")
+            database.update_project(project_id, status="ready_to_render")
+            with state.render_lock:
+                state.is_rendering_active = False
+            gate_released = True
+            return
+
+        database.update_render_job(job_id, status="rendering", step="Başlatılıyor")
+        worker_started = True
+        process_video_task(req, reset_cancel_request=False)
+        job = database.get_render_job(job_id)
+        if job and job["status"] in ("completed", "failed", "cancelled"):
+            if job["status"] == "cancelled":
+                database.update_project(project_id, status="ready_to_render")
+            return
         if state.current_render_state.get("error"):
             database.update_render_job(job_id, status="failed", error_message=state.current_render_state["error"])
-        elif database.get_render_job(job_id) and database.get_render_job(job_id).get("status") not in ("completed", "failed"):
+        elif job:
             database.update_render_job(job_id, status="completed", percent=100, step="Tamamlandı",
                                        output_url=state.current_render_state.get("video_url") or "")
     except Exception as exc:
         database.update_render_job(job_id, status="failed", step="Başarısız", error_message=str(exc))
     finally:
-        state.active_render_job_id = None
+        if state.active_render_job_id == job_id:
+            state.active_render_job_id = None
+        if not worker_started and not gate_released:
+            with state.render_lock:
+                state.is_rendering_active = False
 
 
 @router.post("/projects/{project_id}/render")
@@ -135,6 +158,7 @@ def render_project(project_id: str, req: RenderRequest, background_tasks: Backgr
     with state.render_lock:
         if state.is_rendering_active:
             raise HTTPException(status_code=429, detail="Başka bir render çalışıyor")
+        state.current_render_state["cancel_requested"] = False
         state.is_rendering_active = True
     try:
         job_id = f"job_{uuid.uuid4().hex[:12]}"
@@ -184,14 +208,38 @@ def cancel_job(job_id: str):
 
 
 @router.get("/render-jobs/{job_id}/events")
-async def job_events(job_id: str, request: Request):
+async def job_events(job_id: str, request: Request, after: int = 0):
+    """Stream persisted render events and state snapshots from a resume cursor."""
     if not database.get_render_job(job_id):
         raise HTTPException(status_code=404, detail="Render işi bulunamadı")
+    if after < 0:
+        raise HTTPException(status_code=400, detail="after negatif olamaz")
+    last_event_header = request.headers.get("last-event-id")
+    if last_event_header is not None:
+        try:
+            after = max(after, int(last_event_header))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Last-Event-ID geçersiz") from exc
+
     last = None
     async def stream():
-        nonlocal last
+        nonlocal last, after
         idle_ticks = 0
         while not await request.is_disconnected():
+            events = database.list_render_job_events(job_id, after_id=after)
+            for event in events:
+                after = event["id"]
+                event_payload = {
+                    "job_id": job_id,
+                    "event_type": event["event_type"],
+                    "payload": event["payload"],
+                    "timestamp": event["created_at"],
+                }
+                yield (
+                    f"id: {after}\nevent: render.event\n"
+                    f"data: {json.dumps(event_payload, ensure_ascii=False)}\n\n"
+                )
+
             job = database.get_render_job(job_id)
             payload = json.dumps({"event": "render.state", "job": job}, ensure_ascii=False)
             if payload != last:
@@ -204,7 +252,8 @@ async def job_events(job_id: str, request: Request):
                     idle_ticks = 0
                     yield ": keepalive\n\n"
             if job and job["status"] in ("completed", "failed", "cancelled"):
-                break
+                if not database.list_render_job_events(job_id, after_id=after, limit=1):
+                    break
             await asyncio.sleep(0.7)
     return StreamingResponse(
         stream(),

@@ -134,7 +134,8 @@ class TestSplitScreenGameplay(unittest.TestCase):
             filter_complex = cmd_args[cmd_args.index("-filter_complex") + 1]
             self.assertIn("vstack=inputs=2", filter_complex)
             self.assertIn("drawbox=y=0:h=3:color=0xFFD700@0.95:t=fill", filter_complex)
-            self.assertIn("between(t,0,3.6)", filter_complex)
+            self.assertIn("between(t,0,3.500)", filter_complex)
+            self.assertIn("fade=t=out:st=3.150:d=0.350:alpha=1", filter_complex)
 
     def test_api_models_request_supports_split_screen_and_gameplay(self):
         req = VideoRenderRequest(

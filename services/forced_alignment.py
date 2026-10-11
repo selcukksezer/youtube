@@ -11,7 +11,7 @@ Solves the fundamental A/V sync drift between ASR (Whisper/SenseVoice) and TTS a
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 
 def calculate_alignment_drift(words: List[Dict[str, Any]], audio_duration: float) -> float:
@@ -25,8 +25,6 @@ def calculate_alignment_drift(words: List[Dict[str, Any]], audio_duration: float
 def align_word_timestamps_to_audio_duration(
     words: List[Dict[str, Any]],
     audio_duration: float,
-    max_tokens_per_page: int = 8,
-    max_page_duration_sec: float = 3.0,
 ) -> List[Dict[str, Any]]:
     """
     Performs forced alignment to prevent subtitle drift:
@@ -41,9 +39,7 @@ def align_word_timestamps_to_audio_duration(
     processed: List[Dict[str, Any]] = [copy.deepcopy(w) for w in words]
 
     # Calculate scale factor if raw ASR duration deviates from physical audio duration
-    raw_start = float(processed[0].get("start", 0.0))
     raw_end = float(processed[-1].get("end", audio_duration))
-    raw_span = max(0.01, raw_end - raw_start)
 
     # If raw end exceeds audio duration or falls short by more than 150ms, rescale
     if abs(raw_end - audio_duration) > 0.10:
@@ -54,7 +50,7 @@ def align_word_timestamps_to_audio_duration(
 
     # Monotonic & boundary clamping pass
     current_time = 0.0
-    for i, w in enumerate(processed):
+    for w in processed:
         start = max(current_time, float(w.get("start", current_time)))
         end = max(start + 0.05, float(w.get("end", start + 0.05)))
 

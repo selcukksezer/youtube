@@ -4,7 +4,9 @@ Excluded from this batch: #436, #440-441, #446, #457 (manual upload / OAuth out 
 """
 import inspect
 import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import config
 from hardware_detector import get_system_hardware_specs
@@ -43,6 +45,32 @@ class TestSection7Items411425(unittest.TestCase):
         src = inspect.getsource(render_worker.process_video_task)
         self.assertIn("_sweep_render_temp_files", src)
         self.assertIn("finally:", src)
+
+    def test_item_414_cleanup_removes_master_audio_intermediates_only(self):
+        with tempfile.TemporaryDirectory() as audio_dir:
+            intermediates = (
+                "daily_topic_master_eq.wav",
+                "daily_topic_master_norm.wav",
+                "daily_topic_master_sfxbus.wav",
+                "daily_topic_master_bgm.wav",
+                "daily_topic_master_piano182.wav",
+            )
+            preserved = (
+                "daily_topic.wav",
+                "daily_topic_master.wav",
+                "daily_topic_extra_master_eq.wav",
+            )
+            for name in intermediates + preserved:
+                with open(os.path.join(audio_dir, name), "wb") as audio_file:
+                    audio_file.write(b"test")
+
+            with patch.object(config, "AUDIO_DIR", audio_dir):
+                render_worker._sweep_render_temp_files("daily_topic")
+
+            for name in intermediates:
+                self.assertFalse(os.path.exists(os.path.join(audio_dir, name)), name)
+            for name in preserved:
+                self.assertTrue(os.path.exists(os.path.join(audio_dir, name)), name)
 
     def test_item_415_sqlite_queue_tables(self):
         import database

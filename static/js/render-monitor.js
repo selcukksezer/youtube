@@ -9,21 +9,19 @@ async function restoreRenderState() {
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const state = await res.json();
-        if (!state.is_rendering) {
+        const isActive = Boolean(state.is_rendering);
+        const hasTerminalResult = Boolean(state.video_url || state.error);
+        if (!isActive && !hasTerminalResult) {
             updateTerminalTriggers(false, 0);
             return;
         }
 
-        isRendering = true;
         persistentMonitor.classList.remove('hidden');
         terminalPanel.classList.remove('hidden'); // Sayfa yenilendiğinde de terminal açık kalsın
 
         const percent = Number(state.percent || 0);
         dockProgressFill.style.width = `${percent}%`;
         dockProgressPct.textContent = `%${percent}`;
-        dockStepTitle.textContent = state.step || 'İşlem yürütülüyor...';
-
-        updateTerminalTriggers(true, percent);
 
         const logs = state.logs || [];
         if (logs.length) {
@@ -31,6 +29,32 @@ async function restoreRenderState() {
             terminalBody.textContent = logs.map(log => log.startsWith('[') ? log : `[Sistem] ${log}`).join('\n') + '\n';
             terminalBody.scrollTop = terminalBody.scrollHeight;
         }
+
+        if (!isActive) {
+            isRendering = false;
+            if (dockSpinner) dockSpinner.style.display = 'none';
+            setCancelButtonState('close');
+            updateTerminalTriggers(false, percent);
+
+            if (state.video_url) {
+                dockProgressFill.style.width = '100%';
+                dockProgressPct.textContent = '%100';
+                dockStepTitle.textContent = 'Video hazır';
+                dockLogSnippet.textContent = state.video_url;
+                livePlayer.src = state.video_url + (state.video_url.includes('?') ? '&' : '?') + 't=' + Date.now();
+                livePlayer.classList.remove('hidden');
+                mockupPlaceholder.classList.add('hidden');
+            } else {
+                dockStepTitle.textContent = 'Hata Oluştu';
+                dockLogSnippet.textContent = state.error;
+                dockProgressFill.style.backgroundColor = '#EF4444';
+            }
+            return;
+        }
+
+        isRendering = true;
+        dockStepTitle.textContent = state.step || 'İşlem yürütülüyor...';
+        updateTerminalTriggers(true, percent);
         initSSE();
     } catch (error) {
         console.error('Render durumu geri yüklenemedi:', error);
@@ -74,7 +98,20 @@ function showTerminalAndDock() {
 
 function formatRenderErrorDetail(detail) {
     if (typeof detail === 'string') return detail;
-    if (Array.isArray(detail)) return detail.map(String).join('\n');
+    if (Array.isArray(detail)) {
+        return detail.map(error => {
+            if (typeof error === 'string') return error;
+            if (!error || typeof error !== 'object') return String(error);
+
+            const location = Array.isArray(error.loc)
+                ? error.loc.filter(part => part !== 'body').map(String).join('.')
+                : '';
+            const message = typeof error.msg === 'string' ? error.msg : '';
+            if (location && message) return `${location}: ${message}`;
+            if (message) return message;
+            return JSON.stringify(error);
+        }).join('\n');
+    }
     if (!detail || typeof detail !== 'object') return 'Render başlatılamadı.';
 
     const lines = [];
@@ -89,7 +126,7 @@ function formatRenderErrorDetail(detail) {
             summary.push(`Kelime: ${quality.word_count} (gerekli: ${limits.min_words ?? 85}-${limits.max_words ?? 195})`);
         }
         if (Number.isFinite(quality.scene_count)) {
-            summary.push(`Sahne: ${quality.scene_count} (hedef: ${limits.min_scenes ?? 6}-${limits.max_scenes ?? 12}; en az 4 gerekli)`);
+            summary.push(`Sahne: ${quality.scene_count} (hedef: ${limits.min_scenes ?? 6}-${limits.max_scenes ?? 12}; sınır: ${limits.hard_min_scenes ?? 4}-${limits.hard_max_scenes ?? 24})`);
         }
         if (summary.length) lines.push(summary.join(' · '));
 
@@ -101,12 +138,26 @@ function formatRenderErrorDetail(detail) {
             if (match) return `Toplam kelime sayısı 85-195 aralığında olmalı${match[1] ? ` (mevcut: ${match[1]})` : ''}.`;
             match = value.match(/^scene_count_out_of_band:(\d+)$/);
             if (match) return `Sahne sayısı en az 4 olmalı (mevcut: ${match[1]}).`;
+            match = value.match(/^scene_count_exceeds_limit:(\d+)$/);
+            if (match) return `Sahne sayısı en fazla ${limits.hard_max_scenes ?? 24} olmalı (mevcut: ${match[1]}).`;
             match = value.match(/^scene_(\d+)_words_below_(\d+)$/);
             if (match) return `${Number(match[1]) + 1}. sahnenin anlatımı en az ${match[2]} kelime olmalı.`;
+            match = value.match(/^scene_(\d+)_narration_invalid$/);
+            if (match) return `${Number(match[1]) + 1}. sahnenin anlatımı metin olmalı.`;
+            match = value.match(/^scene_(\d+)_narration_placeholder$/);
+            if (match) return `${Number(match[1]) + 1}. sahnenin anlatımı örnek veya yer tutucu metin içeremez.`;
             match = value.match(/^scene_(\d+)_visual_description_invalid$/);
             if (match) return `${Number(match[1]) + 1}. sahnenin görsel açıklaması eksik veya geçersiz.`;
             match = value.match(/^scene_(\d+)_queries_insufficient$/);
             if (match) return `${Number(match[1]) + 1}. sahne için en az 2 arama terimi gerekli.`;
+            match = value.match(/^scene_(\d+)_queries_invalid$/);
+            if (match) return `${Number(match[1]) + 1}. sahnenin arama terimleri metin listesinden oluşmalı.`;
+            match = value.match(/^scene_(\d+)_queries_above_(\d+)$/);
+            if (match) return `${Number(match[1]) + 1}. sahne en fazla ${match[2]} arama terimi içerebilir.`;
+            match = value.match(/^scene_(\d+)_(claim_ids|must_exclude|caption_emphasis)_invalid$/);
+            if (match) return `${Number(match[1]) + 1}. sahnenin ${match[2]} alanı metin listesi olmalı.`;
+            match = value.match(/^scene_(\d+)_(claim_ids|must_exclude|caption_emphasis)_above_(\d+)$/);
+            if (match) return `${Number(match[1]) + 1}. sahnenin ${match[2]} alanı en fazla ${match[3]} öğe içerebilir.`;
             if (value === 'scenes_missing') return 'Senaryoda sahne bulunamadı.';
             return value;
         });
@@ -239,14 +290,18 @@ async function startRenderProcess(planToUse) {
         : 'plan=yeniden uretilecek';
     terminalBody.textContent = `[${new Date().toLocaleTimeString()}] Render: ${topic} (${planNote})\n`;
 
+    const renderLanguage = selectLanguage?.value === 'en' ? 'en' : 'tr';
+    if (typeof ensureTtsVoiceForLanguage === 'function') {
+        ensureTtsVoiceForLanguage(renderLanguage);
+    }
+
     const payload = {
         keyword: topic,
         plan: plan,
         niche: selectNiche.value,
-        language: document.getElementById('btn-quick-lang-en')?.classList.contains('active') ? 'en' : (selectLanguage?.value || 'tr'),
+        language: renderLanguage,
         voice_gender: (selectTtsVoice?.value === 'auto' ? 'auto' : (findVoiceMeta(selectTtsVoice?.value)?.gender || 'male')),
         tts_voice: (selectTtsVoice?.value && selectTtsVoice.value !== 'auto') ? selectTtsVoice.value : null,
-        gameplay_category: selectGameplayCategory?.value || 'auto',
         subtitle_preset: selectSubPreset.value,
         subtitle_font_size: parseInt(subRangeSize?.value || '54', 10),
         subtitle_y_position: parseFloat(subRangeY?.value || '0.8'),
@@ -297,6 +352,7 @@ async function startRenderProcess(planToUse) {
         enable_bgm: document.getElementById('chk-enable-bgm')
             ? !!document.getElementById('chk-enable-bgm').checked
             : true,
+        enable_sonilo_sfx: !!document.getElementById('chk-enable-sonilo-sfx')?.checked,
         enable_outro: document.getElementById('chk-enable-outro')
             ? !!document.getElementById('chk-enable-outro').checked
             : true,
@@ -317,8 +373,10 @@ async function startRenderProcess(planToUse) {
         body: JSON.stringify(payload)
     }).then(res => {
         if (!res.ok) {
-            return res.json().then(d => {
-                throw new Error(formatRenderErrorDetail(d.detail || d.message));
+            return res.json().catch(() => null).then(errorBody => {
+                const detail = errorBody?.detail ?? errorBody?.message ?? errorBody;
+                const message = formatRenderErrorDetail(detail);
+                throw new Error(message || `HTTP ${res.status}: ${res.statusText || 'Render isteği reddedildi.'}`);
             });
         }
         showToast(plan?.scenes?.length
@@ -454,6 +512,7 @@ function handleServerEvent(type, data) {
                 if (titleInp) titleInp.value = data.seo.seo_title || data.keyword || '';
                 if (tagsInp) tagsInp.value = (data.seo.tags || []).join(', ');
                 if (commentInp) commentInp.value = data.seo.pinned_comment || '';
+                renderSeoTitleIdeas(data.seo.title_ideas, titleInp);
             }
             if (proofLink && data.proof_url) proofLink.href = data.proof_url;
 
@@ -509,6 +568,152 @@ function handleServerEvent(type, data) {
             terminalBody.textContent += `\n[İpucu] Bu senaryoyu zorla render etmek için 'Yine De Devam Et' anahtarını açın veya 'Yine De Devam Et' butonuna tıklayın.\n`;
         }
     }
+}
+
+function renderSeoTitleIdeas(packageData, titleInput) {
+    const container = document.getElementById('seo-title-ideas');
+    if (!container) return;
+    container.replaceChildren();
+
+    const titles = Array.isArray(packageData?.titles) ? packageData.titles : [];
+    if (!titles.length) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    let activeTitle = titleInput?.value?.trim() || String(titles[0] || '');
+    const thumbnails = Array.isArray(packageData.thumbnail_texts)
+        ? packageData.thumbnail_texts
+        : [];
+    const recommended = new Map(
+        (Array.isArray(packageData.recommended) ? packageData.recommended : [])
+            .filter((item) => Number.isInteger(item?.index))
+            .map((item) => [item.index, String(item.reason || '')])
+    );
+
+    titles.forEach((rawTitle, index) => {
+        if (typeof rawTitle !== 'string' || !rawTitle.trim()) return;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'seo-title-idea';
+        const main = document.createElement('span');
+        main.className = 'seo-title-idea-main';
+        const title = document.createElement('strong');
+        title.textContent = rawTitle;
+        main.appendChild(title);
+
+        const thumbnail = String(thumbnails[index] || '').trim();
+        if (thumbnail) {
+            const thumbnailLabel = document.createElement('small');
+            thumbnailLabel.textContent = `Kapak yazısı: ${thumbnail}`;
+            main.appendChild(thumbnailLabel);
+        }
+        button.appendChild(main);
+
+        if (recommended.has(index)) {
+            const badge = document.createElement('span');
+            badge.className = 'seo-title-idea-badge';
+            badge.textContent = 'ÖNERİLEN';
+            button.appendChild(badge);
+            button.title = recommended.get(index);
+        }
+
+        button.addEventListener('click', () => {
+            activeTitle = rawTitle;
+            if (titleInput) titleInput.value = rawTitle;
+            showToast('Başlık seçildi. Kopyalamak için başlık yanındaki kopyala düğmesini kullanın.');
+        });
+        container.appendChild(button);
+    });
+
+    const refiner = document.createElement('section');
+    refiner.className = 'seo-title-refiner';
+    const heading = document.createElement('strong');
+    heading.textContent = 'Geri bildirimle iyileştir';
+    refiner.appendChild(heading);
+
+    const history = document.createElement('div');
+    history.className = 'seo-title-refinement-history';
+    history.setAttribute('aria-live', 'polite');
+    refiner.appendChild(history);
+
+    const feedback = document.createElement('textarea');
+    feedback.className = 'input-styled';
+    feedback.rows = 2;
+    feedback.maxLength = 400;
+    feedback.placeholder = 'Örn. Daha sade ve merak uyandırıcı olsun.';
+    feedback.setAttribute('aria-label', 'Başlık iyileştirme geri bildirimi');
+    refiner.appendChild(feedback);
+
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.className = 'btn btn-sm btn-secondary';
+    submit.textContent = 'Başlığı iyileştir';
+    refiner.appendChild(submit);
+
+    const status = document.createElement('small');
+    status.className = 'seo-title-refinement-status';
+    status.setAttribute('role', 'status');
+    refiner.appendChild(status);
+
+    const appendMessage = (label, text) => {
+        const message = document.createElement('p');
+        const messageLabel = document.createElement('strong');
+        messageLabel.textContent = `${label}: `;
+        message.appendChild(messageLabel);
+        message.appendChild(document.createTextNode(text));
+        history.appendChild(message);
+    };
+
+    submit.addEventListener('click', async () => {
+        const creatorFeedback = feedback.value.trim();
+        if (!activeTitle) {
+            status.textContent = 'Önce bir başlık seçin.';
+            return;
+        }
+        if (!creatorFeedback) {
+            status.textContent = 'Başlığı nasıl değiştirmek istediğinizi yazın.';
+            feedback.focus();
+            return;
+        }
+
+        submit.disabled = true;
+        status.textContent = 'Başlık iyileştiriliyor...';
+        try {
+            const response = await fetch('/api/video/title-ideas/refine', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_title: activeTitle,
+                    feedback: creatorFeedback,
+                    summary: String(packageData.summary || ''),
+                    language: String(packageData.language || 'tr')
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(typeof data.detail === 'string' ? data.detail : 'Başlık iyileştirilemedi.');
+            }
+            const refinement = data.refinement;
+            if (data.status !== 'ok' || typeof refinement?.title !== 'string' || !refinement.title.trim()) {
+                throw new Error('Sunucu geçerli bir başlık döndürmedi.');
+            }
+
+            activeTitle = refinement.title;
+            if (titleInput) titleInput.value = activeTitle;
+            appendMessage('Siz', creatorFeedback);
+            appendMessage('Yeni başlık', `${activeTitle}${refinement.reason ? ` — ${refinement.reason}` : ''}`);
+            feedback.value = '';
+            status.textContent = 'Başlık güncellendi. İsterseniz yeni bir geri bildirimle devam edin.';
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : 'Bilinmeyen ağ hatası.';
+            status.textContent = `Başlık iyileştirilemedi: ${detail}`;
+        } finally {
+            submit.disabled = false;
+        }
+    });
+    container.appendChild(refiner);
+    container.classList.toggle('hidden', container.childElementCount === 0);
 }
 
 // 500-Madde SEO & İtiraz Kopyalama Butonları

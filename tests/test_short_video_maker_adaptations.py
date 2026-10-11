@@ -38,6 +38,130 @@ def test_audio_mood_director_ducking_and_track():
     assert 0.0 < mix["bgm_volume_linear"] < 0.5
 
 
+def test_auto_bgm_prefers_downloaded_track_matching_narration_mood(monkeypatch):
+    from video_composer import _select_auto_bgm
+
+    observed = {}
+
+    def detect_mood(text, niche_id="general"):
+        observed["text"] = text
+        observed["niche_id"] = niche_id
+        return MusicMood.DARK
+
+    def match_bgm_track(mood, preferred_track=None):
+        observed["mood"] = mood
+        assert preferred_track is None
+        return {
+            "filename": "dark_theme.wav",
+            "source": "matched_local",
+        }
+
+    def unexpected_hybrid_selection(**_kwargs):
+        assert not _kwargs
+        raise AssertionError("local mood match should take precedence")
+
+    monkeypatch.setattr(audio_mood_director, "detect_mood", detect_mood)
+    monkeypatch.setattr(audio_mood_director, "match_bgm_track", match_bgm_track)
+    monkeypatch.setattr(
+        "bgm_manager.select_trend_hybrid_bgm",
+        unexpected_hybrid_selection,
+    )
+
+    track, mood = _select_auto_bgm(
+        [{"narration": "Karanlık bir sır ortaya çıktı."}],
+        title="Gizli dosya",
+        niche_id="mystery",
+    )
+
+    assert track == "dark_theme.wav"
+    assert mood == "dark"
+    assert observed == {
+        "text": "Karanlık bir sır ortaya çıktı.",
+        "niche_id": "mystery",
+        "mood": MusicMood.DARK,
+    }
+
+
+def test_auto_bgm_passes_narration_mood_to_trend_fallback(monkeypatch):
+    from video_composer import _select_auto_bgm
+
+    observed = {}
+
+    def select_hybrid(**kwargs):
+        observed.update(kwargs)
+        return {"track": "mystery_theme.wav"}
+
+    def detect_mood(text, niche_id="general"):
+        assert text == "Bir iz daha kayboldu."
+        assert niche_id == "mystery"
+        return MusicMood.UNEASY
+
+    def no_mood_match(mood, preferred_track=None):
+        assert mood is MusicMood.UNEASY
+        assert preferred_track is None
+        return {"source": "safe_default"}
+
+    monkeypatch.setattr(
+        audio_mood_director,
+        "detect_mood",
+        detect_mood,
+    )
+    monkeypatch.setattr(
+        audio_mood_director,
+        "match_bgm_track",
+        no_mood_match,
+    )
+    monkeypatch.setattr("bgm_manager.select_trend_hybrid_bgm", select_hybrid)
+
+    track, mood = _select_auto_bgm(
+        [{"narration": "Bir iz daha kayboldu."}],
+        title="Kayıp dosya",
+        niche_id="mystery",
+    )
+
+    assert track == "mystery_theme.wav"
+    assert mood == "uneasy"
+    assert observed["preferred_mood"] == "uneasy"
+    assert observed["niche_id"] == "mystery"
+
+
+def test_audio_mood_matching_skips_tracks_without_mood_tags(monkeypatch, tmp_path):
+    import importlib
+
+    mood_module = importlib.import_module("services.audio_mood_director")
+    untagged = tmp_path / "untagged.wav"
+    matching = tmp_path / "dark.wav"
+    untagged.write_bytes(b"local track")
+    matching.write_bytes(b"dark track")
+    track_paths = {
+        "untagged.wav": str(untagged),
+        "dark.wav": str(matching),
+    }
+
+    def list_tracks(include_catalog=True):
+        assert include_catalog is True
+        return [
+            {"filename": "untagged.wav", "downloaded": True},
+            {"filename": "dark.wav", "mood": "dark", "downloaded": True},
+        ]
+
+    monkeypatch.setattr(
+        mood_module,
+        "list_bgm_tracks_detailed",
+        list_tracks,
+    )
+    monkeypatch.setattr(
+        mood_module,
+        "get_bgm_path",
+        lambda filename: track_paths.get(filename),
+    )
+
+    result = audio_mood_director.match_bgm_track(MusicMood.DARK)
+
+    assert result["filename"] == "dark.wav"
+    assert result["source"] == "matched_local"
+
+
 def test_kinetic_subtitle_pager():
     """Verify single-line word timestamp grouping and ASS karaoke dialogue generation."""
     words = [

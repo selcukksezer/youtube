@@ -7,6 +7,13 @@ and pure English stock query synthesis tailored to all 35 niches.
 import re
 import config
 
+__all__ = [
+    "EN_TOPIC_MAP",
+    "TR_EN_TOPIC_MAP",
+    "sanitize_topic_title",
+    "_generate_procedural_fallback_scenes",
+]
+
 
 EN_TOPIC_MAP = {
     "bitcoin": "bitcoin crypto candlestick chart",
@@ -82,68 +89,53 @@ _CRYPTO_TOPIC_HINTS = (
 )
 
 
-def _pad_narration_to_min_words(text: str, min_words: int = 12, *, is_tr: bool = True) -> str:
-    """Ensure procedural fallback narrations meet TTS minimum word count."""
-    try:
-        from scenes.narration_validate import normalize_narration_for_validation, scene_narration_usable
-        raw = (text or "").strip()
-        # Fallbacks must remain natural narration. Strip emoji and mechanical
-        # engagement bait before timing and word-count validation.
-        raw = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27bf\ufe00-\ufe0f]", "", raw)
+def _clean_fallback_narration(text: str, *, is_tr: bool = True) -> str:
+    """Remove non-spoken decoration without adding claims to fallback narration."""
+    raw = (text or "").strip()
+    raw = re.sub(r"[\U00010000-\U0010ffff\u2600-\u27bf\ufe00-\ufe0f]", "", raw)
+    raw = re.sub(
+        r"\s*(?:yorumlarda paylaşın|yorumlara yazın|takipte kalın|abone olun|like ve subscribe|subscribe)\s*[.!?]*",
+        " ", raw, flags=re.I,
+    )
+    raw = re.sub(r"\s+(?:ve|and)\s*[.!?]*$", "", raw, flags=re.I)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    raw = re.sub(r"\s+B\u0075nu hafta boyunca akl\u0131nda tut\.?", ".", raw, flags=re.I)
+    raw = re.sub(r"\s+Bunu\s+hafta\s+boyunca\s+aklında\s+tut\.?", ".", raw, flags=re.I)
+    raw = re.sub(r"\s+Keep this in mind throughout the week\.?", ".", raw, flags=re.I)
+    legacy_padding = (
+        (
+            "Bu iddianın kaynağını kontrol et ve bağlamını oku",
+            "Bu, sessiz kalmanın gücünü hatırlatır",
+            "Bu ayrıntı, anlatının geri kalanını anlamak için gerekli",
+        )
+        if is_tr else (
+            "Check the source of this claim and read its full context",
+            "That is the power of deliberate silence",
+            "That detail is necessary to understand the rest of the story",
+        )
+    )
+    for sentence in legacy_padding:
         raw = re.sub(
-            r"\s*(?:yorumlarda paylaşın|yorumlara yazın|takipte kalın|abone olun|like ve subscribe|subscribe)\s*[.!?]*",
-            " ", raw, flags=re.I,
+            rf"(?:^|\s+){re.escape(sentence)}\s*[.!?]*",
+            " ",
+            raw,
+            flags=re.I,
         )
-        raw = re.sub(r"\s+", " ", raw).strip()
-        # Generic padding must never remain in final narration. It can land
-        # inside a quote after a sentence normalizer and create an open quote
-        # or a false clause boundary.
-        raw = re.sub(r"\s+B\u0075nu hafta boyunca akl\u0131nda tut\.?", ".", raw, flags=re.I)
-        raw = re.sub(r"\s+Bunu\s+hafta\s+boyunca\s+aklında\s+tut\.?", ".", raw, flags=re.I)
-        raw = re.sub(r"\s+Keep this in mind throughout the week\.?", ".", raw, flags=re.I)
-        # Strip word-internal apostrophes (Turkish/English suffixes e.g. Peygamber'in, don't) before quote check
-        standalone_quotes = re.sub(r"\b\w+'[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b", "", raw)
-        if standalone_quotes.count("'") % 2 == 1:
-            raw = raw + "'"
-        if raw and raw[-1] not in ".!?":
-            raw += "."
-        if scene_narration_usable(raw):
-            return raw
-        norm = normalize_narration_for_validation(raw).rstrip(".!? ")
-        pad = (
-            "Bu iddianın kaynağını kontrol et ve bağlamını oku."
-            if is_tr else
-            "Check the source of this claim and read its full context."
-        )
-        # Keep complete source sentences intact. The old generic padding was
-        # appended after a closing quote, producing broken lines such as
-        # `Seneca: '...' Bunu hafta boyunca aklında tut.`
-        if norm and re.search(r"[.!?]$", norm):
-            extra = (
-                "Bu, sessiz kalmanın gücünü hatırlatır."
-                if is_tr else "That is the power of deliberate silence."
-            )
-            combined = f"{norm} {extra}".strip()
-        else:
-            combined = f"{norm} {pad}".strip() if norm else pad
-        if combined[-1] not in ".!?":
-            combined += "."
-        if len(normalize_narration_for_validation(combined).split()) < min_words:
-            extra = "Bu ayrıntı, anlatının geri kalanını anlamak için gerekli." if is_tr else "That detail is necessary to understand the rest of the story."
-            combined = f"{combined.rstrip('.!? ')} {extra}."
-        return combined
-    except Exception:
-        return text or ""
+    raw = re.sub(r"\s+", " ", raw).strip()
+    standalone_quotes = re.sub(r"\b\w+'[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b", "", raw)
+    if standalone_quotes.count("'") % 2 == 1:
+        raw += "'"
+    if raw and raw[-1] not in ".!?":
+        raw += "."
+    return raw
 
 
 def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
     scenes = plan.get("scenes") or []
     for sc in scenes:
-        sc["narration"] = _pad_narration_to_min_words(sc.get("narration") or "", is_tr=is_tr)
-        # Final invariant: no mechanical padding token in published narration.
-        sc["narration"] = re.sub(
-            r"\s+Bunu\s+hafta\s+boyunca\s+aklında\s+tut\.?", ".",
-            sc["narration"], flags=re.I,
+        sc["narration"] = _clean_fallback_narration(
+            sc.get("narration") or "",
+            is_tr=is_tr,
         )
         standalone_q = re.sub(r"\b\w+'[a-zA-ZçğıöşüÇĞİÖŞÜ]+\b", "", sc["narration"])
         if standalone_q.count("'") % 2 == 1:
@@ -152,6 +144,25 @@ def _finalize_fallback_plan(plan: dict, *, is_tr: bool = True) -> dict:
         sc["narration"] = sc["narration"].replace(".' .", ".'").replace(".'.", ".'")
         if sc["narration"] and sc["narration"][-1] not in ".!?":
             sc["narration"] += "."
+
+    if scenes:
+        from scenes.narration_validate import auto_repair_scenes, scene_narration_issues
+
+        scenes, narration_fixes = auto_repair_scenes(scenes)
+        if narration_fixes:
+            print(f"  [Fallback] Kısa anlatımlar onarıldı: {narration_fixes}")
+        remaining_issues = [
+            f"scene_{i}:{','.join(scene_narration_issues(scene.get('narration') or ''))}"
+            for i, scene in enumerate(scenes)
+            if scene_narration_issues(scene.get("narration") or "")
+        ]
+        if remaining_issues:
+            raise ValueError(
+                "Procedural fallback narration remains invalid after repair: "
+                + "; ".join(remaining_issues)
+            )
+
+    for sc in scenes:
         vi = sc.get("visual_intent") if isinstance(sc.get("visual_intent"), dict) else {}
         description = str(sc.get("scene_description") or "").strip()
         sc["visual_intent"] = {
@@ -1519,7 +1530,7 @@ def _generate_procedural_fallback_scenes(
     """
     from niche_templates import NICHES, get_scenario_pack
 
-    clean_title, main_kw, words, matched_en = _detect_niche_and_terms(title, raw_body)
+    clean_title, _, _, _ = _detect_niche_and_terms(title, raw_body)
     lang = language or getattr(config, "LANGUAGE", "tr")
     is_tr = (lang == "tr")
     combined = f"{title} {raw_body}".lower()
@@ -1650,6 +1661,11 @@ def _generate_five_fact_scenes(clean_title: str, is_tr: bool, variation_seed: in
                 ["storm lightning", "lightning strike tower", "thunder storm sky"],
             ),
         ]
+    if len(beats) > 2 and variation_seed:
+        fact_beats = beats[1:]
+        shift = variation_seed % len(fact_beats)
+        beats = [beats[0], *fact_beats[shift:], *fact_beats[:shift]]
+
     scenes = []
     for i, (narr, desc, queries) in enumerate(beats):
         scenes.append({

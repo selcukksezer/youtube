@@ -256,7 +256,11 @@ class PipelineStateMachine:
             from server_core import state
             state.broadcast_event("complete", {"url": video_url, "message": message})
         except Exception:
-            pass
+            logger.warning(
+                "Failed to broadcast render completion for job %s",
+                self.job_id,
+                exc_info=True,
+            )
 
     def fail(self, error_message: str):
         """Mark pipeline as failed."""
@@ -266,7 +270,11 @@ class PipelineStateMachine:
             from server_core import state
             state.broadcast_event("error", error_message)
         except Exception:
-            pass
+            logger.warning(
+                "Failed to broadcast render failure for job %s",
+                self.job_id,
+                exc_info=True,
+            )
 
     def export_telemetry(self) -> Dict[str, Any]:
         """Produce a complete execution report of all stages and timings."""
@@ -500,7 +508,11 @@ class PipelineStateMachine:
             if msg:
                 state.broadcast_event("log", msg)
         except Exception:
-            pass
+                logger.warning(
+                    "Failed to sync render progress for job %s",
+                    self.job_id,
+                    exc_info=True,
+                )
 
 
 # ─── ITEM P7: Reference Repo Compatibility Adapter (youtube-shorts-pipeline) ─

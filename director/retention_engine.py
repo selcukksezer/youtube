@@ -11,7 +11,7 @@ Ensures viewer retention remains above 90% by enforcing strict editorial pacing 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 MAX_STATIC_DURATION_SEC: float = 3.0
@@ -45,15 +45,22 @@ class RetentionEngine:
             ))
 
         # Check for static duration gap
-        if duration > MAX_STATIC_DURATION_SEC:
-            # Inject midpoint motion / stimulus
-            midpoint = round(duration / 2.0, 2)
-            stimuli.append(RetentionStimulus(
-                event_type="fast_pullback_reveal" if scene_index % 2 == 0 else "camera_zoom_in",
-                timestamp_sec=midpoint,
-                duration_sec=round(duration - midpoint, 2),
-                narrative_function="Break visual monotony and reset viewer gaze before dropoff.",
-            ))
+        if duration > MAX_STATIC_DURATION_SEC and not has_camera_motion:
+            timestamp = MAX_STATIC_DURATION_SEC
+            stimulus_index = 0
+            while timestamp < duration:
+                stimuli.append(RetentionStimulus(
+                    event_type=(
+                        "fast_pullback_reveal"
+                        if (scene_index + stimulus_index) % 2 == 0
+                        else "camera_zoom_in"
+                    ),
+                    timestamp_sec=round(timestamp, 2),
+                    duration_sec=round(min(MAX_STATIC_DURATION_SEC, duration - timestamp), 2),
+                    narrative_function="Break visual monotony and reset viewer gaze before dropoff.",
+                ))
+                timestamp += MAX_STATIC_DURATION_SEC
+                stimulus_index += 1
 
         return stimuli
 
@@ -67,7 +74,8 @@ class RetentionEngine:
         current_time = 0.0
         for idx, sc in enumerate(scenes):
             dur = float(sc.get("duration", 0.0))
-            has_motion = bool(sc.get("has_motion") or sc.get("camera_direction"))
+            camera_direction = str(sc.get("camera_direction") or "").strip().lower()
+            has_motion = bool(sc.get("has_motion")) or camera_direction not in {"", "static", "none"}
 
             if dur > MAX_STATIC_DURATION_SEC and not has_motion:
                 stale_scenes.append(idx)

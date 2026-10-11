@@ -6,14 +6,44 @@ reference_repos/saard00_shorts_generator evolution:
 """
 
 import os
+import re
+import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
-from subtitle_generator import split_subtitle_pages_on_silence
+from subtitle_generator import create_karaoke_subtitles, split_subtitle_pages_on_silence
 from scenes.scene_composer import compose_dual_clip_scene
 
 
 class TestSaard00SubtitleSilence(unittest.TestCase):
+    def test_karaoke_render_splits_page_on_350ms_pause(self):
+        timings = [
+            {"text": "First", "offset": 0.000, "duration": 0.200},
+            {"text": "pair", "offset": 0.250, "duration": 0.200},
+            {"text": "second", "offset": 0.900, "duration": 0.200},
+            {"text": "phrase", "offset": 1.150, "duration": 0.200},
+            {"text": "ends", "offset": 1.400, "duration": 0.200},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            ass_path = os.path.join(tmp, "captions.ass")
+            create_karaoke_subtitles(
+                timings,
+                ass_path,
+                style_opts={"words_per_page": 5},
+            )
+            with open(ass_path, encoding="utf-8") as subtitle_file:
+                rendered_texts = [
+                    re.sub(r"\{[^}]*\}", "", line.split(",", 9)[-1]).strip()
+                    for line in subtitle_file
+                    if line.startswith("Dialogue: 0,")
+                ]
+
+        self.assertEqual(
+            rendered_texts,
+            ["First pair", "First pair"] + ["second phrase ends"] * 3,
+        )
+
     def test_silence_splits_pages(self):
         # 4 words: first 2 are continuous, then 400ms pause, then next 2 words
         timings = [

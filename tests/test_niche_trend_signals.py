@@ -5,6 +5,7 @@ from unittest.mock import patch
 from services.niche_trend_signals import (
     MAX_TREND_CARDS,
     SOURCE_AI,
+    fetch_public_youtube_trends,
     generate_synthetic_trend_signals,
     is_stoic_banned_title,
 )
@@ -30,10 +31,33 @@ class TestNicheTrendSignals(unittest.TestCase):
         self.assertEqual(_parse_view_count("1.234 görüntüleme"), 1234)
 
     def test_news_synthetic_keeps_flash_titles(self):
-        trends = generate_synthetic_trend_signals("1_news_flash")
+        with patch("services.topic_suggester.suggest_topics", return_value={"suggestions": []}):
+            trends = generate_synthetic_trend_signals("1_news_flash")
         blob = " ".join(t["title"] for t in trends).casefold()
         self.assertTrue(trends)
         self.assertTrue("dakika" in blob or "flaş" in blob or "haber" in blob)
+
+    def test_public_scrape_failure_is_logged(self):
+        with patch(
+            "services.niche_trend_signals.requests.get",
+            side_effect=RuntimeError("network unavailable"),
+        ):
+            with self.assertLogs("services.niche_trend_signals", level="WARNING") as captured:
+                trends = fetch_public_youtube_trends("space")
+
+        self.assertEqual(trends, [])
+        self.assertIn("YouTube public trend scrape failed", captured.output[0])
+
+    def test_suggestion_failure_is_logged_and_uses_family_fallback(self):
+        with patch(
+            "services.topic_suggester.suggest_topics",
+            side_effect=RuntimeError("suggestion service unavailable"),
+        ):
+            with self.assertLogs("services.niche_trend_signals", level="WARNING") as captured:
+                trends = generate_synthetic_trend_signals("6_stoic_philosophy")
+
+        self.assertTrue(trends)
+        self.assertIn("AI trend suggestions unavailable", captured.output[0])
 
     def test_stoic_banned_detector(self):
         self.assertTrue(is_stoic_banned_title("24 Saat İçinde Viral Olan Stoacılık Skandalı"))

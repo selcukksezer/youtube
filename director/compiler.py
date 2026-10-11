@@ -11,7 +11,6 @@ from .schema import (
     DirectorPlan,
     QualityThresholds,
     ScenePlan,
-    DirectorScene,
     merge_effect_manifest,
 )
 from .timeline import solve_timeline
@@ -155,12 +154,8 @@ def compile_director_plan(
     raw_plan = dict(raw_plan or {})
     title = title or raw_plan.get("title") or "Video"
     requested_niche = niche_id or raw_plan.get("niche_id") or "1_news_flash"
-    if requested_niche and requested_niche != "1_news_flash":
-        locked_niche = requested_niche
-        topic_intel = resolve_topic_intelligence(title, requested_niche)
-    else:
-        topic_intel = resolve_topic_intelligence(title, requested_niche)
-        locked_niche = topic_intel["resolved_niche"]
+    topic_intel = resolve_topic_intelligence(title, requested_niche)
+    locked_niche = topic_intel["resolved_niche"]
 
     try:
         from scenes.fallback import _generate_procedural_fallback_scenes

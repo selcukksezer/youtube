@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from scenes.narration_validate import normalize_narration_for_validation
+
 from .quality_gate import check_narration_integrity
 from .schema import DirectorPlan
 
@@ -41,7 +43,7 @@ def validate_director_plan(plan: DirectorPlan) -> Dict[str, Any]:
 
     from .schema import shorts_word_budget
 
-    word_count = len((plan.full_narration or "").split())
+    word_count = len(normalize_narration_for_validation(plan.full_narration or "").split())
     cap_words = shorts_word_budget(qt.max_duration, qt.max_audio_speed)
     if word_count > int(cap_words * 1.05):
         warnings.append(

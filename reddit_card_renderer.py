@@ -14,10 +14,13 @@ import os
 import subprocess
 import tempfile
 import textwrap
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
+
+REDDIT_CARD_DISPLAY_DURATION_SEC = 3.5
+REDDIT_CARD_FADE_DURATION_SEC = 0.35
 
 
 def _get_font(font_name: str, size: int) -> ImageFont.FreeTypeFont:
@@ -38,12 +41,53 @@ def _get_font(font_name: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
+def build_reddit_card_metadata(
+    post: Optional[Dict[str, Any]],
+    fallback_title: str,
+) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {
+        "title": fallback_title,
+        "subreddit": None,
+        "author": None,
+        "upvotes": None,
+        "comments": None,
+    }
+    if not isinstance(post, dict):
+        metadata["source_label"] = "Reddit hikayesi · kaynak doğrulanmadı"
+        return metadata
+
+    metadata["title"] = str(post.get("title") or fallback_title)
+    source = str(post.get("source") or "")
+    if source == "oauth":
+        subreddit = str(post.get("subreddit") or "").strip()
+        author = str(post.get("author") or "").strip()
+        if author and author.casefold() not in {"[deleted]", "deleted"}:
+            metadata["author"] = author if author.casefold().startswith("u/") else f"u/{author}"
+        if subreddit:
+            metadata["subreddit"] = subreddit
+        score = post.get("score")
+        if isinstance(score, (int, float)) and not isinstance(score, bool):
+            metadata["upvotes"] = str(int(score))
+        comment_count = post.get("num_comments")
+        if isinstance(comment_count, int) and not isinstance(comment_count, bool):
+            metadata["comments"] = str(comment_count)
+        metadata["source_label"] = "Reddit'ten herkese açık gönderi"
+    elif source == "ai_discovery":
+        metadata["source_label"] = "AI ile üretilmiş kurgu · gerçek gönderi değil"
+    elif source == "curated_archive":
+        metadata["source_label"] = "Arşiv örneği · gerçek gönderi değil"
+    else:
+        metadata["source_label"] = "Kaynağı doğrulanmamış · gerçek gönderi değil"
+    return metadata
+
+
 def generate_transparent_reddit_card_png(
     title: str,
-    subreddit: str = "AskReddit",
-    author: str = "u/CuriousThinker",
-    upvotes: str = "32.4k",
-    comments: str = "1.8k",
+    subreddit: Optional[str] = None,
+    author: Optional[str] = None,
+    upvotes: Optional[str] = None,
+    comments: Optional[str] = None,
+    source_label: Optional[str] = None,
     output_path: Optional[str] = None,
     card_width: int = 940,
 ) -> str:
@@ -77,9 +121,10 @@ def generate_transparent_reddit_card_png(
     # 'r/' symbol inside icon
     draw.text((45, 36), "r/", font=meta_font, fill=(255, 255, 255, 255))
 
-    # Subreddit name & author
-    draw.text((95, 30), f"r/{subreddit}", font=meta_font, fill=(215, 218, 220, 255))
-    draw.text((95, 58), f"Posted by {author} • 5h ago", font=stat_font, fill=(129, 131, 132, 255))
+    # Subreddit name & verified source details
+    draw.text((95, 30), f"r/{subreddit}" if subreddit else "Reddit hikayesi", font=meta_font, fill=(215, 218, 220, 255))
+    byline = f"Yazar: {author}" if author else (source_label or "Kaynak bilgisi doğrulanmadı")
+    draw.text((95, 58), byline[:58], font=stat_font, fill=(129, 131, 132, 255))
 
     # Thread Question Title
     y = 100
@@ -87,25 +132,29 @@ def generate_transparent_reddit_card_png(
         draw.text((32, y), line, font=title_font, fill=(255, 255, 255, 255))
         y += 52
 
-    # Bottom pill badges: Upvotes & Comments
+    # Show engagement only when it came from a verified source.
     pill_y = y + 15
-    # Upvote badge
-    draw.rounded_rectangle([(32, pill_y), (170, pill_y + 40)], radius=18, fill=(45, 46, 47, 255))
-    draw.text((50, pill_y + 8), f"▲ {upvotes}", font=stat_font, fill=(255, 69, 0, 255))
+    if upvotes is not None:
+        draw.rounded_rectangle([(32, pill_y), (190, pill_y + 40)], radius=18, fill=(45, 46, 47, 255))
+        draw.text((50, pill_y + 8), f"▲ {upvotes} puan", font=stat_font, fill=(255, 69, 0, 255))
+    if comments is not None:
+        comments_x = 205 if upvotes is not None else 32
+        draw.rounded_rectangle([(comments_x, pill_y), (comments_x + 175, pill_y + 40)], radius=18, fill=(45, 46, 47, 255))
+        draw.text((comments_x + 20, pill_y + 8), f"💬 {comments}", font=stat_font, fill=(215, 218, 220, 255))
 
-    # Comments badge
-    draw.rounded_rectangle([(185, pill_y), (330, pill_y + 40)], radius=18, fill=(45, 46, 47, 255))
-    draw.text((205, pill_y + 8), f"💬 {comments}", font=stat_font, fill=(215, 218, 220, 255))
-
-    target = output_path or tempfile.mktemp(suffix="_reddit_card.png")
+    if output_path is None:
+        with tempfile.NamedTemporaryFile(suffix="_reddit_card.png", delete=False) as temp_file:
+            target = temp_file.name
+    else:
+        target = output_path
     card.save(target, format="PNG")
     return target
 
 
 def build_reddit_card_ffmpeg_filter(
     card_png_path: str,
-    display_duration: float = 3.5,
-    fade_duration: float = 0.35,
+    display_duration: float = REDDIT_CARD_DISPLAY_DURATION_SEC,
+    fade_duration: float = REDDIT_CARD_FADE_DURATION_SEC,
     y_pos: int = 580,
     input_video_label: str = "[0:v]",
     output_label: str = "[vout]",
@@ -128,7 +177,8 @@ def build_reddit_card_ffmpeg_filter(
 
 def generate_reddit_post_card_clip(post: dict, output_path: str, duration: float = 4.0) -> str:
     """Renders an attributed Reddit post preview card as a vertical video clip (legacy compatibility)."""
-    image_path = tempfile.mktemp(suffix="_reddit_post.png")
+    with tempfile.NamedTemporaryFile(suffix="_reddit_post.png", delete=False) as temp_file:
+        image_path = temp_file.name
     try:
         image = Image.new("RGB", (1080, 1920), "#15141b")
         draw = ImageDraw.Draw(image)

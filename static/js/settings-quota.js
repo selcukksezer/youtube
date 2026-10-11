@@ -22,6 +22,7 @@ async function loadSettings() {
             hint('input-key-pexels', data.keys?.pexels, 'pexels');
             hint('input-key-pixabay', data.keys?.pixabay, 'pixabay');
             hint('input-key-elevenlabs', data.keys?.elevenlabs, 'elevenlabs');
+            hint('input-key-sonilo', data.keys?.sonilo, 'sonilo');
         }
         if (data.elevenlabs) renderElevenlabsQuota(data.elevenlabs);
         if (data.google_ai) {
@@ -773,6 +774,7 @@ document.getElementById('btn-save-settings')?.addEventListener('click', async ()
     const redditClientId = document.getElementById('input-key-reddit-id').value.trim();
     const redditClientSecret = document.getElementById('input-key-reddit-secret').value.trim();
     const elevenlabsKey = document.getElementById('input-key-elevenlabs')?.value.trim();
+    const soniloKey = document.getElementById('input-key-sonilo')?.value.trim();
 
     const payload = {};
     if (gKey) payload.gemini_key = gKey;
@@ -785,6 +787,7 @@ document.getElementById('btn-save-settings')?.addEventListener('click', async ()
     if (redditClientId) payload.reddit_client_id = redditClientId;
     if (redditClientSecret) payload.reddit_client_secret = redditClientSecret;
     if (elevenlabsKey) payload.elevenlabs_key = elevenlabsKey;
+    if (soniloKey) payload.sonilo_key = soniloKey;
 
     const scriptM = document.getElementById('select-gemini-script-model')?.value;
     const imageM = document.getElementById('select-gemini-image-model')?.value;
@@ -823,6 +826,14 @@ document.getElementById('btn-save-settings')?.addEventListener('click', async ()
             }
         } else {
             showToast('Sistem ayarları + Google AI Pro modelleri kaydedildi!');
+        }
+        if (soniloKey) {
+            const soniloInput = document.getElementById('input-key-sonilo');
+            if (soniloInput) {
+                const masked = body.key_hints?.sonilo || ('••••' + soniloKey.slice(-4));
+                soniloInput.value = '';
+                soniloInput.placeholder = `${masked} (Kayıtlı)`;
+            }
         }
         await loadGoogleAiProPanel();
         await loadTtsVoiceCatalog(true);
@@ -946,4 +957,3 @@ document.getElementById('input-roadmap-search')?.addEventListener('input', () =>
 });
 
 // ══════════════════════════════════════════════════════════════
-

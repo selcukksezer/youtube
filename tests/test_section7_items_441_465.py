@@ -4,7 +4,9 @@ Excluded: #441, #446, #457 (manual upload / OAuth out of scope).
 """
 import inspect
 import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import config
 import database
@@ -12,7 +14,7 @@ import hybrid_niches
 import niche_templates
 from scenes.enrichment import enrich_cinematic_search_queries
 from system_resilience import get_system_health_status
-from video_fetcher import fetch_scene_clip
+from video_fetcher import fetch_scene_clip, search_and_download
 
 
 class TestSection7Items441465(unittest.TestCase):
@@ -145,12 +147,28 @@ class TestSection7Items441465(unittest.TestCase):
         self.assertIn("set_opacity", src)
 
     def test_item_462_retry_partial(self):
-        with open(
-            os.path.join(config.BASE_DIR, "video_fetcher.py"), encoding="utf-8"
-        ) as fh:
-            dl_src = fh.read()
-        self.assertNotIn("max_retries", dl_src)
-        self.assertIn("trying [", dl_src)  # provider failover
+        from visuals.ai_video import VisualSource
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stock_path = os.path.join(tmpdir, "stock-fallback.mp4")
+            with patch("visuals.ai_video.ai_video_enabled", return_value=True), \
+                patch("visuals.ai_video.assign_visual_source", return_value=VisualSource.AI), \
+                patch(
+                    "visuals.ai_video.peer_failover_order",
+                    return_value=[VisualSource.AI, VisualSource.STOCK],
+                ), \
+                patch(
+                    "visuals.ai_video.generate_ai_clip",
+                    side_effect=RuntimeError("AI provider unavailable"),
+                ) as generate_ai, \
+                patch("video_fetcher._fetch_stock_clip", return_value=stock_path) as fetch_stock:
+                result = search_and_download(
+                    ["test subject"], 0, tmpdir, target_duration=5, allow_custom=False
+                )
+
+        self.assertEqual(result, stock_path)
+        generate_ai.assert_called_once()
+        fetch_stock.assert_called_once()
 
     def test_item_463_modular_niche_dicts(self):
         self.assertIsInstance(niche_templates.NICHES, dict)

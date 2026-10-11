@@ -6,12 +6,14 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from server_core.pipeline_state_machine import (
     PipelineStateMachine,
     PipelineStage,
     STAGE_SPECS,
 )
+from server_core import state
 
 
 class TestPipelineStateMachine(unittest.TestCase):
@@ -108,6 +110,48 @@ class TestPipelineStateMachine(unittest.TestCase):
         self.assertEqual(telemetry["error"], "API Quota Exceeded")
         self.assertEqual(telemetry["final_stage"], "FAILED")
 
+    def test_progress_broadcast_failure_is_logged(self):
+        sm = PipelineStateMachine(job_id="progress_broadcast", keyword="Test", niche_id="6_stoic_philosophy")
+        isolated_state = {"logs": []}
+
+        with (
+            patch.object(state, "current_render_state", isolated_state),
+            patch.object(state, "broadcast_event", side_effect=RuntimeError("SSE offline")),
+            self.assertLogs("server_core.pipeline_state_machine", level="WARNING") as captured,
+        ):
+            sm._sync_global_state(10, "Render ediliyor", "İşlem başladı")
+
+        self.assertIn("Failed to sync render progress", "\n".join(captured.output))
+        self.assertEqual(isolated_state["percent"], 10)
+
+    def test_completion_broadcast_failure_is_logged_without_reverting_completion(self):
+        sm = PipelineStateMachine(job_id="complete_broadcast", keyword="Test", niche_id="6_stoic_philosophy")
+
+        with (
+            patch.object(state, "broadcast_event", side_effect=RuntimeError("SSE offline")),
+            patch.object(sm, "_sync_global_state"),
+            self.assertLogs("server_core.pipeline_state_machine", level="WARNING") as captured,
+        ):
+            sm.complete("/output/test.mp4")
+
+        self.assertIn("Failed to broadcast render completion", "\n".join(captured.output))
+        self.assertEqual(sm.current_stage, PipelineStage.COMPLETED)
+        self.assertEqual(sm.export_telemetry()["video_url"], "/output/test.mp4")
+
+    def test_failure_broadcast_failure_is_logged_without_reverting_failure(self):
+        sm = PipelineStateMachine(job_id="failure_broadcast", keyword="Test", niche_id="6_stoic_philosophy")
+
+        with (
+            patch.object(state, "broadcast_event", side_effect=RuntimeError("SSE offline")),
+            patch.object(sm, "_sync_global_state"),
+            self.assertLogs("server_core.pipeline_state_machine", level="WARNING") as captured,
+        ):
+            sm.fail("FFmpeg failed")
+
+        self.assertIn("Failed to broadcast render failure", "\n".join(captured.output))
+        self.assertEqual(sm.current_stage, PipelineStage.FAILED)
+        self.assertEqual(sm.export_telemetry()["error"], "FFmpeg failed")
+
 
 class TestResumeCheckpoint(unittest.TestCase):
     """youtube-shorts-pipeline is_done trusts status. A deleted wav still skips.
@@ -200,4 +244,3 @@ class TestResumeCheckpoint(unittest.TestCase):
                 PipelineStage.STAGE_7_AUDIO_MASTERING,
                 require=[PipelineStage.STAGE_6_TTS_SYNC],
             ))
-

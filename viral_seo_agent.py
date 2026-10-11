@@ -13,16 +13,12 @@ Covers:
 - 5 Diverse Title Variants (Item 109)
 """
 
-import json
 import re
-import os
 import random
 from typing import Dict, List, Any, Optional
 from openai import OpenAI
 import config
 from scene_generator import _call, _clean_json
-from copyright_risk import filter_safe_clips, scan_copyright_risk
-from headline_transformer import batch_convert_headlines, convert_headline_to_question
 
 
 SEO_SYSTEM_PROMPT = """Sen profesyonel bir YouTube SEO Uzmanı, Algoritma Mühendisi ve Viral İçerik Stratejistisin.
@@ -144,6 +140,8 @@ def enforce_title_length_limit(title: str, min_len: int = 40, max_len: int = 60)
     Shorts başlıkları mobil ekranda kesilmemesi için 45-60 karakter aralığında tutulur.
     Asla anlamsız bağlaç/edatla bitmez (örn. '... En #Shorts' önlenir).
     """
+    if min_len < 0 or min_len > max_len:
+        raise ValueError("min_len must be between 0 and max_len")
     clean = re.sub(r'\s+', ' ', title).strip()
     if len(clean) > max_len:
         # Trim words gracefully
@@ -210,7 +208,11 @@ def enforce_three_hashtag_rule(title_or_desc: str, niche_tag: str, general_tag: 
     Item 349: 3-Hashtag Dağılım Kuralı.
     Algoritmanın spam saymaması için maksimum 3 odaklı hashtag (#shorts + #nis + #genel).
     """
-    clean_niche = re.sub(r'[^\w]', '', niche_tag.lstrip('#')).lower() or "shorts"
+    fallback_tag = (
+        re.sub(r'[^\w]', '', title_or_desc.strip().split()[0]).lower()
+        if title_or_desc.strip() else ""
+    )
+    clean_niche = re.sub(r'[^\w]', '', niche_tag.lstrip('#')).lower() or fallback_tag or "shorts"
     clean_general = re.sub(r'[^\w]', '', general_tag.lstrip('#')).lower() or "viral"
     
     tags = ["#Shorts", f"#{clean_niche}", f"#{clean_general}"]
@@ -288,8 +290,16 @@ def build_natural_seo_description(
     desc = append_research_source_reference(desc, keyword=keyword, source_name=source_name or niche)
 
     # 3-hashtag rule
-    first_tag = re.sub(r'[^\w]', '', keyword.split()[0]) if keyword.split() else "Shorts"
-    tag_block = enforce_three_hashtag_rule("", niche_tag=first_tag, general_tag="viral")
+    description_tags = []
+    for raw_tag in tags or []:
+        clean_tag = re.sub(r"[^\w]", "", str(raw_tag or "").lstrip("#")).lower()
+        if clean_tag and clean_tag not in {"shorts", "viral"} and clean_tag not in description_tags:
+            description_tags.append(clean_tag)
+    first_tag = description_tags[0] if description_tags else (
+        re.sub(r'[^\w]', '', keyword.split()[0]) if keyword.split() else "Shorts"
+    )
+    general_tag = description_tags[1] if len(description_tags) > 1 else "viral"
+    tag_block = enforce_three_hashtag_rule("", niche_tag=first_tag, general_tag=general_tag)
     desc += f"\n\n{tag_block}"
     desc = prepend_description_engagement_question(desc, keyword=keyword, lang=lang)
     # Item 485: Topluluk ihtarı önleme — finans/sağlık açıklamasına yasal uyarı
@@ -325,23 +335,32 @@ def get_optimal_upload_schedule(target_country: str = "TR", day_of_week: Optiona
     Hafta içi öğle molası (12:00-14:00) ve iş dönüşü (18:00-21:00); hafta sonu (10:00-13:00).
     ABD hedefleniyorsa New York EST saat dilimine kilitlenir.
     """
+    if day_of_week is not None and day_of_week not in range(7):
+        raise ValueError("day_of_week must use Python weekday values from 0 to 6")
+    is_weekend = day_of_week in (5, 6)
     is_us = (target_country or "").upper() == "US"
     if is_us:
         return {
             "target_country": "US",
             "timezone": "EST (New York)",
-            "primary_window": "12:00 - 15:00 EST",
+            "primary_window": "10:00 - 13:00 EST" if is_weekend else "12:00 - 15:00 EST",
             "secondary_window": "19:00 - 21:00 EST",
-            "best_hours_24h": [12, 13, 14, 19, 20],
-            "recommendation": "ABD Doğu Yakası öğle molası ve akşam dinlenme saatlerine göre zamanlayın."
+            "best_hours_24h": [10, 11, 12, 19, 20] if is_weekend else [12, 13, 14, 19, 20],
+            "recommendation": (
+                "ABD Doğu Yakası hafta sonu sabah ve akşam saatlerine göre zamanlayın."
+                if is_weekend else "ABD Doğu Yakası öğle molası ve akşam dinlenme saatlerine göre zamanlayın."
+            )
         }
     return {
         "target_country": "TR",
         "timezone": "TRT (İstanbul, UTC+3)",
-        "primary_window": "18:00 - 21:00 TRT (Akşam Zirvesi)",
+        "primary_window": "10:00 - 13:00 TRT (Hafta Sonu)" if is_weekend else "18:00 - 21:00 TRT (Akşam Zirvesi)",
         "secondary_window": "12:00 - 13:30 TRT (Öğle Molası)",
-        "best_hours_24h": [12, 18, 19, 20],
-        "recommendation": "Hafta içi 18:00-20:30, hafta sonu 11:00-13:00 en yüksek anlık izleyici hacmini sunar."
+        "best_hours_24h": [10, 11, 12, 18, 19] if is_weekend else [12, 18, 19, 20],
+        "recommendation": (
+            "Hafta sonu 10:00-13:00 ve akşam saatlerini hedefleyin."
+            if is_weekend else "Hafta içi 18:00-20:30 ve öğle molasını hedefleyin."
+        )
     }
 
 
@@ -427,7 +446,11 @@ def enrich_seo_with_retention_metadata(seo_data: dict, retention_metadata: dict 
 
 def generate_15_viral_tags(keyword: str, niche: str = "", lang: str = "tr") -> List[str]:
     """Generate exactly 15 high-volume, clean, individual YouTube tags from keyword and niche."""
-    tags: List[str] = ["shorts", "keşfet", "viral", "trend"]
+    is_english = (lang or "tr").lower().startswith("en")
+    tags: List[str] = (
+        ["shorts", "discover", "viral", "trending"]
+        if is_english else ["shorts", "keşfet", "viral", "trend"]
+    )
 
     TURKISH_STOPWORDS = {
         "ve", "veya", "ile", "için", "icin", "bir", "üç", "uc", "beş", "bes",
@@ -436,11 +459,16 @@ def generate_15_viral_tags(keyword: str, niche: str = "", lang: str = "tr") -> L
         "tarafın", "tarafin", "biri", "her", "daha", "cok", "çok", "nasıl",
         "nasil", "neden", "şey", "sey"
     }
+    ENGLISH_STOPWORDS = {
+        "and", "the", "for", "with", "from", "about", "you", "your",
+        "what", "when", "where", "which", "who", "why", "how",
+    }
+    stopwords = ENGLISH_STOPWORDS if is_english else TURKISH_STOPWORDS
 
     # Extract clean individual words (skip short stop words and grammar particles)
     raw_tokens = [
         w.lower() for w in re.split(r"[^\w\u00e7\u011f\u0131\u00f6\u015f\u00fc\u00c7\u011e\u0130\u00d6\u015e\u00dc]+", keyword)
-        if len(w) >= 3 and w.lower() not in TURKISH_STOPWORDS
+        if len(w) >= 3 and w.lower() not in stopwords
     ]
 
     # Combine adjacent relevant tokens as 2-word tags
@@ -464,22 +492,40 @@ def generate_15_viral_tags(keyword: str, niche: str = "", lang: str = "tr") -> L
     # Niche-specific high-performing search tags
     niche_low = (niche or keyword).lower()
     if any(k in niche_low for k in ("bilim", "gizem", "uzay", "science", "space", "myth")):
-        niche_pool = ["bilim", "bilimsel gerçekler", "gizemli olaylar", "açıklanamayan sırlar", "evren", "uzay", "keşif", "belgesel", "merak"]
+        niche_pool = (
+            ["science", "scientific facts", "mysterious events", "unexplained mysteries", "universe", "space", "discovery", "documentary", "curiosity"]
+            if is_english else ["bilim", "bilimsel gerçekler", "gizemli olaylar", "açıklanamayan sırlar", "evren", "uzay", "keşif", "belgesel", "merak"]
+        )
     elif any(k in niche_low for k in ("tarih", "history", "ancient")):
-        niche_pool = ["tarih", "tarihi olaylar", "antik sırlar", "ilginç tarih", "geçmiş", "arkeoloji", "bilinmeyen tarih"]
+        niche_pool = (
+            ["history", "historical events", "ancient mysteries", "interesting history", "the past", "archaeology", "unknown history"]
+            if is_english else ["tarih", "tarihi olaylar", "antik sırlar", "ilginç tarih", "geçmiş", "arkeoloji", "bilinmeyen tarih"]
+        )
     elif any(k in niche_low for k in ("para", "finans", "money", "crypto", "business")):
-        niche_pool = ["finans", "para kazanma", "ekonomi", "yatırım", "başarı", "girişimcilik", "motivasyon", "zenginlik"]
+        niche_pool = (
+            ["finance", "make money", "economy", "investing", "success", "entrepreneurship", "motivation", "wealth"]
+            if is_english else ["finans", "para kazanma", "ekonomi", "yatırım", "başarı", "girişimcilik", "motivasyon", "zenginlik"]
+        )
     elif any(k in niche_low for k in ("psikoloji", "stoic", "felsefe", "mind")):
-        niche_pool = ["psikoloji", "felsefe", "stoacılık", "kişisel gelişim", "zihin", "davranış", "farkındalık"]
+        niche_pool = (
+            ["psychology", "philosophy", "stoicism", "personal growth", "mindset", "behavior", "mindfulness"]
+            if is_english else ["psikoloji", "felsefe", "stoacılık", "kişisel gelişim", "zihin", "davranış", "farkındalık"]
+        )
     else:
-        niche_pool = ["ilginç bilgiler", "şaşırtıcı gerçekler", "bunu biliyor muydunuz", "öğren", "bilgi", "gündem", "popüler"]
+        niche_pool = (
+            ["interesting facts", "amazing truths", "did you know", "learn", "knowledge", "news", "popular"]
+            if is_english else ["ilginç bilgiler", "şaşırtıcı gerçekler", "bunu biliyor muydunuz", "öğren", "bilgi", "gündem", "popüler"]
+        )
 
     for n_tag in niche_pool:
         if n_tag not in tags and len(tags) < 15:
             tags.append(n_tag)
 
     # Universal high-volume tags
-    universal_fill = ["youtube shorts", "türkiye", "faydalı bilgiler", "kısa video", "izle", "merak edilenler", "şaşırtıcı"]
+    universal_fill = (
+        ["youtube shorts", "usa", "useful facts", "short video", "watch", "curious facts", "amazing"]
+        if is_english else ["youtube shorts", "türkiye", "faydalı bilgiler", "kısa video", "izle", "merak edilenler", "şaşırtıcı"]
+    )
     for u_tag in universal_fill:
         if u_tag not in tags and len(tags) < 15:
             tags.append(u_tag)

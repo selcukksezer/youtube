@@ -229,6 +229,8 @@ def synthesize_shorts_thumbnail(
     niche_id: Optional[str] = None,
     niche: Optional[str] = None,
     timestamp_sec: float = 1.5,
+    background_path: Optional[str] = None,
+    aspect_ratio: str = "9:16",
     custom_hook_text: Optional[str] = None,
     hook_text: Optional[str] = None,
     dry_run: bool = False,
@@ -238,20 +240,31 @@ def synthesize_shorts_thumbnail(
     Bölüm 9.4: Otomatik Küçük Resim (Thumbnail) Sentezleyici.
     Videonun 1.5. saniyesinden en yüksek kontrastlı kareyi yakalar,
     üzerine niş renginde dikkat çekici 3 kelimelik başlık basar,
-    dikey kapak resmi (thumb_9x16.jpg) olarak kaydeder.
+    istenen 9:16 veya 16:9 boyutunda kapak resmi olarak kaydeder.
     """
+    aspect_ratio = str(aspect_ratio).strip()
+    if aspect_ratio == "9:16":
+        w, h = RES_9_16
+        output_filename = "thumb_9x16.jpg"
+        landscape = False
+    elif aspect_ratio == "16:9":
+        w, h = RES_16_9
+        output_filename = "thumb_16x9.jpg"
+        landscape = True
+    else:
+        raise ValueError(f"Unsupported thumbnail aspect ratio: {aspect_ratio}")
+
     effective_niche = niche_id or niche or "general"
     effective_title = custom_hook_text or hook_text or title or "ŞOK EDİCİ GERÇEK"
     # Hedef dosya yolunu belirle
     if output_path:
         final_output = output_path
     elif output_dir:
-        final_output = os.path.join(output_dir, "thumb_9x16.jpg")
+        final_output = os.path.join(output_dir, output_filename)
     else:
-        final_output = "thumb_9x16.jpg"
+        final_output = output_filename
 
     os.makedirs(os.path.dirname(os.path.abspath(final_output)), exist_ok=True)
-    w, h = RES_9_16
 
     palette = get_niche_thumbnail_palette(effective_niche)
     hook_text = (custom_hook_text or hook_text or format_3_word_hook_title(effective_title, effective_niche)).strip()
@@ -262,12 +275,23 @@ def synthesize_shorts_thumbnail(
         os.path.dirname(os.path.abspath(final_output)), f"_raw_frame_{timestamp_sec}.jpg"
     )
 
+    if background_path and os.path.isfile(background_path):
+        try:
+            with Image.open(background_path) as image:
+                bg_image = image.convert("RGB")
+        except (OSError, ValueError) as exc:
+            logger.warning("Could not read thumbnail background %s: %s", background_path, exc)
+
     if video_path and os.path.exists(video_path) and not dry_run:
-        ok = extract_highest_contrast_frame(video_path, extracted_frame, target_sec=timestamp_sec)
-        if ok and os.path.exists(extracted_frame):
+        if bg_image is None:
+            ok = extract_highest_contrast_frame(video_path, extracted_frame, target_sec=timestamp_sec)
+        else:
+            ok = None
+        if bg_image is None and ok and os.path.exists(extracted_frame):
             try:
                 bg_image = Image.open(extracted_frame).convert("RGB")
-            except Exception:
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not read extracted thumbnail frame %s: %s", extracted_frame, exc)
                 bg_image = None
             finally:
                 try:
@@ -297,7 +321,7 @@ def synthesize_shorts_thumbnail(
     # 3. Kontrast İçin Alt Yarım Degrade Katmanı
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d_over = ImageDraw.Draw(overlay)
-    start_y = int(h * 0.40)
+    start_y = int(h * (0.40 if not landscape else 0.35))
     for y in range(start_y, h):
         prog = (y - start_y) / (h - start_y)
         alpha = int(prog * prog * 225)
@@ -309,12 +333,15 @@ def synthesize_shorts_thumbnail(
 
     # 4. 3 Kelimelik Başlık Tipografisi (Bölüm 9.4)
     words = hook_text.split()
-    font_size = 110 if len(words) <= 3 else 90
+    if landscape:
+        font_size = 68 if len(words) <= 3 else 56
+    else:
+        font_size = 110 if len(words) <= 3 else 90
     font = _find_bold_font(font_size)
 
     # Kelimeleri alt alta dikey etki yaratacak şekilde yerleştir
     line_h = int(font_size * 1.25)
-    start_text_y = int(h * 0.60)
+    start_text_y = int(h * (0.48 if landscape else 0.60))
 
     for idx, word in enumerate(words[:4]):
         y = start_text_y + (idx * line_h)
@@ -346,9 +373,9 @@ def synthesize_shorts_thumbnail(
         # Ön plan metni
         draw.text((x, y), word, fill=text_color, font=font)
 
-    # 5. Kaydet (thumb_9x16.jpg)
+    # 5. Save the generated thumbnail
     combined.save(final_output, "JPEG", quality=95)
-    logger.info(f"Thumb_9x16 generated at: {final_output}")
+    logger.info("Thumbnail generated (%s): %s", aspect_ratio, final_output)
     return final_output
 
 

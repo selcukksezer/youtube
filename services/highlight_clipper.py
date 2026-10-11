@@ -13,6 +13,7 @@ anil _reframe_vertical re-encodes every frame in OpenCV. That path is not used.
 """
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -226,6 +227,38 @@ def select_highlights(
         row["end_time"] = snapped[1]
         row["start"] = snapped[0]
         row["end"] = snapped[1]
+        raw_broll = row.get("broll")
+        if isinstance(raw_broll, list):
+            from services.dynamic_broll_director import dynamic_broll_director
+
+            offset_shift = start - snapped[0]
+            adjusted_cues = []
+            for cue in raw_broll:
+                if not isinstance(cue, dict):
+                    continue
+                try:
+                    raw_start = float(cue.get("start_offset", 0.0))
+                    raw_end = float(cue.get("end_offset", raw_start + 3.0))
+                except (TypeError, ValueError):
+                    continue
+                adjusted_cues.append({
+                    **cue,
+                    "start_offset": raw_start + offset_shift,
+                    "end_offset": raw_end + offset_shift,
+                })
+
+            safe_cues = dynamic_broll_director.sanitize_cues(
+                adjusted_cues,
+                clip_duration=snapped[1] - snapped[0],
+            )
+            row["broll"] = [
+                {
+                    "start_offset": cue.start_offset,
+                    "end_offset": cue.end_offset,
+                    "subject": cue.subject,
+                }
+                for cue in safe_cues
+            ]
         cleaned.append(row)
     kept = dedupe_overlapping(cleaned, ratio=ratio)
     kept.sort(key=lambda clip: (-_score(clip), _span(clip)[0]))
@@ -286,6 +319,24 @@ def vertical_vf(
     return f"scale={scaled_w}:{scaled_h}:flags=lanczos,crop={out_w}:{out_h}:{x}:{y},setsar=1"
 
 
+def vertical_crop_x_for_center(
+    src_w: int,
+    src_h: int,
+    center_x: float,
+    out_w: int = OUT_W,
+    out_h: int = OUT_H,
+) -> int:
+    """Return the post-scale crop x that places a normalized subject at center."""
+    if not math.isfinite(center_x) or not 0.0 <= center_x <= 1.0:
+        raise ValueError("Kadraj merkezi 0-1 aralığında olmalı.")
+    scale = max(out_w / float(src_w), out_h / float(src_h))
+    scaled_w = max(out_w, int(src_w * scale))
+    scaled_w -= scaled_w % 2
+    max_x = max(0, scaled_w - out_w)
+    x = int(round(center_x * scaled_w - out_w / 2.0))
+    return max(0, min(max_x, x)) // 2 * 2
+
+
 def _ffmpeg_exe() -> str:
     try:
         import imageio_ffmpeg
@@ -308,6 +359,69 @@ def _probe_wh(path: str) -> Tuple[int, int]:
         return 0, 0
 
 
+def detect_speaker_split_centers(
+    source: str,
+    ranges: Sequence[Tuple[float, float]],
+) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    """Sample selected clip ranges and return stable two-face centers, if present."""
+    spans = [
+        (float(start), float(end))
+        for start, end in ranges
+        if float(end) > float(start)
+    ]
+    if not spans:
+        return None
+
+    timestamps = []
+    for start, end in spans:
+        span = end - start
+        timestamps.extend(start + span * fraction for fraction in (0.15, 0.38, 0.62, 0.85))
+
+    from visuals.face_reframe import detect_speaker_face_pair
+
+    return detect_speaker_face_pair(source, timestamps)
+
+
+def _speaker_split_vf(
+    width: int,
+    height: int,
+    centers: Tuple[Tuple[float, float], Tuple[float, float]],
+) -> str:
+    """Stack independently framed left/right speakers into a 9:16 output."""
+    normalized = [float(value) for center in centers for value in center]
+    if len(normalized) != 4 or any(not 0.0 <= value <= 1.0 for value in normalized):
+        raise ValueError("Konuşmacı kadraj noktaları 0-1 aralığında olmalı.")
+
+    half_height = OUT_H // 2
+    target_aspect = OUT_W / float(half_height)
+    source_width = max(2, int(width) - int(width) % 2)
+    source_height = max(2, int(height) - int(height) % 2)
+    crop_width = min(source_width, int(source_height * target_aspect))
+    crop_width -= crop_width % 2
+    crop_height = min(source_height, int(crop_width / target_aspect))
+    crop_height -= crop_height % 2
+    crop_width = max(2, crop_width)
+    crop_height = max(2, crop_height)
+
+    def position(center: Tuple[float, float]) -> Tuple[int, int]:
+        x = int(round(center[0] * source_width - crop_width / 2.0))
+        y = int(round(center[1] * source_height - crop_height * 0.4))
+        x = max(0, min(source_width - crop_width, x))
+        y = max(0, min(source_height - crop_height, y))
+        return x - x % 2, y - y % 2
+
+    top_x, top_y = position(centers[0])
+    bottom_x, bottom_y = position(centers[1])
+    return (
+        "[vc]split=2[speaker_left][speaker_right];"
+        f"[speaker_left]crop={crop_width}:{crop_height}:{top_x}:{top_y},"
+        f"scale={OUT_W}:{half_height}:flags=lanczos[speaker_top];"
+        f"[speaker_right]crop={crop_width}:{crop_height}:{bottom_x}:{bottom_y},"
+        f"scale={OUT_W}:{half_height}:flags=lanczos[speaker_bottom];"
+        "[speaker_top][speaker_bottom]vstack=inputs=2,setsar=1[vout]"
+    )
+
+
 def _has_audio(path: str, ffmpeg: str) -> bool:
     proc = subprocess.run([ffmpeg, "-hide_banner", "-i", path], capture_output=True, text=True)
     return "Audio:" in (proc.stderr or "")
@@ -318,6 +432,8 @@ def cut_ranges_vertical(
     ranges: Sequence[Tuple[float, float]],
     out_path: str,
     crop_x: Optional[int] = None,
+    crop_center_x: Optional[float] = None,
+    speaker_split_centers: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None,
 ) -> str:
     """One FFmpeg graph. Trim, concat, then 9:16 cover crop."""
     if not source or not os.path.isfile(source):
@@ -331,12 +447,19 @@ def cut_ranges_vertical(
     if width < 2 or height < 2:
         width, height = 1920, 1080
     if crop_x is None:
-        try:
-            from render.ffmpeg_graph import face_cover_crop_x
-            crop_x = face_cover_crop_x(source, OUT_W, OUT_H)
-        except Exception:
-            crop_x = None
-    vf = vertical_vf(width, height, crop_x=crop_x)
+        if crop_center_x is not None:
+            crop_x = vertical_crop_x_for_center(width, height, crop_center_x)
+        else:
+            try:
+                from render.ffmpeg_graph import face_cover_crop_x
+                crop_x = face_cover_crop_x(source, OUT_W, OUT_H)
+            except Exception:
+                crop_x = None
+    vf = (
+        _speaker_split_vf(width, height, speaker_split_centers)
+        if speaker_split_centers is not None
+        else vertical_vf(width, height, crop_x=crop_x)
+    )
     audio = _has_audio(source, ffmpeg)
     parts: List[str] = []
     links: List[str] = []

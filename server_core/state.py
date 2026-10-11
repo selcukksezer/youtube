@@ -77,7 +77,11 @@ def broadcast_event(event_type: str, data: Any):
         from services.log_sanitizer import sanitize_payload
         data = sanitize_payload(data)
     except Exception:
-        pass
+        logger.exception(
+            "Render event payload sanitization failed; %s event was not broadcast",
+            event_type,
+        )
+        raise
     if event_type == "progress":
         if isinstance(data, dict):
             current_render_state["percent"] = data.get("percent", current_render_state["percent"])
@@ -104,9 +108,16 @@ def broadcast_event(event_type: str, data: Any):
     if job_id:
         try:
             import database
+            database.append_render_job_event(job_id, event_type, data)
             if event_type == "progress" and isinstance(data, dict):
+                job = database.get_render_job(job_id)
+                job_status = (
+                    job["status"]
+                    if job and job["status"] in ("cancelling", "completed", "failed", "cancelled")
+                    else "rendering"
+                )
                 database.update_render_job(
-                    job_id, status="rendering", percent=int(data.get("percent", 0)),
+                    job_id, status=job_status, percent=int(data.get("percent", 0)),
                     step=str(data.get("step", "Render ediliyor")),
                 )
             elif event_type == "complete":
@@ -114,7 +125,11 @@ def broadcast_event(event_type: str, data: Any):
                 database.update_render_job(job_id, status="completed", percent=100,
                                            step="Tamamlandı", output_url=url or "")
             elif event_type == "error":
-                database.update_render_job(job_id, status="failed", step="Başarısız",
+                cancelled = bool(current_render_state.get("cancel_requested"))
+                database.update_render_job(
+                    job_id,
+                    status="cancelled" if cancelled else "failed",
+                    step="İptal edildi" if cancelled else "Başarısız",
                                            error_message=str(data))
         except Exception as exc:
             logger.warning("Render job state güncellenemedi (%s): %s", job_id, exc)

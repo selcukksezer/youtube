@@ -23,6 +23,41 @@ class TestGameplayPool(unittest.TestCase):
         self.assertIn("parkour", gp.GAMEPLAY_CATEGORIES)
         self.assertIn("subway_surfers_style", gp.GAMEPLAY_CATEGORIES)
 
+    def test_every_explicit_studio_category_resolves_without_niche_fallback(self):
+        categories = (
+            "minecraft_parkour",
+            "subway_surfers_style",
+            "gta_car_ramp",
+            "asmr_kinetic_sand",
+            "soap_cutting",
+            "satisfying",
+            "parkour",
+            "mobile_game",
+        )
+        listed_ids = {entry["id"] for entry in gp.list_categories()}
+
+        for category in categories:
+            with self.subTest(category=category):
+                self.assertIn(category, gp.GAMEPLAY_CATEGORIES)
+                self.assertIn(category, listed_ids)
+                self.assertEqual(
+                    gp.resolve_gameplay_category(category, niche="3_split_gameplay"),
+                    category,
+                )
+                self.assertTrue(gp.queries_for_category(category))
+
+    def test_new_explicit_categories_do_not_change_auto_rotation_set(self):
+        self.assertEqual(
+            gp._ROTATABLE,
+            [
+                "mobile_game",
+                "soap_cutting",
+                "satisfying",
+                "parkour",
+                "subway_surfers_style",
+            ],
+        )
+
     def test_resolve_auto_uses_niche_hint(self):
         cat = gp.resolve_gameplay_category("auto", niche="3_split_gameplay")
         self.assertEqual(cat, "subway_surfers_style")

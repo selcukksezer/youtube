@@ -125,7 +125,9 @@ class AudioMoodDirector:
         # 1. First priority: match exact mood in downloaded tracks
         for tr in detailed:
             tr_mood = str(tr.get("mood") or "").lower()
-            if tr.get("downloaded") and (mood.value in tr_mood or tr_mood in mood.value):
+            if tr.get("downloaded") and tr_mood and (
+                mood.value in tr_mood or tr_mood in mood.value
+            ):
                 p = get_bgm_path(tr["filename"])
                 if p and os.path.isfile(p):
                     return {

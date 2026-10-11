@@ -91,6 +91,114 @@ function switchTab(tabId, updateHistory = true) {
 
 window.switchTab = switchTab;
 
+const mobileNavToggle = document.getElementById('mobile-nav-toggle');
+const mobileNavBackdrop = document.getElementById('mobile-nav-backdrop');
+const mobileNavSidebar = document.getElementById('app-sidebar');
+const mobileNavMain = document.getElementById('main-content');
+const mobileNavMedia = window.matchMedia('(max-width: 768px)');
+let mobileNavFocusFallback;
+let mobileNavTransitionEndHandler;
+let mobileNavFocusGeneration = 0;
+
+function setMobileNavOpen(open, returnFocus = false) {
+    const isOpen = open && mobileNavMedia.matches;
+    const focusGeneration = ++mobileNavFocusGeneration;
+    if (mobileNavFocusFallback !== undefined) {
+        window.clearTimeout(mobileNavFocusFallback);
+        mobileNavFocusFallback = undefined;
+    }
+    if (mobileNavTransitionEndHandler) {
+        mobileNavSidebar.removeEventListener('transitionend', mobileNavTransitionEndHandler);
+        mobileNavTransitionEndHandler = undefined;
+    }
+
+    document.body.classList.toggle('mobile-nav-open', isOpen);
+    mobileNavToggle.setAttribute('aria-expanded', String(isOpen));
+    mobileNavToggle.setAttribute('aria-label', isOpen ? 'Menüyü kapat' : 'Menüyü aç');
+
+    if (isOpen) {
+        mobileNavMain.setAttribute('inert', '');
+        mobileNavMain.setAttribute('aria-hidden', 'true');
+        const focusFirstNavItem = () => {
+            if (
+                focusGeneration === mobileNavFocusGeneration
+                && document.body.classList.contains('mobile-nav-open')
+            ) {
+                mobileNavSidebar.querySelector('.nav-btn')?.focus({ preventScroll: true });
+            }
+        };
+
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            window.requestAnimationFrame(() => window.requestAnimationFrame(focusFirstNavItem));
+        } else {
+            const onTransitionEnd = (event) => {
+                if (event.target !== mobileNavSidebar || event.propertyName !== 'transform') return;
+                mobileNavSidebar.removeEventListener('transitionend', onTransitionEnd);
+                mobileNavTransitionEndHandler = undefined;
+                if (mobileNavFocusFallback !== undefined) {
+                    window.clearTimeout(mobileNavFocusFallback);
+                    mobileNavFocusFallback = undefined;
+                }
+                focusFirstNavItem();
+            };
+            mobileNavTransitionEndHandler = onTransitionEnd;
+            mobileNavSidebar.addEventListener('transitionend', onTransitionEnd);
+            mobileNavFocusFallback = window.setTimeout(() => {
+                if (mobileNavTransitionEndHandler) {
+                    mobileNavSidebar.removeEventListener('transitionend', mobileNavTransitionEndHandler);
+                    mobileNavTransitionEndHandler = undefined;
+                }
+                mobileNavFocusFallback = undefined;
+                focusFirstNavItem();
+            }, 260);
+        }
+    } else {
+        mobileNavMain.removeAttribute('inert');
+        mobileNavMain.removeAttribute('aria-hidden');
+        if (returnFocus) mobileNavToggle.focus();
+    }
+}
+
+mobileNavToggle.addEventListener('click', () => {
+    setMobileNavOpen(!document.body.classList.contains('mobile-nav-open'));
+});
+
+mobileNavBackdrop.addEventListener('click', () => setMobileNavOpen(false, true));
+
+document.addEventListener('keydown', (event) => {
+    if (!document.body.classList.contains('mobile-nav-open')) return;
+
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        setMobileNavOpen(false, true);
+        return;
+    }
+
+    if (event.key !== 'Tab') return;
+    const focusable = [
+        ...mobileNavSidebar.querySelectorAll(
+            'button:not([disabled]), summary, a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+        mobileNavBackdrop,
+    ].filter((element) => element.getClientRects().length);
+    if (!focusable.length) return;
+
+    const activeIndex = focusable.indexOf(document.activeElement);
+    if (event.shiftKey && activeIndex <= 0) {
+        event.preventDefault();
+        focusable[focusable.length - 1].focus();
+    } else if (!event.shiftKey && activeIndex === focusable.length - 1) {
+        event.preventDefault();
+        focusable[0].focus();
+    }
+});
+
+window.addEventListener('resize', () => {
+    if (!mobileNavMedia.matches && document.body.classList.contains('mobile-nav-open')) {
+        setMobileNavOpen(false);
+    }
+});
+
 // Global delegated click listener for navigation buttons (guaranteed to catch clicks on icons, text, badges, etc.)
 document.addEventListener('click', (e) => {
     const btn = e.target.closest('.nav-btn');
@@ -99,6 +207,7 @@ document.addEventListener('click', (e) => {
         if (tab) {
             e.preventDefault();
             switchTab(tab);
+            if (mobileNavMedia.matches) setMobileNavOpen(false, true);
         }
     }
 });
@@ -135,7 +244,9 @@ function setTheme(colorName) {
     document.body.setAttribute('data-theme', colorName);
     localStorage.setItem('shorts_theme', colorName);
     themeDots.forEach(d => {
-        d.classList.toggle('active', d.getAttribute('data-color') === colorName);
+        const isActive = d.getAttribute('data-color') === colorName;
+        d.classList.toggle('active', isActive);
+        d.setAttribute('aria-pressed', String(isActive));
     });
 }
 
@@ -229,4 +340,3 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ══════════════════════════════════════════════════════════════
-

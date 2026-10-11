@@ -6,7 +6,7 @@ Hallucination Detection, and Cinematic Query Enrichment.
 import re
 import math
 import random
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 
 CLOSING_GAZE_QUERY_HINTS = [
     "direct gaze camera portrait",
@@ -46,25 +46,21 @@ def enrich_cinematic_search_queries(queries: List[str], mood: str = "epic") -> L
     return enriched
 
 
-def _split_narration_cleanly(narration: str, cutaway_counter: int):
-    # 1. Split ONLY on sentence boundaries (. ! ?) — never mid-clause or mid-verb
+def _split_narration_cleanly(narration: str) -> Optional[Tuple[str, str]]:
+    from .narration_validate import MIN_WORDS_PER_SCENE
+
     sentences = [s.strip() for s in re.split(r'(?<=[.?!])\s+', narration or "") if s.strip()]
     if len(sentences) >= 2:
         mid = len(sentences) // 2
         left = " ".join(sentences[:mid])
         right = " ".join(sentences[mid:])
-        if len(left.split()) >= 5 and len(right.split()) >= 5:
+        if (
+            len(left.split()) >= MIN_WORDS_PER_SCENE
+            and len(right.split()) >= MIN_WORDS_PER_SCENE
+        ):
             return left, right
 
-    # Long lines split on words. Short lines stay whole on the first
-    # half; the cutaway only adds an angle mark so the spoken text is
-    # not copied and no shock filler is invented.
-    words = (narration or "").split()
-    if len(words) >= 8:
-        mid = len(words) // 2
-        return " ".join(words[:mid]), " ".join(words[mid:])
-    base = (narration or "").strip() or "Sahne"
-    return base, f"{base} Açı {cutaway_counter}."
+    return None
 
 
 def _differentiate_queries(queries: List[str], cutaway_counter: int):
@@ -98,12 +94,17 @@ def enforce_visual_cadence_14(scenes: List[Dict[str, Any]], min_cadence: int = 1
         curr_dur = sc.get("duration", 6.0)
         # If we still need cuts and current scene is sufficiently long (> 3.0s)
         if cuts_needed > 0 and curr_dur >= 3.5:
+            split = _split_narration_cleanly(sc.get("narration", ""))
+            if split is None:
+                sc_copy = dict(sc)
+                sc_copy["scene_number"] = len(expanded) + 1
+                expanded.append(sc_copy)
+                continue
             part1_dur = round(curr_dur / 2.0, 2)
             part2_dur = round(curr_dur - part1_dur, 2)
             cuts_needed -= 1
 
-            orig_narration = sc.get("narration", "")
-            narr1, narr2 = _split_narration_cleanly(orig_narration, cutaway_counter)
+            narr1, narr2 = split
             queries1, queries2 = _differentiate_queries(sc.get("search_queries", []), cutaway_counter)
 
             sc1 = dict(sc)
@@ -129,15 +130,28 @@ def enforce_visual_cadence_14(scenes: List[Dict[str, Any]], min_cadence: int = 1
 
     # If still below min_cadence, split remaining largest scenes
     while len(expanded) < min_cadence:
-        max_idx = max(range(len(expanded)), key=lambda i: expanded[i]["duration"])
-        target = expanded[max_idx]
-        if target["duration"] < 1.5:
+        split_idx = None
+        split = None
+        for candidate_idx in sorted(
+            range(len(expanded)),
+            key=lambda i: expanded[i]["duration"],
+            reverse=True,
+        ):
+            candidate = expanded[candidate_idx]
+            if candidate["duration"] < 1.5:
+                break
+            candidate_split = _split_narration_cleanly(candidate.get("narration", ""))
+            if candidate_split is not None:
+                split_idx = candidate_idx
+                split = candidate_split
+                break
+        if split_idx is None or split is None:
             break
+        target = expanded[split_idx]
         half1 = round(target["duration"] / 2.0, 2)
         half2 = round(target["duration"] - half1, 2)
 
-        orig_narr = target.get("narration", "")
-        narr1, narr2 = _split_narration_cleanly(orig_narr, cutaway_counter)
+        narr1, narr2 = split
         queries1, queries2 = _differentiate_queries(target.get("search_queries", []), cutaway_counter)
 
         t1 = dict(target)
@@ -153,7 +167,7 @@ def enforce_visual_cadence_14(scenes: List[Dict[str, Any]], min_cadence: int = 1
         t2["scene_description"] = f"Cutaway dynamic angle showing {queries2[0]}"
         cutaway_counter += 1
 
-        expanded = expanded[:max_idx] + [t1, t2] + expanded[max_idx + 1:]
+        expanded = expanded[:split_idx] + [t1, t2] + expanded[split_idx + 1:]
 
     # Renumber scenes
     for i, sc in enumerate(expanded):

@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional
 
 
 class RenderAttemptError(Exception):
@@ -24,9 +24,9 @@ class WorkflowRenderRetry:
 
     @staticmethod
     def get_attempt_path(target_path: str, attempt: int) -> str:
-        """Returns isolated output path for attempt (e.g. video.attempt-002.mp4)."""
-        if attempt <= 1:
-            return target_path
+        """Returns an isolated output path for each attempt."""
+        if attempt < 1:
+            raise ValueError("attempt must be at least 1")
         p = Path(target_path)
         return str(p.with_name(f"{p.stem}.attempt-{attempt:03d}{p.suffix}"))
 
@@ -38,6 +38,7 @@ class WorkflowRenderRetry:
         max_attempts: int = 3,
         initial_backoff: float = 0.5,
         backoff_multiplier: float = 2.0,
+        initial_use_gpu: bool = True,
     ) -> Dict[str, Any]:
         """
         Executes render_fn(output_file, use_hardware_gpu).
@@ -47,32 +48,32 @@ class WorkflowRenderRetry:
         3. On final retry, switches to software CPU fallback.
         4. On success, moves attempt file cleanly to target output_path.
         """
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be at least 1")
+        if initial_backoff < 0:
+            raise ValueError("initial_backoff must not be negative")
+
         last_error: Optional[str] = None
         attempt_history = []
         backoff = initial_backoff
 
         for attempt in range(1, max_attempts + 1):
-            use_gpu = (attempt < max_attempts)  # Fall back to software CPU on final attempt
+            use_gpu = initial_use_gpu and attempt < max_attempts
             attempt_file = cls.get_attempt_path(output_path, attempt)
 
-            # Ensure clean start
-            if os.path.exists(attempt_file):
-                try:
-                    os.unlink(attempt_file)
-                except OSError:
-                    pass
+            try:
+                os.unlink(attempt_file)
+            except FileNotFoundError:
+                pass
 
             t0 = time.time()
+            cancelled: Optional[InterruptedError] = None
             try:
                 success = render_fn(attempt_file, use_gpu)
                 elapsed = round(time.time() - t0, 3)
 
                 if success and os.path.exists(attempt_file) and os.path.getsize(attempt_file) > 0:
-                    # Rename to final output_path if not already identical
-                    if attempt_file != output_path:
-                        if os.path.exists(output_path):
-                            os.unlink(output_path)
-                        os.rename(attempt_file, output_path)
+                    os.replace(attempt_file, output_path)
 
                     attempt_history.append({"attempt": attempt, "use_gpu": use_gpu, "elapsed_sec": elapsed, "success": True})
                     return {
@@ -84,18 +85,23 @@ class WorkflowRenderRetry:
                     }
                 else:
                     last_error = f"Attempt {attempt} produced empty or missing file."
-            except Exception as e:
-                last_error = str(e)
+            except InterruptedError as exc:
+                last_error = str(exc)
+                elapsed = round(time.time() - t0, 3)
+                cancelled = exc
+            except Exception as exc:
+                last_error = str(exc)
                 elapsed = round(time.time() - t0, 3)
 
             attempt_history.append({"attempt": attempt, "use_gpu": use_gpu, "elapsed_sec": elapsed, "success": False, "error": last_error})
 
-            # Cleanup broken attempt file
-            if os.path.exists(attempt_file):
-                try:
-                    os.unlink(attempt_file)
-                except OSError:
-                    pass
+            try:
+                os.unlink(attempt_file)
+            except FileNotFoundError:
+                pass
+
+            if cancelled is not None:
+                raise cancelled
 
             if attempt < max_attempts:
                 time.sleep(backoff)

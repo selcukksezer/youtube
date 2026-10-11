@@ -6,6 +6,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from director import compile_director_plan, pre_render_score
+from director.timeline import condense_plan_narration, recover_overlong_narration
 from director.quality_gate import check_narration_integrity
 from scenes.narration_validate import (
     auto_repair_plan,
@@ -47,7 +48,9 @@ class TestNarrationNormalization(unittest.TestCase):
 
 class TestNarrationAutoRepair(unittest.TestCase):
     def test_missing_terminal_repaired(self):
-        fixed, fixes = auto_repair_scene_narration("Marcus Aurelius bugün yaşasaydı sana bunu net söylerdi")
+        fixed, fixes = auto_repair_scene_narration(
+            "Marcus Aurelius bugün yaşasaydı sana bunu net ve açık biçimde söylerdi"
+        )
         self.assertTrue(fixed.endswith("."))
         self.assertIn("added_terminal", fixes)
         self.assertEqual(scene_narration_issues(fixed), [])
@@ -77,6 +80,71 @@ class TestNarrationAutoRepair(unittest.TestCase):
         self.assertTrue(fixes, msg="Expected repairs applied")
         for sc in repaired["scenes"]:
             self.assertEqual(scene_narration_issues(sc["narration"]), [])
+
+    def test_short_scene_merges_neighbor_context_without_generic_padding(self):
+        plan = {
+            "scenes": [
+                {
+                    "narration": "Bu piyasa sinyalini dikkatle izlemek için her seansta",
+                    "duration": 3.0,
+                    "scene_description": "A market indicator on a trading screen",
+                    "search_queries": ["market indicator", "trading screen"],
+                },
+                {
+                    "narration": "fiyat ve işlem hacmini birlikte karşılaştır.",
+                    "duration": 3.0,
+                    "scene_description": "A price chart beside volume bars",
+                    "search_queries": ["price chart", "volume bars"],
+                },
+            ],
+        }
+
+        repaired, fixes = auto_repair_plan(plan)
+
+        self.assertEqual(len(repaired["scenes"]), 1)
+        self.assertEqual(repaired["scenes"][0]["duration"], 6.0)
+        self.assertIn("işlem hacmini birlikte karşılaştır", repaired["full_narration"])
+        self.assertNotIn("aklında tut", repaired["full_narration"].lower())
+        self.assertIn("volume bars", repaired["scenes"][0]["scene_description"])
+        self.assertEqual(len(repaired["scenes"][0]["search_queries"]), 4)
+        self.assertTrue(any(fix.startswith("merged_scene_") for fix in fixes))
+
+    def test_word_budget_condense_never_adds_generic_or_wrong_language_text(self):
+        plan = {
+            "scenes": [{
+                "narration": (
+                    "The market breaks when sellers overwhelm buyers. "
+                    "The next candle confirms the move after volume rises across exchanges."
+                ),
+            }],
+        }
+
+        condensed = condense_plan_narration(plan, max_words=12)
+        narration = condensed["scenes"][0]["narration"]
+
+        self.assertEqual(
+            narration,
+            "The next candle confirms the move after volume rises across exchanges.",
+        )
+        self.assertLessEqual(len(narration.split()), 12)
+        self.assertNotIn("Bunu aklında tut", narration)
+
+    def test_recovery_preserves_spoken_word_cap_with_mood_labels(self):
+        narrations = [
+            "**URGENT** " + " ".join(["careful"] * 17 + ["today."])
+            for _ in range(5)
+        ]
+        narrations.append(
+            "**DRAMATIC** " + " ".join(["careful"] * 19 + ["today."])
+        )
+        plan = {"scenes": [{"narration": narration} for narration in narrations]}
+
+        recovered = recover_overlong_narration(plan, audio_seconds=60.0)
+
+        self.assertEqual(
+            [scene["narration"] for scene in recovered["scenes"]],
+            narrations,
+        )
 
     def test_formatted_screenshot_plan_pre_render_ok(self):
         scenes = [

@@ -226,6 +226,31 @@ def is_valid_voice(voice_id: str, lang: Optional[str] = None) -> bool:
     return False
 
 
+def is_voice_available_from_catalog(voice_id: str, lang: Optional[str] = None) -> bool:
+    """Check supported voices without refreshing a remote catalog."""
+    if not voice_id:
+        return False
+    if is_local_offline_voice(voice_id):
+        return True
+    if not is_elevenlabs_voice(voice_id):
+        langs = [lang.lower()] if lang else list(EDGE_TTS_VOICE_CATALOG.keys())
+        return any(
+            entry["id"] == voice_id
+            for code in langs
+            for entry in EDGE_TTS_VOICE_CATALOG.get(code, [])
+        )
+
+    if not _elevenlabs_configured():
+        return False
+    import config as cfg
+    current_key = getattr(cfg, "ELEVENLABS_API_KEY", "") or ""
+    if _el_voice_cache.get("api_key") == current_key and _el_voice_cache.get("error"):
+        if _is_auth_error(_el_voice_cache["error"]):
+            return False
+    catalog = _el_voice_cache.get("voices") or ELEVENLABS_FREE_VOICES
+    return any(entry.get("id") == voice_id for entry in catalog)
+
+
 def _native_voice_prefix(lang: str) -> str:
     return {"tr": "tr-TR-", "en": "en-"}.get((lang or "tr").lower(), "tr-TR-")
 

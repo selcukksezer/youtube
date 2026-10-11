@@ -9,6 +9,7 @@ from niche_templates import (
     get_niche_scene_structure,
     list_all_niches,
 )
+from scenes.prompts import PROMPT_EN, PROMPT_TR, PROMPT_VARIANTS_TR
 
 class TestNiches(unittest.TestCase):
     def test_total_niches_count(self):
@@ -39,6 +40,23 @@ class TestNiches(unittest.TestCase):
         self.assertIn("VIRAL HOOK", prompt)
         self.assertIn("SEAMLESS LOOP", prompt)
         self.assertIn("Global Space Discovery", prompt)
+
+    def test_niche_prompts_match_director_spoken_scene_budget(self):
+        prompt_tr = get_niche_prompt("6_stoic_philosophy", "Marcus Aurelius", language="tr")
+        prompt_en = get_niche_prompt("6_stoic_philosophy", "Marcus Aurelius", language="en")
+
+        self.assertIn("Tam 6 konuşma sahnesi oluştur", prompt_tr)
+        self.assertIn("en fazla 110 kelime", prompt_tr)
+        self.assertIn("Write exactly 6 complete spoken scenes", prompt_en)
+        self.assertIn("not exceed 110 words", prompt_en)
+
+    def test_rotated_prompts_do_not_reintroduce_oversized_scripts(self):
+        for prompt in (PROMPT_TR, PROMPT_EN, *PROMPT_VARIANTS_TR):
+            with self.subTest(prompt=prompt[:40]):
+                self.assertIn("110", prompt)
+                self.assertNotIn("120-170", prompt)
+                self.assertNotIn("8-16", prompt)
+                self.assertNotIn("8-12", prompt)
 
     def test_split_screen_niches_flag(self):
         """Verify specific niches like reddit or split gameplay have has_split_screen enabled."""

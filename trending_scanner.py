@@ -1,10 +1,17 @@
 """
 YouTube Shorts Advanced Viral Trend Scanner — Scrapes, analyzes & extracts deep viral YouTube Shorts insights.
 """
-import requests, re, json, urllib.parse
+import json
+import logging
+import re
+import urllib.parse
 from typing import List, Dict, Any
 
+import requests
+
 from research_service import extract_format_fingerprint_from_title
+
+logger = logging.getLogger(__name__)
 
 CATEGORIES = {
     "all": "",
@@ -86,7 +93,7 @@ def scan_youtube_shorts_trends(topic: str, time_filter: str = "week", sort_by: s
                         v_text = reel.get("viewCountText", {}).get("simpleText", "Yüksek İzlenme")
                         thumb = reel.get("thumbnail", {}).get("thumbnails", [{}])[-1].get("url", "")
                         if v_id and t_text:
-                            results.append(_format_trend_card(v_id, t_text, v_text, "Son Günlerde", "YouTube Creator", thumb, topic))
+                            results.append(_format_trend_card(v_id, t_text, v_text, "Son Günlerde", "YouTube Creator", thumb))
                     continue
 
                 video_id = video.get("videoId")
@@ -98,7 +105,7 @@ def scan_youtube_shorts_trends(topic: str, time_filter: str = "week", sort_by: s
                 thumb_url = thumbnails[-1].get("url", "") if thumbnails else ""
 
                 if video_id and title:
-                    results.append(_format_trend_card(video_id, title, view_text, pub_time, channel, thumb_url, topic))
+                    results.append(_format_trend_card(video_id, title, view_text, pub_time, channel, thumb_url))
 
                 if len(results) >= 12:
                     break
@@ -109,11 +116,12 @@ def scan_youtube_shorts_trends(topic: str, time_filter: str = "week", sort_by: s
             return results
         return _get_fallback_viral_trends(topic)
 
-    except Exception as e:
-        print(f"  [Advanced Trend Scanner] Warning: {e}")
+    except Exception as exc:
+        logger.warning("YouTube Shorts trend scan failed: %s", exc)
         return _get_fallback_viral_trends(topic)
 
-def _format_trend_card(v_id: str, title: str, view_text: str, pub_time: str, channel: str, thumb_url: str, topic: str) -> Dict[str, Any]:
+
+def _format_trend_card(v_id: str, title: str, view_text: str, pub_time: str, channel: str, thumb_url: str) -> Dict[str, Any]:
     # Calculate mock viral score based on view string keywords
     score = 85
     if "M" in view_text or "Mn" in view_text or "milyon" in view_text.lower():
@@ -159,8 +167,8 @@ def _get_fallback_viral_trends(topic: str) -> List[Dict[str, Any]]:
             s_clean = s.strip()
             if 12 <= len(s_clean) <= 90:
                 candidate_titles.append(s_clean[0].upper() + s_clean[1:])
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("YouTube autocomplete fallback failed: %s", exc)
 
     if not candidate_titles:
         candidate_titles = [

@@ -8,11 +8,12 @@ in 9:16 vertical shorts without expensive re-encoding loops.
 """
 from __future__ import annotations
 
+from statistics import median
 import os
 import sys
 import math
 from bisect import bisect_right
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 
 def _get_short_path(path: str) -> str:
@@ -148,6 +149,137 @@ def face_crop_expression(track: List[Tuple[float, float]]) -> Optional[str]:
         if t1 > t0 and abs(x1 - x0) > 0.000001:
             terms.append(f"({x1-x0:.7f})*clip((t-{t0:.4f})/{t1-t0:.4f},0,1)")
     return "2*floor(max(0,min(iw-ow,iw*(" + "+".join(terms) + ")-ow/2))/2)"
+
+
+def select_speaker_face_pair(
+    face_boxes: Sequence[Tuple[int, int, int, int]],
+    frame_width: int,
+    frame_height: int,
+) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    """Choose two distinct, prominent faces, returned left-to-right normalized."""
+    if frame_width <= 0 or frame_height <= 0:
+        return None
+
+    candidates = []
+    min_width = max(30, int(frame_width * 0.04))
+    min_height = max(30, int(frame_height * 0.04))
+    for raw_x, raw_y, raw_width, raw_height in face_boxes:
+        x, y = int(raw_x), int(raw_y)
+        width, height = int(raw_width), int(raw_height)
+        if width < min_width or height < min_height:
+            continue
+        candidates.append((x, y, width, height))
+
+    distinct = []
+    for box in sorted(candidates, key=lambda item: item[2] * item[3], reverse=True):
+        x, y, width, height = box
+        area = width * height
+        duplicate = False
+        for kept_x, kept_y, kept_width, kept_height in distinct:
+            overlap_width = max(
+                0,
+                min(x + width, kept_x + kept_width) - max(x, kept_x),
+            )
+            overlap_height = max(
+                0,
+                min(y + height, kept_y + kept_height) - max(y, kept_y),
+            )
+            overlap = overlap_width * overlap_height
+            if overlap / max(1, min(area, kept_width * kept_height)) >= 0.55:
+                duplicate = True
+                break
+        if not duplicate:
+            distinct.append(box)
+
+    if len(distinct) < 2:
+        return None
+    first, second = sorted(
+        distinct[:2],
+        key=lambda box: box[0] + box[2] / 2.0,
+    )
+    first_x, first_y, first_width, first_height = first
+    second_x, second_y, second_width, second_height = second
+    first_center_x = first_x + first_width / 2.0
+    second_center_x = second_x + second_width / 2.0
+    if second_center_x - first_center_x < frame_width * 0.18:
+        return None
+
+    return (
+        (first_center_x / frame_width, (first_y + first_height / 2.0) / frame_height),
+        (second_center_x / frame_width, (second_y + second_height / 2.0) / frame_height),
+    )
+
+
+def detect_speaker_face_pair(
+    media_path: str,
+    timestamps: Sequence[float],
+    *,
+    minimum_visible_share: float = 0.6,
+) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    """Return stable left/right face centers only when both appear in most samples."""
+    try:
+        import cv2
+    except (ImportError, OSError):
+        return None
+
+    sample_times = []
+    for raw_time in list(timestamps)[:24]:
+        try:
+            time_sec = float(raw_time)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(time_sec) and time_sec >= 0:
+            sample_times.append(time_sec)
+    if not media_path or not sample_times:
+        return None
+
+    cascade = _load_cascade()
+    if cascade is None:
+        return None
+    capture = cv2.VideoCapture(_get_short_path(media_path))
+    if not capture.isOpened():
+        capture.release()
+        return None
+
+    found_pairs = []
+    try:
+        for time_sec in sample_times:
+            capture.set(cv2.CAP_PROP_POS_MSEC, time_sec * 1000.0)
+            ok, frame = capture.read()
+            if not ok or frame is None:
+                continue
+            frame_height, frame_width = frame.shape[:2]
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            boxes = cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=5,
+                minSize=(
+                    max(30, int(frame_width * 0.04)),
+                    max(30, int(frame_height * 0.04)),
+                ),
+            )
+            pair = select_speaker_face_pair(boxes, frame_width, frame_height)
+            if pair is not None:
+                found_pairs.append(pair)
+    except (cv2.error, OSError, TypeError, ValueError):
+        return None
+    finally:
+        capture.release()
+
+    required_pairs = max(1, math.ceil(len(sample_times) * minimum_visible_share))
+    if len(found_pairs) < required_pairs:
+        return None
+    return (
+        (
+            median(pair[0][0] for pair in found_pairs),
+            median(pair[0][1] for pair in found_pairs),
+        ),
+        (
+            median(pair[1][0] for pair in found_pairs),
+            median(pair[1][1] for pair in found_pairs),
+        ),
+    )
 
 
 def detect_face_center_x(media_path: str, samples_per_sec: float = 2.0) -> Optional[float]:

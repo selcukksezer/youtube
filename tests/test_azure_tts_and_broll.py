@@ -24,6 +24,36 @@ class AzureTtsUnitTests(unittest.TestCase):
         self.assertIn("a &amp; b &lt;c&gt;", ssml)
         self.assertIn("tr-TR-AhmetNeural", ssml)
 
+    def test_wav_output_path_preserves_dots_in_parent_directory(self):
+        import azure_tts
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = os.path.join(tmp, "voice.v1")
+            os.makedirs(output_dir)
+            output_path = os.path.join(output_dir, "narration")
+            expected_wav = output_path + ".wav"
+            response = mock.Mock(status_code=200, content=b"fake-mp3", text="")
+
+            def fake_convert(mp3_path, wav_path):
+                self.assertTrue(os.path.isfile(mp3_path))
+                with open(wav_path, "wb") as wav_file:
+                    wav_file.write(b"RIFF")
+                return wav_path
+
+            with mock.patch("config.AZURE_SPEECH_KEY", "test-key"), mock.patch(
+                "config.AZURE_SPEECH_REGION", "test-region"
+            ), mock.patch(
+                "azure_tts.requests.post", return_value=response
+            ), mock.patch(
+                "azure_tts._mp3_to_wav", side_effect=fake_convert
+            ) as convert:
+                ok, message = azure_tts.generate_tts_wav(
+                    "hello", output_path, voice="tr-TR-AhmetNeural"
+                )
+
+            self.assertEqual(convert.call_args.args[1], expected_wav)
+            self.assertTrue(ok, message)
+
     def test_active_provider_prefers_azure_label(self):
         import tts_engine
 

@@ -98,7 +98,6 @@ class RenderConcurrencyGate:
     @asynccontextmanager
     async def acquire_slot(self, task_id: str = "anonymous", timeout: float = 60.0):
         """Asynchronous context manager using non-blocking executor wait."""
-        loop = asyncio.get_running_loop()
         start_time = time.monotonic()
 
         with self._lock:

@@ -145,7 +145,7 @@ class TestFFmpegRender(unittest.TestCase):
         self.assertIn("Duration: 00:00:03.", stderr)
 
     # ─── K2: Probe sonucu -t sınırı, asla -shortest ───
-    def _captured_cmds(self, probe_dur, **render_kwargs):
+    def _captured_cmds(self, probe_dur, *, clip_duration=3.0, **render_kwargs):
         from unittest import mock
         import render.ffmpeg_graph as fg
 
@@ -161,7 +161,7 @@ class TestFFmpegRender(unittest.TestCase):
             def __getattr__(self, name):
                 raise RuntimeError("stop")
 
-        clips = [{"path": self.sample_clip, "duration": 3.0, "scene_index": 0}]
+        clips = [{"path": self.sample_clip, "duration": clip_duration, "scene_index": 0}]
         out = os.path.join(self.test_dir, "k2.mp4")
         with mock.patch.object(fg, "_probe_audio_duration", return_value=probe_dur), \
              mock.patch.object(fg.subprocess, "Popen", side_effect=lambda cmd, *a, **k: _FakeProc(cmd)):
@@ -190,18 +190,31 @@ class TestFFmpegRender(unittest.TestCase):
             self.assertNotIn("-shortest", c)
             self.assertEqual(c[c.index("-t") + 1], "3.500")
 
-    def test_reddit_card_is_enabled_for_the_full_clip_timeline(self):
+    def test_reddit_card_fades_after_opening_display_interval(self):
         with tempfile.NamedTemporaryFile(suffix=".png") as card:
             cmds = self._captured_cmds(
                 -1.0,
+                clip_duration=1.0,
                 enable_reddit_card=True,
                 reddit_card_path=card.name,
             )
         self.assertTrue(cmds, "no ffmpeg command captured")
         graphs = [c[c.index("-filter_complex") + 1] for c in cmds]
+        self.assertTrue(any("between(t,0,1.000)" in graph for graph in graphs))
+        self.assertTrue(any("fade=t=in:st=0:d=0.350:alpha=1" in graph for graph in graphs))
+        self.assertTrue(any("fade=t=out:st=0.650:d=0.350:alpha=1" in graph for graph in graphs))
+
+    def test_reddit_card_uses_three_point_five_second_cap_on_long_video(self):
+        with tempfile.NamedTemporaryFile(suffix=".png") as card:
+            cmds = self._captured_cmds(
+                12.0,
+                clip_duration=12.0,
+                enable_reddit_card=True,
+                reddit_card_path=card.name,
+            )
+        graphs = [c[c.index("-filter_complex") + 1] for c in cmds]
         self.assertTrue(any("between(t,0,3.500)" in graph for graph in graphs))
-        self.assertTrue(any("fade=t=in:st=0:d=0.35:alpha=1" in graph for graph in graphs))
-        self.assertTrue(all("fade=t=out" not in graph for graph in graphs))
+        self.assertTrue(any("fade=t=out:st=3.150:d=0.350:alpha=1" in graph for graph in graphs))
 
     # ─── 18.3 Test 3: Bellek Sızıntısı ve Tracemalloc Doğrulaması ───
     def test_tracemalloc_memory_leak_bounds(self):

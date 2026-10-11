@@ -3,11 +3,11 @@ SQLite Database Persistence Layer for Shorts Video Creators (shorts.db)
 Architecturally optimized with WAL mode, foreign key constraints, error tracking and cleanup.
 """
 import hashlib
+import json
 import os
-import shutil
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import config
 
@@ -15,8 +15,17 @@ import config
 DB_PATH = os.getenv("SHORTS_DB_PATH") or os.path.join(config.BASE_DIR, "shorts.db")
 BACKUP_DIR = os.path.join(config.BASE_DIR, "data", "backups")
 
+
+class _ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 def get_connection():
-    conn = sqlite3.connect(DB_PATH, timeout=15.0)
+    conn = sqlite3.connect(DB_PATH, timeout=15.0, factory=_ClosingConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
@@ -126,6 +135,20 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
             )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS render_job_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (job_id) REFERENCES render_jobs(id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_render_job_events_job_id_id
+            ON render_job_events(job_id, id)
         """)
 
         # Anti-Detect & 5-Rule Compliant Managed Channels (Items 1-70, 28)
@@ -326,18 +349,49 @@ def record_source_asset(source_key: str, source_url: str = "", content_hash: str
         conn.commit()
 
 def cleanup_stale_tasks():
-    """Recovers any tasks left in 'processing' state when server restarts or after crash."""
-    try:
-        with get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE videos 
-                SET status = 'failed', error_message = 'Sunucu yeniden başlatıldı veya işlem beklenmedik şekilde sonlandı.' 
-                WHERE status = 'processing'
-            """)
-            conn.commit()
-    except Exception:
-        pass
+    """Marks in-flight tasks as failed when the server restarts or crashes."""
+    restart_error = "Sunucu yeniden başlatıldı; render işi tamamlanamadı."
+    with get_connection() as conn:
+        stale_render_jobs = conn.execute("""
+            SELECT id FROM render_jobs
+            WHERE status IN ('queued', 'rendering', 'cancelling')
+        """).fetchall()
+        conn.execute("""
+            UPDATE videos
+            SET status = 'failed',
+                error_message = 'Sunucu yeniden başlatıldı veya işlem beklenmedik şekilde sonlandı.'
+            WHERE status = 'processing'
+        """)
+        conn.execute("""
+            UPDATE projects
+            SET status = 'ready_to_render', updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'rendering'
+              AND EXISTS (
+                  SELECT 1 FROM render_jobs
+                  WHERE render_jobs.project_id = projects.id
+                    AND render_jobs.status IN ('queued', 'rendering', 'cancelling')
+              )
+        """)
+        conn.execute("""
+            UPDATE render_jobs
+            SET status = 'failed',
+                step = 'Başarısız',
+                error_message = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status IN ('queued', 'rendering', 'cancelling')
+        """, (restart_error,))
+        for row in stale_render_jobs:
+            _insert_render_job_event(
+                conn,
+                row["id"],
+                "status",
+                {
+                    "status": "failed",
+                    "step": "Başarısız",
+                    "error_message": restart_error,
+                },
+            )
+        conn.commit()
 
 def add_video_record(
     keyword: str,
@@ -435,6 +489,7 @@ def list_projects(limit: int = 50) -> List[Dict[str, Any]]:
 def create_render_job(job_id: str, project_id: str) -> Dict[str, Any]:
     with get_connection() as conn:
         conn.execute("INSERT INTO render_jobs (id, project_id) VALUES (?, ?)", (job_id, project_id))
+        _insert_render_job_event(conn, job_id, "status", {"status": "queued"})
         conn.commit()
     return get_render_job(job_id) or {}
 
@@ -443,6 +498,56 @@ def get_render_job(job_id: str) -> Optional[Dict[str, Any]]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM render_jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
+
+
+def _insert_render_job_event(conn, job_id: str, event_type: str, payload: Any) -> None:
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    conn.execute(
+        """INSERT INTO render_job_events (job_id, event_type, payload_json)
+           VALUES (?, ?, ?)""",
+        (job_id, event_type, payload_json),
+    )
+
+
+def append_render_job_event(job_id: str, event_type: str, payload: Any) -> int:
+    if not event_type:
+        raise ValueError("Render job event type cannot be empty.")
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "SELECT 1 FROM render_jobs WHERE id = ?",
+            (job_id,),
+        )
+        if cursor.fetchone() is None:
+            raise ValueError(f"Render job not found: {job_id}")
+        _insert_render_job_event(conn, job_id, event_type, payload)
+        event_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+        conn.commit()
+    return event_id
+
+
+def list_render_job_events(
+    job_id: str, *, after_id: int = 0, limit: int = 200
+) -> List[Dict[str, Any]]:
+    cursor_id = max(0, int(after_id))
+    page_size = max(1, min(int(limit), 500))
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT id, job_id, event_type, payload_json, created_at
+               FROM render_job_events
+               WHERE job_id = ? AND id > ?
+               ORDER BY id ASC LIMIT ?""",
+            (job_id, cursor_id, page_size),
+        ).fetchall()
+    return [
+        {
+            "id": int(row["id"]),
+            "job_id": row["job_id"],
+            "event_type": row["event_type"],
+            "payload": json.loads(row["payload_json"]),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
 
 
 def update_render_job(job_id: str, *, status: Optional[str] = None, percent: Optional[int] = None,
@@ -459,7 +564,24 @@ def update_render_job(job_id: str, *, status: Optional[str] = None, percent: Opt
     fields.append("updated_at = CURRENT_TIMESTAMP")
     values.append(job_id)
     with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT status FROM render_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        if existing is None:
+            return False
         cur = conn.execute(f"UPDATE render_jobs SET {', '.join(fields)} WHERE id = ?", values)
+        if cur.rowcount and status is not None and status != existing["status"]:
+            event_payload = {"status": status}
+            for key, value in (
+                ("percent", percent),
+                ("step", step),
+                ("output_url", output_url),
+                ("error_message", error_message),
+            ):
+                if value is not None:
+                    event_payload[key] = value
+            _insert_render_job_event(conn, job_id, "status", event_payload)
         conn.commit()
         return cur.rowcount > 0
 
@@ -680,7 +802,7 @@ def encrypted_db_backup(
         or os.getenv("ENV_VAULT_PASSPHRASE")
         or "youtubeoto-local-backup"
     )
-    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     plain_copy = os.path.join(out_dir, f"shorts_{stamp}.db")
     enc_path = os.path.join(out_dir, f"shorts_{stamp}.db.enc")
     # WAL mode: a raw file copy can miss pages still in shorts.db-wal.
@@ -1023,5 +1145,3 @@ if __name__ == "__main__":
     else:
         print(f"Database initialized and verified at {DB_PATH}")
         print("Usage: python database.py [backup | restore <file.db.enc> <out.db>]")
-
-

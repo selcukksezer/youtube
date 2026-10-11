@@ -60,96 +60,6 @@ _TR_EN: Dict[str, str] = {
     "araba": "car interior accessory", "araç": "car gadget tech",
 }
 
-# Short seeds for keyless providers (Openverse / Wikimedia) — long cinematic
-# phrases return 0 hits when Pexels/Pixabay keys are empty.
-_FAMILY_KEYLESS_SEEDS: Dict[str, List[str]] = {
-    "religious": [
-        "mosque", "minaret", "quran book", "islamic calligraphy",
-        "muslim prayer", "kaaba", "mosque dome",
-    ],
-    "stoic": ["marble bust", "roman columns", "olive tree", "parchment"],
-    "crypto": ["bitcoin", "trading chart", "server room", "stock market"],
-    "mystery": ["fog forest", "abandoned hallway", "deep space", "locked door"],
-    "dark": ["shadow silhouette", "rain city", "empty chair"],
-    "news": ["newsroom", "city skyline", "press conference"],
-    "history": ["old map", "museum archive", "stone ruins"],
-    "science": ["laboratory", "earth space", "microscope"],
-    "astrology": ["milky way", "telescope", "full moon"],
-    "general": ["sunrise", "ocean waves", "architecture", "nature"],
-}
-
-
-_FAMILY_BROLL: Dict[str, List[str]] = {
-    "religious": [
-        "mosque",
-        "minaret golden hour",
-        "mosque interior dome soft light",
-        "quran open pages warm light",
-        "muslim hands raised in prayer",
-        "islamic geometric pattern closeup",
-    ],
-    "crypto": [
-        "cryptocurrency trading desk monitors",
-        "bitcoin coin macro dark desk",
-        "digital candlestick chart screen",
-        "server room blue lights",
-    ],
-    "mystery": [
-        "fog forest night path",
-        "abandoned hallway dim light",
-        "deep space stars slow drift",
-        "locked metal door darkness",
-    ],
-    "dark": [
-        "shadow silhouette window night",
-        "rain city street neon reflection",
-        "closeup eye darkness",
-        "empty chair interrogation room",
-    ],
-    "stoic": [
-        "roman marble bust museum",
-        "stone columns mediterranean light",
-        "ancient parchment closeup",
-        "olive tree wind greece",
-    ],
-    "news": [
-        "newsroom desk monitors",
-        "city skyline dusk traffic",
-        "press conference microphones",
-        "newspaper printing press",
-    ],
-    "history": [
-        "old map parchment closeup",
-        "museum archive shelves",
-        "black and white historical film grain",
-        "stone ruins golden hour",
-    ],
-    "science": [
-        "laboratory glassware blue light",
-        "earth from space nasa",
-        "microscope lens closeup",
-        "particle trails abstract",
-    ],
-    "astrology": [
-        "night sky milky way",
-        "telescope observatory dome",
-        "constellation star trails",
-        "moon surface crater",
-    ],
-    "quiz": [
-        "neon question mark dark",
-        "countdown timer screen",
-        "crowd cheering stadium lights",
-        "chalkboard equations closeup",
-    ],
-    "general": [
-        "slow aerial landscape dusk",
-        "abstract light particles dark",
-        "architectural detail concrete",
-        "ocean waves aerial calm",
-    ],
-}
-
 # Religious must never pull Stoic/Roman
 _RELIGIOUS_BAN = re.compile(
     r"\b(marcus|aurelius|roman|rome|stoic|stoicism|colosseum|gladiator|caesar)\b",
@@ -189,6 +99,9 @@ def build_shot_queries(
     max_queries: int = 5,
 ) -> List[str]:
     """Return ranked EN shot queries: specific → generic → niche b-roll."""
+    if max_queries <= 0:
+        return []
+
     family = family_for_niche(niche_id)
     intent = visual_intent if isinstance(visual_intent, dict) else {}
     blob_for_lock = " ".join([

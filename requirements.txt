@@ -6,6 +6,7 @@ moviepy==1.0.3
 imageio>=2.34.0
 imageio-ffmpeg>=0.5.1
 numpy>=1.24.0
+audioop-lts; python_version >= "3.13"
 opencv-python>=4.8.0
 fastapi>=0.100.0
 uvicorn>=0.22.0
@@ -16,4 +17,4 @@ google-api-python-client>=2.0.0
 google-auth-oauthlib>=1.0.0
 google-auth-httplib2>=0.1.0
 yt-dlp>=2024.0.0
-
+twelvelabs>=1.2.8

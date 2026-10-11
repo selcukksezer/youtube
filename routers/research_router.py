@@ -2,14 +2,21 @@
 Research, script generation, trending scanner, Reddit and RSS news router.
 """
 import re
-from typing import Any, Dict, List, Optional
+import logging
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-import requests
+from pydantic import BaseModel, Field
 import config
 from trending_scanner import scan_youtube_shorts_trends
 from niche_templates import get_niche_production_profile, get_niche_ab_variants
-from api_models import ContentGapResearchRequest, ScriptGenerateRequest, TopicSuggestRequest
+from api_models import (
+    ContentGapResearchRequest,
+    ScriptManuscriptRequest,
+    ScriptTranslateRequest,
+    ScriptGenerateRequest,
+    SeriesPlanRequest,
+    TopicSuggestRequest,
+)
 from services.topic_suggester import suggest_topics
 from research_service import (
     build_content_gap_suggestions,
@@ -18,7 +25,7 @@ from research_service import (
     extract_format_fingerprint_from_title,
     build_topic_research_brief,
 )
-from director import resolve_niche_from_topic, compile_director_plan, pre_render_score
+from director import compile_director_plan, pre_render_score
 from director.visual_intent import resolve_topic_intelligence
 from scene_generator import generate_scenes, generate_reddit_rewrite_script
 from scenes.narration_validate import apply_auto_repair_if_needed, sanitize_plan_scene_descriptions
@@ -27,8 +34,23 @@ from reddit_client import fetch_public_posts
 from rss_scanner import DEFAULT_RSS_FEEDS, get_breaking_news_topics, transform_rss_item_to_shorts_idea
 from production.profiles import channel_profile
 from production.quality import validate_script_quality
+from scenes.generator import generate_series_outline
 
 router = APIRouter(tags=["Research"])
+logger = logging.getLogger(__name__)
+
+
+def _is_nsfw_reddit_post(post: Optional[Dict[str, Any]]) -> bool:
+    if not post:
+        return False
+
+    for marker in ("is_nsfw", "over_18"):
+        value = post.get(marker)
+        if value is True or (type(value) is int and value == 1):
+            return True
+        if isinstance(value, str) and value.strip().casefold() in {"1", "true", "yes"}:
+            return True
+    return False
 
 
 @router.post("/api/topics/suggest")
@@ -48,6 +70,22 @@ def api_suggest_topics(req: TopicSuggestRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/series/plan", summary="Plan a connected Shorts series")
+def api_plan_series(req: SeriesPlanRequest):
+    """Return a validated episode outline for the Studio series planner."""
+    try:
+        outline = generate_series_outline(
+            topic=req.topic,
+            niche_type=req.niche or "1_news_flash",
+            language=req.language or config.LANGUAGE,
+            episode_count=req.episode_count,
+        )
+    except RuntimeError as error:
+        logger.warning("Shorts series outline generation failed: %s", error)
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return {"status": "ok", "outline": outline}
 
 
 @router.get("/api/trending/scan")
@@ -86,6 +124,41 @@ class TopicTranslateRequest(BaseModel):
     target_lang: str = "en"
 
 
+class SubtitleTranslateRequest(BaseModel):
+    srt_text: str
+    target_language: str = Field(min_length=1, max_length=64)
+    source_language: str = Field(default="", max_length=64)
+
+
+@router.post("/api/subtitles/translate")
+def api_translate_subtitles(req: SubtitleTranslateRequest):
+    """Translate SRT cue text without changing cue indices or timestamps."""
+    from services.subtitle_translation import SubtitleTranslationError, translate_srt
+
+    try:
+        translated = translate_srt(
+            req.srt_text,
+            target_language=req.target_language,
+            source_language=req.source_language,
+            api_key=config.AI_API_KEY,
+            base_url=config.AI_BASE_URL,
+            model=config.AI_MODEL,
+        )
+    except SubtitleTranslationError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    except Exception as err:
+        logger.exception("Subtitle translation failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Altyazı çevirisi AI sağlayıcısında başarısız oldu.",
+        ) from err
+    return {
+        "status": "ok",
+        "target_language": req.target_language.strip(),
+        "srt_text": translated,
+    }
+
+
 @router.post("/api/topics/translate")
 def api_translate_topic(req: TopicTranslateRequest):
     """Translates video topic/title between Turkish and English using fast LLM."""
@@ -112,20 +185,100 @@ def api_translate_topic(req: TopicTranslateRequest):
         return {"status": "error", "message": str(e), "translated": text}
 
 
+@router.post("/api/script/translate")
+def api_translate_script(req: ScriptTranslateRequest):
+    """Translate a scene plan for another Studio language without changing its visuals."""
+    source_lang = str(
+        req.plan.get("language") or req.plan.get("lang") or config.LANGUAGE
+    ).strip().lower()[:2]
+    target_lang = req.target_lang
+    if source_lang not in {"tr", "en"}:
+        raise HTTPException(status_code=422, detail="Senaryonun kaynak dili Türkçe veya İngilizce olmalı.")
+    if source_lang == target_lang:
+        raise HTTPException(status_code=422, detail="Senaryo zaten seçili hedef dilde.")
+
+    scenes = req.plan.get("scenes")
+    if (
+        not isinstance(scenes, list)
+        or not scenes
+        or any(not isinstance(scene, dict) for scene in scenes)
+        or not any(str(scene.get("narration") or scene.get("text") or "").strip() for scene in scenes)
+    ):
+        raise HTTPException(status_code=422, detail="Çevrilecek anlatım içeren sahneli bir senaryo gerekli.")
+
+    from services.dubbing import DubbingTranslationError, apply_dubbing_to_plan
+
+    try:
+        plan = apply_dubbing_to_plan(req.plan, target_lang=target_lang, strict=True)
+    except DubbingTranslationError as err:
+        logger.warning("Script translation failed: %s", err)
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    return {"status": "ok", "plan": plan}
+
+
+@router.post("/api/script/from-manuscript")
+def api_script_from_manuscript(req: ScriptManuscriptRequest):
+    """Split a provided manuscript into a scene plan while preserving its narration."""
+    from services.manuscript_script import (
+        ManuscriptSegmentationError,
+        build_manuscript_plan,
+    )
+    from services.timed_visual_matcher import generate_timed_visual_queries
+
+    try:
+        plan = build_manuscript_plan(
+            text=req.text,
+            title=req.title,
+            language=req.language,
+            niche_id=req.niche or "1_news_flash",
+        )
+    except ManuscriptSegmentationError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+
+    plan["scenes"] = generate_timed_visual_queries(
+        plan["scenes"],
+        niche_id=plan["niche_id"],
+        force_local=True,
+    )
+    for scene in plan["scenes"]:
+        queries = scene.get("search_queries") or []
+        if queries:
+            scene["scene_description"] = f"Visual footage of {queries[0]}."
+
+    try:
+        from routers.media_router import auto_fetch_videos_for_scenes
+
+        plan["scenes"] = auto_fetch_videos_for_scenes(
+            plan["scenes"],
+            niche_id=plan["niche_id"],
+        )
+    except Exception as err:
+        logger.warning("Manuscript stock-video search failed: %s", err)
+
+    return {"status": "ok", "plan": plan}
+
+
 @router.post("/api/script/generate")
 def api_generate_script(req: ScriptGenerateRequest):
+    if _is_nsfw_reddit_post(req.reddit_post):
+        raise HTTPException(
+            status_code=422,
+            detail="NSFW Reddit posts cannot be used for script generation.",
+        )
+
     old_lang = config.LANGUAGE
     try:
-        req_lang = (req.language or "").strip().lower() or config.LANGUAGE
         if req.language:
             config.LANGUAGE = req.language
         requested_niche = (req.niche or "").strip()
         topic_intel = resolve_topic_intelligence(req.keyword or "", requested_niche or "1_news_flash")
-        # Respect user's explicit niche choice from UI
-        if requested_niche and requested_niche != "1_news_flash":
-            locked_niche = requested_niche
-        else:
-            locked_niche = topic_intel["resolved_niche"]
+        locked_niche = topic_intel["resolved_niche"]
+        continuity_context = (req.continuity_context or "").strip()
+        if continuity_context and req.reddit_post and locked_niche == "2_reddit_confessions":
+            raise HTTPException(
+                status_code=422,
+                detail="Series continuity context is not supported for Reddit story rewrites.",
+            )
         if req.reddit_post and locked_niche == "2_reddit_confessions":
             source_text = f"{req.reddit_post.get('title', '')}\n{req.reddit_post.get('body', '')}"
             plan = generate_reddit_rewrite_script(source_text, lang=req.language or "tr")
@@ -144,9 +297,11 @@ def api_generate_script(req: ScriptGenerateRequest):
                 format_fingerprint=fp,
                 variation_attempt=var_attempt,
                 previous_narration=getattr(req, "previous_narration", None),
+                continuity_context=continuity_context or None,
                 force_regenerate=bool(getattr(req, "force_regenerate", False)),
                 enable_outro=getattr(req, "enable_outro", True) is not False,
             )
+        series_continuity = plan.get("series_continuity")
         plan["niche_id"] = locked_niche
         if req.format_fingerprint:
             plan["format_fingerprint"] = req.format_fingerprint
@@ -169,7 +324,7 @@ def api_generate_script(req: ScriptGenerateRequest):
                     plan["scenes"], niche_id=locked_niche,
                 )
         except Exception as err:
-            print(f"  [AutoStock] Note: {err}")
+            logger.warning("Automatic stock-video search failed: %s", err)
 
         config.LANGUAGE = old_lang
 
@@ -219,7 +374,7 @@ def api_generate_script(req: ScriptGenerateRequest):
                 "issues": narr_block,
             }
         except Exception as val_err:
-            print(f"  [ScriptGenerate] Validation note: {val_err}")
+            logger.warning("Script validation failed: %s", val_err)
 
         try:
             from plagiarism_checker import check_script_originality
@@ -237,7 +392,7 @@ def api_generate_script(req: ScriptGenerateRequest):
                 "threshold_pct": 35,
             }
         except Exception as plag_err:
-            print(f"  [ScriptGenerate] Plagiarism note: {plag_err}")
+            logger.warning("Script originality check failed: %s", plag_err)
 
         ch_paths = config.channel_paths(getattr(req, "channel_id", None))
 
@@ -245,17 +400,33 @@ def api_generate_script(req: ScriptGenerateRequest):
 
         # New production contract: generation may return a draft, but every
         # draft carries an explicit quality decision before render/publish.
-        script_quality = validate_script_quality(
+        quality_profile = channel_profile(
+            getattr(req, "channel_id", None) or "default",
+            niche_id=locked_niche,
+            language=req.language or config.LANGUAGE,
+        ).to_dict()
+        script_quality = validate_script_quality(plan, channel_profile=quality_profile)
+        from production.script_repair import repair_script_quality_plan
+
+        repair_result = repair_script_quality_plan(
             plan,
-            channel_profile=channel_profile(
-                getattr(req, "channel_id", None) or "default",
-                niche_id=locked_niche,
-                language=req.language or config.LANGUAGE,
-            ).to_dict(),
+            script_quality,
+            title=req.keyword,
+            niche_id=locked_niche,
+            language=req.language or config.LANGUAGE,
+            channel_profile=quality_profile,
         )
+        plan = repair_result["plan"]
+        script_quality = repair_result["script_quality"]
+        quality_repair = repair_result["quality_repair"]
+        plan["research_brief"] = research_brief
+        if series_continuity:
+            plan["series_continuity"] = series_continuity
+
         plan.setdefault("meta", {})
         plan["meta"]["script_quality"] = script_quality
         plan["meta"]["render_allowed"] = bool(script_quality.get("ok"))
+        plan["meta"]["script_quality_repair"] = quality_repair
 
         compliance = None
         viewer_score = None
@@ -286,14 +457,14 @@ def api_generate_script(req: ScriptGenerateRequest):
             if disc:
                 plan["meta"]["ai_disclosure_text"] = disc
             if compliance.get("hard_fail"):
-                print(
-                    f"  [Compliance] HARD FAIL risk="
-                    f"{(compliance.get('inauthentic') or {}).get('risk')} "
-                    f"verdict={(compliance.get('inauthentic') or {}).get('verdict')} "
-                    f"craft={compliance.get('human_craft_reason')}"
+                logger.warning(
+                    "Compliance hard fail: risk=%s verdict=%s craft=%s",
+                    (compliance.get("inauthentic") or {}).get("risk"),
+                    (compliance.get("inauthentic") or {}).get("verdict"),
+                    compliance.get("human_craft_reason"),
                 )
         except Exception as comp_err:
-            print(f"  [Compliance] note: {comp_err}")
+            logger.warning("Plan compliance evaluation failed: %s", comp_err)
 
         return {
             "status": "ok",
@@ -307,6 +478,7 @@ def api_generate_script(req: ScriptGenerateRequest):
             "viewer_score": viewer_score,
             "compliance": compliance,
             "script_quality": script_quality,
+            "script_quality_repair": quality_repair,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -424,4 +596,3 @@ def api_transform_viral_to_flow(req: ViralFlowTransformRequest):
         return {"status": "ok", "data": storyboard}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Viral video dönüştürülemedi: {e}")
-

@@ -314,11 +314,36 @@ wizardCreateBtn?.addEventListener('click', async () => {
 // ══════════════════════════════════════════════════════════════
 document.getElementById('btn-new-topic')?.addEventListener('click', clearCurrentScenario);
 
+function showScriptGenerationToast(validation, forceRegenerate, qualityRepair) {
+    if (qualityRepair?.status === 'repaired') {
+        showToast('Senaryo kalite uyarıları yapay zekâ tarafından otomatik düzeltildi.', 'success');
+        return;
+    }
+    if (qualityRepair && !['not_needed'].includes(qualityRepair.status)) {
+        showToast('Senaryo kalite sorunlarının bir kısmı otomatik düzeltilemedi; timeline raporunu inceleyin.', 'warn');
+        return;
+    }
+    if (validation?.hard_fail || validation?.ok === false) {
+        showToast('Senaryo üretildi ancak kalite kapısı renderı engelliyor; timeline uyarılarını düzeltin.', 'warn');
+        return;
+    }
+    showToast(
+        forceRegenerate ? 'Senaryo başarıyla yeniden yazıldı' : 'Senaryo hazır — timeline\'da inceleyin',
+        'success',
+    );
+}
+
 async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
     const topic = (inputTopic?.value || '').trim();
     if (!topic) {
         alert('Lütfen bir video konusu girin!');
         inputTopic?.focus();
+        return;
+    }
+    const continuityInput = document.getElementById('input-series-continuity');
+    const continuityContext = continuityInput?.value.trim() || '';
+    if (selectedRedditPost && continuityContext) {
+        showToast('Reddit hikâyesi yeniden yazımında seri devamlılığı notları desteklenmiyor.', 'warning');
         return;
     }
 
@@ -334,6 +359,7 @@ async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
     const btnRegenerateTimeline = document.getElementById('btn-regenerate-scenario');
 
     if (btnCreateScript) {
+        btnCreateScript.dataset.generating = 'true';
         btnCreateScript.disabled = true;
         btnCreateScript.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> AI Senaryosu Yazılıyor...';
     }
@@ -347,11 +373,11 @@ async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
 
     showToast('AI senaryoyu oluşturuyor — sahneler ve kancalar hazırlanıyor...');
 
-    if (!userManuallyPickedNiche && !selectNiche?.value) {
-        await resolveAndApplyNicheFromTopic({ toast: false });
-    }
-
     try {
+        if (!userManuallyPickedNiche && !selectNiche?.value) {
+            await resolveAndApplyNicheFromTopic({ toast: false });
+        }
+
         if (forceRegenerate) {
             window._studioVariationAttempt = (window._studioVariationAttempt || 0) + 1;
         } else {
@@ -374,6 +400,7 @@ async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
                 force_regenerate: !!forceRegenerate,
                 variation_attempt: window._studioVariationAttempt || 0,
                 previous_narration: forceRegenerate ? prevNarr : null,
+                continuity_context: continuityContext || null,
                 enable_outro: document.getElementById('chk-enable-outro')
                     ? !!document.getElementById('chk-enable-outro').checked
                     : true
@@ -382,6 +409,7 @@ async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
         const data = await res.json();
         if (data.status === 'ok') {
             let plan = data.plan;
+            const seriesContinuity = plan.series_continuity;
             const lockedNiche = plan.niche_id || plan.niche_profile?.id;
             if (!userManuallyPickedNiche && lockedNiche && selectNiche && selectNiche.value !== lockedNiche) {
                 selectNiche.value = lockedNiche;
@@ -400,13 +428,17 @@ async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
             }
             const validation = await updateStudioQualityPanel(plan);
             if (validation?.plan) plan = validation.plan;
+            if (seriesContinuity) plan.series_continuity = seriesContinuity;
             if (data.plagiarism) applyPlagiarismBadge(data.plagiarism);
 
             renderTimelineScenes(plan);
             persistCurrentPlan();
             saveStudioSettings();
 
-            showToast(forceRegenerate ? 'Senaryo başarıyla yeniden yazıldı' : 'Senaryo hazır — timeline\'da inceleyin');
+            showScriptGenerationToast(validation, forceRegenerate, data.script_quality_repair);
+            if (seriesContinuity?.applied === false) {
+                showToast('AI üretimi kullanılamadığı için bu taslakta seri devamlılığı bağlamı uygulanmadı.', 'warning');
+            }
             updateFlowRail('timeline');
             switchTab('timeline');
         } else {
@@ -416,16 +448,236 @@ async function generateScriptFromTopic({ forceRegenerate = false } = {}) {
     } catch (err) {
         alert('Hata: ' + err.message);
     } finally {
-        if (btnCreateScript) btnCreateScript.disabled = false;
+        if (btnCreateScript) {
+            btnCreateScript.disabled = false;
+            delete btnCreateScript.dataset.generating;
+        }
         if (btnRegenerateStudio) btnRegenerateStudio.disabled = false;
         if (btnRegenerateTimeline) btnRegenerateTimeline.disabled = false;
         updateScriptActionButtons();
     }
 }
 
+function appendSeriesDetail(card, label, value) {
+    const paragraph = document.createElement('p');
+    paragraph.className = 'series-episode-card__detail';
+    const strong = document.createElement('strong');
+    strong.textContent = `${label}: `;
+    paragraph.append(strong, document.createTextNode(value));
+    card.appendChild(paragraph);
+}
+
+function renderSeriesPlan(outline) {
+    const results = document.getElementById('series-plan-results');
+    if (!results) return;
+
+    const isEnglish = window.APP_STATE?.language === 'en';
+    const labels = isEnglish
+        ? { premise: 'Series premise', summary: 'Summary', question: 'Central question', hook: 'Ending hook', continuity: 'Carries forward', use: 'Prepare this episode' }
+        : { premise: 'Seri öncülü', summary: 'Özet', question: 'Ana soru', hook: 'Bölüm sonu kancası', continuity: 'Devamlılık', use: 'Bu bölümü hazırla' };
+    results.replaceChildren();
+    results.classList.remove('hidden');
+
+    const premise = document.createElement('p');
+    premise.className = 'series-plan-premise';
+    premise.textContent = `${labels.premise}: ${outline.series_premise}`;
+    results.appendChild(premise);
+
+    const list = document.createElement('div');
+    list.className = 'series-plan-list';
+    for (const episode of outline.episodes) {
+        const card = document.createElement('article');
+        card.className = 'series-episode-card';
+
+        const heading = document.createElement('h4');
+        heading.textContent = `${episode.number}. ${episode.title}`;
+        card.appendChild(heading);
+        appendSeriesDetail(card, labels.summary, episode.summary);
+        appendSeriesDetail(card, labels.question, episode.central_question);
+        appendSeriesDetail(card, labels.hook, episode.cliffhanger);
+        appendSeriesDetail(card, labels.continuity, episode.continuity_note);
+
+        const useButton = document.createElement('button');
+        useButton.type = 'button';
+        useButton.className = 'btn btn-outline btn-sm series-episode-card__action';
+        useButton.textContent = labels.use;
+        useButton.addEventListener('click', () => {
+            if (selectedRedditPost) {
+                showToast(
+                    isEnglish
+                        ? 'Series planning is unavailable while a Reddit source is selected.'
+                        : 'Reddit gönderisi seçiliyken seri taslağı kullanılamaz.',
+                    'warning',
+                );
+                return;
+            }
+
+            const priorEpisodes = outline.episodes
+                .filter(item => item.number < episode.number)
+                .map(item => `${item.number}. ${item.title}\n${item.summary}\nOpen hook: ${item.cliffhanger}\nContinuity: ${item.continuity_note}`);
+            const episodeTarget = [
+                `CURRENT EPISODE TARGET: ${episode.title}`,
+                `SUMMARY: ${episode.summary}`,
+                `CENTRAL QUESTION: ${episode.central_question}`,
+                `REQUIRED ENDING HOOK: ${episode.cliffhanger}`,
+                `CONTINUITY NOTE: ${episode.continuity_note}`,
+            ].join('\n');
+            const continuityBlocks = [
+                `SERIES PREMISE: ${outline.series_premise}`,
+                priorEpisodes.length ? `PREVIOUS EPISODES:\n${priorEpisodes.join('\n\n')}` : '',
+                episodeTarget,
+            ].filter(Boolean);
+
+            const continuityInput = document.getElementById('input-series-continuity');
+            if (inputTopic) inputTopic.value = episode.title;
+            if (continuityInput) {
+                continuityInput.value = continuityBlocks.join('\n\n').slice(-4000);
+            }
+            const outroToggle = document.getElementById('chk-enable-outro');
+            if (outroToggle) outroToggle.checked = false;
+            showToast(
+                isEnglish
+                    ? 'Episode topic and continuity notes are ready. Generate the script when ready.'
+                    : 'Bölüm konusu ve devamlılık notları hazır. Senaryo üretimini başlatabilirsiniz.',
+                'success',
+            );
+            inputTopic?.focus();
+        });
+        card.appendChild(useButton);
+        list.appendChild(card);
+    }
+    results.appendChild(list);
+}
+
+async function generateShortsSeriesOutline() {
+    const topic = (inputTopic?.value || '').trim();
+    if (topic.length < 3) {
+        alert('Önce en az 3 karakterlik bir video konusu girin.');
+        inputTopic?.focus();
+        return;
+    }
+    if (selectedRedditPost) {
+        showToast('Reddit hikâyesi seçiliyken seri taslağı üretilemez.', 'warning');
+        return;
+    }
+
+    const button = document.getElementById('btn-plan-series');
+    const results = document.getElementById('series-plan-results');
+    const isEnglish = window.APP_STATE?.language === 'en';
+    const originalLabel = button?.innerHTML;
+    if (button) {
+        button.disabled = true;
+        button.textContent = isEnglish ? 'Planning series…' : 'Seri taslağı hazırlanıyor…';
+    }
+    if (results) {
+        results.classList.remove('hidden');
+        results.textContent = isEnglish ? 'Building a connected episode arc…' : 'Bağlantılı bölüm akışı kuruluyor…';
+    }
+
+    try {
+        const response = await fetch('/api/series/plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                topic,
+                niche: selectNiche?.value || '1_news_flash',
+                language: isEnglish ? 'en' : 'tr',
+                episode_count: Number(document.getElementById('select-series-episode-count')?.value || 3),
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== 'ok' || !data.outline) {
+            throw new Error(data.detail || 'Seri taslağı oluşturulamadı.');
+        }
+        renderSeriesPlan(data.outline);
+    } catch (error) {
+        if (results) {
+            results.classList.add('hidden');
+            results.replaceChildren();
+        }
+        alert(`${isEnglish ? 'Series outline failed' : 'Seri taslağı oluşturulamadı'}: ${error.message}`);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalLabel;
+        }
+    }
+}
+
+async function importManuscriptAsScenes() {
+    const manuscriptInput = document.getElementById('input-manuscript');
+    const status = document.getElementById('manuscript-import-status');
+    const button = document.getElementById('btn-import-manuscript');
+    const text = (manuscriptInput?.value || '').trim();
+    if (text.length < 30) {
+        showToast('Sahnelere aktarmak için en az 30 karakterlik bir metin girin.', 'warning');
+        manuscriptInput?.focus();
+        return;
+    }
+
+    const originalLabel = button?.innerHTML;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Sahnelere ayrılıyor...';
+    }
+    if (status) status.textContent = 'Anlatım korunarak sahneler hazırlanıyor...';
+
+    try {
+        const response = await fetch('/api/script/from-manuscript', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                text,
+                title: (inputTopic?.value || '').trim() || null,
+                language: selectLanguage?.value || window.APP_STATE?.language || 'tr',
+                niche: selectNiche?.value || '1_news_flash',
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== 'ok' || !data.plan?.scenes?.length) {
+            throw new Error(data.detail || 'Metin sahnelere aktarılamadı.');
+        }
+
+        let plan = data.plan;
+        if (inputTopic) inputTopic.value = plan.title;
+        timelineReviewed = false;
+        setCurrentPlan(plan, { skipQualityPanel: true });
+        const validation = await updateStudioQualityPanel(plan);
+        if (validation?.plan) plan = validation.plan;
+        renderTimelineScenes(plan);
+        persistCurrentPlan();
+        saveStudioSettings();
+        updateFlowRail('timeline');
+        switchTab('timeline');
+        if (status) status.textContent = `${plan.scenes.length} sahne hazır; anlatım metni korundu.`;
+        showToast(`Metin ${plan.scenes.length} sahneye aktarıldı. Timeline'da görselleri inceleyin.`, 'success');
+    } catch (error) {
+        if (status) status.textContent = error.message;
+        showToast(`Metin içe aktarılamadı: ${error.message}`, 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalLabel;
+        }
+    }
+}
+
 (btnCreateScript || document.getElementById('btn-create-script'))?.addEventListener('click', () => generateScriptFromTopic());
 document.getElementById('btn-regenerate-script-studio')?.addEventListener('click', () => generateScriptFromTopic({ forceRegenerate: true }));
 document.getElementById('btn-regenerate-scenario')?.addEventListener('click', () => generateScriptFromTopic({ forceRegenerate: true }));
+document.getElementById('btn-plan-series')?.addEventListener('click', generateShortsSeriesOutline);
+document.getElementById('btn-import-manuscript')?.addEventListener('click', importManuscriptAsScenes);
+document.getElementById('btn-use-current-script-continuity')?.addEventListener('click', () => {
+    const currentNarration = currentPlan?.full_narration
+        || (currentPlan?.scenes || []).map(scene => scene.narration).filter(Boolean).join(' ');
+    const continuityInput = document.getElementById('input-series-continuity');
+    if (!currentNarration || !continuityInput) {
+        showToast('Önceki senaryo bulunamadı; önce bir senaryo üretin veya yükleyin.', 'warning');
+        return;
+    }
+    continuityInput.value = currentNarration.slice(0, 4000);
+    showToast('Mevcut senaryo devamlılık bağlamına eklendi. Gerekirse özeti düzenleyin.', 'success');
+});
 
 // ══════════════════════════════════════════════════════════════
 // 9A. SAHNE & KURGU EDİTÖRÜ — 500 Madde Uyumlu Overhaul
@@ -594,6 +846,10 @@ function scheduleNicheResolveFromTopic() {
     }, 350);
 }
 
+inputTopic?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.isComposing) event.preventDefault();
+});
+
 inputTopic?.addEventListener('input', () => {
     if (!suppressFingerprintClear) clearPendingFormatFingerprint();
     suppressFingerprintClear = false;
@@ -637,6 +893,9 @@ function renderTopicSuggestCards(suggestions, nicheName) {
     body.innerHTML = suggestions.map((s, idx) => {
         const src = TOPIC_SOURCE_LABELS[s.source] || TOPIC_SOURCE_LABELS.ai;
         const hook = s.hook ? `<div class="topic-suggest-card-hook">${escapeHtml(s.hook)}</div>` : '';
+        const sourceDetail = s.source_detail
+            ? `<span class="topic-suggest-source-detail">${escapeHtml(s.source_detail)}</span>`
+            : '';
         const scoreLabel = isEn ? `Relevance ${s.confidence || s.relevance || 0}/100` : `Uygunluk ${s.confidence || s.relevance || 0}/100`;
         return `
             <button type="button" class="topic-suggest-card" data-suggest-idx="${idx}">
@@ -644,6 +903,7 @@ function renderTopicSuggestCards(suggestions, nicheName) {
                 ${hook}
                 <div class="topic-suggest-card-meta">
                     <span class="topic-suggest-badge ${src.cls}"><i class="${src.icon}"></i> ${src.label}</span>
+                    ${sourceDetail}
                     <span class="topic-suggest-score">${scoreLabel}</span>
                 </div>
             </button>`;
@@ -698,6 +958,14 @@ async function suggestTopic(ev) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || (isEn ? 'Could not fetch topic suggestions.' : 'Konu önerileri alınamadı.'));
+        if (data.topic_hint_ignored) {
+            showToast(
+                isEn
+                    ? 'Your current title does not match this niche; suggestions were generated for the selected niche.'
+                    : 'Mevcut başlık seçili nişle uyuşmadı; öneriler seçili nişe göre üretildi.',
+                'warn',
+            );
+        }
         renderTopicSuggestCards(data.suggestions, data.niche_name);
     } catch (err) {
         if (body) body.innerHTML = `<div class="topic-suggest-error">${escapeHtml(err.message || (isEn ? 'Connection error' : 'Bağlantı hatası'))}</div>`;
@@ -719,11 +987,13 @@ document.getElementById('btn-close-topic-suggest')?.addEventListener('click', ()
 async function applyNicheProfile(nicheId) {
     const profileBox = document.getElementById('niche-production-profile');
     if (!nicheId || !profileBox) return;
+    profileBox.classList.add('hidden');
+    profileBox.replaceChildren();
     try {
         const response = await fetch(`/api/niches/${encodeURIComponent(nicheId)}/profile`);
         const data = await response.json();
         const profile = data.profile;
-        if (!profile) return;
+        if (!profile) throw new Error('Yanıtta niş üretim profili yok.');
         const rules = profile.production_rules || {};
         if (!splitTouched && chkSplitScreen) {
             chkSplitScreen.checked = Boolean(rules.split_screen);
@@ -738,6 +1008,7 @@ async function applyNicheProfile(nicheId) {
             <div style="font-size: 11px; color: #cbd5e1; margin-top: 6px;">Ton: ${escapeHtml(profile.tone)}</div>
             <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">${rules.split_screen ? 'Split-screen' : 'Tam ekran'} · ${escapeHtml(rules.subtitle_preset)} altyazı · Dinamik hareket · Neon ilerleme</div>
         `;
+        profileBox.classList.remove('hidden');
         updateLoopBridge(nicheId, inputTopic.value);
         applyNichePanelVisibility(nicheId);
         const gapField = document.getElementById('content-gap-topics');
@@ -746,6 +1017,7 @@ async function applyNicheProfile(nicheId) {
         }
     } catch (error) {
         profileBox.textContent = 'Niş üretim profili yüklenemedi.';
+        profileBox.classList.remove('hidden');
         console.error('Niş profili yükleme hatası:', error);
     }
 }
@@ -1095,6 +1367,74 @@ async function translateCurrentTopicToEnglish() {
     }
 }
 
+async function translateCurrentScript() {
+    if (!currentPlan?.scenes?.length) {
+        showToast('Önce çevrilecek bir senaryo oluşturun.', 'warn');
+        return;
+    }
+    const targetLang = selectLanguage?.value || window.APP_STATE?.language || 'tr';
+    const sourceLang = String(currentPlan.language || currentPlan.lang || window.APP_STATE?.language || 'tr').slice(0, 2);
+    if (sourceLang === targetLang) {
+        showToast('Senaryo zaten seçili dilde.', 'warn');
+        return;
+    }
+
+    const button = document.getElementById('btn-translate-script');
+    const originalLabel = button?.innerHTML;
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>Çevriliyor...</span>';
+    }
+    showToast('Sahne görselleri korunarak senaryo çevriliyor...');
+    try {
+        const response = await fetch('/api/script/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: currentPlan, target_lang: targetLang })
+        });
+        const data = await response.json();
+        if (!response.ok || data.status !== 'ok' || !data.plan) {
+            throw new Error(data.detail || data.message || 'Senaryo çevrilemedi.');
+        }
+
+        let plan = data.plan;
+        if (inputTopic && plan.title) inputTopic.value = plan.title;
+        setCurrentPlan(plan, { skipQualityPanel: true });
+        setStudioLanguage(targetLang, { toast: false });
+        const validation = await updateStudioQualityPanel(plan);
+        if (validation?.plan) plan = validation.plan;
+        renderTimelineScenes(plan);
+        persistCurrentPlan();
+        saveStudioSettings();
+        showToast('Senaryo çevrildi; sahne görselleri ve süreleri korundu.');
+    } catch (error) {
+        showToast(`Senaryo çevirisi başarısız: ${error.message}`, 'error');
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.innerHTML = originalLabel;
+            updateScriptActionButtons();
+        }
+    }
+}
+
+function ensureTtsVoiceForLanguage(lang) {
+    if (!selectTtsVoice || !selectTtsVoice.value || selectTtsVoice.value === 'auto') return;
+
+    const catalogs = [
+        ...(ttsVoiceCatalog[lang] || []),
+        ...(ttsVoiceCatalog.local || []),
+        ...LOCAL_OFFLINE_VOICES,
+        ...(ttsVoiceCatalog.elevenlabs || []),
+    ];
+    if (catalogs.some(voice => voice.id === selectTtsVoice.value)) return;
+
+    const fallbackVoice = lang === 'en' ? 'en-US-GuyNeural' : 'tr-TR-AhmetNeural';
+    selectTtsVoice.value = [...selectTtsVoice.options].some(option => option.value === fallbackVoice)
+        ? fallbackVoice
+        : 'auto';
+}
+
 function setStudioLanguage(lang, options = {}) {
     const isEn = (lang === 'en');
     const targetLang = isEn ? 'en' : 'tr';
@@ -1109,6 +1449,8 @@ function setStudioLanguage(lang, options = {}) {
     const btnTr = document.getElementById('btn-quick-lang-tr');
     const btnEn = document.getElementById('btn-quick-lang-en');
     if (btnTr && btnEn) {
+        btnTr.setAttribute('aria-pressed', String(!isEn));
+        btnEn.setAttribute('aria-pressed', String(isEn));
         if (isEn) {
             btnTr.classList.remove('active');
             btnTr.classList.add('btn-outline');
@@ -1136,6 +1478,8 @@ function setStudioLanguage(lang, options = {}) {
         }
     }
 
+    saveStudioSettings();
+
     // 3. Placeholder güncelle
     if (inputTopic) {
         if (isEn) {
@@ -1149,6 +1493,7 @@ function setStudioLanguage(lang, options = {}) {
     if (typeof populateTtsVoiceSelect === 'function') {
         populateTtsVoiceSelect(targetLang);
     }
+    ensureTtsVoiceForLanguage(targetLang);
     if (selectTtsVoice && isEn) {
         if ([...selectTtsVoice.options].some(o => o.value === 'en-US-GuyNeural')) {
             selectTtsVoice.value = 'en-US-GuyNeural';
@@ -1205,6 +1550,7 @@ document.getElementById('btn-quick-lang-tr')?.addEventListener('click', () => se
 document.getElementById('btn-quick-lang-en')?.addEventListener('click', () => setStudioLanguage('en', { toast: true, autoTranslate: true }));
 selectLanguage?.addEventListener('change', () => setStudioLanguage(selectLanguage.value, { toast: false, autoTranslate: true }));
 document.getElementById('btn-translate-topic')?.addEventListener('click', translateCurrentTopicToEnglish);
+document.getElementById('btn-translate-script')?.addEventListener('click', translateCurrentScript);
 
 selectNiche?.addEventListener('change', () => {
     userManuallyPickedNiche = true;
@@ -1284,4 +1630,3 @@ btnTier1?.addEventListener('click', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-

@@ -124,6 +124,42 @@ class TestElevenLabsApiClient(unittest.TestCase):
             mock_post.assert_called_once()
 
     @patch("elevenlabs_tts.requests.post")
+    @patch("elevenlabs_tts._mp3_to_wav")
+    def test_wav_output_path_preserves_dots_in_parent_directory(
+        self, mock_convert, mock_post
+    ):
+        from elevenlabs_tts import generate_tts_wav
+
+        config.ELEVENLABS_API_KEY = "sk-test"
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.content = b"fake-mp3-bytes"
+        mock_resp.headers = {}
+        mock_post.return_value = mock_resp
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = os.path.join(tmp, "voice.v1")
+            os.makedirs(output_dir)
+            output_path = os.path.join(output_dir, "narration")
+            expected_wav = output_path + ".wav"
+
+            def fake_convert(mp3_path, wav_path):
+                self.assertTrue(os.path.isfile(mp3_path))
+                with open(wav_path, "wb") as wav_file:
+                    wav_file.write(b"RIFF")
+                return wav_path
+
+            mock_convert.side_effect = fake_convert
+            ok, message = generate_tts_wav(
+                "Merhaba dünya", output_path, ELEVENLABS_FREE_VOICES[0]["id"]
+            )
+
+            mock_convert.assert_called_once_with(
+                output_path + ".tmp.mp3", expected_wav
+            )
+            self.assertTrue(ok, message)
+
+    @patch("elevenlabs_tts.requests.post")
     def test_generate_tts_wav_401(self, mock_post):
         from elevenlabs_tts import generate_tts_wav
 

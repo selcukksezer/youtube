@@ -3,10 +3,13 @@ import os
 import tempfile
 import unittest
 import wave
+from unittest.mock import patch
 
 from subtitle_generator import (
     _rescale_timings_to_audio_duration,
     align_words_whisper,
+    create_subtitle_files,
+    create_srt_file,
     merge_continuation_words,
     snap_script_to_whisper,
 )
@@ -99,6 +102,69 @@ class TestChapter4WhisperAlign(unittest.TestCase):
         out = align_words_whisper(timings, audio_path="/tmp/no-such-narration.wav", enabled=False)
         self.assertEqual(out[0]["text"], "Merhaba")
         self.assertEqual(out[0]["offset"], 0.0)
+
+    def test_srt_honors_render_whisper_alignment_override(self):
+        audio = _wav(1.0)
+        srt = tempfile.NamedTemporaryFile(suffix=".srt", delete=False).name
+        timings = [
+            {"text": "Merhaba", "offset": 0.0, "duration": 0.5},
+            {"text": "dünya", "offset": 0.5, "duration": 0.5},
+        ]
+        heard = [
+            {"text": "Merhaba", "offset": 0.1, "duration": 0.3},
+            {"text": " dünya", "offset": 0.45, "duration": 0.4},
+        ]
+        try:
+            with patch("subtitle_generator.config.WHISPER_ALIGN", False), \
+                patch("subtitle_generator._transcribe_whisper_words", return_value=heard) as transcribe:
+                create_srt_file(
+                    timings,
+                    srt,
+                    audio_path=audio,
+                    style_opts={"whisper_align": True, "language": "tr"},
+                )
+
+            transcribe.assert_called_once_with(audio, language="tr")
+            with open(srt, encoding="utf-8") as subtitle_file:
+                self.assertIn("Merhaba dünya", subtitle_file.read())
+        finally:
+            os.unlink(audio)
+            os.unlink(srt)
+
+    def test_ass_and_srt_share_one_whisper_transcription(self):
+        audio = _wav(1.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            ass = os.path.join(tmp, "subs.ass")
+            srt = os.path.join(tmp, "subs.srt")
+            timings = [
+                {"text": "Merhaba", "offset": 0.0, "duration": 0.5},
+                {"text": "dünya", "offset": 0.5, "duration": 0.5},
+            ]
+            heard = [
+                {"text": "Merhaba", "offset": 0.1, "duration": 0.3},
+                {"text": " dünya", "offset": 0.45, "duration": 0.4},
+            ]
+            try:
+                with patch("subtitle_generator.config.WHISPER_ALIGN", False), \
+                    patch("subtitle_generator._transcribe_whisper_words", return_value=heard) as transcribe:
+                    create_subtitle_files(
+                        timings,
+                        ass,
+                        srt,
+                        style_opts={
+                            "audio_path": audio,
+                            "whisper_align": True,
+                            "language": "tr",
+                        },
+                    )
+
+                transcribe.assert_called_once_with(audio, language="tr")
+                with open(ass, encoding="utf-8") as ass_file:
+                    self.assertIn("0:00:00.10", ass_file.read())
+                with open(srt, encoding="utf-8") as srt_file:
+                    self.assertIn("00:00:00,100", srt_file.read())
+            finally:
+                os.unlink(audio)
 
 
 if __name__ == "__main__":

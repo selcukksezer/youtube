@@ -1,5 +1,6 @@
 """P3 acceptance for the MoviePy final merge: shared card, timing and cleanup."""
 from pathlib import Path
+import io
 import subprocess
 import wave
 from unittest.mock import Mock
@@ -127,6 +128,68 @@ def test_failed_merge_removes_hook_temp(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="Encoder unavailable"):
         composer._merge(*(str(p) for p in paths), style_opts={"hook_card_text": "Temporary hook"})
     assert not list(tmp_path.glob("hook_card_*.png"))
+
+
+def test_failed_merge_removes_partial_video_output(tmp_path, monkeypatch):
+    _configure_merge(monkeypatch)
+    paths = _media_paths(tmp_path)
+
+    def encode(command, **kwargs):
+        paths[-1].write_bytes(b"partial mp4")
+        return subprocess.CompletedProcess(command, 1, stderr=b"encoder failed")
+
+    monkeypatch.setattr(composer.subprocess, "run", encode)
+    assert not composer._merge(*(str(path) for path in paths))
+    assert not paths[-1].exists()
+
+
+def test_merge_cancellation_terminates_ffmpeg_and_removes_partial_output(tmp_path, monkeypatch):
+    _configure_merge(monkeypatch)
+    paths = _media_paths(tmp_path)
+
+    class RunningProcess:
+        def __init__(self):
+            self.returncode = None
+            self.stdout = io.BytesIO()
+            self.stderr = io.BytesIO()
+            self.terminated = False
+
+        def poll(self):
+            return self.returncode
+
+        def communicate(self, timeout=None):
+            if timeout == 0.25:
+                raise subprocess.TimeoutExpired("ffmpeg", timeout)
+            return b"", b""
+
+        def terminate(self):
+            self.terminated = True
+            self.returncode = -15
+
+        def wait(self, timeout=None):
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    process = RunningProcess()
+
+    def start_ffmpeg(command, **_kwargs):
+        paths[-1].write_bytes(b"partial mp4")
+        return process
+
+    monkeypatch.setattr(composer.subprocess, "Popen", start_ffmpeg)
+    cancel_state = iter((False, False, True))
+    with pytest.raises(InterruptedError, match="kullanıcı tarafından iptal"):
+        composer._merge(
+            *(str(path) for path in paths),
+            cancel_check=lambda: next(cancel_state),
+        )
+
+    assert process.terminated
+    assert process.stdout.closed
+    assert process.stderr.closed
+    assert not paths[-1].exists()
 
 
 def test_real_merge_hook_ends_at_2_5_and_preserves_duration(tmp_path, monkeypatch):

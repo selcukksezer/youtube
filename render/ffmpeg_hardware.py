@@ -8,10 +8,9 @@ and selects the optimal encoder profile with automatic software fallback to libx
 
 from __future__ import annotations
 
-import os
 import platform
 import subprocess
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import imageio_ffmpeg
 
 

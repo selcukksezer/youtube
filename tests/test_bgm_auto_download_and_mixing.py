@@ -54,6 +54,10 @@ class TestBgmAutoDownloadAndMixing(unittest.TestCase):
         self.assertIsNotNone(p_label)
         self.assertTrue(os.path.isfile(p_label))
 
+    def test_get_bgm_path_rejects_traversal(self):
+        self.assertIsNone(get_bgm_path("../yt_safe_441_meditation.mp3"))
+        self.assertIsNone(get_bgm_path("youtube_studio/../yt_safe_441_meditation.mp3"))
+
     def test_get_cached_bgm_path_fallback(self):
         p = get_cached_bgm_path("")
         self.assertIsNotNone(p)

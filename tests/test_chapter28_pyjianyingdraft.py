@@ -9,7 +9,6 @@ from render.keyframe_motion import (
     KeyframeProperty,
     EasingCurve,
     evaluate_easing,
-    Keyframe,
     KeyframeTrajectory,
 )
 
@@ -54,6 +53,20 @@ class TestPyJianYingDraftKeyframeMotion(unittest.TestCase):
         self.assertIn("1.000 + (0.150)", expr)
         self.assertIn("cos(3.14159265", expr)
         self.assertIn("3.500", expr)
+
+    def test_build_ffmpeg_expression_uses_every_keyframe(self):
+        traj = KeyframeTrajectory(KeyframeProperty.POSITION_X)
+        traj.add_keyframe(0.0, 0.0)
+        traj.add_keyframe(2.0, 0.4)
+        traj.add_keyframe(5.0, 1.0)
+
+        expr = traj.build_ffmpeg_cosine_expression(var_name="on")
+
+        self.assertIn("0.000 + (0.400)", expr)
+        self.assertIn("(0.600)", expr)
+        self.assertEqual(expr.count("cos(3.14159265"), 2)
+        self.assertIn("2.000", expr)
+        self.assertIn("3.000", expr)
 
 
 if __name__ == "__main__":

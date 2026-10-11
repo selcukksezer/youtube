@@ -4,11 +4,14 @@ Zero-cost, 0 TL web search using DuckDuckGo HTML endpoint without API keys.
 Extracts factual snippets from live web search to feed into script generation prompts.
 """
 
+import logging
 import re
 import urllib.parse
 from html.parser import HTMLParser
 from typing import List, Optional
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 class _DDGHTMLParser(HTMLParser):
@@ -22,7 +25,7 @@ class _DDGHTMLParser(HTMLParser):
         d = dict(attrs)
         # DuckDuckGo HTML uses class 'result__snippet' for snippet text
         css_class = d.get("class", "")
-        if "result__snippet" in css_class:
+        if tag in ("a", "td", "div", "span") and "result__snippet" in css_class:
             self._in_snippet = True
             self._current_text = []
 
@@ -120,14 +123,14 @@ def research_topic_facts(
                 if len(clean_snippets) >= max_snippets:
                     break
     except Exception as exc:
-        pass
+        logger.warning("DuckDuckGo HTML fact lookup failed: %s", exc)
 
     # Fallback 1: DuckDuckGo Lite
     if not clean_snippets:
         try:
             clean_snippets = _query_duckduckgo_lite(query, max_results=max_snippets)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("DuckDuckGo Lite fact lookup failed: %s", exc)
 
     # Fallback 2: Wikipedia API (0 TL, kesintisiz ansiklopedik doğrulama)
     if not clean_snippets:
@@ -135,8 +138,8 @@ def research_topic_facts(
             clean_snippets = _query_wikipedia_snippets(query, lang="tr", max_results=max_snippets)
             if not clean_snippets:
                 clean_snippets = _query_wikipedia_snippets(query, lang="en", max_results=max_snippets)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Wikipedia fact lookup failed: %s", exc)
 
     return clean_snippets[:max_snippets]
 
@@ -543,4 +546,3 @@ def scrub_unverified_claims(plan: dict, snippets: Optional[List[str]], lang: str
             f"  [FactResearcher] Teyitsiz iddia elendi: {report['sanitized_count']}"
         )
     return plan
-

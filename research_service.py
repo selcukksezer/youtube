@@ -1,5 +1,6 @@
 """Topic research normalization helpers, independent from web routes."""
 import json
+import logging
 import re
 import urllib.parse
 from collections import Counter
@@ -10,6 +11,8 @@ from typing import Any, Dict, List
 import requests
 
 from niche_templates import get_niche_family, get_niche_production_profile
+
+logger = logging.getLogger(__name__)
 
 _STOIC_BANNED_RE = re.compile(
     r"skandal|24\s*saat|viral|breaking|son\s*dakika|fla[sş]|bomba|"
@@ -139,8 +142,8 @@ def fetch_youtube_autocomplete_suggestions(query: str, lang: str = "tr", limit: 
             data = json.loads(payload)
             suggestions = data[1] if isinstance(data, list) and len(data) > 1 else []
             return [row[0] for row in suggestions[:limit] if row and row[0]]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("YouTube autocomplete request failed: %s", exc)
     return []
 
 
@@ -317,7 +320,8 @@ def collect_topic_evidence(topic: str, *, lang: str = "tr", fetcher=None) -> Lis
     if fetcher is not None:
         try:
             rows = fetcher(topic, lang=lang) or []
-        except Exception:
+        except Exception as exc:
+            logger.warning("Custom topic evidence fetch failed: %s", exc)
             return []
         from production.evidence import text_hash
         normalized = []
@@ -361,9 +365,9 @@ def collect_topic_evidence(topic: str, *, lang: str = "tr", fetcher=None) -> Lis
                 "reliability": 0.55,
                 "retrieval_status": "discovery_only",
             })
-    except Exception:
+    except Exception as exc:
         # Search failure must not skip the Wikipedia excerpt below.
-        pass
+        logger.warning("Wikidata evidence discovery failed: %s", exc)
     # Retrieve an article excerpt for research context. Wikimedia-owned pages
     # remain one source group; neither search snippets nor this unassessed
     # excerpt can grant factual approval.
@@ -394,6 +398,6 @@ def collect_topic_evidence(topic: str, *, lang: str = "tr", fetcher=None) -> Lis
                     "retrieval_status": "retrieved",
                     "content_sha256": text_hash(excerpt),
                 })
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Wikipedia evidence retrieval failed: %s", exc)
     return rows[:2]

@@ -2,7 +2,8 @@
 Video composer — MoviePy (video only) + ffmpeg (audio + karaoke subs).
 3-tier fallback: ASS karaoke → SRT styled → no subs.
 """
-import os, subprocess, platform, gc, shutil, tempfile
+import os, subprocess, gc, shutil, tempfile
+from typing import Optional
 from moviepy.editor import VideoFileClip, ColorClip, CompositeVideoClip, concatenate_videoclips, vfx
 
 try:
@@ -15,7 +16,7 @@ except Exception:
     pass
 
 import config
-from subtitle_generator import create_karaoke_subtitles, create_srt_file, ffmpeg_force_style_from_opts
+from subtitle_generator import create_subtitle_files, ffmpeg_force_style_from_opts
 from bgm_manager import get_bgm_path, mix_narration_and_bgm, mix_intro_punch_bgm, align_scenes_to_bgm_beats
 from sfx_manager import add_sfx_to_narration
 from effects_engine import (
@@ -56,14 +57,6 @@ from viral_retention_engine import ViralRetentionEngine
 
 from proglog import ProgressBarLogger
 
-def cleanup_stray_ffmpeg_processes():
-    """Kullanıcı render iptal ettiğinde veya işlem bittiğinde asılı kalan FFmpeg okuyucularını temizler."""
-    try:
-        if platform.system() == "Windows":
-            subprocess.run("taskkill /F /IM ffmpeg-win*.exe", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-
 class MoviePyProgressLogger(ProgressBarLogger):
     def __init__(self, callback=None, cancel_check=None):
         super().__init__(init_state=None, bars=None, ignored_bars=None, logged_bars='all', min_time_interval=0, ignore_bars_under=0)
@@ -102,6 +95,63 @@ class MoviePyProgressLogger(ProgressBarLogger):
                         except Exception:
                             pass
 
+
+_COMPOSER_AUDIO_TEMP_SUFFIXES = (
+    "_eq.wav", "_consistent.wav", "_gated.wav", "_breaths.wav", "_intro112.wav",
+    "_room.wav", "_norm.wav", "_sonic.wav", "_jitter.wav", "_sfx_audio.wav",
+    "_risers.wav", "_quiz_gap.wav", "_tension_gap.wav", "_ding.wav", "_buzzer.wav",
+    "_rev_reverb.wav", "_news_cadence.wav", "_vinyl_crackle.wav", "_shock_silence.wav",
+    "_monologue_pause.wav", "_phone_quote.wav", "_piano182.wav", "_synth183.wav",
+    "_crowd188.wav", "_reverb191.wav", "_epic195.wav", "_bgm_swell.wav",
+    "_mixed_audio.wav", "_intro_punch.wav", "_phase_aligned.wav", "_master_norm.wav",
+)
+
+
+def _cleanup_composer_audio_files(output_path, source_audio, *temporary_audio_paths):
+    output_base = output_path.rsplit(".", 1)[0]
+    protected = (
+        os.path.normcase(os.path.abspath(source_audio))
+        if source_audio else None
+    )
+    candidates = [output_base + suffix for suffix in _COMPOSER_AUDIO_TEMP_SUFFIXES]
+    candidates.extend(temporary_audio_paths)
+    for path in dict.fromkeys(path for path in candidates if path):
+        if os.path.normcase(os.path.abspath(path)) == protected:
+            continue
+        if not os.path.isfile(path):
+            continue
+        try:
+            os.remove(path)
+        except OSError as exc:
+            print(f"  [Composer] Temporary audio cleanup failed for {path}: {exc}", flush=True)
+
+
+def _select_auto_bgm(scene_clips, title, niche_id) -> tuple[str, str]:
+    from services.audio_mood_director import audio_mood_director
+
+    script_text = " ".join(
+        str(scene.get("narration") or "")
+        for scene in (scene_clips or [])
+        if isinstance(scene, dict)
+    ).strip() or str(title or "")
+    mood = audio_mood_director.detect_mood(
+        script_text,
+        niche_id=niche_id or "general",
+    )
+    matched = audio_mood_director.match_bgm_track(mood)
+    if matched.get("source") == "matched_local" and matched.get("filename"):
+        return str(matched["filename"]), mood.value
+
+    from bgm_manager import select_trend_hybrid_bgm
+
+    hybrid = select_trend_hybrid_bgm(
+        niche_id=niche_id or "",
+        topic=title or "",
+        preferred_mood=mood.value,
+    )
+    return str(hybrid.get("track") or ""), mood.value
+
+
 def compose_video(scene_clips, audio_path, word_timings, output_path, title="", 
                   bgm_track=None, bgm_volume=None, subtitle_opts=None,
                   progress_callback=None, cancel_check=None,
@@ -109,7 +159,8 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                   enable_ken_burns=True, enable_section2_filters=True, gameplay_path=None,
                   niche_id="", audio_premastered=False, retention_metadata=None,
                   hybrid_niche="", hybrid_render_overlay=None, human_craft=None,
-                  enable_zoompan=False, enable_face_center=False, **kwargs):
+                  enable_zoompan=False, enable_face_center=False,
+                  use_gpu_override: Optional[bool] = None, **kwargs):
     print(f"\n  [Composer] Building video with 500-Item Optimization Pipeline (Items 71-79)...")
     W, H = getattr(config, "get_target_resolution", lambda: (config.VIDEO_WIDTH, config.VIDEO_HEIGHT))()
     print(f"  [Composer] Hedef Çözünürlük: {W}x{H} (Mod: {getattr(config, 'RENDER_RESOLUTION_MODE', '1080p')})", flush=True)
@@ -471,16 +522,17 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     # Step B: Check for BGM mixing (Items 166, 169, 170)
     final_audio = processed_audio
     chosen_bgm = bgm_track or getattr(config, "DEFAULT_BGM_TRACK", "")
-    # R10 #87: when no explicit track, pick trend-hybrid profile for niche
+    # With no explicit choice, prefer a downloaded track matching the narration mood.
     if not chosen_bgm:
         try:
-            from bgm_manager import select_trend_hybrid_bgm
-            hybrid = select_trend_hybrid_bgm(niche_id=niche_id or "", topic=title or "")
-            if hybrid.get("track"):
-                chosen_bgm = hybrid["track"]
-                print(f"  [BGM] Trend-hybrid profile={hybrid.get('profile_id')} track={chosen_bgm}")
-        except Exception:
-            pass
+            chosen_bgm, mood = _select_auto_bgm(scene_clips, title, niche_id)
+            if chosen_bgm:
+                print(f"  [BGM] Auto mood={mood} track={chosen_bgm}")
+        except Exception as err:
+            print(
+                f"  [BGM] Mood selection failed; using niche fallback: {err}",
+                flush=True,
+            )
     if not chosen_bgm and getattr(config, "ENABLE_BGM", True):
         # Item 169: Müzik BPM Eşleştirmesi (Niş Temposu: Motivasyon 120-130 BPM, Felsefe/Gizem 70-85 BPM)
         from bgm_manager import match_bgm_track_to_niche
@@ -555,7 +607,6 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
     srt = output_path.rsplit(".", 1)[0] + ".srt"
 
     try:
-        cleanup_stray_ffmpeg_processes()
         total_scenes = len(scene_clips)
         for idx, sc in enumerate(scene_clips):
             if cancel_check and cancel_check():
@@ -850,12 +901,20 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             export_fps = 30.0
 
         cpu_cores = os.cpu_count() or 16
-        render_threads = int(getattr(config, 'RENDER_THREADS', 8) or 8)
+        render_threads = int(
+            kwargs.get("render_threads")
+            if kwargs.get("render_threads") is not None
+            else (getattr(config, "RENDER_THREADS", 8) or 8)
+        )
         if render_threads <= 1:
             render_threads = max(4, min(8, cpu_cores // 2))
 
         from system_resilience import get_export_codec_settings
-        use_gpu = getattr(config, "USE_GPU_ACCELERATION", True)
+        use_gpu = (
+            getattr(config, "USE_GPU_ACCELERATION", True)
+            if use_gpu_override is None
+            else use_gpu_override
+        )
         gpu_codec = getattr(config, "GPU_CODEC", "")
         chosen_codec, codec_preset, extra_params, mode_desc = get_export_codec_settings(use_gpu, gpu_codec)
         mode_desc = f"{mode_desc} (threads={render_threads}/{cpu_cores})"
@@ -897,8 +956,7 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         sub_opts.setdefault("hook_card_text", title)
         if "audio_path" not in sub_opts and final_audio:
             sub_opts["audio_path"] = final_audio
-        create_karaoke_subtitles(word_timings, ass, style_opts=sub_opts)
-        create_srt_file(word_timings, srt, audio_path=final_audio)
+        create_subtitle_files(word_timings, ass, srt, style_opts=sub_opts)
 
         # Final Audio Mastering Pass: Ensure volume is strictly normalized to -14 LUFS YouTube standard
         try:
@@ -912,7 +970,11 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
             print(f"  [Composer] Final audio normalization notice: {nae}")
 
         print(f"  [Composer] Merging audio + subtitles...")
-        ok = _merge(tmp, final_audio, ass, srt, output_path, style_opts=sub_opts)
+        ok = _merge(
+            tmp, final_audio, ass, srt, output_path,
+            style_opts=sub_opts, render_threads=render_threads,
+            cancel_check=cancel_check,
+        )
 
         if ok and os.path.exists(output_path):
             mb = os.path.getsize(output_path) / 1048576
@@ -1122,7 +1184,6 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 s.close()
             except Exception:
                 pass
-        cleanup_stray_ffmpeg_processes()
         gc.collect()
 
         # Cleanup intermediate files safely
@@ -1133,16 +1194,53 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                 except Exception:
                     pass
 
-        for temp_aud in [processed_audio, final_audio]:
-            if temp_aud != audio_path and os.path.exists(temp_aud):
-                try:
-                    os.remove(temp_aud)
-                except Exception:
-                    pass
+        _cleanup_composer_audio_files(
+            output_path, audio_path, processed_audio, final_audio,
+        )
 
 import imageio_ffmpeg
 
-def _merge(vid, aud, ass, srt, out, style_opts=None):
+
+def _run_cancellable_ffmpeg(command, cwd, cancel_check, on_started=None):
+    proc = subprocess.Popen(
+        command,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if on_started:
+        on_started()
+    try:
+        while True:
+            if cancel_check and cancel_check():
+                raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
+            try:
+                stdout, stderr = proc.communicate(timeout=0.25)
+                return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
+            except subprocess.TimeoutExpired:
+                continue
+    finally:
+        try:
+            if proc.poll() is None:
+                try:
+                    proc.terminate()
+                except OSError as exc:
+                    print(f"  [Composer] FFmpeg terminate uyarısı: {exc}", flush=True)
+            try:
+                proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                except OSError as exc:
+                    print(f"  [Composer] FFmpeg kill uyarısı: {exc}", flush=True)
+                proc.wait()
+        finally:
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None:
+                    stream.close()
+
+
+def _merge(vid, aud, ass, srt, out, style_opts=None, render_threads=None, cancel_check=None):
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     out_dir = os.path.dirname(os.path.abspath(out))
 
@@ -1163,7 +1261,13 @@ def _merge(vid, aud, ass, srt, out, style_opts=None):
     # Donanim Hizlandirma Yapilandirmasi (RTX NVENC vs Multi-thread CPU)
     use_gpu = getattr(config, "USE_GPU_ACCELERATION", True)
     gpu_codec = getattr(config, "GPU_CODEC", "h264_nvenc")
-    render_threads = int(getattr(config, "RENDER_THREADS", 8) or 8)
+    render_threads = int(
+        render_threads
+        if render_threads is not None
+        else (getattr(config, "RENDER_THREADS", 8) or 8)
+    )
+    output_attempted = False
+    merge_succeeded = False
 
     hook_temp = ""
     hook_path = ""
@@ -1187,6 +1291,14 @@ def _merge(vid, aud, ass, srt, out, style_opts=None):
 
     def execute_ffmpeg_pass(vf_string):
         """Attempts GPU NVENC encoding first, automatically falling back to CPU multi-threading."""
+        nonlocal output_attempted
+        if cancel_check and cancel_check():
+            raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
+
+        def mark_output_attempted():
+            nonlocal output_attempted
+            output_attempted = True
+
         extra_inputs = []
         filter_args = ["-vf", vf_string]
         if hook_path:
@@ -1205,7 +1317,16 @@ def _merge(vid, aud, ass, srt, out, style_opts=None):
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
                 "-movflags", "+faststart", base_out
             ]
-            r = subprocess.run(gpu_cmd, cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if cancel_check:
+                r = _run_cancellable_ffmpeg(
+                    gpu_cmd, out_dir, cancel_check, on_started=mark_output_attempted,
+                )
+            else:
+                mark_output_attempted()
+                r = subprocess.run(
+                    gpu_cmd, cwd=out_dir,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
             if r.returncode == 0 and os.path.exists(out):
                 return True, r
             else:
@@ -1220,7 +1341,16 @@ def _merge(vid, aud, ass, srt, out, style_opts=None):
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             "-movflags", "+faststart", base_out
         ]
-        r = subprocess.run(cpu_cmd, cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if cancel_check:
+            r = _run_cancellable_ffmpeg(
+                cpu_cmd, out_dir, cancel_check, on_started=mark_output_attempted,
+            )
+        else:
+            mark_output_attempted()
+            r = subprocess.run(
+                cpu_cmd, cwd=out_dir,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
         return (r.returncode == 0 and os.path.exists(out)), r
 
     try:
@@ -1229,6 +1359,7 @@ def _merge(vid, aud, ass, srt, out, style_opts=None):
             vf_chain = f"{base_vf},ass={base_ass}"
             success, r = execute_ffmpeg_pass(vf_chain)
             if success:
+                merge_succeeded = True
                 print(f"    [OK] Karaoke subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
                 return True
             print(f"    ASS failed ({r.stderr.decode('utf-8', errors='ignore')[:150]}), trying SRT...")
@@ -1241,6 +1372,7 @@ def _merge(vid, aud, ass, srt, out, style_opts=None):
             )
             success, r = execute_ffmpeg_pass(srt_vf)
             if success:
+                merge_succeeded = True
                 print(f"    [OK] SRT subtitles, Unsharp, Static Grain & Vignette applied (Items 84, 86, 92, 173)")
                 return True
             print(f"    SRT failed, trying no subs...")
@@ -1248,10 +1380,19 @@ def _merge(vid, aud, ass, srt, out, style_opts=None):
         # Try 3: No subs (apply unsharp, static grain & vignette filters)
         success, r = execute_ffmpeg_pass(base_vf)
         if success:
+            merge_succeeded = True
             print(f"    Video created with Unsharp, Static Grain & Vignette (no subtitles, 192k AAC 48k)")
             return True
         return False
     finally:
+        if output_attempted and not merge_succeeded and os.path.isfile(out):
+            try:
+                os.remove(out)
+            except OSError as cleanup_err:
+                print(
+                    f"    [Composer] Failed merge output cleanup failed for {out}: {cleanup_err}",
+                    flush=True,
+                )
         if hook_temp:
             try:
                 os.remove(hook_temp)

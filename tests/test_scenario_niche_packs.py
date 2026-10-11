@@ -36,7 +36,8 @@ class TestScenarioNichePacks(unittest.TestCase):
         self.assertIn("8_crypto_market", crypto)
         self.assertIn("18_astrology_horoscope", astro)
         self.assertNotIn("TAM OLARAK 14", crypto)
-        self.assertIn("8-16", crypto)
+        self.assertIn("Tam 6 konuşma sahnesi oluştur", crypto)
+        self.assertIn("en fazla 110 kelime", crypto)
         self.assertIn("38-60", crypto)
         self.assertIn("horror", crypto.lower())
         self.assertIn("YASAK", crypto)
@@ -90,6 +91,26 @@ class TestScenarioNichePacks(unittest.TestCase):
         self.assertTrue(plan_quality_usable(plan["scenes"]))
         for sc in plan["scenes"]:
             self.assertTrue(scene_narration_usable(sc["narration"]), sc.get("narration"))
+
+    def test_five_fact_retry_seed_rotates_facts_but_keeps_intro(self):
+        first = _generate_procedural_fallback_scenes(
+            "5 ilginç gerçek",
+            niche_type="9_five_facts",
+            language="tr",
+            variation_seed=0,
+        )
+        second = _generate_procedural_fallback_scenes(
+            "5 ilginç gerçek",
+            niche_type="9_five_facts",
+            language="tr",
+            variation_seed=1,
+        )
+        first_narrations = [scene["narration"] for scene in first["scenes"]]
+        second_narrations = [scene["narration"] for scene in second["scenes"]]
+
+        self.assertEqual(first_narrations[0], second_narrations[0])
+        self.assertNotEqual(first_narrations[1:], second_narrations[1:])
+        self.assertCountEqual(first_narrations[1:], second_narrations[1:])
 
     def test_horror_does_not_leak_into_finance_or_animals(self):
         for nid in ("8_crypto_market", "35_animal_kingdom_stories", "18_astrology_horoscope"):

@@ -5,7 +5,6 @@ Supports:
 2. Dynamic AI-Powered Live Story Discovery (generates 100% fresh, hyper-engaging viral Reddit stories on every refresh).
 3. Curated High-Retention Viral Reddit Archive with rotation and anti-repeat tracking.
 """
-import os
 import re
 import json
 import time
@@ -359,6 +358,8 @@ def fetch_public_posts(subreddit: str, limit: int = 10, lang: Optional[str] = No
                         "title": data.get("title", ""),
                         "body": body[:3000],
                         "score": data.get("score", 0),
+                        "author": data.get("author"),
+                        "num_comments": data.get("num_comments", 0),
                         "url": f"https://www.reddit.com{data.get('permalink', '')}",
                         "source": "oauth"
                     })
@@ -397,7 +398,10 @@ def fetch_public_posts(subreddit: str, limit: int = 10, lang: Optional[str] = No
         unseen_posts = candidate_pool
 
     random.shuffle(unseen_posts)
-    selected = unseen_posts[:limit]
+    selected = [
+        {**post, "source": post.get("source") or "curated_archive"}
+        for post in unseen_posts[:limit]
+    ]
     for p in selected:
         _SEEN_POST_IDS.add(p["id"])
 

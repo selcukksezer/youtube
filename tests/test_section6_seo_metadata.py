@@ -12,7 +12,7 @@ from viral_seo_agent import (
     get_optimal_upload_schedule,
     calculate_cta_timing,
     generate_viral_seo_metadata,
-    generate_title_variants
+    generate_15_viral_tags,
 )
 
 
@@ -22,6 +22,8 @@ class TestSection6SeoMetadata(unittest.TestCase):
         trimmed = enforce_title_length_limit(very_long, min_len=40, max_len=60)
         self.assertLessEqual(len(trimmed), 60)
         self.assertIn("#Shorts", trimmed)
+        with self.assertRaises(ValueError):
+            enforce_title_length_limit("Başlık", min_len=61, max_len=60)
 
     def test_item_347_capital_hook_word(self):
         title = "Bu kuralı asla unutmayın ve zihninizi yönetin"
@@ -42,12 +44,15 @@ class TestSection6SeoMetadata(unittest.TestCase):
         self.assertEqual(tag_list[0], "#Shorts")
         self.assertEqual(tag_list[1], "#stoic")
         self.assertEqual(tag_list[2], "#viral")
+        fallback_tags = enforce_three_hashtag_rule("space mystery", niche_tag="")
+        self.assertIn("#space", fallback_tags)
 
     def test_item_352_natural_seo_description(self):
         desc = build_natural_seo_description(
             keyword="Marcus Aurelius",
             hook="Antik Roma'nın en bilge imparatorunun gizli kuralları.",
             bullet_points=["Zihin kontrolü", "Duygusal dayanıklılık", "Kader sevgisi"],
+            tags=["stoacılık", "marcus aurelius"],
             source_name="Roma Tarih Kaynakları"
         )
         self.assertIn("Marcus Aurelius", desc)
@@ -55,6 +60,8 @@ class TestSection6SeoMetadata(unittest.TestCase):
         self.assertIn("📌 Kaynak & Araştırma:", desc)
         self.assertIn("⚖️ Yasal Bildirim (Fair Use):", desc)
         self.assertIn("#Shorts", desc)
+        self.assertIn("#stoacılık", desc)
+        self.assertIn("#marcusaurelius", desc)
 
     def test_item_358_channel_master_keywords(self):
         stoic_kw = get_channel_master_keywords("stoic")
@@ -74,6 +81,17 @@ class TestSection6SeoMetadata(unittest.TestCase):
         us_sched = get_optimal_upload_schedule("US")
         self.assertEqual(us_sched["target_country"], "US")
         self.assertIn("EST", us_sched["timezone"])
+        weekend_sched = get_optimal_upload_schedule("TR", day_of_week=5)
+        self.assertIn("10:00 - 13:00", weekend_sched["primary_window"])
+        with self.assertRaises(ValueError):
+            get_optimal_upload_schedule("TR", day_of_week=7)
+
+    def test_english_viral_tags_are_localized(self):
+        tags = generate_15_viral_tags("Space mystery facts", niche="space", lang="en")
+        self.assertEqual(len(tags), 15)
+        self.assertIn("discover", tags)
+        self.assertIn("scientific facts", tags)
+        self.assertNotIn("keşfet", tags)
 
     def test_item_367_cta_timing(self):
         cta = calculate_cta_timing(total_duration=45.0)

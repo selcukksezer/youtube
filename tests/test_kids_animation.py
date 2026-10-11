@@ -133,6 +133,14 @@ class KidsAdapterMockTests(unittest.TestCase):
             res = RunwayVideoProvider().generate("kids cartoon forest", output_path=out)
             self.assertIsNotNone(res)
             self.assertEqual(res.provider, "runway")
+            self.assertEqual(
+                mock_post.call_args.kwargs["headers"]["Authorization"],
+                "Bearer rw_test",
+            )
+            self.assertEqual(
+                mock_get.call_args.kwargs["headers"]["Authorization"],
+                "Bearer rw_test",
+            )
 
     @patch("visuals.ai_video.providers.luma.download_url")
     @patch("visuals.ai_video.providers.luma.requests.post")
@@ -160,6 +168,25 @@ class KidsAdapterMockTests(unittest.TestCase):
                     output_path=out,
                 )
             self.assertIsNone(res)
+
+    def test_chain_blocks_unsafe_custom_kids_prompt(self):
+        provider = MagicMock()
+        provider.name = "fake"
+        provider.generate.return_value = None
+
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "custom.mp4")
+            with patch.object(ai_chain, "ai_video_enabled", return_value=True), \
+                    patch.object(ai_chain, "available_providers", return_value=[provider]), \
+                    patch.object(ai_chain, "cache_lookup", return_value=None):
+                res = ai_chain.generate_ai_clip(
+                    prompt="photoreal child face smiling",
+                    niche_id="36_kids_animation",
+                    output_path=out,
+                )
+
+        self.assertIsNone(res)
+        provider.generate.assert_not_called()
 
     def test_chain_stitches_long_duration(self):
         class FakeProv:

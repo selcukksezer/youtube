@@ -5,7 +5,9 @@
 - Smart scoring: resolution + orientation + duration
 - scene_description matching for better relevance
 """
-import os, hashlib, requests, re, time, subprocess, json
+import os, hashlib, requests, re, time, subprocess, json, tempfile
+from typing import Any, Callable, Optional
+from urllib.parse import urlsplit
 import imageio_ffmpeg
 import config
 import database
@@ -19,6 +21,12 @@ _used_hashes: set = set()
 _source_counter: int = 0  # Round-robin counter
 # K3: thread lock — paralel asyncio.gather fetch'lerinde race condition önlemi
 _fetch_lock = _threading.Lock()
+_SELECTED_VIDEO_HOSTS = {
+    "pexels": frozenset({"videos.pexels.com"}),
+    "pixabay": frozenset({"cdn.pixabay.com"}),
+    "coverr": frozenset({"cdn.coverr.co"}),
+}
+_MAX_SELECTED_VIDEO_BYTES = 256 * 1024 * 1024
 _USED_PERSIST_PATH = os.path.join(
     getattr(config, "BASE_DIR", os.path.dirname(os.path.abspath(__file__))),
     "data",
@@ -1018,6 +1026,224 @@ def _record_visual_manifest(
         })
     except Exception as exc:
         print(f"    [VisualLedger] kayıt notu: {exc}")
+
+
+def fetch_selected_stock_video(
+    selected_video: dict[str, Any],
+    scene_index: int,
+    project_dir: str,
+    target_duration: float = 7.0,
+    cancel_check: Optional[Callable[[], bool]] = None,
+) -> Optional[str]:
+    """Download a selected licensed stock video from its known provider CDN."""
+    if not isinstance(selected_video, dict):
+        print("    [SelectedStock] selection is not an object; falling back to scene search.")
+        return None
+
+    source = str(selected_video.get("source") or "").strip().casefold()
+    kind = str(selected_video.get("kind") or "").strip().casefold()
+    url = str(selected_video.get("url") or "").strip()
+    allowed_hosts = _SELECTED_VIDEO_HOSTS.get(source)
+    if kind != "video":
+        print(f"    [SelectedStock] {source or 'unknown'} selection is {kind or 'untyped'}, not video; falling back.")
+        return None
+    if not allowed_hosts or not url:
+        print(f"    [SelectedStock] unsupported provider or empty URL ({source or 'unknown'}); falling back.")
+        return None
+    try:
+        parsed_url = urlsplit(url)
+        port = parsed_url.port
+    except ValueError as exc:
+        print(f"    [SelectedStock] invalid selected URL: {exc}; falling back.")
+        return None
+    if (
+        parsed_url.scheme != "https"
+        or parsed_url.username
+        or parsed_url.password
+        or parsed_url.hostname not in allowed_hosts
+        or port not in (None, 443)
+        or not parsed_url.path.lower().endswith(".mp4")
+    ):
+        print(f"    [SelectedStock] rejected URL outside the {source} MP4 CDN; falling back.")
+        return None
+    if cancel_check and cancel_check():
+        return None
+
+    source_id = str(selected_video.get("id") or "").strip()
+    if not source_id:
+        source_id = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+    source_key = f"{source}:{source_id}"
+    candidate = {
+        "source": source,
+        "id": source_id,
+        "contributor": selected_video.get("contributor") or "",
+    }
+    if _stock_candidate_blocked(candidate) or database.source_asset_was_used(source_key):
+        print(f"    [SelectedStock] {source_key} is blocked or already used; falling back.")
+        return None
+
+    from visuals.license import License, LicenseInfo, is_commercial_safe
+
+    provider_licenses = {
+        "pexels": License.PEXELS,
+        "pixabay": License.PIXABAY,
+        "coverr": License.COVERR,
+    }
+    license_data = selected_video.get("license")
+    if license_data is None:
+        license_info = LicenseInfo(provider_licenses[source], source)
+    elif isinstance(license_data, dict) and license_data.get("license"):
+        license_info = LicenseInfo.from_dict(license_data)
+        if (
+            not is_commercial_safe(license_info.license)
+            or (license_info.source and license_info.source.casefold() != source)
+        ):
+            print(f"    [SelectedStock] unsafe or mismatched license metadata for {source_key}; falling back.")
+            return None
+    else:
+        print(f"    [SelectedStock] invalid license metadata for {source_key}; falling back.")
+        return None
+
+    os.makedirs(project_dir, exist_ok=True)
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", source_id)[:80] or "selected"
+    clip_path = os.path.join(project_dir, f"s{scene_index:03d}_{source}_{safe_id}_selected.mp4")
+    temp_path = None
+    try:
+        fd, temp_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(clip_path)}.",
+            suffix=".part",
+            dir=project_dir,
+        )
+        os.close(fd)
+        with requests.get(
+            url,
+            stream=True,
+            timeout=60,
+            headers={"User-Agent": "Mozilla/5.0"},
+            allow_redirects=False,
+        ) as response:
+            if response.is_redirect:
+                raise requests.RequestException("selected video redirect rejected")
+            response.raise_for_status()
+            declared_size = response.headers.get("Content-Length")
+            if declared_size:
+                try:
+                    if int(declared_size) > _MAX_SELECTED_VIDEO_BYTES:
+                        raise requests.RequestException("selected video exceeds download limit")
+                except ValueError as exc:
+                    raise requests.RequestException("invalid selected video Content-Length") from exc
+
+            downloaded_size = 0
+            with open(temp_path, "wb") as output:
+                for chunk in response.iter_content(256 * 1024):
+                    if cancel_check and cancel_check():
+                        print(f"    [SelectedStock] download cancelled for {source_key}.")
+                        return None
+                    if not chunk:
+                        continue
+                    downloaded_size += len(chunk)
+                    if downloaded_size > _MAX_SELECTED_VIDEO_BYTES:
+                        raise requests.RequestException("selected video exceeds download limit")
+                    output.write(chunk)
+        if downloaded_size <= 10_000:
+            raise requests.RequestException("selected video download below size floor")
+        os.replace(temp_path, clip_path)
+        temp_path = None
+    except (requests.RequestException, OSError) as exc:
+        print(f"    [SelectedStock] {source_key} download failed: {exc}; falling back.")
+        return None
+    finally:
+        if temp_path and os.path.isfile(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError as exc:
+                print(f"    [SelectedStock] temporary file cleanup failed: {exc}")
+
+    if cancel_check and cancel_check():
+        try:
+            os.remove(clip_path)
+        except OSError as exc:
+            print(f"    [SelectedStock] cancelled clip cleanup failed: {exc}")
+        return None
+
+    from system_resilience import verify_stock_video_integrity
+
+    try:
+        minimum_duration = min(1.0, max(0.3, float(target_duration) * 0.3))
+    except (TypeError, ValueError):
+        minimum_duration = 1.0
+    integrity = verify_stock_video_integrity(clip_path, min_duration=minimum_duration)
+    if not integrity.get("valid"):
+        print(
+            f"    [SelectedStock] ffprobe rejected {source_key}: "
+            f"{integrity.get('reason')}; falling back."
+        )
+        try:
+            os.remove(clip_path)
+        except OSError as exc:
+            print(f"    [SelectedStock] invalid clip cleanup failed: {exc}")
+        return None
+
+    clip_hash = _file_hash(clip_path)
+    with _fetch_lock:
+        if (
+            clip_hash in _used_hashes
+            or source_id in _job_used_ids
+            or database.source_asset_was_used(source_key, clip_hash)
+        ):
+            print(f"    [SelectedStock] duplicate {source_key}; falling back.")
+            try:
+                os.remove(clip_path)
+            except OSError as exc:
+                print(f"    [SelectedStock] duplicate clip cleanup failed: {exc}")
+            return None
+        database.record_source_asset(source_key, url, clip_hash, source)
+        _job_used_ids.add(source_id)
+        _used_hashes.add(clip_hash)
+
+    title = str(selected_video.get("title") or f"{source.title()} video {source_id}")
+    source_url = (
+        _safe_public_url(str(selected_video.get("source_url") or license_info.source_url or ""))
+        or ""
+    )
+    license_urls = {
+        "pexels": "https://www.pexels.com/license/",
+        "pixabay": "https://pixabay.com/service/license-summary/",
+        "coverr": "https://coverr.co/license",
+    }
+    license_url = (
+        _safe_public_url(str(selected_video.get("license_url") or license_info.license_url or ""))
+        or license_urls[source]
+    )
+    license_info.source = source
+    license_info.title = title
+    license_info.source_url = source_url
+    license_info.license_url = license_url
+
+    from visuals.fetch import add_manifest_entry
+
+    add_manifest_entry({
+        "scene_index": int(scene_index),
+        "path": clip_path,
+        "uid": f"selected:{source_key}",
+        "source": source,
+        "id": source_id,
+        "title": title,
+        "kind": "video",
+        "url": url,
+        "asset_url": url,
+        "source_url": source_url,
+        "license_url": license_url,
+        "attribution": selected_video.get("attribution") or license_info.attribution,
+        "contributor": selected_video.get("contributor") or "",
+        "sha1": clip_hash,
+        "sha256": clip_hash,
+        "license": license_info.to_dict(),
+    })
+    if source in _SESSION_SOURCE_COUNTS:
+        _SESSION_SOURCE_COUNTS[source] = _SESSION_SOURCE_COUNTS.get(source, 0) + 1
+    print(f"    [OK] [SelectedStock:{source}] scene={scene_index} id={source_id}")
+    return clip_path
 
 
 def _usable_clip(path) -> bool:

@@ -434,8 +434,9 @@ function persistTtsVoicePreference(voiceId) {
     } catch (e) {}
 }
 
-function populateTtsVoiceSelect(_lang) {
+function populateTtsVoiceSelect(lang) {
     if (!selectTtsVoice) return;
+    const targetLang = lang === 'en' ? 'en' : 'tr';
     const prev = selectTtsVoice.value !== 'auto' ? selectTtsVoice.value : savedTtsVoicePreference();
     const trVoices = (ttsVoiceCatalog.tr && ttsVoiceCatalog.tr.length) ? ttsVoiceCatalog.tr : STATIC_TTS_FALLBACK.tr;
     const enVoices = (ttsVoiceCatalog.en && ttsVoiceCatalog.en.length) ? ttsVoiceCatalog.en : STATIC_TTS_FALLBACK.en;
@@ -448,8 +449,11 @@ function populateTtsVoiceSelect(_lang) {
         if (!localVoices.some((row) => row.id === voice.id)) localVoices.push(voice);
     });
     appendEdgeVoiceGroup(selectTtsVoice, 'Yerel (çevrimdışı)', localVoices);
-    appendEdgeVoiceGroup(selectTtsVoice, 'Türkçe Edge', trVoices);
-    appendEdgeVoiceGroup(selectTtsVoice, 'English Edge', enVoices);
+    appendEdgeVoiceGroup(
+        selectTtsVoice,
+        targetLang === 'en' ? 'English Edge' : 'Türkçe Edge',
+        targetLang === 'en' ? enVoices : trVoices,
+    );
 
     if (elevenVoices.length) {
         const group = document.createElement('optgroup');
@@ -474,8 +478,11 @@ function populateTtsVoiceSelect(_lang) {
     }
 
     const savedSettings = restoreStudioSettings();
-    const preferredVoice = prev || savedSettings?.ttsVoice;
-    if (preferredVoice && [...selectTtsVoice.options].some(o => o.value === preferredVoice)) {
+    const options = [...selectTtsVoice.options];
+    const preferredVoice = [prev, savedSettings?.ttsVoice].find(
+        voice => voice && options.some(option => option.value === voice),
+    );
+    if (preferredVoice) {
         selectTtsVoice.value = preferredVoice;
     } else {
         selectTtsVoice.value = 'auto';
@@ -584,5 +591,4 @@ chkSplitScreen?.addEventListener('change', (ev) => {
         if (span) span.textContent = chkSplitScreen.checked ? 'Split-Screen: AÇIK' : 'Split-Screen Modunu Aç';
     }
 });
-
 

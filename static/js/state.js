@@ -80,6 +80,19 @@ function initDomElements() {
         chkEmphasisCard.addEventListener('change', () => { chkEmphasisCardLab.checked = chkEmphasisCard.checked; });
         chkEmphasisCardLab.addEventListener('change', () => { chkEmphasisCard.checked = chkEmphasisCardLab.checked; });
     }
+    const fxEnabledCount = document.getElementById('fx-enabled-count');
+    const fxOptionToggles = document.querySelectorAll(
+        '#render-enhancement-options .switches-grid input[type="checkbox"]'
+    );
+    if (fxEnabledCount) {
+        const updateFxEnabledCount = () => {
+            const enabledCount = Array.from(fxOptionToggles).filter(toggle => toggle.checked).length;
+            fxEnabledCount.textContent = `${enabledCount} açık`;
+        };
+        fxOptionToggles.forEach(toggle => toggle.addEventListener('change', updateFxEnabledCount));
+        chkEmphasisCardLab?.addEventListener('change', updateFxEnabledCount);
+        updateFxEnabledCount();
+    }
     chkAllowSimilarScript = document.getElementById('chk-allow-similar-script');
     chkAutoPublish = document.getElementById('chk-auto-publish');
     btnCreateScript = document.getElementById('btn-create-script');
@@ -250,11 +263,14 @@ function restoreStudioSettings() {
             selectSubPreset.value = s.subtitlePreset;
         }
         if (s.language && selectLanguage) {
-            selectLanguage.value = s.language;
+            const restoredLanguage = s.language === 'en' ? 'en' : 'tr';
+            selectLanguage.value = restoredLanguage;
             const btnTr = document.getElementById('btn-quick-lang-tr');
             const btnEn = document.getElementById('btn-quick-lang-en');
             if (btnTr && btnEn) {
-                if (s.language === 'en') {
+                btnTr.setAttribute('aria-pressed', String(restoredLanguage === 'tr'));
+                btnEn.setAttribute('aria-pressed', String(restoredLanguage === 'en'));
+                if (restoredLanguage === 'en') {
                     btnTr.classList.remove('active');
                     btnTr.classList.add('btn-outline');
                     btnEn.classList.add('active');
@@ -289,6 +305,8 @@ function restoreStudioSettings() {
         if (s.contentGaps) {
             const el = document.getElementById('content-gap-topics');
             if (el) el.value = s.contentGaps;
+            const researchTools = document.getElementById('topic-research-tools');
+            if (researchTools) researchTools.open = true;
         }
         if (s.splitScreen !== undefined && chkSplitScreen) {
             chkSplitScreen.checked = !!s.splitScreen;
@@ -464,16 +482,28 @@ function updateScriptActionButtons() {
     const btnNewTopic = document.getElementById('btn-new-topic');
     const btnRegenerateStudio = document.getElementById('btn-regenerate-script-studio');
     const btnRegenerateTimeline = document.getElementById('btn-regenerate-scenario');
+    const btnTranslateScript = document.getElementById('btn-translate-script');
     if (!btn) return;
 
     const ready = hasExistingPlan();
+    const sourceLanguage = String(currentPlan?.language || currentPlan?.lang || window.APP_STATE?.language || 'tr').slice(0, 2);
+    const targetLanguage = selectLanguage?.value || window.APP_STATE?.language || 'tr';
     const currentTopic = (inputTopic?.value || '').trim();
     const planTopic = (currentPlan?.title || currentPlan?.topic || currentPlan?.keyword || '').trim();
     const topicChanged = ready && currentTopic && planTopic && (currentTopic.toLowerCase() !== planTopic.toLowerCase());
+    const isGenerating = btn.dataset.generating === 'true';
 
     btnNewTopic?.classList.toggle('hidden', !ready);
     btnRegenerateStudio?.classList.toggle('hidden', !ready);
     btnRegenerateTimeline?.classList.toggle('hidden', !ready);
+    btnTranslateScript?.classList.toggle('hidden', !ready || sourceLanguage === targetLanguage);
+    btn.disabled = isGenerating || (!ready && !currentTopic);
+    if (btnTranslateScript && sourceLanguage !== targetLanguage) {
+        const targetName = targetLanguage === 'en' ? 'İngilizceye' : 'Türkçeye';
+        btnTranslateScript.querySelector('span').textContent = `Senaryoyu ${targetName} Çevir`;
+    }
+
+    if (isGenerating) return;
 
     if (ready) {
         if (topicChanged) {
@@ -486,9 +516,12 @@ function updateScriptActionButtons() {
         if (btnRegenerateStudio) {
             btnRegenerateStudio.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i><span>Senaryoyu Yeniden Yaz</span>';
         }
+    } else if (currentTopic) {
+        btn.className = 'btn btn-primary btn-lg';
+        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i><span id="btn-create-script-label">Senaryo Yaz</span>';
     } else {
         btn.className = 'btn btn-secondary btn-lg';
-        btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i><span id="btn-create-script-label">1. Senaryoyu İncele & Düzenle</span>';
+        btn.innerHTML = '<i class="fa-solid fa-pen-to-square"></i><span id="btn-create-script-label">Konu girin</span>';
     }
 }
 
@@ -502,15 +535,30 @@ function setSqpPill(id, text, state) {
     el.append(document.createTextNode(' ' + text));
 }
 
+function updateStudioPlanSummary(scenes) {
+    const totalSec = scenes.reduce((acc, scene) => acc + (parseFloat(scene.duration) || 6), 0);
+    const totalWords = scenes.reduce((acc, scene) => acc + wordCount(cleanNarration(scene.narration)), 0);
+    const queries = scenes.map(scene => ((scene.search_queries || [])[0] || '').toLowerCase().trim()).filter(Boolean);
+    const uniqueClips = new Set(queries).size;
+    const dupes = queries.length - uniqueClips;
+
+    setSqpPill('sqp-cadence', `Cadence: ${scenes.length} sahne`, directorCadenceStatus(scenes.length));
+    setSqpPill('sqp-words', `Kelime: ${totalWords}`, directorWordCountStatus(totalWords));
+    setSqpPill('sqp-duration', `Sure: ${totalSec.toFixed(1)}sn`, directorDurationStatus(totalSec));
+    setSqpPill('sqp-clips', `Klip: ${uniqueClips}/${scenes.length}`, dupes === 0 ? 'ok' : 'warn');
+}
+
 async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     const panel = document.getElementById('studio-quality-panel');
     const badge = document.getElementById('sqp-status-badge');
     const issuesEl = document.getElementById('sqp-issues');
+    const pills = document.getElementById('sqp-pills');
     const advisoryGroup = document.getElementById('sqp-advisory-group');
     const advisoriesEl = document.getElementById('sqp-advisories');
     if (!panel || !badge) return { ok: false, issues: ['Panel yok'] };
 
     if (!plan?.scenes?.length) {
+        pills?.classList.add('hidden');
         const scriptQuality = plan?.meta?.script_quality || {};
         const scriptHardFail = scriptQuality.hard_fail === true;
         badge.className = `sqp-status-badge ${scriptHardFail ? 'blocked' : 'waiting'}`;
@@ -535,27 +583,28 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
             advisoriesEl.replaceChildren();
             advisoryGroup.classList.add('hidden');
         }
-        updateRenderButtonsBlocked(true, scriptQuality.issues?.[0] || 'Once senaryo olusturun');
+        updateRenderButtonsBlocked(
+            true,
+            scriptQuality.issues?.[0] || 'Once senaryo olusturun',
+            !scriptHardFail
+        );
         return { ok: false, issues: scriptQuality.issues || ['Senaryo yok'], script_quality: scriptQuality, hard_fail: scriptHardFail };
     }
 
-    const scenes = plan.scenes;
-    const totalSec = scenes.reduce((acc, s) => acc + (parseFloat(s.duration) || 6), 0);
-    const totalWords = scenes.reduce((acc, s) => acc + wordCount(cleanNarration(s.narration)), 0);
-    const queries = scenes.map(s => ((s.search_queries || [])[0] || '').toLowerCase().trim()).filter(Boolean);
-    const uniqueClips = new Set(queries).size;
-    const dupes = queries.length - uniqueClips;
-
-    const cadenceOk = scenes.length >= 8 && scenes.length <= 16;
-    setSqpPill('sqp-cadence', `Cadence: ${scenes.length} sahne`, cadenceOk ? 'ok' : (scenes.length >= 6 ? 'warn' : 'fail'));
-    setSqpPill('sqp-words', `Kelime: ${totalWords}`, totalWords >= 70 ? 'ok' : (totalWords >= 50 ? 'warn' : 'fail'));
-    setSqpPill('sqp-duration', `Sure: ${totalSec.toFixed(1)}sn`, totalSec >= 38 && totalSec <= 60 ? 'ok' : 'warn');
-    setSqpPill('sqp-clips', `Klip: ${uniqueClips}/${scenes.length}`, dupes === 0 ? 'ok' : 'warn');
+    pills?.classList.remove('hidden');
+    updateStudioPlanSummary(plan.scenes);
 
     badge.className = 'sqp-status-badge warn';
     badge.textContent = 'Dogrulaniyor...';
 
     const validation = await validatePlanViaApi(plan, { autoRepair: true });
+    if (validation.quality_repair?.status === 'repaired') {
+        showToast('Senaryo kalite sorunları otomatik düzeltildi.', 'success');
+    } else if (validation.quality_repair && validation.quality_repair.status !== 'not_needed') {
+        showToast('Senaryo kalite sorunlarının bir kısmı düzeltilemedi; kalite raporunu inceleyin.', 'warn');
+    } else if (validation.repaired && validation.fixes?.length) {
+        showToast('Anlatim otomatik duzeltildi');
+    }
     const continuityAdvisories = Array.isArray(validation.scene_continuity_advisories)
         ? validation.scene_continuity_advisories
         : [];
@@ -577,20 +626,33 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
                 ...validation.plan,
                 meta: { ...(plan.meta || {}), ...(validation.plan.meta || {}) }
             };
-        if (activePlan !== currentPlan) {
-            currentPlan = activePlan;
-            persistCurrentPlan();
-            if (typeof renderTimelineScenes === 'function') {
-                try { renderTimelineScenes(activePlan); } catch (_) {}
-            }
+    }
+    const scriptQuality = validation.script_quality || activePlan.meta?.script_quality || {};
+    if (validation.script_quality) {
+        activePlan = {
+            ...activePlan,
+            meta: { ...(activePlan.meta || {}), script_quality: validation.script_quality }
+        };
+    }
+    updateStudioPlanSummary(activePlan.scenes || []);
+    if (activePlan !== currentPlan) {
+        currentPlan = activePlan;
+        persistCurrentPlan();
+        if (typeof renderTimelineScenes === 'function') {
+            try { renderTimelineScenes(activePlan); } catch (_) {}
         }
     }
 
-    if (validation.repaired && validation.fixes?.length && !silent) {
+    if (
+        (!validation.quality_repair || validation.quality_repair.status === 'not_needed')
+        && validation.repaired
+        && validation.fixes?.length
+        && !silent
+    ) {
         showToast('Anlatim otomatik duzeltildi');
     }
 
-    const narrOk = validation.ok;
+    const narrOk = validation.narration_ok ?? validation.ok;
     setSqpPill('sqp-narration', narrOk ? 'Anlatim: OK' : 'Anlatim: SORUN', narrOk ? 'ok' : 'fail');
 
     // Human-craft / discovery beast (anti AI-slop)
@@ -611,7 +673,6 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     const hook = (hc.mute_hook_line || '').slice(0, 28);
     setSqpPill('sqp-pov', hook ? `POV: ${pov} · ${hook}` : `POV: ${pov}`, hc.pov_angle ? 'ok' : 'neutral');
 
-    const scriptQuality = activePlan.meta?.script_quality || {};
     const scriptHardFail = scriptQuality.hard_fail === true;
     if (issuesEl) {
         const craftIssues = [];
@@ -647,7 +708,7 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
         );
     }
 
-    return { ...validation, script_quality: scriptQuality, hard_fail: scriptHardFail };
+    return { ...validation, plan: activePlan, script_quality: scriptQuality, hard_fail: scriptHardFail };
 }
 
 function applyPlagiarismBadge(plagiarism) {
@@ -1067,7 +1128,9 @@ async function postPlanGate(path, plan, { autoRepair = true } = {}) {
             fixes: data.fixes || [],
             pre_render_score: data.pre_render_score,
             scene_continuity_advisories: data.scene_continuity_advisories || [],
-            script_quality: data.script_quality || {}
+            script_quality: data.script_quality || {},
+            narration_ok: data.narration_ok ?? data.ok,
+            quality_repair: data.quality_repair
         };
     }
     return {
@@ -1078,7 +1141,9 @@ async function postPlanGate(path, plan, { autoRepair = true } = {}) {
         fixes: data.fixes || [],
         pre_render_score: data.pre_render_score,
         scene_continuity_advisories: data.scene_continuity_advisories || [],
-        script_quality: data.script_quality || {}
+        script_quality: data.script_quality || {},
+        narration_ok: data.narration_ok ?? data.ok,
+        quality_repair: data.quality_repair
     };
 }
 
@@ -1091,6 +1156,7 @@ async function validatePlanViaApi(plan, { autoRepair = true } = {}) {
             if (repairResult.ok) {
                 return {
                     ...repairResult,
+                    quality_repair: result.quality_repair || repairResult.quality_repair,
                     repaired: true,
                     fixes: [...(result.fixes || []), ...(repairResult.fixes || [])],
                     scene_continuity_advisories: repairResult.scene_continuity_advisories || result.scene_continuity_advisories || []
@@ -1099,6 +1165,7 @@ async function validatePlanViaApi(plan, { autoRepair = true } = {}) {
             if (repairResult.repaired || repairResult.fixes?.length) {
                 result = {
                     ...repairResult,
+                    quality_repair: result.quality_repair || repairResult.quality_repair,
                     repaired: true,
                     fixes: [...(result.fixes || []), ...(repairResult.fixes || [])],
                     scene_continuity_advisories: repairResult.scene_continuity_advisories || result.scene_continuity_advisories || []
@@ -1117,20 +1184,40 @@ async function validatePlanViaApi(plan, { autoRepair = true } = {}) {
     }
 }
 
-function updateRenderButtonsBlocked(blocked, reason) {
+function updateRenderButtonsBlocked(blocked, reason, allowDirectRender = false) {
     const scriptQuality = currentPlan?.meta?.script_quality || {};
     const scriptHardFail = scriptQuality.hard_fail === true;
-    blocked = !!blocked || scriptHardFail;
+    const blockAll = !!blocked || scriptHardFail;
     if (scriptHardFail) reason = scriptQuality.issues?.[0] || reason;
     const btns = [
-        document.getElementById('btn-render-from-timeline'),
-        document.getElementById('btn-quick-render')
-    ].filter(Boolean);
-    btns.forEach(btn => {
-        btn.disabled = !!blocked;
-        btn.title = blocked ? (reason || 'Kopuk anlatim — once senaryoyu duzeltin') : '';
-        btn.classList.toggle('render-blocked', !!blocked);
+        { button: document.getElementById('btn-render-from-timeline'), blocked: blockAll },
+        {
+            button: document.getElementById('btn-quick-render'),
+            blocked: scriptHardFail || (blockAll && !allowDirectRender)
+        }
+    ].filter(({ button }) => button);
+    btns.forEach(({ button, blocked: buttonBlocked }) => {
+        button.disabled = buttonBlocked;
+        button.title = buttonBlocked ? (reason || 'Kopuk anlatim — once senaryoyu duzeltin') : '';
+        button.classList.toggle('render-blocked', buttonBlocked);
     });
+}
+
+function directorCadenceStatus(sceneCount) {
+    if (sceneCount === 6) return 'ok';
+    return sceneCount >= 4 ? 'warn' : 'fail';
+}
+
+function directorWordCountStatus(wordCount) {
+    if (wordCount < 85 || wordCount > 195) return 'fail';
+    if (wordCount > 110) return 'warn';
+    return 'ok';
+}
+
+function directorDurationStatus(duration) {
+    if (duration < 38 || duration > 65) return 'fail';
+    if (duration < 50 || duration > 60.25) return 'warn';
+    return 'ok';
 }
 
 function getComplianceIssues(scenes) {
@@ -1142,8 +1229,8 @@ function getComplianceIssues(scenes) {
     if (totalSec < 38 || totalSec > 60) {
         soft.push(`Sure bandi: ${totalSec.toFixed(1)}sn (izin 38-60, tavan 60)`);
     }
-    if (scenes.length < 8 || scenes.length > 16) {
-        soft.push(`Cadence: ${scenes.length} sahne (izin 8-16)`);
+    if (directorCadenceStatus(scenes.length) !== 'ok') {
+        soft.push(`Cadence: ${scenes.length} sahne (Director hedefi 6)`);
     }
     const longCuts = timedScenes.filter(s => sceneDurationSec(s) > 3.2).length;
     if (longCuts > 3) {
@@ -1298,6 +1385,8 @@ const TOPIC_SOURCE_LABELS = {
     ai: { label: 'AI', icon: 'fa-solid fa-wand-magic-sparkles', cls: 'ai' },
     trend: { label: 'Trend', icon: 'fa-solid fa-chart-line', cls: 'trend' },
     reddit: { label: 'Reddit', icon: 'fa-brands fa-reddit-alien', cls: 'reddit' },
+    google_trends: { label: 'Google Trends', icon: 'fa-solid fa-arrow-trend-up', cls: 'trend' },
+    rss: { label: 'RSS', icon: 'fa-solid fa-rss', cls: 'trend' },
 };
 
 

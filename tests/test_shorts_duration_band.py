@@ -18,7 +18,9 @@ class TestShortsDurationBand(unittest.TestCase):
         self.assertEqual(15, len(FIFTEEN.split()))
         self.assertGreaterEqual(natural_target_duration(150), 55.0)
         self.assertLessEqual(natural_target_duration(150), 60.0)
-        self.assertEqual(natural_target_duration(80), 38.0)
+        self.assertAlmostEqual(natural_target_duration(80), 80 / 1.9, places=2)
+        self.assertGreaterEqual(natural_target_duration(95), 50.0)
+        self.assertLessEqual(natural_target_duration(110), 60.0)
         self.assertEqual(natural_target_duration(200), 60.0)
 
     def test_word_budget_is_natural_110(self):

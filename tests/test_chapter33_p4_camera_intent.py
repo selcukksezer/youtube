@@ -2,9 +2,9 @@
 Bölüm 33.3 P4: Sahne niyetine üç kamera hareketi testleri.
 Referans: youtube-shorts-pipeline/verticals/broll.py:animate_frame
 3 kamera modeli:
-- Soru / Hook / Curiosity / Establishing -> zoom-in (z='1+0.12*ease')
+- Soru / Hook / Curiosity / Establishing -> keyframe zoom-in (z: 1.0 to 1.12)
 - Geçiş / Transition / Action / Body -> pan (z='1.12', x over time)
-- Kapanış / Conclusion / Outro / CTA -> zoom-out (z='1+0.12*ease_back')
+- Kapanış / Conclusion / Outro / CTA -> keyframe zoom-out (z: 1.12 to 1.0)
 
 Kutu kapalıyken (enable_zoompan=False): FFmpeg komutunda 'zoompan' yoktur.
 Kutu açıkken (enable_zoompan=True): ardışık üç sahne üç farklı 'z=' ifadesi alır.
@@ -72,6 +72,8 @@ class TestChapter33P4CameraIntent(unittest.TestCase):
         self.assertIn("zoompan=", zf0)
         self.assertIn("zoompan=", zf1)
         self.assertIn("zoompan=", zf2)
+        for scene_filter in (zf0, zf1, zf2):
+            self.assertIn("d=1:s=1080x1920:", scene_filter)
 
         # z= ifadelerini çekelim
         def _extract_z(f_str):
@@ -84,13 +86,15 @@ class TestChapter33P4CameraIntent(unittest.TestCase):
         z1 = _extract_z(zf1)
         z2 = _extract_z(zf2)
 
-        # 1. Sahne (Soru): 1-cos (zoom_in)
-        self.assertIn("1-cos", z0)
+        # 1. Sahne (Soru): keyframe-backed cosine zoom-in
+        self.assertIn("1.000 + (0.120)", z0)
+        self.assertIn("cos(3.14159265", z0)
         # 2. Sahne (Geçiş): sabit zoom 1.12 (pan_right)
         self.assertIn("1.12", z1)
         self.assertNotIn("cos", z1)
-        # 3. Sahne (Kapanış): 1+cos (zoom_out)
-        self.assertIn("1+cos", z2)
+        # 3. Sahne (Kapanış): reverse keyframe-backed cosine zoom
+        self.assertIn("1.120 + (-0.120)", z2)
+        self.assertIn("cos(3.14159265", z2)
 
         # Üç ifadenin tamamı birbirinden farklıdır
         self.assertNotEqual(z0, z1)
@@ -126,7 +130,8 @@ class TestChapter33P4CameraIntent(unittest.TestCase):
             scene_intent="question",
         )
         self.assertIn("zoompan=", chain_with_zp)
-        self.assertIn("1-cos", chain_with_zp)
+        self.assertIn("1.000 + (0.120)", chain_with_zp)
+        self.assertIn("cos(3.14159265", chain_with_zp)
 
     @patch("imageio_ffmpeg.get_ffmpeg_exe", return_value="ffmpeg")
     @patch("render.ffmpeg_graph.probe_stream_color", return_value={})
@@ -229,12 +234,13 @@ class TestChapter33P4CameraIntent(unittest.TestCase):
         zp_count = filter_complex.count("zoompan=")
         self.assertEqual(zp_count, 3)
 
-        # 1. Sahne (Soru): 1-cos
-        self.assertIn("1-cos", filter_complex)
+        # 1. Sahne (Soru): keyframe-backed cosine zoom-in
+        self.assertIn("1.000 + (0.120)", filter_complex)
+        self.assertIn("cos(3.14159265", filter_complex)
         # 2. Sahne (Geçiş): z='1.12'
         self.assertIn("z='1.12'", filter_complex)
-        # 3. Sahne (Kapanış): 1+cos
-        self.assertIn("1+cos", filter_complex)
+        # 3. Sahne (Kapanış): reverse keyframe-backed cosine zoom
+        self.assertIn("1.120 + (-0.120)", filter_complex)
 
 
 if __name__ == "__main__":

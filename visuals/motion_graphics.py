@@ -154,9 +154,9 @@ def build_solid_color_clip(
     fontfile: str = "",
 ) -> Optional[str]:
     """Palette color card (+ optional drawtext). Last-resort scene so fetch never stalls."""
-    w = int(width or getattr(config, "VIDEO_WIDTH", 1080) if config else 1080)
-    h = int(height or getattr(config, "VIDEO_HEIGHT", 1920) if config else 1920)
-    r = int(fps or getattr(config, "FPS", 30) if config else 30)
+    w = int(width or (getattr(config, "VIDEO_WIDTH", 1080) if config else 1080))
+    h = int(height or (getattr(config, "VIDEO_HEIGHT", 1920) if config else 1920))
+    r = int(fps or (getattr(config, "FPS", 30) if config else 30))
     dur = max(1.0, float(duration))
     pal = palette_for(niche_id)
     colors = pal["colors"]
@@ -215,9 +215,9 @@ def build_kinetic_clip(
     Uses lavfi gradients + drawtext; no MoviePy / ImageMagick.
     On ffmpeg filter failure, retries without grain then a solid color card.
     """
-    w = int(width or getattr(config, "VIDEO_WIDTH", 1080) if config else 1080)
-    h = int(height or getattr(config, "VIDEO_HEIGHT", 1920) if config else 1920)
-    r = int(fps or getattr(config, "FPS", 30) if config else 30)
+    w = int(width or (getattr(config, "VIDEO_WIDTH", 1080) if config else 1080))
+    h = int(height or (getattr(config, "VIDEO_HEIGHT", 1920) if config else 1920))
+    r = int(fps or (getattr(config, "FPS", 30) if config else 30))
     dur = max(1.5, float(duration))
     pal = palette_for(niche_id)
     colors = pal["colors"]

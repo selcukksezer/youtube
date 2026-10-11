@@ -86,6 +86,26 @@ def test_thumbnail_generator_class_wrapper(tmp_path):
     assert os.path.exists(out)
 
 
+def test_synthesize_shorts_thumbnail_landscape_uses_background(tmp_path):
+    source_path = tmp_path / "source.jpg"
+    output_path = tmp_path / "landscape.jpg"
+    Image.new("RGB", (320, 180), (190, 30, 20)).save(source_path)
+
+    synthesize_shorts_thumbnail(
+        title="Clear Strong Story",
+        output_path=str(output_path),
+        background_path=str(source_path),
+        aspect_ratio="16:9",
+    )
+
+    with Image.open(output_path) as image:
+        assert image.size == (1280, 720)
+        red, green, blue = image.getpixel((10, 10))
+        assert red > 180
+        assert green < 50
+        assert blue < 50
+
+
 def test_extract_highest_contrast_frame_nonexistent():
     # Should safely return None on missing file without crashing
     res = extract_highest_contrast_frame("non_existent_file_xyz_123.mp4")

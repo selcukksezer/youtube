@@ -9,6 +9,7 @@ import time
 import subprocess
 import asyncio
 import re
+from typing import Any, Callable, Mapping
 import imageio_ffmpeg
 import config
 import database
@@ -19,6 +20,7 @@ from video_fetcher import (
     reset_used_videos,
     reset_session_source_counts,
     fetch_scene_clip,
+    fetch_selected_stock_video,
     generate_ai_image_clip,
     generate_veo_scene_clip,
     commit_published_stock_ids,
@@ -31,6 +33,15 @@ from subtitle_generator import SUBTITLE_PRESETS, merge_studio_subtitle_opts, res
 from batch_processor import batch_manager
 from notifications import notify_video_ready, notify_render_error
 from . import state
+from services.workflow_retry import GLOBAL_RENDER_RETRY
+
+
+def _quality_report_allows_render(
+    script_quality: Mapping[str, Any],
+    *,
+    allow_draft_render: bool = False,
+) -> bool:
+    return allow_draft_render or not bool(script_quality.get("hard_fail"))
 
 
 def _gemini_image_circuit_open() -> bool:
@@ -63,6 +74,71 @@ def _log(msg, pct=None):
     print(msg, flush=True)
     if pct is not None:
         state.broadcast_event("progress", {"percent": pct, "step": msg})
+
+
+def _apply_optional_sonilo_sfx(video_path: str, enabled: bool) -> bool:
+    if not enabled:
+        return False
+    from services.sonilo_sfx import SoniloSfxError, add_ai_sfx_to_video
+
+    _log("[Sonilo SFX] Görüntü analiziyle AI ses efekti üretiliyor; render dosyası yükleniyor.")
+    try:
+        add_ai_sfx_to_video(video_path)
+    except SoniloSfxError as exc:
+        _log(f"[Sonilo SFX] Uygulanamadı; mevcut render korundu: {exc}", 95)
+        return False
+    _log("[Sonilo SFX] AI ses efekti render'a eklendi.", 95)
+    return True
+
+
+def _compose_with_retry(
+    compose_fn: Callable[..., str],
+    clips: Any,
+    audio_path: str,
+    word_timings: Any,
+    output_path: str,
+    **compose_kwargs: Any,
+) -> str:
+    progress_callback = compose_kwargs.get("progress_callback")
+    last_progress = float("-inf")
+
+    def render_attempt(attempt_path: str, use_gpu: bool) -> bool:
+        attempt_kwargs = dict(compose_kwargs)
+        if callable(progress_callback):
+            def report_progress(pct: float, *args: Any, **kwargs: Any) -> None:
+                nonlocal last_progress
+                last_progress = max(last_progress, float(pct))
+                progress_callback(last_progress, *args, **kwargs)
+
+            attempt_kwargs["progress_callback"] = report_progress
+
+        rendered_path = compose_fn(
+            clips,
+            audio_path,
+            word_timings,
+            attempt_path,
+            use_gpu_override=use_gpu,
+            **attempt_kwargs,
+        )
+        return bool(
+            rendered_path
+            and os.path.normcase(os.path.abspath(rendered_path))
+            == os.path.normcase(os.path.abspath(attempt_path))
+        )
+
+    retry = GLOBAL_RENDER_RETRY.execute_render_with_retry(
+        render_fn=render_attempt,
+        output_path=output_path,
+        max_attempts=2,
+        initial_backoff=0.5,
+        initial_use_gpu=bool(getattr(config, "USE_GPU_ACCELERATION", True)),
+    )
+    if retry["attempts_used"] > 1:
+        _log(
+            "[RenderRetry] İlk deneme başarısız; izole çıktı ve "
+            f"{'donanım' if retry['used_gpu'] else 'CPU'} kodlayıcıyla tamamlandı."
+        )
+    return output_path
 
 
 def _veo_circuit_open() -> bool:
@@ -148,14 +224,25 @@ def _sweep_render_temp_files(job_prefix: str = "") -> None:
     suffixes = (
         "_eq.wav", "_146147.wav", "_breaths.wav", "_intro112.wav", "_room.wav",
         "_norm.wav", "_sonic.wav", "_jitter.wav", "_sfxbus.wav", "_bgm.wav", "_fitted.wav",
+        "_piano182.wav", "_synth183.wav", "_crowd188.wav", "_reverb191.wav", "_epic195.wav",
     )
-    for suffix in suffixes:
-        fp = os.path.join(audio_dir, f"{job_prefix}{suffix}")
-        if os.path.isfile(fp):
-            try:
-                os.remove(fp)
-            except OSError:
-                pass
+    for prefix in (job_prefix, f"{job_prefix}_master"):
+        for suffix in suffixes:
+            fp = os.path.join(audio_dir, f"{prefix}{suffix}")
+            if os.path.isfile(fp):
+                try:
+                    os.remove(fp)
+                except OSError:
+                    pass
+
+
+def _get_render_thread_limits(thermal_state=None):
+    render_threads = int(getattr(config, "RENDER_THREADS", 4) or 4)
+    ffmpeg_threads = int(getattr(config, "FFMPEG_THREADS", render_threads) or render_threads)
+    if (thermal_state or {}).get("thermal_throttle_recommended"):
+        render_threads = max(2, min(render_threads, 4))
+        ffmpeg_threads = render_threads
+    return render_threads, ffmpeg_threads
 
 
 def _stamp_visual_mode(plan, selected) -> None:
@@ -211,7 +298,7 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
     if visual_mode == "stock":
         prefer_ai = False
 
-    # 0) Direct assigned clip (AI preview, Whiteboard preview, or custom selected local clip)
+    # 0) Direct assigned clip (AI preview, Whiteboard preview, or selected stock clip)
     selected_vid = scene.get("selected_video") or {}
     local_candidate = selected_vid.get("path") or scene.get("video_path") or selected_vid.get("file_path")
     if local_candidate and os.path.exists(local_candidate):
@@ -221,6 +308,15 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         else:
             p = local_candidate
             _log(f"[Visual] Sahne #{i+1}: Önceden üretilen yerel klip kullanılıyor: {os.path.basename(p)}")
+
+    if not p and selected_vid and visual_mode not in ("whiteboard", "sketch", "cizim"):
+        p = fetch_selected_stock_video(
+            selected_vid,
+            i,
+            proj,
+            target_duration=d,
+            cancel_check=_is_cancelled,
+        )
 
     if not p and visual_mode in ("whiteboard", "sketch", "cizim"):
         from services.whiteboard_animator import create_whiteboard_scene_clip
@@ -368,6 +464,17 @@ async def _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=None
     def _cancelled():
         return bool(state.current_render_state.get("cancel_requested", False))
 
+    if _cancelled():
+        raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
+    from compliance.visual_diversity import diversify_scene_search_queries
+    adjusted_visuals = diversify_scene_search_queries(scenes)
+    if adjusted_visuals:
+        state.broadcast_event(
+            "log",
+            f"[VisualDiversity] {adjusted_visuals} sahnede tekrar eden arama sorgusu "
+            "mevcut alternatif açıyla değiştirildi.",
+        )
+
     async def _one(i, scene):
         if _cancelled():
             return i, None, None
@@ -386,7 +493,9 @@ async def _fetch_scenes_parallel(scenes, plan, proj, total_s, gameplay_path=None
     return results
 
 
-def process_video_task(req: VideoRenderRequest):
+def process_video_task(
+    req: VideoRenderRequest, *, reset_cancel_request: bool = True
+):
     old_stdout = sys.stdout
     sys.stdout = state.SSELogStreamer(old_stdout)
     db_id = None
@@ -395,6 +504,7 @@ def process_video_task(req: VideoRenderRequest):
     orig_voice = config.TTS_VOICE
     orig_rate = config.TTS_RATE
     orig_sacred = bool(getattr(config, "TTS_SACRED_CALM", False))
+    render_threads, ffmpeg_threads = _get_render_thread_limits()
     script_regen_494 = False
     gate_context = None
     slot_acquired = False
@@ -415,7 +525,8 @@ def process_video_task(req: VideoRenderRequest):
         slot_acquired = True
         slogger.info("Render donanım slotu tahsis edildi", extra={"active_renders": GLOBAL_RENDER_GATE.active_count})
 
-        state.current_render_state["cancel_requested"] = False
+        if reset_cancel_request:
+            state.current_render_state["cancel_requested"] = False
         state.current_render_state["cancel_notified"] = False
         # Every job starts with clean terminal state. Otherwise a previous
         # failed render remains visible while a new render is already running.
@@ -423,6 +534,7 @@ def process_video_task(req: VideoRenderRequest):
         state.current_render_state["video_url"] = None
         state.current_render_state["percent"] = 0
         state.current_render_state["step"] = "Başlatılıyor"
+        check_cancelled()
 
         # Item 448: auto-delete rendered outputs older than 30 days (best-effort)
         try:
@@ -442,11 +554,10 @@ def process_video_task(req: VideoRenderRequest):
             from hardware_detector import get_cpu_thermal_state
             thermal = get_cpu_thermal_state()
             if thermal.get("thermal_throttle_recommended"):
-                config.RENDER_THREADS = max(2, min(getattr(config, "RENDER_THREADS", 4), 4))
-                config.FFMPEG_THREADS = config.RENDER_THREADS
+                render_threads, ffmpeg_threads = _get_render_thread_limits(thermal)
                 _log(
                     f"[Ops] CPU thermal throttle: {thermal.get('temperature_c')}°C — "
-                    f"threads={config.RENDER_THREADS}",
+                    f"threads={render_threads}",
                     2,
                 )
         except Exception:
@@ -732,26 +843,70 @@ def process_video_task(req: VideoRenderRequest):
                 "matched_title": matched_title or "",
             }
 
-        # Strict production contract: drafts that do not meet the intended
-        # 45-60s / 6-12 scene / 120-170 word shape must be regenerated rather
-        # than rendered as filler-heavy output.
+        # Intended production shape is 45-60s / six scenes / 85-110 words;
+        # the quality gate distinguishes hard limits from advisory deviations.
         try:
             from production.quality import validate_script_quality
             script_quality = validate_script_quality(plan or {})
             plan.setdefault("meta", {})
             plan["meta"]["script_quality"] = script_quality
+            if director is not None:
+                from production.script_repair import repair_script_quality_plan
+
+                repair_result = repair_script_quality_plan(
+                    plan or {},
+                    script_quality,
+                    title=keyword,
+                    niche_id=locked_niche,
+                    language=target_lang,
+                )
+                quality_repair = repair_result["quality_repair"]
+                if quality_repair["status"] in ("repaired", "partially_repaired"):
+                    plan = repair_result["plan"]
+                    director = repair_result["director"]
+                    keyword = plan.get("title") or keyword
+                    script_quality = repair_result["script_quality"]
+                    plan.setdefault("meta", {})
+                    plan["meta"]["script_quality"] = script_quality
+                    plan["meta"]["script_quality_repair"] = quality_repair
+                    plan["meta"]["render_allowed"] = bool(script_quality.get("ok"))
+                    with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f:
+                        json.dump(plan, f, ensure_ascii=False, indent=2)
+                    with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
+                        json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
+                    _log(
+                        "[QualityGate] AI repaired script-quality findings: "
+                        f"{quality_repair['status']}",
+                        24,
+                    )
+                elif quality_repair["status"] != "not_needed":
+                    _log(
+                        "[QualityGate] AI repair incomplete: "
+                        f"{quality_repair['status']}",
+                        24,
+                    )
             for warning in script_quality.get("warnings") or []:
                 if warning.startswith((
                     "opening_repeats_title",
                     "repeated_narration_scenes",
                     "numeric_claims_not_in_source",
                     "numeric_source_conflicts",
+                    "age_claims_not_in_source",
+                    "age_source_conflicts",
+                    "year_claims_not_in_source",
+                    "year_source_conflicts",
+                    "date_claims_not_in_source",
+                    "date_source_conflicts",
                     "ending_is_brief_statement",
                     "ending_scene_missing",
                 )):
                     _log(f"[QualityGate] Senaryo uyarısı: {warning}", 24)
 
-            if script_quality.get("hard_fail") and not getattr(req, "allow_draft_render", False):
+            allow_draft_render = bool(getattr(req, "allow_draft_render", False))
+            if not _quality_report_allows_render(
+                script_quality,
+                allow_draft_render=allow_draft_render,
+            ):
                 # Attempt auto-repair before aborting
                 from scenes.narration_validate import apply_auto_repair_if_needed
                 repaired_plan, narr_fixes, _ = apply_auto_repair_if_needed(plan)
@@ -761,33 +916,18 @@ def process_video_task(req: VideoRenderRequest):
                     script_quality = validate_script_quality(plan)
                     plan["meta"]["script_quality"] = script_quality
 
-                if script_quality.get("hard_fail") and not getattr(req, "allow_draft_render", False):
-                    # Check if issues are non-fatal per-scene discrepancies or soft threshold deviations
+                if not _quality_report_allows_render(
+                    script_quality,
+                    allow_draft_render=allow_draft_render,
+                ):
                     issues_list = script_quality.get("issues", [])
-                    non_fatal = all(
-                        (i.startswith("scene_") and (
-                            "words_below" in i
-                            or "queries_insufficient" in i
-                            or "missing_terminal" in i
-                            or "visual_description" in i
-                            or "mechanical_filler" in i
-                        ))
-                        or i.startswith("repeated_scene_fingerprint")
-                        or i.startswith("word_count_out_of_band")
-                        or i.startswith("duration_out_of_band")
-                        or i.startswith("scene_count_out_of_band")
-                        for i in issues_list
-                    )
-                    if non_fatal and len(plan.get("scenes", [])) >= 4:
-                        _log(f"[QualityGate] UYARI: Sözleşme sınırındaki senaryo esnetilerek kabul edildi: {issues_list}", 24)
-                    else:
-                        reason = ", ".join(issues_list)
-                        msg = f"Senaryo üretim sözleşmesi reddetti: {reason}"
-                        _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
-                        if db_id:
-                            database.update_video_status(db_id, "failed", error_message=msg)
-                        state.broadcast_event("error", msg)
-                        return
+                    reason = ", ".join(issues_list)
+                    msg = f"Senaryo üretim sözleşmesi reddetti: {reason}"
+                    _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
+                    if db_id:
+                        database.update_video_status(db_id, "failed", error_message=msg)
+                    state.broadcast_event("error", msg)
+                    return
         except Exception as script_quality_err:
             msg = f"Senaryo kalite sözleşmesi çalıştırılamadı: {script_quality_err}"
             _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
@@ -825,6 +965,8 @@ def process_video_task(req: VideoRenderRequest):
                 f"[QualityGate] Pre-score={pre['score']} ok={pre['ok']} issues={pre.get('issues')}",
                 25,
             )
+            for warning in pre.get("warnings") or []:
+                _log(f"[RetentionGate] Görsel ritim uyarısı: {warning}", 25)
             semantic_block = [
                 i for i in pre.get("issues", [])
                 if i.startswith("fragment") or i.startswith("low_words")
@@ -2046,13 +2188,16 @@ def process_video_task(req: VideoRenderRequest):
             enable_rcard = True
         if enable_rcard:
             try:
-                from reddit_card_renderer import generate_transparent_reddit_card_png
-                rcard_title = keyword
-                if getattr(req, "reddit_post", None) and isinstance(req.reddit_post, dict):
-                    rcard_title = req.reddit_post.get("title") or keyword
+                from reddit_card_renderer import (
+                    build_reddit_card_metadata,
+                    generate_transparent_reddit_card_png,
+                )
+                card_metadata = build_reddit_card_metadata(
+                    getattr(req, "reddit_post", None),
+                    fallback_title=keyword,
+                )
                 reddit_card_path = generate_transparent_reddit_card_png(
-                    title=rcard_title,
-                    subreddit="AskReddit" if req.niche == "11_reddit_stories" else "ShortsStories",
+                    **card_metadata,
                     output_path=os.path.join(output_root, f"{safe}_reddit_card.png"),
                 )
                 _log("[RedditCard] Soru kartı PNG overlay oluşturuldu.", 80)
@@ -2139,20 +2284,31 @@ def process_video_task(req: VideoRenderRequest):
                                 c["path"] = _cands[0]
                                 _sc.path = _cands[0]
 
+        from services.scene_prerequisites import ScenePrerequisiteGate
+        ScenePrerequisiteGate.check_render_prerequisites_or_raise(clips, audio_path)
+
         prev_sfx = getattr(config, "ENABLE_SFX", True)
         prev_bgm = getattr(config, "ENABLE_BGM", True)
         if director or user_wants_muted:
             config.ENABLE_SFX = False if director else prev_sfx
             config.ENABLE_BGM = False
         try:
-            result = compose_via_director(
-                clips, audio_path, timings, output_file,
+            result = _compose_with_retry(
+                compose_via_director, clips, audio_path, timings, output_file,
                 audio_premastered=bool(director),
+                render_threads=render_threads,
+                ffmpeg_thread_limit=ffmpeg_threads,
                 **compose_kwargs,
             )
         finally:
             config.ENABLE_SFX = prev_sfx
             config.ENABLE_BGM = prev_bgm
+
+        if result and os.path.isfile(result):
+            _apply_optional_sonilo_sfx(
+                result,
+                bool(getattr(req, "enable_sonilo_sfx", False)),
+            )
 
         # ─── 8) Post quality gate ─────────────────────────────────────────
         pre_result = locals().get("pre") or {}
@@ -2262,6 +2418,39 @@ def process_video_task(req: VideoRenderRequest):
             size_mb = round(os.path.getsize(result) / (1024 * 1024), 2)
             total_dur = sum(c["duration"] for c in clips)
 
+            try:
+                from services.video_title_ideas import generate_video_title_ideas
+                title_ideas = generate_video_title_ideas(
+                    result,
+                    keyword=keyword,
+                    script_context=script_text,
+                    current_title=str(seo_meta.get("seo_title") or keyword),
+                    language=target_lang,
+                )
+            except (ImportError, OSError, TypeError, ValueError) as title_err:
+                title_ideas = None
+                _log(
+                    f"[TitleIdeas] Optional title analysis failed "
+                    f"({type(title_err).__name__}); keeping existing SEO title.",
+                    95,
+                )
+            if title_ideas:
+                seo_meta["title_ideas"] = title_ideas
+                try:
+                    with open(seo_file, "w", encoding="utf-8") as sf:
+                        json.dump(seo_meta, sf, ensure_ascii=False, indent=2)
+                    _log(
+                        f"[TitleIdeas] {len(title_ideas['titles'])} kareyle doğrulanmış "
+                        "başlık önerisi hazır.",
+                        95,
+                    )
+                except OSError as title_file_err:
+                    _log(
+                        f"[TitleIdeas] SEO dosyasına öneriler yazılamadı "
+                        f"({type(title_file_err).__name__}).",
+                        95,
+                    )
+
             # File-only delivery contract: policy snapshot, AI disclosure,
             # quality report, manual checklist and output checksum are written
             # before the job is marked completed.
@@ -2309,7 +2498,9 @@ def process_video_task(req: VideoRenderRequest):
                 from services.thumbnail_generator import generate_thumbnail, extract_best_video_frame
                 _log("[Thumbnail] High-CTR kapak görseli hazırlanıyor (Verticals v3)...", 99)
                 raw_frame = os.path.join(proj, "raw_thumb_frame.jpg")
-                got_frame = extract_best_video_frame(result, raw_frame, timestamp_sec=min(3.0, total_dur * 0.25))
+                got_frame = extract_best_video_frame(
+                    result, raw_frame, target_sec=min(3.0, total_dur * 0.25)
+                )
                 bg_src = raw_frame if got_frame else None
                 generate_thumbnail(
                     title=seo_meta.get("seo_title", keyword),
@@ -2323,7 +2514,10 @@ def process_video_task(req: VideoRenderRequest):
                     background_path=bg_src,
                     aspect_ratio="16:9",
                 )
-                _log(f"[Thumbnail] 9:16 ve 16:9 kapak hazır: {os.path.basename(thumb_path)}")
+                _log(
+                    f"[Thumbnail] 9:16 ve 16:9 kapak hazır: "
+                    f"{os.path.basename(thumb_path)}, {os.path.basename(thumb_169_path)}"
+                )
             except Exception as thumb_err:
                 _log(f"[Thumbnail] Kapak üretim uyarısı: {thumb_err}")
 

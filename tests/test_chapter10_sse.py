@@ -14,7 +14,7 @@ Covers:
 import asyncio
 import json
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from server_core.state import (
     format_sse_message,
@@ -108,6 +108,30 @@ def test_broadcast_event_slow_consumer_queue_overflow():
         assert item2["data"] == "Line 3"
         assert item3["data"] == "Line 4"
     finally:
+        if test_q in event_queues:
+            event_queues.remove(test_q)
+
+
+def test_broadcast_event_fails_closed_when_payload_sanitization_fails(caplog):
+    test_q = asyncio.Queue()
+    event_queues.append(test_q)
+    state_before = dict(current_render_state)
+    state_before["logs"] = list(current_render_state["logs"])
+
+    try:
+        with patch(
+            "services.log_sanitizer.sanitize_payload",
+            side_effect=RuntimeError("sanitizer unavailable"),
+        ):
+            with pytest.raises(RuntimeError, match="sanitizer unavailable"):
+                broadcast_event("log", "api_key=secret-value")
+
+        assert test_q.empty()
+        assert "api_key=secret-value" not in current_render_state["logs"]
+        assert "payload sanitization failed" in caplog.text.lower()
+    finally:
+        current_render_state.clear()
+        current_render_state.update(state_before)
         if test_q in event_queues:
             event_queues.remove(test_q)
 

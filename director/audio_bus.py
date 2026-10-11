@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import List
 
-from .schema import AudioEvent, DirectorPlan, ScenePlan
+from .schema import AudioEvent, DirectorPlan
 
 
 def narration_bed_noise_type(manifest: dict | None) -> str | None:

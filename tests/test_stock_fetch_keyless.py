@@ -65,6 +65,14 @@ class TestKeylessStockFetch(unittest.TestCase):
             (0, {"search_queries": ["mosque dome"]}, "10_religious_quotes")
         )
         self.assertEqual(sc["selected_video"]["source"], "pexels")
+        self.assertEqual(
+            sc["selected_video"]["source_url"],
+            "https://www.pexels.com/video/1/",
+        )
+        self.assertEqual(
+            sc["selected_video"]["license_url"],
+            "https://www.pexels.com/license/",
+        )
 
 
 if __name__ == "__main__":

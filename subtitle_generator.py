@@ -466,7 +466,11 @@ def _whisper_language(code) -> str:
     return raw[:2] if len(raw) >= 2 else "tr"
 
 
-def _transcribe_whisper_words(audio_path: str, language: str = "tr") -> list:
+def _transcribe_whisper_words(
+    audio_path: str,
+    language: str = "tr",
+    initial_prompt: str = "",
+) -> list:
     """
     openshorts decode: beam 5, VAD on, previous-text conditioning off.
     Model stays cached. Continuation fragments are merged before strip.
@@ -480,14 +484,15 @@ def _transcribe_whisper_words(audio_path: str, language: str = "tr") -> list:
     if _WHISPER_MODEL is None or _WHISPER_MODEL_KEY != key:
         _WHISPER_MODEL = WhisperModel(size, device=device, compute_type=compute)
         _WHISPER_MODEL_KEY = key
-    segments, _info = _WHISPER_MODEL.transcribe(
+    segments = _WHISPER_MODEL.transcribe(
         audio_path,
         language=_whisper_language(language),
         word_timestamps=True,
         beam_size=5,
         vad_filter=True,
         condition_on_previous_text=False,
-    )
+        initial_prompt=initial_prompt.strip() or None,
+    )[0]
     raw = []
     for seg in segments:
         for w in seg.words or []:
@@ -757,10 +762,11 @@ Style: K,{font_name},{scaled_font_size},{primary_ass},{highlight_ass},{stroke_as
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    groups = _group(
-        timings, max_words,
+    groups = split_subtitle_pages_on_silence(
+        timings,
+        max_words_per_page=max_words,
         break_on_punctuation=not bool(opts.get("words_per_page")),
-        max_gap=1.2,
+        silence_threshold_sec=0.350,
     )
     events = []
 
@@ -843,9 +849,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     print(f"  [Subs] Karaoke ASS (Vector Engine Item 94): {len(events)} events (Highlight: {highlight_hex} Item 91)")
     return path
 
-def create_srt_file(timings, path, max_dur=9999.0, audio_path: str = None):
+def create_srt_file(timings, path, max_dur=9999.0, audio_path: str = None, style_opts=None):
+    opts = style_opts or {}
     timings = _clean_timings(timings or [])
-    timings = align_words_whisper(timings, audio_path=audio_path)
+    timings = align_words_whisper(
+        timings,
+        audio_path=audio_path or opts.get("audio_path"),
+        enabled=opts.get("whisper_align"),
+        language=opts.get("language"),
+    )
     if not timings:
         open(path, "w").close()
         return path
@@ -872,6 +884,25 @@ def create_srt_file(timings, path, max_dur=9999.0, audio_path: str = None):
         f.write("\n".join(lines))
     print(f"  [Subs] SRT: {idx-1} lines")
     return path
+
+
+def create_subtitle_files(timings, ass_path, srt_path, max_dur=9999.0, style_opts=None):
+    opts = dict(style_opts or {})
+    aligned_timings = align_words_whisper(
+        _clean_timings(timings or []),
+        audio_path=opts.get("audio_path"),
+        enabled=opts.get("whisper_align"),
+        language=opts.get("language"),
+    )
+    render_opts = {**opts, "audio_path": None, "whisper_align": False}
+    ass_result = create_karaoke_subtitles(
+        aligned_timings, ass_path, max_dur=max_dur, style_opts=render_opts,
+    )
+    srt_result = create_srt_file(
+        aligned_timings, srt_path, max_dur=max_dur, style_opts=render_opts,
+    )
+    return ass_result, srt_result
+
 
 def _at(s):
     total_cs = max(0, int(round(float(s) * 100)))

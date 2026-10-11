@@ -212,6 +212,37 @@ class TestKineticProcedural(unittest.TestCase):
             self.assertTrue(path and os.path.isfile(path))
             self.assertGreater(os.path.getsize(path), 2_000)
 
+    def test_clip_builders_honor_explicit_dimensions_without_config(self):
+        from unittest.mock import patch
+        from visuals import motion_graphics
+
+        commands = []
+
+        def record_ffmpeg_call(cmd, *args, **kwargs):
+            commands.append((cmd, args, kwargs))
+            return True
+
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(motion_graphics, "config", None), \
+                patch.object(motion_graphics.imageio_ffmpeg, "get_ffmpeg_exe", return_value="ffmpeg"), \
+                patch("render.ffmpeg_graph.cheap_pan_filter", return_value="null"), \
+                patch.object(motion_graphics, "_run_ffmpeg", side_effect=record_ffmpeg_call):
+            build_solid_color_clip(
+                os.path.join(td, "solid.mp4"), 1.0, width=640, height=360, fps=24,
+            )
+            build_kinetic_clip(
+                os.path.join(td, "kinetic.mp4"), 1.5, "A clear title",
+                niche_id="general", width=640, height=360, fps=24,
+            )
+
+        solid_cmd = commands[0][0]
+        kinetic_cmd = commands[1][0]
+        solid_input = solid_cmd[solid_cmd.index("-i") + 1]
+        kinetic_input = kinetic_cmd[kinetic_cmd.index("-i") + 1]
+        self.assertIn("s=640x360:d=1.000:r=24", solid_input)
+        self.assertIn("gradients=s=640x360", kinetic_input)
+        self.assertIn(":rate=24:", kinetic_input)
+
 
 class TestEvaluatePlan(unittest.TestCase):
     def test_bundle(self):

@@ -117,7 +117,7 @@ class TestMoneyPrinterMillisecondDurationLock(unittest.TestCase):
         )
         solved = solve_timeline(plan)
         cuts = solved.time_map.get("cuts", [])
-        self.assertEqual(len(cuts), 8)
+        self.assertEqual(len(cuts), 6)
         # Check acceleration: early cuts longer, later cuts faster or non-uniform
         durations = [c["t1"] - c["t0"] for c in cuts]
         self.assertTrue(any(abs(durations[i] - durations[0]) > 0.05 for i in range(1, len(durations))))

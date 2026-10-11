@@ -27,6 +27,7 @@ def _key_hints() -> Dict[str, str]:
         "reddit_id": mask_api_key(config.REDDIT_CLIENT_ID),
         "reddit_secret": mask_api_key(config.REDDIT_CLIENT_SECRET),
         "elevenlabs": mask_api_key(getattr(config, "ELEVENLABS_API_KEY", "")),
+        "sonilo": mask_api_key(getattr(config, "SONILO_API_KEY", "")),
     }
 
 
@@ -61,6 +62,7 @@ def get_dashboard_config() -> Dict[str, Any]:
             "youtube_data": bool(config.YOUTUBE_DATA_API_KEY),
             "reddit": bool(config.REDDIT_CLIENT_ID and config.REDDIT_CLIENT_SECRET),
             "elevenlabs": bool(getattr(config, "ELEVENLABS_API_KEY", "")),
+            "sonilo": bool(getattr(config, "SONILO_API_KEY", "")),
         },
         "key_hints": _key_hints(),
         "elevenlabs": _elevenlabs_dashboard_info(),
@@ -103,6 +105,7 @@ def apply_dashboard_config(data: Any) -> None:
         "grok_key": "GROK_API_KEY", "pexels_key": "PEXELS_API_KEY", "pixabay_key": "PIXABAY_API_KEY",
         "youtube_data_key": "YOUTUBE_DATA_API_KEY", "reddit_client_id": "REDDIT_CLIENT_ID",
         "reddit_client_secret": "REDDIT_CLIENT_SECRET", "elevenlabs_key": "ELEVENLABS_API_KEY",
+        "sonilo_key": "SONILO_API_KEY",
         "subtitle_color": "SUBTITLE_COLOR",
         "subtitle_highlight_color": "SUBTITLE_HIGHLIGHT_COLOR", "subtitle_font_size": "SUBTITLE_FONT_SIZE",
         "subtitle_y_position": "SUBTITLE_Y_POSITION", "enable_bgm": "ENABLE_BGM", "bgm_volume": "BGM_VOLUME",
@@ -183,6 +186,7 @@ def _dashboard_env_updates() -> Dict[str, str]:
         "REDDIT_CLIENT_ID": config.REDDIT_CLIENT_ID or "",
         "REDDIT_CLIENT_SECRET": config.REDDIT_CLIENT_SECRET or "",
         "ELEVENLABS_API_KEY": getattr(config, "ELEVENLABS_API_KEY", "") or "",
+        "SONILO_API_KEY": getattr(config, "SONILO_API_KEY", "") or "",
         "ELEVENLABS_MODEL_ID": getattr(config, "ELEVENLABS_MODEL_ID", "eleven_multilingual_v2") or "",
         "LANGUAGE": config.LANGUAGE or "tr",
         "TTS_GENDER": config.TTS_GENDER or "male",

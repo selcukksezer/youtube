@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import os
+import tempfile
 import time
 from typing import Any, Dict, Optional, Tuple
 
@@ -37,33 +38,70 @@ def env_key(*names: str) -> str:
     return ""
 
 
+def _temporary_output_path(path: str) -> str:
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(
+        prefix=f".{os.path.basename(path)}.",
+        suffix=".part",
+        dir=directory,
+    )
+    os.close(fd)
+    return temp_path
+
+
+def _remove_temporary_file(path: Optional[str], label: str) -> None:
+    if not path:
+        return
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        print(f"    [AI-VIDEO:{label}] temp cleanup failed: {exc}")
+
+
 def download_url(url: str, path: str, timeout: int = 90, headers: Optional[dict] = None) -> bool:
+    temp_path = None
     try:
         hdrs = {"User-Agent": USER_AGENT}
         if headers:
             hdrs.update(headers)
         with requests.get(url, stream=True, timeout=timeout, headers=hdrs) as r:
             r.raise_for_status()
-            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-            with open(path, "wb") as fh:
+            temp_path = _temporary_output_path(path)
+            with open(temp_path, "wb") as fh:
                 for chunk in r.iter_content(256 * 1024):
                     if chunk:
                         fh.write(chunk)
-        return os.path.isfile(path) and os.path.getsize(path) > 10_000
+        if not os.path.isfile(temp_path) or os.path.getsize(temp_path) <= 10_000:
+            return False
+        os.replace(temp_path, path)
+        temp_path = None
+        return True
     except Exception as exc:
         print(f"    [AI-VIDEO:dl] {exc}")
         return False
+    finally:
+        _remove_temporary_file(temp_path, "dl")
 
 
 def write_bytes(data: bytes, path: str) -> bool:
+    temp_path = None
     try:
-        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        with open(path, "wb") as fh:
+        temp_path = _temporary_output_path(path)
+        with open(temp_path, "wb") as fh:
             fh.write(data)
-        return os.path.isfile(path) and os.path.getsize(path) > 10_000
+        if not os.path.isfile(temp_path) or os.path.getsize(temp_path) <= 10_000:
+            return False
+        os.replace(temp_path, path)
+        temp_path = None
+        return True
     except OSError as exc:
         print(f"    [AI-VIDEO:write] {exc}")
         return False
+    finally:
+        _remove_temporary_file(temp_path, "write")
 
 
 def decode_data_uri(uri: str, path: str) -> bool:

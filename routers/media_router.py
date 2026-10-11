@@ -154,9 +154,21 @@ def _paid_stock_keys_present() -> bool:
 
 
 def _candidate_to_selected(best: Dict[str, Any], query: str) -> Dict[str, Any]:
+    source = str(best.get("source") or "stock").strip().casefold()
+    source_id = str(best.get("id") or "")
+    provider_id = source_id.split("_", 1)[-1] if "_" in source_id else source_id
+    source_urls = {
+        "pexels": f"https://www.pexels.com/video/{provider_id}/",
+        "pixabay": f"https://pixabay.com/videos/video-{provider_id}/",
+    }
+    license_urls = {
+        "pexels": "https://www.pexels.com/license/",
+        "pixabay": "https://pixabay.com/service/license-summary/",
+        "coverr": "https://coverr.co/license",
+    }
     return {
-        "id": best.get("id", ""),
-        "source": best.get("source", "stock"),
+        "id": source_id,
+        "source": source,
         "url": best.get("url", ""),
         "thumbnail": best.get("thumbnail") or best.get("url") or "",
         "duration": best.get("duration", 10),
@@ -164,6 +176,12 @@ def _candidate_to_selected(best: Dict[str, Any], query: str) -> Dict[str, Any]:
         "height": best.get("height", 1920),
         "query": query,
         "kind": best.get("kind", "video"),
+        "title": best.get("title", ""),
+        "contributor": best.get("contributor", ""),
+        "license": best.get("license"),
+        "attribution": best.get("attribution", ""),
+        "source_url": best.get("source_url") or source_urls.get(source, ""),
+        "license_url": best.get("license_url") or license_urls.get(source, ""),
     }
 
 
@@ -630,4 +648,3 @@ def api_syndication_crosspost(payload: dict):
             results["postbridge"] = {"error": str(e)}
 
     return {"status": "ok", "results": results}
-

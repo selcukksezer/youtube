@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import enum
 import math
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List
 
 
 class KeyframeProperty(str, enum.Enum):
@@ -99,21 +99,26 @@ class KeyframeTrajectory:
 
     def build_ffmpeg_cosine_expression(self, var_name: str = "t") -> str:
         """
-        Compiles a two-point or multi-point trajectory into an analytical FFmpeg expression string.
+        Compiles all keyframes into a clamped, piecewise FFmpeg cosine expression.
         Example for start_val=1.0, end_val=1.15 over duration d:
         '1.000 + 0.150 * 0.5 * (1 - cos(PI * min(t, 4.000) / 4.000))'
         """
-        if len(self.keyframes) < 2:
+        if not self.keyframes:
+            return "1.000"
+        if len(self.keyframes) == 1:
             val = self.keyframes[0].value if self.keyframes else 1.0
             return f"{val:.3f}"
 
-        k0 = self.keyframes[0]
-        k1 = self.keyframes[1]
-        delta = k1.value - k0.value
-        dur = max(0.001, k1.time_sec - k0.time_sec)
-
-        # Clamped cosine ease-in-out FFmpeg formula
-        return (
-            f"{k0.value:.3f} + ({delta:.3f}) * 0.5 * "
-            f"(1 - cos(3.14159265 * min(max({var_name} - {k0.time_sec:.3f}, 0), {dur:.3f}) / {dur:.3f}))"
-        )
+        terms = [f"{self.keyframes[0].value:.3f}"]
+        for start, end in zip(self.keyframes, self.keyframes[1:]):
+            delta = end.value - start.value
+            duration = max(0.001, end.time_sec - start.time_sec)
+            progress = (
+                f"min(max(({var_name}) - {start.time_sec:.3f}, 0), "
+                f"{duration:.3f}) / {duration:.3f}"
+            )
+            terms.append(
+                f"({delta:.3f}) * 0.5 * "
+                f"(1 - cos(3.14159265 * {progress}))"
+            )
+        return " + ".join(terms)

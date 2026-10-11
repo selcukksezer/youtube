@@ -2,6 +2,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -11,7 +12,11 @@ from google_ai_hub import (
     get_plan_and_quota_snapshot,
     resolve_gemini_tts_voice,
 )
-from royalty_free_audio import search_mixkit, list_voicelab_library
+from royalty_free_audio import (
+    list_voicelab_library,
+    search_mixkit,
+    search_pixabay_sfx,
+)
 from tts_engine import active_tts_provider, _estimate_word_timings
 import config
 
@@ -40,6 +45,15 @@ class TestGoogleAiHub(unittest.TestCase):
         tracks = search_mixkit("ambient")
         self.assertGreaterEqual(len(tracks), 1)
         self.assertIn("url", tracks[0])
+
+    def test_sfx_search_does_not_fallback_to_music(self):
+        response = MagicMock(status_code=503)
+        with patch.object(config, "PIXABAY_API_KEY", "test-key", create=True):
+            with patch("royalty_free_audio.requests.get", return_value=response):
+                with patch("royalty_free_audio.search_pixabay_music") as music_search:
+                    self.assertEqual(search_pixabay_sfx("glass"), [])
+
+        music_search.assert_not_called()
 
     def test_voicelab_library_shape(self):
         lib = list_voicelab_library()

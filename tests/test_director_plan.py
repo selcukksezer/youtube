@@ -39,6 +39,114 @@ def _sample_raw_plan(n=14):
 
 
 class TestDirectorPlan(unittest.TestCase):
+    def test_scene_from_dict_does_not_split_string_search_queries_into_characters(self):
+        scene = ScenePlan.from_dict({
+            "narration": "Careful observers notice subtle shifts across this scene today.",
+            "search_queries": "fake query string",
+        })
+
+        self.assertEqual(scene.search_queries, [])
+
+    def test_nested_visual_intent_string_fields_are_not_split_into_characters(self):
+        scene = ScenePlan.from_dict({
+            "narration": "Careful observers notice subtle shifts across this scene today.",
+            "search_queries": ["careful observer scene", "subtle shift scene"],
+            "visual_intent": {
+                "search_queries": "fake query string",
+                "must_include": "visible action",
+                "must_exclude": "gore",
+            },
+            "claim_ids": "claim_1",
+            "caption_emphasis": "urgent phrase",
+        })
+
+        self.assertEqual(scene.visual_intent.search_queries, [])
+        self.assertEqual(scene.visual_intent.must_include, [])
+        self.assertEqual(scene.visual_intent.must_exclude, [])
+        self.assertEqual(scene.claim_ids, [])
+        self.assertEqual(scene.caption_emphasis, [])
+
+    def test_visual_intent_from_dict_rejects_non_object_values(self):
+        with self.assertRaisesRegex(ValueError, "visual_intent must be an object"):
+            ScenePlan.from_dict({
+                "narration": "Careful observers notice subtle shifts across this scene today.",
+                "visual_intent": "invalid-intent",
+            })
+
+    def test_scene_from_dict_recovers_invalid_derived_timing_metadata(self):
+        scene = ScenePlan.from_dict(
+            {
+                "index": "invalid",
+                "narration": "Careful observers notice subtle shifts across this scene today.",
+                "duration": 5,
+                "t0": "not-a-number",
+                "t1": "Infinity",
+                "beat_hint_ms": "NaN",
+            },
+            index=3,
+        )
+
+        self.assertEqual(scene.index, 3)
+        self.assertEqual(scene.t0, 0.0)
+        self.assertEqual(scene.t1, 0.0)
+        self.assertIsNone(scene.beat_hint_ms)
+
+    def test_mood_labels_are_not_counted_in_director_word_budget(self):
+        narrations = [
+            "**URGENT** " + " ".join(["careful"] * 17 + ["today."])
+            for _ in range(5)
+        ]
+        narrations.append(
+            "**DRAMATIC** " + " ".join(["careful"] * 19 + ["today."])
+        )
+        scenes = [
+            ScenePlan(index=index, narration=narration, duration=50 / len(narrations))
+            for index, narration in enumerate(narrations)
+        ]
+        plan = DirectorPlan(
+            title="Mood label count",
+            niche_id="1_news_flash",
+            full_narration=" ".join(narrations),
+            scenes=scenes,
+        )
+
+        result = validate_director_plan(plan)
+
+        self.assertEqual(result["word_count"], 110)
+        self.assertFalse(any(warning.startswith("Narration ") for warning in result["warnings"]))
+
+    def test_six_scene_default_quality_threshold_matches_timeline(self):
+        narration = (
+            "The careful observer studies every visible change and connects the evidence "
+            "with choices people make in their surroundings."
+        )
+        scenes = [
+            ScenePlan(
+                index=index,
+                narration=narration,
+                duration=8.5,
+                beat_type="hook" if index == 0 else "conflict",
+                scene_description=f"Careful observer studies visible changes in setting {index}",
+                search_queries=[
+                    f"careful observer visible change evidence scene {index}",
+                    f"people choices surroundings scene {index}",
+                ],
+            )
+            for index in range(6)
+        ]
+        plan = DirectorPlan(
+            title="Observation",
+            niche_id="1_news_flash",
+            full_narration=" ".join(scene.narration for scene in scenes),
+            scenes=scenes,
+        )
+
+        self.assertEqual(plan.quality_thresholds.min_scenes, 6)
+        self.assertEqual(validate_director_plan(plan)["errors"], [])
+        self.assertFalse(
+            any(issue.startswith("cadence") for issue in pre_render_score(plan)["issues"])
+        )
+
     def test_niche_lock_from_topic(self):
         locked = resolve_niche_from_topic(
             "Marcus Aurelius stoacı kurallar",
@@ -66,6 +174,18 @@ class TestDirectorPlan(unittest.TestCase):
             self.assertNotIn("skull", joined)
             self.assertNotIn("hooded", joined)
             self.assertTrue(s.visual_intent.must_exclude)
+
+    def test_compile_preserves_explicit_niche_when_topic_has_no_strong_match(self):
+        raw = _sample_raw_plan()
+        raw["title"] = "A quiet horizon over a distant shoreline"
+
+        plan = compile_director_plan(
+            raw,
+            title=raw["title"],
+            niche_id="13_mystery_paranormal",
+        )
+
+        self.assertEqual(plan.niche_id, "13_mystery_paranormal")
 
     def test_timeline_assigns_beats(self):
         raw = _sample_raw_plan()
@@ -548,7 +668,8 @@ class TestFFmpegGraphHelpers(unittest.TestCase):
             0, 3.0, 1080, 1920, 0, enable_ken_burns=False, enable_zoompan=True,
         )
         self.assertIn("zoompan=", zoom)
-        self.assertIn("1+0.12*", zoom)
+        self.assertIn("1.000 + (0.120)", zoom)
+        self.assertIn("cos(3.14159265", zoom)
         pan = build_scene_filter_chain(
             0, 3.0, 1080, 1920, 1, enable_ken_burns=False, enable_zoompan=True,
         )
@@ -556,7 +677,7 @@ class TestFFmpegGraphHelpers(unittest.TestCase):
         pull = build_scene_filter_chain(
             0, 3.0, 1080, 1920, 2, enable_ken_burns=False, enable_zoompan=True,
         )
-        self.assertIn("1+cos", pull)
+        self.assertIn("1.120 + (-0.120)", pull)
         padded = build_scene_filter_chain(
             0, 3.0, 1080, 1920, 0, enable_ken_burns=False, pad_seconds=1.2,
         )

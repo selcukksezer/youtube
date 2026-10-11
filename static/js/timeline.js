@@ -10,7 +10,18 @@ function hasEmoji(text) {
 
 // Helper: Word count
 function wordCount(text) {
-    return (text || '').trim().split(/\s+/).filter(Boolean).length;
+    const spokenText = (text || '').replace(
+        /\*\*(?:URGENT|DRAMATIC|EPIC|CALM|MYSTERIOUS|ENERGETIC|DARK|BRIGHT|SECRET|WARNING|HOOK|CTA)\*\*\s*/gi,
+        '',
+    );
+    const matches = spokenText.match(/[\p{L}\p{N}_'-]+/gu);
+    return matches ? matches.length : 0;
+}
+
+function sceneWordCountClass(wordCount) {
+    if (wordCount < 7) return 'count-danger';
+    if (wordCount < 12 || wordCount > 20) return 'count-warn';
+    return 'count-ok';
 }
 
 // Helper: Clean cutaway markers from narration for display
@@ -51,18 +62,13 @@ function updateComplianceDashboard(scenes) {
         chipDur.classList.add('status-danger');
     }
 
-    // Cadence — Madde 88 helper; 8-16 sahne izin, 14 kutsal değil
+    // Director narration target: six spoken scenes.
     const chipCad = document.getElementById('chip-cadence');
     const chipCadText = document.getElementById('chip-cadence-text');
     chipCadText.textContent = `Cadence: ${scenes.length} sahne`;
     chipCad.className = 'compliance-chip';
-    if (scenes.length >= 8 && scenes.length <= 16) {
-        chipCad.classList.add('status-ok');
-    } else if (scenes.length >= 6) {
-        chipCad.classList.add('status-warn');
-    } else {
-        chipCad.classList.add('status-danger');
-    }
+    const cadenceStatus = directorCadenceStatus(scenes.length);
+    chipCad.classList.add(cadenceStatus === 'fail' ? 'status-danger' : `status-${cadenceStatus}`);
 
     // 3.2s advisory — Madde 76 soft warning (AI pacing allowed)
     const longCuts = timedScenes.filter(s => sceneDurationSec(s) > 3.2).length;
@@ -180,10 +186,7 @@ function renderTimelineScenes(plan) {
         const searchQueries = sc.search_queries || [];
         const sceneDesc = sc.scene_description || '';
 
-        // Word count class
-        let wcClass = 'count-ok';
-        if (wc < 10) wcClass = 'count-danger';
-        else if (wc > 20) wcClass = 'count-warn';
+        const wcClass = sceneWordCountClass(wc);
 
         // Build CSS classes
         let cardClasses = `scene-item-card mood-${mood}`;
@@ -653,4 +656,3 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ══════════════════════════════════════════════════════════════
-

@@ -460,7 +460,7 @@ def match_shot(*parts: str) -> Optional[ShotFamily]:
     blob = fold(" ".join(p for p in parts if p))
     if len(blob) < 3:
         return None
-    for _length, needle, fam in _BY_LENGTH:
+    for _, needle, fam in _BY_LENGTH:
         if _has_phrase(blob, needle):
             return fam
     return None

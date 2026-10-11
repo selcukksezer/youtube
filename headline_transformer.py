@@ -1,5 +1,6 @@
 """Original question-style transformations for news headlines."""
 import random
+import re
 
 from openai import OpenAI
 
@@ -36,16 +37,21 @@ Kurallar:
 SADECE JSON:
 {"question_title": "...", "strategy": "curiosity|shock|question|mystery"}"""
 
+_SHORTS_TAG = " #shorts"
+_MAX_TITLE_LENGTH = 70
+
+
+def _fit_short_title(title: str) -> str:
+    """Keep the Shorts tag intact while enforcing the title-length limit."""
+    base = re.sub(r"\s*#shorts\b", "", title.strip(), flags=re.IGNORECASE).strip()
+    base = base[:_MAX_TITLE_LENGTH - len(_SHORTS_TAG)].rstrip()
+    return f"{base}{_SHORTS_TAG}" if base else _SHORTS_TAG.strip()
+
 
 def convert_headline_to_question(news_headline: str, lang: str = "tr", use_ai: bool = True) -> dict:
     """Converts a news headline into an original, question-led Shorts title."""
     templates = _QUESTION_TEMPLATES_TR if lang == "tr" else _QUESTION_TEMPLATES_EN
-    raw_transformed = random.choice(templates)(news_headline)
-    if len(raw_transformed) > 70:
-        base_part = raw_transformed.replace("#shorts", "").strip()[:61].rstrip()
-        rule_based = f"{base_part} #shorts"
-    else:
-        rule_based = raw_transformed
+    rule_based = _fit_short_title(random.choice(templates)(news_headline))
     result = {"question_title": rule_based, "strategy": "rule_based", "original": news_headline}
     if not use_ai or not config.AI_PROVIDER or not config.AI_API_KEY:
         print(f"  [Item 122] Kural tabanlı dönüşüm: '{rule_based}'")
@@ -57,8 +63,13 @@ def convert_headline_to_question(news_headline: str, lang: str = "tr", use_ai: b
         if "Gemini" in config.AI_PROVIDER or "OpenAI" in config.AI_PROVIDER:
             params["response_format"] = {"type": "json_object"}
         data = _clean_json(_call(client, params).choices[0].message.content.strip())
-        if data and "question_title" in data:
-            return {"question_title": data["question_title"][:70], "strategy": data.get("strategy", "ai_generated"), "original": news_headline}
+        question_title = data.get("question_title") if data else None
+        if isinstance(question_title, str) and question_title.strip():
+            return {
+                "question_title": _fit_short_title(question_title),
+                "strategy": data.get("strategy", "ai_generated"),
+                "original": news_headline,
+            }
     except Exception as error:
         print(f"    [Item 122] AI hatası: {error}. Kural tabanlı fallback.")
     return result
@@ -75,6 +86,10 @@ def batch_convert_headlines(headlines: list, lang: str = "tr") -> list:
             available = list(range(len(templates)))
         index = random.choice(available)
         used_strategies.append(index)
-        results.append({"question_title": templates[index](headline)[:70], "strategy": f"template_{index}", "original": headline})
+        results.append({
+            "question_title": _fit_short_title(templates[index](headline)),
+            "strategy": f"template_{index}",
+            "original": headline,
+        })
     print(f"  [Item 122] {len(results)} haber başlığı soru formatına dönüştürüldü.")
     return results

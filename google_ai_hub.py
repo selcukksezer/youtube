@@ -5,7 +5,6 @@ Uses Gemini Developer API (generativelanguage.googleapis.com) with GEMINI_API_KE
 from __future__ import annotations
 
 import base64
-import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple

@@ -43,7 +43,6 @@ def generate_piper_wav(text: str, output_path: str, model_path: str = "") -> Tup
     R10 #45: Offline Piper TTS when `piper` binary + onnx model present.
     Falls back with clear message if missing (Edge remains default).
     """
-    import shutil as _sh
     exe = _piper_binary()
     if not exe:
         return False, "piper binary not found (brew/pip install piper-tts)"
@@ -210,7 +209,7 @@ def _estimate_word_timings(text: str, duration_sec: float):
     total_weight = sum(weights) or float(len(words))
     timings = []
     current_offset = 0.0
-    for idx, (w, wt) in enumerate(zip(words, weights)):
+    for w, wt in zip(words, weights):
         # Proportional duration
         dur = (wt / total_weight) * duration_sec
         # Ensure minimal audible duration
@@ -233,7 +232,7 @@ def _wav_duration_seconds(wav_path: str) -> float:
         return 0.0
 
 
-def _generate_elevenlabs_narration(text, output_path, voice_profile=None):
+def _generate_elevenlabs_narration(text, output_path):
     """Single-pass ElevenLabs TTS with estimated karaoke timings."""
     from elevenlabs_tts import generate_tts_wav
     from tts_voices import is_elevenlabs_voice
@@ -288,7 +287,7 @@ def _generate_azure_narration(text, output_path, voice_profile=None):
     return output_path, _sanitize_word_timings(timings)
 
 
-def _generate_gemini_narration(text, output_path, voice_profile=None):
+def _generate_gemini_narration(text, output_path):
     """Single-pass Gemini TTS with estimated karaoke timings."""
     from google_ai_hub import generate_gemini_tts_wav
     from voice_humanizer import VoiceHumanizer
@@ -680,7 +679,7 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
     )
     if use_elevenlabs:
         try:
-            return _generate_elevenlabs_narration(text, output_path, voice_profile=voice_profile)
+            return _generate_elevenlabs_narration(text, output_path)
         except Exception as el_err:
             elevenlabs_failed = True
             print(f"  [TTS] ElevenLabs başarısız, Azure/Edge yedek: {el_err}")
@@ -712,7 +711,7 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
         print("  [TTS/Gemini] circuit open — Edge yedek")
     elif use_gemini:
         try:
-            return _generate_gemini_narration(text, output_path, voice_profile=voice_profile)
+            return _generate_gemini_narration(text, output_path)
         except Exception as gem_err:
             if _is_gemini_quota_block(gem_err):
                 gemini_blocked = True

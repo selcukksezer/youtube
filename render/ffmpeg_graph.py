@@ -14,11 +14,13 @@ import subprocess
 import tempfile
 import threading
 import time
+from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import imageio_ffmpeg
 
 import config
+from .keyframe_motion import KeyframeProperty, KeyframeTrajectory
 
 
 def _escape_ass_path(path: str) -> str:
@@ -27,6 +29,59 @@ def _escape_ass_path(path: str) -> str:
     if len(p) > 1 and p[1] == ":":
         p = p[0] + "\\:" + p[2:]
     return p.replace("'", r"\'")
+
+
+def _with_ffgraph_temp_dir(func):
+    @wraps(func)
+    def wrapped(*args, **kwargs):
+        tmp_dir = tempfile.mkdtemp(prefix="ffgraph_")
+        try:
+            kwargs["_ffgraph_temp_dir"] = tmp_dir
+            return func(*args, **kwargs)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+    return wrapped
+
+
+def _cleanup_ffmpeg_process(proc, reader_thread=None):
+    if proc is None:
+        return
+    try:
+        still_running = proc.poll() is None
+    except OSError as exc:
+        print(f"  [FFmpegGraph] FFmpeg süreç temizliği uyarısı: {exc}", flush=True)
+        still_running = True
+    if still_running:
+        try:
+            proc.terminate()
+        except OSError as exc:
+            print(f"  [FFmpegGraph] FFmpeg terminate uyarısı: {exc}", flush=True)
+    try:
+        proc.wait(timeout=2.0)
+    except subprocess.TimeoutExpired:
+        try:
+            proc.kill()
+        except OSError as exc:
+            print(f"  [FFmpegGraph] FFmpeg kill uyarısı: {exc}", flush=True)
+        try:
+            proc.wait(timeout=5.0)
+        except subprocess.TimeoutExpired as exc:
+            print(f"  [FFmpegGraph] FFmpeg süreç sonlandırılamadı: {exc}", flush=True)
+        except OSError as exc:
+            print(f"  [FFmpegGraph] FFmpeg wait uyarısı: {exc}", flush=True)
+    except OSError as exc:
+        print(f"  [FFmpegGraph] FFmpeg wait uyarısı: {exc}", flush=True)
+
+    if reader_thread is not None:
+        reader_thread.join(timeout=2.0)
+    for stream in (getattr(proc, "stdout", None), getattr(proc, "stderr", None)):
+        if stream is not None:
+            try:
+                stream.close()
+            except OSError as exc:
+                print(f"  [FFmpegGraph] FFmpeg pipe kapatılamadı: {exc}", flush=True)
+    if reader_thread is not None and reader_thread.is_alive():
+        reader_thread.join(timeout=1.0)
 
 
 def _probe_has_audio(path: str) -> bool:
@@ -384,6 +439,22 @@ def cheap_pan_filter(
     return f"scale={sw}:{sh},crop={width}:{height}:x='{xexpr}':y='{yexpr}'"
 
 
+def _keyframed_camera_expression(
+    prop: KeyframeProperty,
+    start_value: float,
+    end_value: float,
+    duration_frames: int,
+    fps: float,
+) -> str:
+    duration_seconds = duration_frames / fps
+    trajectory = KeyframeTrajectory(prop)
+    trajectory.add_keyframe(0.0, start_value)
+    trajectory.add_keyframe(duration_seconds, end_value)
+    return trajectory.build_ffmpeg_cosine_expression(
+        var_name=f"on/{fps:.6f}",
+    )
+
+
 def zoompan_filter(
     width: int,
     height: int,
@@ -398,15 +469,31 @@ def zoompan_filter(
     """
     Opt-in Ken Burns (Bölüm 33.3 P4 / youtube-shorts-pipeline:animate_frame).
     Sahne niyetine göre 3 kamera:
-      - Soru -> zoom_in (z='1+0.12*ease', iw/2-iw/zoom/2)
+      - Soru -> zoom_in (z: 1.0 to 1.12, centered)
       - Geçiş -> pan_right (z='1.12', x pans across)
-      - Kapanış -> zoom_out (z='1+0.12*ease_back', iw/2-iw/zoom/2)
-    Kosinüs rampası jerk'i önler.
+      - Kapanış -> zoom_out (z: 1.12 to 1.0, centered)
+    Camera paths are compiled from cosine-eased keyframes.
     """
     fps = float(output_fps) if output_fps else float(getattr(config, "FPS", 30) or 30)
     frames = max(1, int(max(float(duration), 0.1) * fps))
-    ease = f"0.5*(1-cos(PI*on/{frames}))"
-    ease_back = f"0.5*(1+cos(PI*on/{frames}))"
+    zoom_in = _keyframed_camera_expression(
+        KeyframeProperty.SCALE, 1.0, 1.12, frames, fps,
+    )
+    zoom_out = _keyframed_camera_expression(
+        KeyframeProperty.SCALE, 1.12, 1.0, frames, fps,
+    )
+    pan_forward = _keyframed_camera_expression(
+        KeyframeProperty.POSITION_X, 0.0, 1.0, frames, fps,
+    )
+    pan_reverse = _keyframed_camera_expression(
+        KeyframeProperty.POSITION_X, 1.0, 0.0, frames, fps,
+    )
+    tilt_forward = _keyframed_camera_expression(
+        KeyframeProperty.POSITION_Y, 0.0, 1.0, frames, fps,
+    )
+    tilt_reverse = _keyframed_camera_expression(
+        KeyframeProperty.POSITION_Y, 1.0, 0.0, frames, fps,
+    )
 
     cam = resolve_camera_intent(
         scene_intent=scene_intent,
@@ -416,29 +503,29 @@ def zoompan_filter(
         narration=narration or "",
     )
     if cam in ("zoom_in", "push_in"):
-        z_expr = f"1+0.12*{ease}"
+        z_expr = zoom_in
         x_expr = "iw/2-(iw/zoom/2)"
         y_expr = "ih/2-(ih/zoom/2)"
     elif cam in ("zoom_out", "pull_out"):
-        z_expr = f"1+0.12*{ease_back}"
+        z_expr = zoom_out
         x_expr = "iw/2-(iw/zoom/2)"
         y_expr = "ih/2-(ih/zoom/2)"
     elif cam in ("pan_right", "pan"):
         z_expr = "1.12"
-        x_expr = f"(iw-iw/zoom)*{ease}"
+        x_expr = f"(iw-iw/zoom)*({pan_forward})"
         y_expr = "(ih-ih/zoom)/2"
     elif cam == "pan_left":
         z_expr = "1.12"
-        x_expr = f"(iw-iw/zoom)*{ease_back}"
+        x_expr = f"(iw-iw/zoom)*({pan_reverse})"
         y_expr = "(ih-ih/zoom)/2"
     elif cam == "tilt_down":
         z_expr = "1.12"
         x_expr = "(iw-iw/zoom)/2"
-        y_expr = f"(ih-ih/zoom)*{ease}"
+        y_expr = f"(ih-ih/zoom)*({tilt_forward})"
     elif cam == "tilt_up":
         z_expr = "1.12"
         x_expr = "(iw-iw/zoom)/2"
-        y_expr = f"(ih-ih/zoom)*{ease_back}"
+        y_expr = f"(ih-ih/zoom)*({tilt_reverse})"
     elif cam == "static":
         z_expr = "1.0"
         x_expr = "iw/2-(iw/zoom/2)"
@@ -447,20 +534,21 @@ def zoompan_filter(
         kind = int(scene_index) % 3
         if kind == 1:
             z_expr = "1.12"
-            x_expr = f"(iw-iw/zoom)*{ease}"
+            x_expr = f"(iw-iw/zoom)*({pan_forward})"
             y_expr = "(ih-ih/zoom)/2"
         elif kind == 2:
-            z_expr = f"1+0.12*{ease_back}"
+            z_expr = zoom_out
             x_expr = "iw/2-(iw/zoom/2)"
             y_expr = "ih/2-(ih/zoom/2)"
         else:
-            z_expr = f"1+0.12*{ease}"
+            z_expr = zoom_in
             x_expr = "iw/2-(iw/zoom/2)"
             y_expr = "ih/2-(ih/zoom/2)"
 
+    # zoompan's d is frames per input frame; one preserves the planned scene duration.
     return (
         f"zoompan=z='{z_expr}':x='{x_expr}':y='{y_expr}':"
-        f"d={frames}:s={width}x{height}:fps={fps:.2f}"
+        f"d=1:s={width}x{height}:fps={fps:.2f}"
     )
 
 
@@ -742,6 +830,7 @@ def get_look_filters(width: int, height: int, anti_duplicate: bool = True) -> st
     return ",".join(parts)
 
 
+@_with_ffgraph_temp_dir
 def render_with_ffmpeg_graph(
     clips: List[Dict[str, Any]],
     audio_path: str,
@@ -770,6 +859,8 @@ def render_with_ffmpeg_graph(
     niche_id: str = "",
     enable_reddit_card: bool = False,
     reddit_card_path: Optional[str] = None,
+    thread_limit: Optional[int] = None,
+    use_gpu_override: Optional[bool] = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -792,7 +883,7 @@ def render_with_ffmpeg_graph(
     W = align_even_dimension(int(W))
     H = align_even_dimension(int(H))
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    tmp_dir = tempfile.mkdtemp(prefix="ffgraph_")
+    tmp_dir = kwargs.pop("_ffgraph_temp_dir")
     concat_list = os.path.join(tmp_dir, "concat.txt")
 
     # Generate ASS if needed
@@ -1111,9 +1202,13 @@ def render_with_ffmpeg_graph(
     rcard_png = reddit_card_path or kwargs.get("reddit_card_path")
     if _reddit_active or (rcard_png and os.path.exists(rcard_png)):
         try:
+            from reddit_card_renderer import (
+                REDDIT_CARD_DISPLAY_DURATION_SEC,
+                REDDIT_CARD_FADE_DURATION_SEC,
+                generate_transparent_reddit_card_png,
+            )
             if not rcard_png or not os.path.exists(rcard_png):
-                from reddit_card_renderer import generate_transparent_reddit_card_png
-                rcard_png = os.path.join(tempfile.gettempdir(), f"rcard_{int(time.time()*1000)}.png")
+                rcard_png = os.path.join(tmp_dir, "reddit_card.png")
                 card_title = title or "Reddit Soru"
                 generate_transparent_reddit_card_png(
                     title=card_title,
@@ -1122,13 +1217,22 @@ def render_with_ffmpeg_graph(
                     card_width=int(W * 0.88),
                 )
             if rcard_png and os.path.exists(rcard_png):
-                card_duration = sum(float(c.get("duration", 3.0)) for c in valid) + 0.5
+                card_duration = min(
+                    REDDIT_CARD_DISPLAY_DURATION_SEC,
+                    total_dur,
+                )
+                fade_duration = min(
+                    REDDIT_CARD_FADE_DURATION_SEC,
+                    card_duration / 2.0,
+                )
+                fade_out_start = max(0.0, card_duration - fade_duration)
                 cmd.extend(["-loop", "1", "-t", f"{card_duration:.3f}", "-i", rcard_png])
                 rcard_input = next_input
                 next_input += 1
                 filter_parts.append(
                     f"[{rcard_input}:v]format=rgba,"
-                    f"fade=t=in:st=0:d=0.35:alpha=1[rcard_faded]"
+                    f"fade=t=in:st=0:d={fade_duration:.3f}:alpha=1,"
+                    f"fade=t=out:st={fade_out_start:.3f}:d={fade_duration:.3f}:alpha=1[rcard_faded]"
                 )
                 filter_parts.append(
                     f"[{picture}][rcard_faded]overlay=x=(W-w)/2:y={int(H * 0.28)}:"
@@ -1152,9 +1256,18 @@ def render_with_ffmpeg_graph(
 
     # Chapter 3.4 & Section 16.1: Hierarchical hardware encoder negotiation
     from system_resilience import get_encoder_fallback_chain
-    use_gpu = getattr(config, "USE_GPU_ACCELERATION", True)
+    use_gpu = (
+        getattr(config, "USE_GPU_ACCELERATION", True)
+        if use_gpu_override is None
+        else use_gpu_override
+    )
     gpu_codec = getattr(config, "GPU_CODEC", "")
-    threads = int(getattr(config, "FFMPEG_THREADS", getattr(config, "RENDER_THREADS", 4)) or 4)
+    threads = int(
+        thread_limit
+        if thread_limit is not None
+        else getattr(config, "FFMPEG_THREADS", getattr(config, "RENDER_THREADS", 4))
+    )
+    threads = max(1, threads)
     encoder_candidates = get_encoder_fallback_chain(use_gpu, gpu_codec)
 
     fps = output_fps
@@ -1181,6 +1294,8 @@ def render_with_ffmpeg_graph(
         print("  [FFmpegGraph] zoompan AÇIK — bu geçiş render süresini uzatır", flush=True)
 
     # Attempt encoding with encoder fallback chain (NVENC -> QSV -> AMF -> MF -> libx264)
+    output_attempted = False
+    render_succeeded = False
     try:
         for candidate_idx, (vcodec, mode) in enumerate(encoder_candidates):
             if cancel_check and cancel_check():
@@ -1191,6 +1306,7 @@ def render_with_ffmpeg_graph(
                     os.remove(output_path)
                 except Exception:
                     pass
+            output_attempted = True
 
             run_cmd = list(cmd)
             run_cmd.extend([
@@ -1219,6 +1335,8 @@ def render_with_ffmpeg_graph(
                 progress_callback(80, f"[FFmpegGraph] Kodlama başlıyor ({mode})...")
 
             try:
+                proc = None
+                reader_thread = None
                 proc = subprocess.Popen(
                     run_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True
                 )
@@ -1226,10 +1344,11 @@ def render_with_ffmpeg_graph(
 
                 def _stderr_reader(p=proc, q=stderr_queue):
                     try:
-                        if p.stderr:
-                            for line in iter(p.stderr.readline, ""):
-                                q.put(line)
-                            p.stderr.close()
+                        while p.stderr:
+                            line = p.stderr.readline()
+                            if not isinstance(line, str) or not line:
+                                break
+                            q.put(line)
                     except Exception:
                         pass
 
@@ -1242,11 +1361,6 @@ def render_with_ffmpeg_graph(
 
                 while True:
                     if cancel_check and cancel_check():
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=2.0)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
                         raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
                     try:
@@ -1269,11 +1383,6 @@ def render_with_ffmpeg_graph(
                     # Item 3.5: Heartbeat zombie process detection & termination
                     if time.time() - last_heartbeat > inactivity_limit:
                         print(f"  [FFmpegGraph] {mode} {inactivity_limit}s sessiz kaldı (zombi koruması), sonlandırılıyor...", flush=True)
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=3.0)
-                        except subprocess.TimeoutExpired:
-                            proc.kill()
                         break
 
                 if proc.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) >= 100000:
@@ -1290,6 +1399,7 @@ def render_with_ffmpeg_graph(
                     except Exception as pr_err:
                         print(f"  [FFmpegGraph] PostRender note: {pr_err}")
 
+                    render_succeeded = True
                     return output_path
                 else:
                     err = "".join(stderr_data)[-800:]
@@ -1304,6 +1414,8 @@ def render_with_ffmpeg_graph(
                 print(f"  [FFmpegGraph] {mode} denemesinde istisna: {candidate_err}", flush=True)
                 if candidate_idx < len(encoder_candidates) - 1:
                     continue
+            finally:
+                _cleanup_ffmpeg_process(proc, reader_thread)
 
         return ""
     except InterruptedError:
@@ -1312,10 +1424,15 @@ def render_with_ffmpeg_graph(
         print(f"  [FFmpegGraph] Exception: {e}")
         return ""
     finally:
-        try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:
-            pass
+        if output_attempted and not render_succeeded and os.path.isfile(output_path):
+            try:
+                os.remove(output_path)
+            except OSError as cleanup_err:
+                print(
+                    f"  [FFmpegGraph] Başarısız render çıktısı temizlenemedi: "
+                    f"{output_path}: {cleanup_err}",
+                    flush=True,
+                )
 
 
 def _needs_moviepy_composer(kwargs: Dict[str, Any]) -> bool:
@@ -1350,6 +1467,7 @@ def compose_via_director(
     enable_native_hybrid = kwargs.pop(
         "enable_native_hybrid", getattr(config, "ENABLE_NATIVE_HYBRID_OVERLAY", False)
     )
+    use_gpu_override = kwargs.pop("use_gpu_override", None)
     if not enable_native_hybrid and _needs_moviepy_composer(kwargs):
         print(
             "  [Director] MoviePy compose_video — full Section-2/B5 overlay pipeline "
@@ -1358,7 +1476,11 @@ def compose_via_director(
         )
         from video_composer import compose_video
         kwargs.setdefault("audio_premastered", kwargs.get("audio_premastered", True))
-        return compose_video(clips, audio_path, word_timings, output_path, **kwargs)
+        return compose_video(
+            clips, audio_path, word_timings, output_path,
+            use_gpu_override=use_gpu_override,
+            **kwargs,
+        )
 
     # Fast path: basic concat + look when overlays disabled explicitly
     if prefer_ffmpeg and getattr(config, "ENABLE_FFMPEG_GRAPH", True):
@@ -1386,6 +1508,8 @@ def compose_via_director(
             niche_id=kwargs.get("niche_id", ""),
             enable_reddit_card=bool(kwargs.get("enable_reddit_card", False)),
             reddit_card_path=kwargs.get("reddit_card_path"),
+            thread_limit=kwargs.get("ffmpeg_thread_limit"),
+            use_gpu_override=use_gpu_override,
             director=kwargs.get("director"),
         )
         if result:
@@ -1394,4 +1518,8 @@ def compose_via_director(
 
     from video_composer import compose_video
     kwargs["audio_premastered"] = kwargs.pop("audio_premastered", True)
-    return compose_video(clips, audio_path, word_timings, output_path, **kwargs)
+    return compose_video(
+        clips, audio_path, word_timings, output_path,
+        use_gpu_override=use_gpu_override,
+        **kwargs,
+    )

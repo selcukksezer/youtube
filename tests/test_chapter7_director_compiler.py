@@ -8,7 +8,6 @@ Bölüm 7.6 Testleri: DirectorPlan Derleyici ve Sahne Niyeti Eşleme
 - FFmpeg Ken Burns & Zoompan entegrasyonu
 """
 import unittest
-from typing import Dict, Any, List
 
 from director.schema import (
     DirectorPlan,
@@ -21,7 +20,6 @@ from director.compiler import compile_director_plan
 from director.visual_intent import (
     classify_scene_intent,
     assign_camera_direction,
-    apply_visual_intents,
 )
 from director.validate import validate_director_plan
 from render.ffmpeg_graph import cheap_pan_filter, zoompan_filter
@@ -133,25 +131,25 @@ class TestChapter7DirectorCompiler(unittest.TestCase):
             "scenes": [
                 {
                     "index": 0,
-                    "narration": "Antik Roma sokaklarında imparator Marcus Aurelius derin düşüncelere daldı.",
+                    "narration": "Antik Roma sokaklarında imparator Marcus Aurelius kalabalık arasında derin düşüncelere daldı.",
                     "scene_description": "Roman marble columns and imperial statues under dusk light.",
                     "duration": 4.0,
                 },
                 {
                     "index": 1,
-                    "narration": "Gözlerini kapattı ve elindeki eski parşömene şu sözleri yazdı.",
+                    "narration": "Gözlerini kapattı ve elindeki eski parşömene aklındaki düşünceleri sakince yazmaya başladı.",
                     "scene_description": "Close up of hands writing with quill on ancient parchment scroll.",
                     "duration": 3.8,
                 },
                 {
                     "index": 2,
-                    "narration": "Düşman orduları sınıra hızla hücum ederken o sükunetini korudu.",
+                    "narration": "Düşman orduları sınıra hızla hücum ederken imparator sükunetini korudu ve askerlerine güven verdi.",
                     "scene_description": "Warriors riding horses fast across dusty battlefield.",
                     "duration": 4.2,
                 },
                 {
                     "index": 3,
-                    "narration": "Ancak zafer kılıçla değil, zihnin dinginliğiyle kazanıldı.",
+                    "narration": "Ancak zafer kılıçla değil, zihnin dinginliğiyle kazanıldı ve Marcus bunu herkese kanıtladı.",
                     "scene_description": "Calm ocean horizon sunrise with stoic philosopher standing alone.",
                     "duration": 4.5,
                 },

@@ -86,7 +86,7 @@ def list_bgm_tracks(include_catalog: bool = False):
 def list_bgm_tracks_detailed(include_catalog: bool = True) -> list:
     """Returns track dicts with display labels for API/UI."""
     try:
-        from youtube_safe_bgm_catalog import get_display_label, list_catalog_entries, load_catalog
+        from youtube_safe_bgm_catalog import get_display_label, list_catalog_entries
     except Exception:
         return [{"filename": f, "display": f, "downloaded": True} for f in list_bgm_tracks()]
 
@@ -162,17 +162,55 @@ def ensure_royalty_free_ambient_bgm() -> str:
 
 def get_bgm_path(track_name):
     """Returns full path of a BGM track if it exists, auto-downloading catalog tracks if needed."""
-    if not track_name:
+    if not isinstance(track_name, str) or not track_name.strip():
         return None
-    try:
-        from services.bgm_security import validate_bgm_filename, MAX_BGM_UPLOAD_BYTES
-        base_name = os.path.basename(track_name.replace("\\", "/"))
-        validate_bgm_filename(base_name)
-    except Exception as e:
-        print(f"  [BgmSecurity] Invalid BGM track name rejected: {e}", flush=True)
+    from services.bgm_security import (
+        BgmSecurityError,
+        MAX_BGM_UPLOAD_BYTES,
+        validate_bgm_filename,
+    )
+
+    requested = track_name.strip()
+    safe = requested.replace("\\", "/")
+    path_parts = safe.split("/")
+    if "/" in safe and (
+        len(path_parts) != 2
+        or path_parts[0] != "youtube_studio"
+        or path_parts[1] in {"", ".", ".."}
+    ):
+        print("  [BgmSecurity] Invalid BGM track path rejected.", flush=True)
         return None
 
-    safe = track_name.replace("\\", "/")
+    base_name = os.path.basename(safe)
+    try:
+        validate_bgm_filename(base_name)
+    except BgmSecurityError as filename_error:
+        if "/" in safe:
+            print(f"  [BgmSecurity] Invalid BGM track name rejected: {filename_error}", flush=True)
+            return None
+
+        from youtube_safe_bgm_catalog import get_display_label, track_by_filename
+
+        catalog_track = track_by_filename(requested)
+        label = requested
+        download_suffix = "(indirilecek)"
+        if label.casefold().endswith(download_suffix):
+            label = label[:-len(download_suffix)].strip()
+        aliases = set()
+        if catalog_track:
+            aliases = {
+                str(catalog_track.get("filename") or "").casefold(),
+                str(catalog_track.get("id") or "").casefold(),
+                str(catalog_track.get("title") or "").casefold(),
+                get_display_label(catalog_track["filename"]).casefold(),
+            }
+        if not catalog_track or label.casefold() not in aliases:
+            print(f"  [BgmSecurity] Invalid BGM track name rejected: {filename_error}", flush=True)
+            return None
+        base_name = validate_bgm_filename(catalog_track["filename"])
+        safe = base_name
+        track_name = base_name
+
     if safe.startswith("youtube_studio/"):
         full_path = os.path.join(config.BGM_DIR, safe)
     else:
@@ -771,7 +809,7 @@ def detect_audio_bpm_and_beats(
                         measured_bpm = (len(peaks) - 1) / dur_span * 60.0
                         if 40.0 <= measured_bpm <= 220.0:
                             raw_bpm = measured_bpm
-        except Exception as exc:
+        except Exception:
             pass
 
     final_bpm = normalize_bpm_to_shorts_band(raw_bpm) if enforce_band else raw_bpm
@@ -800,11 +838,9 @@ def compute_scene_beat_hints(
     """
     if not scenes:
         return []
-    if bpm is not None:
-        used_bpm = normalize_bpm_to_shorts_band(bpm) if enforce_band else float(bpm)
-    else:
-        raw_bpm = parse_bgm_bpm(bgm_path or "")
-        used_bpm = normalize_bpm_to_shorts_band(raw_bpm) if enforce_band else raw_bpm
+    used_bpm = float(bpm) if bpm is not None else parse_bgm_bpm(bgm_path or "")
+    if enforce_band:
+        used_bpm = normalize_bpm_to_shorts_band(used_bpm)
 
     beat_interval_ms = (60.0 / used_bpm) * 1000.0
     total_ms = sum(
@@ -990,7 +1026,7 @@ def detect_bgm_bpm_and_beats(bgm_path: str, duration: float = 60.0, default_bpm:
     Item 102 & 169: BGM Beat-Syncing (Ritim Tespiti).
     Müziğin temposuna (BPM) göre ritim vuruş (beat) zaman damgalarını hesaplar.
     """
-    _bpm, beats = detect_audio_bpm_and_beats(
+    _, beats = detect_audio_bpm_and_beats(
         bgm_path, duration=duration, default_bpm=default_bpm, enforce_band=False
     )
     return beats
@@ -1047,5 +1083,3 @@ def apply_outro_music_swell(music_audio: str, output_audio: str,
         swell_seconds=swell_seconds,
         boost_db=boost_db
     )
-
-

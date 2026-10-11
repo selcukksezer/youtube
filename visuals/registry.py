@@ -242,11 +242,14 @@ def score_candidate(
     else:
         score += 8  # images OK via Ken Burns
     # text overlap
-    blob = c.text.lower()
-    tokens = set(re_tokens(query)) | set(re_tokens(narration))
-    matched_tokens = sorted(t for t in tokens if t in blob)
+    blob_tokens = set(re_tokens(c.text))
+    query_tokens = set(re_tokens(query))
+    narration_tokens = set(re_tokens(narration)) - query_tokens
+    matched_query_tokens = sorted(query_tokens & blob_tokens)
+    matched_narration_tokens = sorted(narration_tokens & blob_tokens)
+    matched_tokens = sorted(set(matched_query_tokens) | set(matched_narration_tokens))
     hits = len(matched_tokens)
-    score += min(30, hits * 4)
+    score += min(30, len(matched_query_tokens) * 6 + len(matched_narration_tokens) * 2)
 
     # A technically good clip is still the wrong clip when it does not
     # describe the shot.  The old baseline allowed an unrelated Pixabay or
@@ -263,25 +266,41 @@ def score_candidate(
         c.matched_terms = matched_tokens
         c.semantic_evidence = {
             "query": query,
-            "query_tokens": sorted(tokens),
+            "query_tokens": sorted(query_tokens),
             "matched_tokens": matched_tokens,
-            "text_overlap": round(hits / max(1, len(tokens)), 4),
+            "matched_query_terms": matched_query_tokens,
+            "matched_narration_terms": matched_narration_tokens,
+            "query_match_score": round(
+                len(matched_query_tokens) / max(1, len(query_tokens)), 4
+            ),
+            "text_overlap": round(
+                hits / max(1, len(query_tokens | narration_tokens)), 4
+            ),
             "subject_match": False,
             "rejected": "subject_mismatch",
         }
         return -1e9
     c.semantic_evidence = {
         "query": query,
-        "query_tokens": sorted(tokens),
+        "query_tokens": sorted(query_tokens),
         "matched_tokens": matched_tokens,
-        "text_overlap": round(hits / max(1, len(tokens)), 4),
+        "matched_query_terms": matched_query_tokens,
+        "matched_narration_terms": matched_narration_tokens,
+        "query_match_score": round(
+            len(matched_query_tokens) / max(1, len(query_tokens)), 4
+        ),
+        "text_overlap": round(
+            hits / max(1, len(query_tokens | narration_tokens)), 4
+        ),
         "subject_match": True,
         "title_tags": c.text,
         "verification": "metadata_token_match",
     }
-    c.topic_match_score = round(hits / max(1, len(tokens)), 4)
+    c.topic_match_score = round(
+        hits / max(1, len(query_tokens | narration_tokens)), 4
+    )
     c.visual_verification_score = round(
-        len(matched_tokens) / max(1, len(re_tokens(query))), 4
+        len(matched_query_tokens) / max(1, len(query_tokens)), 4
     )
     c.matched_terms = matched_tokens
     # provider prior

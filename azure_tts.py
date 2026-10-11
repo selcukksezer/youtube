@@ -128,7 +128,11 @@ def generate_tts_wav(
         if not os.path.getsize(mp3_path):
             return False, "Azure Speech returned empty audio"
 
-        wav_path = output_path if output_path.endswith(".wav") else output_path.rsplit(".", 1)[0] + ".wav"
+        wav_path = (
+            output_path
+            if output_path.endswith(".wav")
+            else os.path.splitext(output_path)[0] + ".wav"
+        )
         result = _mp3_to_wav(mp3_path, wav_path)
         if not result.endswith(".wav") or not os.path.isfile(wav_path):
             return False, "MP3→WAV conversion failed"

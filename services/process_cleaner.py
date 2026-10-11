@@ -13,11 +13,10 @@ from __future__ import annotations
 import enum
 import logging
 import os
-import signal
 import subprocess
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 logger = logging.getLogger("ProcessCleaner")
 
@@ -144,7 +143,8 @@ class SubprocessRollbackManager:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, exc_val, _exc_tb):
+        del _exc_tb
         if exc_type is not None:
             logger.warning(f"Rollback triggered due to exception: {exc_val}")
             self.rollback()

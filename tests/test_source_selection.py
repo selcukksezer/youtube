@@ -1,6 +1,7 @@
 """Tests for persistent no-reuse source selection."""
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -48,6 +49,21 @@ class TestSourceSelection(unittest.TestCase):
         database.record_source_asset(source_key, "https://example.invalid/old.mp4", "old-hash", "pexels")
         self.assertTrue(database.source_asset_was_used(source_key))
         self.assertNotIn("test-persisted-source", _used_ids)
+
+    def test_database_connection_context_closes_handle(self):
+        conn = database.get_connection()
+        with conn:
+            conn.execute("SELECT 1")
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+
+    def test_database_connection_context_closes_handle_after_error(self):
+        conn = database.get_connection()
+        with self.assertRaisesRegex(RuntimeError, "rollback test"):
+            with conn:
+                raise RuntimeError("rollback test")
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
 
     def test_job_local_ids_not_persisted_until_publish_p1_12(self):
         _job_used_ids.add("job-only-42")

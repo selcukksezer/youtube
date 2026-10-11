@@ -12,6 +12,11 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+
+class DubbingTranslationError(RuntimeError):
+    """Raised when a requested narration translation cannot be produced."""
+
+
 # Minimal offline glossary for TR→EN smoke paths when LLM unavailable
 _TR_EN_GLOSS = {
     "merhaba": "hello",
@@ -36,7 +41,12 @@ def _simple_glossary_translate(text: str, target_lang: str) -> str:
     return text
 
 
-def translate_text(text: str, source_lang: str = "tr", target_lang: str = "en") -> str:
+def translate_text(
+    text: str,
+    source_lang: str = "tr",
+    target_lang: str = "en",
+    strict: bool = False,
+) -> str:
     """Translate a single string via Gemini when available, else glossary fallback."""
     plain = (text or "").strip()
     if not plain:
@@ -49,16 +59,27 @@ def translate_text(text: str, source_lang: str = "tr", target_lang: str = "en") 
         import config
         from google_ai_hub import generate_text
 
-        if getattr(config, "GEMINI_API_KEY", ""):
-            prompt = (
-                f"Translate from {src} to {tgt}. Keep Shorts narration punchy. "
-                f"Return ONLY the translation, no quotes.\n\n{plain}"
-            )
-            ok, out = generate_text(prompt)
-            if ok and out and isinstance(out, str) and len(out.strip()) > 2:
-                return out.strip().strip('"')
+        if not getattr(config, "GEMINI_API_KEY", ""):
+            if strict:
+                raise DubbingTranslationError("Gemini API anahtarı yapılandırılmamış.")
+            return _simple_glossary_translate(plain, tgt)
+        prompt = (
+            f"Translate from {src} to {tgt}. Keep Shorts narration punchy. "
+            f"Return ONLY the translation, no quotes.\n\n{plain}"
+        )
+        ok, out = generate_text(prompt)
+        if ok and out and isinstance(out, str) and len(out.strip()) > 2:
+            return out.strip().strip('"')
+        if strict:
+            raise DubbingTranslationError("Gemini geçerli bir çeviri döndürmedi.")
+    except DubbingTranslationError:
+        raise
     except Exception as exc:
         logger.warning("dubbing translate fallback to glossary: %s", exc)
+        if strict:
+            raise DubbingTranslationError("Gemini çevirisi başarısız oldu.") from exc
+    if strict:
+        raise DubbingTranslationError("Gemini geçerli bir çeviri döndürmedi.")
     return _simple_glossary_translate(plain, tgt)
 
 
@@ -67,6 +88,7 @@ def build_dubbing_pack(
     source_lang: str = "tr",
     target_lang: str = "en",
     title: str = "",
+    strict: bool = False,
 ) -> Dict[str, Any]:
     """
     R10 #73: Build a multi-language dub pack — translated narrations ready for re-TTS.
@@ -74,7 +96,7 @@ def build_dubbing_pack(
     dubbed_scenes: List[Dict[str, Any]] = []
     for i, sc in enumerate(scenes or []):
         narr = (sc.get("narration") or sc.get("text") or "").strip()
-        translated = translate_text(narr, source_lang, target_lang) if narr else ""
+        translated = translate_text(narr, source_lang, target_lang, strict=strict) if narr else ""
         dubbed_scenes.append({
             "index": i,
             "source_narration": narr,
@@ -82,7 +104,7 @@ def build_dubbing_pack(
             "duration": sc.get("duration"),
             "search_queries": sc.get("search_queries") or [],
         })
-    titled = translate_text(title, source_lang, target_lang) if title else ""
+    titled = translate_text(title, source_lang, target_lang, strict=strict) if title else ""
     return {
         "rule": "r10_73_dubbing",
         "source_lang": source_lang,
@@ -99,23 +121,40 @@ def build_dubbing_pack(
     }
 
 
-def apply_dubbing_to_plan(plan: Dict[str, Any], target_lang: str = "en") -> Dict[str, Any]:
+def apply_dubbing_to_plan(
+    plan: Dict[str, Any],
+    target_lang: str = "en",
+    strict: bool = False,
+) -> Dict[str, Any]:
     """Mutate a scene plan dict in-place-ish (returns new dict) with dubbed narrations."""
     src_lang = (plan.get("language") or plan.get("lang") or "tr")
     scenes = plan.get("scenes") or []
-    pack = build_dubbing_pack(scenes, source_lang=src_lang, target_lang=target_lang, title=plan.get("title", ""))
+    pack = build_dubbing_pack(
+        scenes,
+        source_lang=src_lang,
+        target_lang=target_lang,
+        title=plan.get("title", ""),
+        strict=strict,
+    )
     new_scenes = []
     for sc, dub in zip(scenes, pack["scenes"]):
         merged = dict(sc)
-        merged["narration_source"] = sc.get("narration")
+        merged["narration_source"] = sc.get("narration_source") or sc.get("narration") or sc.get("text")
+        merged["narration_source_lang"] = sc.get("narration_source_lang") or src_lang
         merged["narration"] = dub["dubbed_narration"] or sc.get("narration")
         new_scenes.append(merged)
     out = dict(plan)
     out["scenes"] = new_scenes
     out["language"] = target_lang
+    out["full_narration"] = " ".join(
+        str(scene.get("narration") or "").strip()
+        for scene in new_scenes
+        if scene.get("narration")
+    )
     out["dubbing"] = {
         "source_lang": src_lang,
         "target_lang": target_lang,
+        "title_source": plan.get("title", ""),
         "title_dubbed": pack.get("title_dubbed"),
     }
     if pack.get("title_dubbed"):

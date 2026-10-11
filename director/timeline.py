@@ -6,7 +6,12 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from scenes.narration_validate import MIN_WORDS_PER_SCENE, MIN_WORDS_PER_SENTENCE, scene_narration_issues
+from scenes.narration_validate import (
+    MIN_WORDS_PER_SCENE,
+    MIN_WORDS_PER_SENTENCE,
+    normalize_narration_for_validation,
+    scene_narration_issues,
+)
 
 from .schema import (
     DirectorPlan,
@@ -184,10 +189,6 @@ def _condense_narration(text: str, max_words: int) -> str:
     if not out:
         out = _shorten_sentence(text, max_words)
 
-    if not out and text:
-        from scenes.narration_validate import _append_minimal_completion
-        out = _append_minimal_completion(_shorten_sentence(text, max(MIN_WORDS_PER_SCENE, max_words)))
-
     while out and len(out.split()) > max_words and len(kept) > 1:
         kept.pop()
         out = " ".join(kept).strip()
@@ -198,9 +199,10 @@ def _condense_narration(text: str, max_words: int) -> str:
 
 
 def _scene_word_count(scenes: List[ScenePlan]) -> int:
-    return len(" ".join(
-        s.narration.strip() for s in scenes if (s.narration or "").strip()
-    ).split())
+    return sum(
+        len(normalize_narration_for_validation(s.narration or "").split())
+        for s in scenes
+    )
 
 
 def _scenes_narration_ok(scenes: List[ScenePlan]) -> bool:
@@ -242,7 +244,7 @@ def _clean_spoken_sentence(text: str) -> str:
     for part in parts:
         if part[-1:] not in ".!?":
             continue
-        cleaned, _did = _strip_dangling_clause(part)
+        cleaned, _ = _strip_dangling_clause(part)
         cleaned = (cleaned or "").strip()
         if not cleaned or _bare_conjunction(cleaned):
             continue
@@ -312,7 +314,7 @@ def _fit_spoken_scene_count(scenes: List[ScenePlan]) -> None:
         if not group:
             continue
         head = group[0][0]
-        head.narration = " ".join(narr for _scene, narr in group if narr).strip()
+        head.narration = " ".join(narr for _, narr in group if narr).strip()
         fitted.append(head)
     if not fitted:
         return
@@ -445,7 +447,7 @@ def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
     qt.target_duration = target
     plan.quality_thresholds = qt
 
-    # Turkish TTS ≈ 2.3–2.6 wps; only condense when over the 60s cap (Madde 494).
+    # The target uses measured natural narration pace; only condense over the word cap.
     # Drop whole scenes down to 4 before any per-scene trim. Do not split a
     # sentence to manufacture an 8-cut cadence.
     max_words = shorts_word_budget(qt.max_duration, qt.max_audio_speed)
@@ -506,13 +508,15 @@ def solve_timeline(plan: DirectorPlan) -> DirectorPlan:
 
 
 def _plan_dict_word_count(scenes: List[dict]) -> int:
-    return sum(len((s.get("narration") or "").split()) for s in scenes)
+    return sum(
+        len(normalize_narration_for_validation(s.get("narration") or "").split())
+        for s in scenes
+    )
 
 
 def _settle_spoken_sentence(text: str, max_words: int) -> str:
     """Finish or drop a clipped clause. Never return a dangling tail."""
     from scenes.narration_validate import (
-        _append_minimal_completion,
         _strip_dangling_clause,
         scene_narration_issues,
     )
@@ -540,15 +544,7 @@ def _settle_spoken_sentence(text: str, max_words: int) -> str:
     short = _shorten_sentence(text, max_words)
     if short and not scene_narration_issues(short) and len(short.split()) <= max_words:
         return short
-    if short:
-        finished = _append_minimal_completion(short)
-        if (
-            finished
-            and not scene_narration_issues(finished)
-            and len(finished.split()) <= max_words
-        ):
-            return finished
-    stripped, _did = _strip_dangling_clause(text)
+    stripped, _ = _strip_dangling_clause(text)
     stripped = _ensure_terminal(stripped) if stripped else ""
     if stripped and not scene_narration_issues(stripped) and len(stripped.split()) <= max_words:
         return stripped
@@ -637,7 +633,11 @@ def recover_overlong_narration(plan: dict, *, audio_seconds: float) -> dict:
     scenes = [s for s in ((plan or {}).get("scenes") or []) if isinstance(s, dict)]
     words = _plan_dict_word_count(scenes)
     if not words and (plan or {}).get("full_narration"):
-        words = len(str(plan.get("full_narration") or "").split())
+        words = len(
+            normalize_narration_for_validation(
+                str(plan.get("full_narration") or "")
+            ).split()
+        )
     cap = natural_narration_word_cap(words, audio_seconds)
     if words <= cap:
         import copy
@@ -660,8 +660,6 @@ def fit_tts_to_timeline(
     take raises RuntimeError (Madde 494).
     """
     import wave
-    import os
-
     qt = plan.quality_thresholds
     budget_ceiling = min(max(qt.max_duration, 60.0), 60.0)
     _ = output_path

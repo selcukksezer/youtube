@@ -4,11 +4,51 @@ Maps roadmap items 88, 129, 201-225, 266, 274, 345, 494 into a typed plan.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional
 
 
 BEAT_TYPES = ("hook", "conflict", "climax", "resolution", "quiz", "document", "shock")
+
+
+def _string_list(value: Any) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        item.strip()
+        for item in value
+        if isinstance(item, str) and item.strip()
+    ]
+
+
+def _int_or_default(value: Any, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _finite_float_or(value: Any, default: float) -> float:
+    if isinstance(value, bool):
+        return default
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
+def _optional_finite_float(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return parsed if math.isfinite(parsed) else None
 
 
 @dataclass
@@ -31,7 +71,10 @@ class VisualIntent:
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "VisualIntent":
-        data = data or {}
+        if data is None:
+            data = {}
+        elif not isinstance(data, dict):
+            raise ValueError("visual_intent must be an object")
         return cls(
             subject=str(data.get("subject", "")),
             action=str(data.get("action", "slow push in")),
@@ -40,10 +83,10 @@ class VisualIntent:
             mood=str(data.get("mood", "cinematic")),
             lighting=str(data.get("lighting", "natural light")),
             visual_priority=str(data.get("visual_priority", "subject")),
-            must_include=list(data.get("must_include") or []),
-            must_exclude=list(data.get("must_exclude") or []),
+            must_include=_string_list(data.get("must_include")),
+            must_exclude=_string_list(data.get("must_exclude")),
             continuity_motif=str(data.get("continuity_motif", "default")),
-            search_queries=list(data.get("search_queries") or []),
+            search_queries=_string_list(data.get("search_queries")),
             shot_type=str(data.get("shot_type") or "establishing"),
         )
 
@@ -126,18 +169,22 @@ class ScenePlan:
     @classmethod
     def from_dict(cls, data: Dict[str, Any], index: int = 0) -> "ScenePlan":
         vi = VisualIntent.from_dict(data.get("visual_intent"))
+        raw_queries = data.get("search_queries")
+        if isinstance(raw_queries, list):
+            search_queries = _string_list(raw_queries)
+        elif not raw_queries and isinstance(data.get("search_query"), str):
+            search_queries = [data["search_query"].strip()] if data["search_query"].strip() else []
+        else:
+            search_queries = []
         return cls(
-            index=int(data.get("index", index)),
+            index=_int_or_default(data.get("index", index), index),
             narration=str(data.get("narration", "")),
             duration=float(data.get("duration", 3.0)),
-            t0=float(data.get("t0", 0.0)),
-            t1=float(data.get("t1", 0.0)),
+            t0=_finite_float_or(data.get("t0", 0.0), 0.0),
+            t1=_finite_float_or(data.get("t1", 0.0), 0.0),
             beat_type=str(data.get("beat_type", "conflict")),
             scene_description=str(data.get("scene_description", "")),
-            search_queries=list(
-                data.get("search_queries")
-                or ([data["search_query"]] if data.get("search_query") else [])
-            ),
+            search_queries=search_queries,
             visual_intent=vi,
             scene_intent=str(data.get("scene_intent", "action")),
             camera_direction=str(data.get("camera_direction", "zoom_in")),
@@ -149,10 +196,10 @@ class ScenePlan:
             wipe_direction=str(data.get("wipe_direction", "horizontal")),
             path=data.get("path"),
             mood=str(data.get("mood", "")),
-            beat_hint_ms=float(data["beat_hint_ms"]) if data.get("beat_hint_ms") is not None else None,
-            claim_ids=list(data.get("claim_ids") or []),
+            beat_hint_ms=_optional_finite_float(data.get("beat_hint_ms")),
+            claim_ids=_string_list(data.get("claim_ids")),
             evidence_required=bool(data.get("evidence_required", False)),
-            caption_emphasis=list(data.get("caption_emphasis") or []),
+            caption_emphasis=_string_list(data.get("caption_emphasis")),
             transition_intent=str(data.get("transition_intent", "cut")),
             arabic_text=data.get("arabic_text"),
             source_citation=data.get("source_citation"),
@@ -165,7 +212,8 @@ class ScenePlan:
 DirectorScene = ScenePlan
 
 
-# tr-TR Edge TTS ≈ 2.3–2.6 words/s. ElevenLabs TR measured ~2.0 wps (slower).
+# Provider speed varies; duration planning uses the conservative 1.9 wps
+# measured for natural Turkish narration and the 110-word Shorts ceiling.
 TTS_WORDS_PER_SEC = 2.45
 TTS_BUDGET_WPS = 2.5
 # Historical emergency ceiling. Default fit path no longer speeds speech (Item 494).
@@ -194,10 +242,10 @@ def natural_target_duration(
     word_count: int,
     min_d: float = 38.0,
     max_d: float = 60.0,
-    wps: float = TTS_WORDS_PER_SEC,
+    wps: float = NATURAL_TTS_WPS,
 ) -> float:
-    """Content-driven Shorts length. Floor 38, cap 60 — 48 is not a magnet."""
-    natural = max(0, int(word_count or 0)) / max(float(wps) or TTS_WORDS_PER_SEC, 0.1)
+    """Content-driven Shorts length at measured natural narration pace."""
+    natural = max(0, int(word_count or 0)) / max(float(wps) or NATURAL_TTS_WPS, 0.1)
     return round(min(float(max_d), max(float(min_d), natural)), 2)
 
 
@@ -241,7 +289,7 @@ class QualityThresholds:
     min_duration: float = 38.0
     max_duration: float = 60.0
     target_duration: float = 0.0  # 0 = content-driven via natural_target_duration
-    min_scenes: int = 8
+    min_scenes: int = 6
     max_audio_speed: float = 1.15
     max_av_delta: float = 0.05
     min_alignment_score: float = 0.25

@@ -2,6 +2,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -18,6 +19,7 @@ def _sample_plan(n=3):
             {
                 "narration": f"Bu stoaci kural {i + 1} ofkeyi yok eder ve zihni sakin tutar.",
                 "duration": 3.0,
+                "scene_description": f"Stoacı düşünceyi gösteren sahne {i + 1}",
                 "search_queries": ["stoic portrait", "roman emperor"],
             }
             for i in range(n)
@@ -54,6 +56,61 @@ class TestPlanValidateApi(unittest.TestCase):
         self.assertIn("narration_integrity", data)
         self.assertIn("pre_render_score", data)
         self.assertIn("scene_continuity_advisories", data)
+
+    def test_plan_validate_uses_plan_niche_when_request_omits_it(self):
+        plan = _sample_plan()
+        video_router = __import__("routers.video_router", fromlist=["_plan_gate_result"])
+        with patch.object(video_router, "_plan_gate_result", return_value={"ok": True}) as gate:
+            response = self.client.post(
+                "/api/plan/validate",
+                json={"plan": plan, "recompile": False},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(gate.call_args.kwargs["niche"], "6_stoic_philosophy")
+
+    def test_plan_repair_uses_plan_niche_when_request_omits_it(self):
+        plan = _sample_plan()
+        gate_result = {
+            "ok": True,
+            "plan": plan,
+            "narration_ok": True,
+            "narration_integrity": [],
+            "scene_continuity_advisories": [],
+            "script_quality": {},
+            "pre_render_score": {},
+        }
+        video_router = __import__("routers.video_router", fromlist=["_plan_gate_result"])
+        with patch(
+            "scenes.narration_validate.auto_repair_plan",
+            return_value=(plan, []),
+        ), patch.object(
+            video_router,
+            "_plan_gate_result",
+            return_value=gate_result,
+        ) as gate:
+            response = self.client.post("/api/plan/repair", json={"plan": plan})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(gate.call_args.kwargs["niche"], "6_stoic_philosophy")
+
+    def test_scene_enrichment_failure_is_logged_and_validation_continues(self):
+        with patch(
+            "scenes.enrichment.enrich_plan_scenes",
+            side_effect=RuntimeError("enrichment unavailable"),
+        ):
+            with self.assertLogs("routers.video_router", level="WARNING") as captured:
+                response = self.client.post(
+                    "/api/plan/validate",
+                    json={
+                        "plan": _sample_plan(),
+                        "recompile": False,
+                        "auto_repair": False,
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("enrichment unavailable", "\n".join(captured.output))
 
     def test_topic_discontinuity_is_advisory_only(self):
         discontinuous_plan = _sample_plan()

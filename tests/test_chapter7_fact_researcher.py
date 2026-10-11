@@ -9,10 +9,12 @@ Bölüm 7.4: Anti-Halüsinasyon İnternet Doğrulama Ajanı (FactResearcher) Tes
 import os
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.web_fact_researcher import (
+    _DDGHTMLParser,
     extract_claims_from_text,
     cross_verify_claim,
     sanitize_unverified_claims,
@@ -52,6 +54,39 @@ class TestChapter7FactResearcher(unittest.TestCase):
         # Ağ bağlantısı varsa en az 1 snippet gelmeli, yoksa boş liste güvenli dönmeli
         for s in snippets:
             self.assertGreaterEqual(len(s), 20)
+
+    def test_parser_ignores_unsupported_snippet_container_tags(self):
+        parser = _DDGHTMLParser()
+        parser.feed(
+            '<section class="result__snippet">'
+            "This unsupported wrapper should not become a search result "
+            "<span>nested text</span></section>"
+        )
+
+        self.assertEqual(parser.snippets, [])
+
+    def test_research_provider_failures_are_logged(self):
+        with (
+            patch(
+                "services.web_fact_researcher.requests.post",
+                side_effect=RuntimeError("html unavailable"),
+            ),
+            patch(
+                "services.web_fact_researcher._query_duckduckgo_lite",
+                side_effect=RuntimeError("lite unavailable"),
+            ),
+            patch(
+                "services.web_fact_researcher._query_wikipedia_snippets",
+                side_effect=RuntimeError("wiki unavailable"),
+            ),
+        ):
+            with self.assertLogs("services.web_fact_researcher", level="WARNING") as captured:
+                snippets = research_topic_facts("a test topic")
+
+        self.assertEqual(snippets, [])
+        self.assertTrue(any("DuckDuckGo HTML" in message for message in captured.output))
+        self.assertTrue(any("DuckDuckGo Lite" in message for message in captured.output))
+        self.assertTrue(any("Wikipedia" in message for message in captured.output))
 
     def test_format_research_prompt_context(self):
         """Anti-halüsinasyon prompt bağlamının biçimlendirilmesi testi."""
@@ -135,7 +170,7 @@ class TestChapter7FactResearcher(unittest.TestCase):
     def test_opening_hook_percent_stays(self):
         hook = "İnsanların %99'u bunu bilmez."
         scenes = [{"narration": hook + " Roma 1842 yılında kuruldu."}]
-        updated, _report = verify_and_sanitize_scenes(
+        updated, report = verify_and_sanitize_scenes(
             scenes,
             topic="Roma",
             web_snippets=["Genel ansiklopedi metni, sayı yok."],
@@ -144,6 +179,7 @@ class TestChapter7FactResearcher(unittest.TestCase):
         narr = updated[0]["narration"]
         self.assertIn("%99", narr)
         self.assertNotIn("1842", narr)
+        self.assertGreaterEqual(report["sanitized_count"], 1)
 
     def test_empty_sources_keep_numbers(self):
         scenes = [{"narration": "İnsanların %99'u 1842 yılında bunu duydu."}]

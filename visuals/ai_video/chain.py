@@ -8,7 +8,7 @@ from typing import List, Optional
 from .base import AIVideoProvider, AIVideoResult
 from .cache import cache_lookup, cache_store, prompt_hash
 from .http_util import env_key
-from .kids_safety import is_kids_niche
+from .kids_safety import check_kids_prompt_safety, is_kids_niche, sanitize_kids_prompt
 from .prompt import build_cinematic_prompt, resolve_style_preset
 from .providers import ALL_PROVIDER_CLASSES
 from .stitch import clip_count_for_duration, ffmpeg_concat
@@ -23,6 +23,7 @@ def _truthy(val: str) -> bool:
 def _any_key_present() -> bool:
     keys = (
         "FAL_API_KEY", "FAL_KEY",
+        "AGNES_API_KEY",
         "HF_TOKEN", "HUGGINGFACE_TOKEN", "HUGGINGFACEHUB_API_TOKEN",
         "REPLICATE_API_TOKEN", "REPLICATE_API_KEY",
         "DEEPINFRA_TOKEN", "DEEPINFRA_API_KEY",
@@ -145,13 +146,21 @@ def generate_ai_clip(
 
     style = resolve_style_preset(niche_id, style_preset)
     try:
-        eng_prompt = prompt or build_cinematic_prompt(
-            narration=narration,
-            scene_description=scene_description,
-            niche_id=niche_id,
-            aspect=aspect,
-            style_preset=style,
-        )
+        if prompt:
+            eng_prompt = prompt
+            if style == "kids_cartoon" or is_kids_niche(niche_id):
+                ok, reason = check_kids_prompt_safety(eng_prompt)
+                if not ok:
+                    raise ValueError(f"kids_prompt_blocked:{reason}")
+                eng_prompt = sanitize_kids_prompt(eng_prompt)
+        else:
+            eng_prompt = build_cinematic_prompt(
+                narration=narration,
+                scene_description=scene_description,
+                niche_id=niche_id,
+                aspect=aspect,
+                style_preset=style,
+            )
     except ValueError as exc:
         print(f"    [AI-VIDEO:kids_safety] blocked: {exc}")
         return None

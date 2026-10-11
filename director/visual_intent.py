@@ -947,8 +947,8 @@ def _fork_distinct_from_previous(
     prev: VisualIntent,
     shot_type: str = "",
 ) -> VisualIntent:
-    """Rotate motif when split siblings would share subject + queries (P0-06)."""
-    if intent.subject != prev.subject or intent.search_queries != prev.search_queries:
+    """Vary adjacent same-subject shots without changing their semantic root."""
+    if intent.subject != prev.subject:
         return intent
     # Same real subject on a split: change the angle, not the object.
     from visuals.subject_lock import next_variant

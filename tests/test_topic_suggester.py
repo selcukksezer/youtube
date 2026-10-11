@@ -1,18 +1,37 @@
 """Tests for advanced niche-aware topic suggestion pipeline."""
 import unittest
-from unittest.mock import patch
+from unittest.mock import DEFAULT, patch
 
 from services.topic_suggester import (
     suggest_topics,
     _score_candidate,
     _niche_context_words,
+    _generate_seed_based_topics,
+    _fetch_youtube_candidates,
+    _fetch_google_trend_candidates,
     _slugify_topic,
     SOURCE_AI,
+    SOURCE_GOOGLE_TRENDS,
     SOURCE_YOUTUBE,
 )
 
 
 class TestTopicSuggester(unittest.TestCase):
+    def setUp(self):
+        source_patches = patch.multiple(
+            "services.topic_suggester",
+            _fetch_youtube_candidates=DEFAULT,
+            _fetch_google_trend_candidates=DEFAULT,
+            _fetch_rss_candidates=DEFAULT,
+            _fetch_trend_candidates=DEFAULT,
+            _fetch_reddit_candidates=DEFAULT,
+            _generate_ai_candidates=DEFAULT,
+        )
+        self.sources = source_patches.start()
+        self.addCleanup(source_patches.stop)
+        for source in self.sources.values():
+            source.return_value = []
+
     def test_stoic_returns_five_suggestions(self):
         with patch("services.topic_suggester._fetch_youtube_candidates", return_value=[]), \
              patch("services.topic_suggester._fetch_trend_candidates", return_value=[]), \
@@ -68,6 +87,29 @@ class TestTopicSuggester(unittest.TestCase):
         )
         self.assertIsNone(item)
 
+    def test_seed_marker_cannot_bypass_cross_niche_classification(self):
+        ctx = _niche_context_words("10_religious_quotes")
+        item = _score_candidate(
+            "Uçuşunuz rötara uğradığında havayolundan tazminat alma yolları",
+            "10_religious_quotes",
+            SOURCE_AI,
+            ctx,
+            set(),
+            {"is_seed_tailored": True, "viral_score": 99},
+        )
+        self.assertIsNone(item)
+
+    def test_religious_seed_fallback_does_not_invent_hadith_citations(self):
+        self.assertEqual(
+            _generate_seed_based_topics(
+                "Peygamberimizin sabır hakkındaki hadisi",
+                "10_religious_quotes",
+                count=5,
+                language="tr",
+            ),
+            [],
+        )
+
     def test_youtube_source_scored(self):
         ctx = _niche_context_words("6_stoic_philosophy")
         item = _score_candidate(
@@ -93,6 +135,113 @@ class TestTopicSuggester(unittest.TestCase):
         used = {_slugify_topic(title)}
         item = _score_candidate(title, "6_stoic_philosophy", SOURCE_AI, ctx, used)
         self.assertIsNone(item)
+
+    def test_off_niche_user_hint_is_not_seeded_or_passed_to_ai(self):
+        hint = "Uçuşunuz Rötara Uğradığında Havayolundan Alabileceğiniz Gizli Tazminat Hakkı"
+        with patch("services.topic_suggester._generate_ai_candidates", return_value=[]) as ai, \
+             patch("services.topic_suggester._collect_used_topics", return_value=set()):
+            result = suggest_topics(
+                "10_religious_quotes",
+                language="tr",
+                count=5,
+                topic_hint=hint,
+            )
+
+        ai.assert_called_once_with("10_religious_quotes", "tr", 5, "")
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["topic_hint_ignored"])
+        self.assertEqual(len(result["suggestions"]), 5)
+        self.assertTrue(all(
+            "uçuş" not in item["title"].casefold()
+            and "tazminat" not in item["title"].casefold()
+            for item in result["suggestions"]
+        ))
+        self.assertTrue(all(item["niche_aligned"] for item in result["suggestions"]))
+
+    def test_seed_hint_contributes_at_most_one_template_and_confidence_is_calibrated(self):
+        hint = "Peygamberimizin sabır hakkındaki hadisi"
+        with patch("services.topic_suggester._generate_ai_candidates", return_value=[]), \
+             patch("services.topic_suggester._collect_used_topics", return_value=set()):
+            result = suggest_topics(
+                "10_religious_quotes",
+                language="tr",
+                count=5,
+                topic_hint=hint,
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertFalse(result["topic_hint_ignored"])
+        self.assertEqual(len(result["suggestions"]), 5)
+        self.assertLessEqual(
+            sum(hint.casefold() in item["title"].casefold() for item in result["suggestions"]),
+            1,
+        )
+        self.assertTrue(all(len(item["title"]) <= 75 for item in result["suggestions"]))
+        self.assertTrue(all(item["confidence"] <= 95 for item in result["suggestions"]))
+
+    def test_suggestions_mix_live_sources_and_report_source_counts(self):
+        self.sources["_fetch_youtube_candidates"].return_value = [{
+            "title": "Stoacılık öfke kontrolü: 3 pratik yöntem",
+            "source": SOURCE_YOUTUBE,
+            "source_detail": "YouTube arama önerisi",
+        }]
+        self.sources["_fetch_google_trend_candidates"].return_value = [{
+            "title": "Stoacılıkta günlük disiplin ve huzur",
+            "source": SOURCE_GOOGLE_TRENDS,
+            "source_detail": "Google Trends · yaklaşık trafik 20K+",
+        }]
+        self.sources["_generate_ai_candidates"].return_value = [{
+            "title": "Marcus Aurelius'un zor günler için disiplin kuralı",
+            "source": SOURCE_AI,
+        }]
+
+        result = suggest_topics("6_stoic_philosophy", count=3)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(result["suggestions"]), 3)
+        sources = {item["source"] for item in result["suggestions"]}
+        self.assertEqual(sources, {SOURCE_YOUTUBE, SOURCE_GOOGLE_TRENDS, SOURCE_AI})
+        self.assertEqual(result["source_counts"], {
+            SOURCE_YOUTUBE: 1,
+            SOURCE_GOOGLE_TRENDS: 1,
+            SOURCE_AI: 1,
+        })
+        self.assertEqual(
+            next(item for item in result["suggestions"] if item["source"] == SOURCE_GOOGLE_TRENDS)["source_detail"],
+            "Google Trends · yaklaşık trafik 20K+",
+        )
+        self.sources["_fetch_reddit_candidates"].assert_not_called()
+
+    def test_youtube_fallback_cards_are_not_mislabeled_as_live_evidence(self):
+        synthetic_card = {
+            "title": "Stoacılık Hakkında Muhtemelen Bilmediğiniz 5 Şaşırtıcı Gerçek",
+            "video_id": "trend_1",
+            "channel": "Viral Studio",
+            "view_count": "1.5M izlenme",
+            "url": "https://www.youtube.com/hashtag/shorts",
+        }
+        with patch("services.topic_suggester.fetch_youtube_autocomplete_suggestions", return_value=[]), \
+             patch("services.topic_suggester.scan_youtube_shorts_trends", return_value=[synthetic_card]):
+            candidates = _fetch_youtube_candidates("6_stoic_philosophy", "tr", 5)
+
+        self.assertEqual(candidates, [])
+
+    def test_google_trends_collector_uses_selected_language_region(self):
+        trend = type("Trend", (), {
+            "to_dict": lambda self: {
+                "title": "Stoicism discipline habits",
+                "trending_score": 0.9,
+                "metadata": {"traffic": "20K+"},
+            },
+        })()
+        with patch("services.autonomous_topic_engine.AutonomousTopicEngine") as engine:
+            engine.return_value.fetch_google_trends.return_value = [trend]
+            candidates = _fetch_google_trend_candidates("en")
+
+        engine.assert_called_once_with(timeout=4.0)
+        engine.return_value.fetch_google_trends.assert_called_once_with(geo="US", limit=8)
+        self.assertEqual(candidates[0]["source"], SOURCE_GOOGLE_TRENDS)
+        self.assertIn("20K+", candidates[0]["source_detail"])
 
 
 if __name__ == "__main__":

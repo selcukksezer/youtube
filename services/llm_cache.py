@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -20,6 +21,7 @@ from typing import Any, Dict, Optional
 
 _CACHE_LOCKS = tuple(threading.Lock() for _ in range(256))
 DEFAULT_LLM_CACHE_TTL = 7 * 24 * 3600  # 7 days
+logger = logging.getLogger(__name__)
 
 
 class LLMResponseCache:
@@ -79,8 +81,9 @@ class LLMResponseCache:
 
                 self.hits += 1
                 return data.get("response")
-            except Exception:
+            except Exception as exc:
                 self.misses += 1
+                logger.warning("Failed to read LLM cache entry %s: %s", os.path.basename(path), exc)
                 return None
 
     def set(
@@ -117,12 +120,13 @@ class LLMResponseCache:
                 temp.close()
 
                 os.replace(temp.name, target_path)
-            except Exception:
+            except Exception as exc:
+                logger.warning("Failed to write LLM cache entry %s: %s", os.path.basename(target_path), exc)
                 if 'temp' in locals() and os.path.exists(temp.name):
                     try:
                         os.remove(temp.name)
-                    except OSError:
-                        pass
+                    except OSError as cleanup_exc:
+                        logger.warning("Failed to remove temporary LLM cache file: %s", cleanup_exc)
 
 
 # Global singleton

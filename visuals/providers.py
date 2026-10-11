@@ -20,6 +20,7 @@ import html
 import os
 import random
 import re
+import time
 from dataclasses import dataclass, field, asdict
 from typing import Callable, Dict, List, Optional
 
@@ -29,6 +30,7 @@ from .license import License, LicenseInfo, parse_cc_license
 
 USER_AGENT = "youtubeoto-shorts/1.0 (open-license visual sourcing; local dev)"
 TIMEOUT = 8
+_PEXELS_RETRY_DELAYS = (0.25, 0.75)
 
 _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
@@ -114,6 +116,41 @@ class Candidate:
 
 # ─── Pexels ──────────────────────────────────────────────────────────────────
 
+def _is_retryable_pexels_error(error: requests.RequestException) -> bool:
+    if isinstance(error, (requests.Timeout, requests.ConnectionError)):
+        return True
+    if isinstance(error, requests.HTTPError):
+        status_code = error.response.status_code if error.response is not None else None
+        return status_code is not None and 500 <= status_code < 600
+    return False
+
+
+def _get_pexels_response(query: str, per_page: int, key: str) -> requests.Response:
+    attempt = 0
+    while True:
+        try:
+            response = _session.get(
+                "https://api.pexels.com/videos/search",
+                headers={"Authorization": key},
+                # No orientation lock. Real subject footage is usually 16:9.
+                # visuals.fetch crops it to 9:16, the same reframe ViewMade does.
+                params={
+                    "query": query,
+                    "per_page": min(max(per_page, 1), 15),
+                    "size": "medium",
+                    "page": _rand_page(),
+                },
+                timeout=TIMEOUT,
+            )
+            response.raise_for_status()
+            return response
+        except (requests.Timeout, requests.ConnectionError, requests.HTTPError) as error:
+            if attempt >= len(_PEXELS_RETRY_DELAYS) or not _is_retryable_pexels_error(error):
+                raise
+            time.sleep(_PEXELS_RETRY_DELAYS[attempt])
+            attempt += 1
+
+
 def _pick_pexels_file(files: List[Dict]) -> Optional[Dict]:
     best, best_score = None, -1e9
     for f in files or []:
@@ -130,15 +167,7 @@ def search_pexels(query: str, per_page: int = 12) -> List[Candidate]:
     key = _env("PEXELS_API_KEY")
     if not key:
         return []
-    r = _session.get(
-        "https://api.pexels.com/videos/search",
-        headers={"Authorization": key},
-        # No orientation lock. Real subject footage is usually 16:9.
-        # visuals.fetch crops it to 9:16, the same reframe ViewMade does.
-        params={"query": query, "per_page": min(max(per_page, 1), 15), "size": "medium", "page": _rand_page()},
-        timeout=TIMEOUT,
-    )
-    r.raise_for_status()
+    r = _get_pexels_response(query, per_page, key)
     out: List[Candidate] = []
     for v in r.json().get("videos", []):
         f = _pick_pexels_file(v.get("video_files", []))
@@ -194,7 +223,7 @@ def search_coverr(query: str, per_page: int = 10) -> List[Candidate]:
         return []
     r = _session.get(
         "https://api.coverr.co/videos",
-        headers={"Authorization": f"Bearer {key}"},
+        headers={"Authorization": key},
         params={"query": query, "page_size": per_page},
         timeout=TIMEOUT,
     )

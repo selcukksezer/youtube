@@ -11,6 +11,7 @@ import logging
 import os
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
 from typing import Any, Dict, List, Optional, Set
 
@@ -20,7 +21,7 @@ from director.visual_intent import resolve_topic_intelligence
 from niche_templates import NICHES, get_niche_production_profile
 from research_service import extract_format_fingerprint_from_title, fetch_youtube_autocomplete_suggestions
 from trending_scanner import scan_youtube_shorts_trends
-from services.niche_topic_vault import CURATED_NICHE_TOPICS, get_curated_topics_for_niche, resolve_canonical_niche
+from services.niche_topic_vault import get_curated_topics_for_niche, resolve_canonical_niche
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,8 @@ SOURCE_AI = "ai"
 SOURCE_TREND = "trend"
 SOURCE_REDDIT = "reddit"
 SOURCE_VAULT = "vault"
+SOURCE_GOOGLE_TRENDS = "google_trends"
+SOURCE_RSS = "rss"
 
 _GENERIC_PATTERNS = (
     r"^(?:herkes|everyone|tüm dünya)\b",
@@ -94,6 +97,22 @@ def _niche_context_words(niche_id: str) -> Set[str]:
     return {w for w in re.findall(r"\w{3,}", blob.lower())}
 
 
+def _topic_hint_matches_niche(topic_hint: str, niche_id: str) -> bool:
+    hint = (topic_hint or "").strip()
+    if not hint:
+        return False
+
+    canonical_niche = resolve_canonical_niche(niche_id)
+    intelligence = resolve_topic_intelligence(hint, canonical_niche)
+    if resolve_canonical_niche(intelligence["resolved_niche"]) != canonical_niche:
+        return False
+    if intelligence["match_method"] != "passthrough":
+        return True
+
+    hint_words = set(re.findall(r"\w{3,}", hint.casefold()))
+    return bool(hint_words & _niche_context_words(canonical_niche))
+
+
 def _is_generic(title: str) -> bool:
     low = title.casefold()
     return any(re.search(pat, low, re.I) for pat in _GENERIC_PATTERNS)
@@ -103,6 +122,9 @@ def _generate_seed_based_topics(
     seed_keyword: str, niche_id: str, count: int = 5, language: str = "tr"
 ) -> List[Dict[str, Any]]:
     """Synthesize high-CTR viral topic candidates directly from a user seed keyword."""
+    if resolve_canonical_niche(niche_id) == "10_religious_quotes":
+        return []
+
     raw = (seed_keyword or "").strip()
     raw = re.sub(r"#\w+", "", raw)
     clean = re.sub(r"[^\w\s\u00C0-\u017F-]", "", raw).strip()
@@ -126,16 +148,6 @@ def _generate_seed_based_topics(
             f"How {cap_seed} Quietly Controls 99% of People Without Them Knowing",
             f"The Beginner's Guide to {cap_seed}: 3 Golden Rules You Must Follow",
         ]
-    elif niche_id == "10_religious_quotes":
-        templates = [
-            f"Hz. Peygamber'in {cap_seed} Hakkındaki Mucizevi Hadis-i Şerifi (Buhari)",
-            f"Kalplere Şifa Olan {cap_seed} Hadisi Şerifi ve Fazileti (Müslim)",
-            f"Resulullah'ın (s.a.v.) {cap_seed} Konusundaki Altın Öğüdü (Tirmizi)",
-            f"{cap_seed} ile İlgili Peygamberimizin Hayat Değiştiren Hadisi",
-            f"Rabbinizin Müjdesi: {cap_seed} Hakkındaki Hikmetli Ayet-i Kerime",
-            f"Zor Zamanlarda {cap_seed} İçin Okunacak En Tesirli Nebevî Dua",
-            f"Peygamber Efendimiz'in {cap_seed} Uyarısı ve Kurtarıcı Sünneti",
-        ]
     else:
         templates = [
             f"{cap_seed} Hakkında Muhtemelen Bilmediğiniz 5 Şaşırtıcı Gerçek",
@@ -150,7 +162,7 @@ def _generate_seed_based_topics(
     random.shuffle(templates)
     
     out: List[Dict[str, Any]] = []
-    for t in templates[:count + 2]:
+    for t in templates[:count]:
         out.append({
             "title": t,
             "source": SOURCE_AI,
@@ -172,6 +184,8 @@ def _score_candidate(
     topic = re.sub(r"\s+", " ", (title or "").strip())
     if len(topic) < 8 or len(topic) > 160:
         return None
+    if source in (SOURCE_AI, SOURCE_VAULT) and len(topic) > 75:
+        return None
     if _is_generic(topic):
         return None
     slug = _slugify_topic(topic)
@@ -181,13 +195,15 @@ def _score_candidate(
     words = set(re.findall(r"\w{3,}", topic.casefold()))
     overlap = len(words & context_words)
     intel = resolve_topic_intelligence(topic, niche_id)
-    niche_match = intel["resolved_niche"] == niche_id
+    canonical_niche = resolve_canonical_niche(niche_id)
+    niche_match = resolve_canonical_niche(intel["resolved_niche"]) == canonical_niche
+    if intel["locked"] and not niche_match:
+        return None
 
-    # If it is from our curated vault or seed tailored, it is inherently niche-aligned
-    is_vault = source == SOURCE_VAULT or (extra and extra.get("is_curated")) or (extra and extra.get("is_seed_tailored"))
+    is_vault = source == SOURCE_VAULT or (extra and extra.get("is_curated"))
 
     if not is_vault:
-        if source == SOURCE_YOUTUBE and overlap < 1:
+        if source in (SOURCE_YOUTUBE, SOURCE_GOOGLE_TRENDS, SOURCE_RSS) and overlap < 1:
             return None
         if source == SOURCE_REDDIT and niche_id != "2_reddit_confessions" and overlap < 1:
             return None
@@ -196,18 +212,20 @@ def _score_candidate(
         if intel["match_method"] == "passthrough" and overlap < 1 and source in (SOURCE_YOUTUBE, SOURCE_AI):
             return None
 
-    score = 65 + overlap * 6
+    score = 55 + min(20, overlap * 4)
     score += 15 if (niche_match or is_vault) else -15
-    score += 10 if source == SOURCE_VAULT else 0
-    score += 12 if source == SOURCE_YOUTUBE else 0
-    score += 8 if source == SOURCE_TREND else 0
-    score += 10 if source == SOURCE_REDDIT and niche_id == "2_reddit_confessions" else 0
-    score += 8 if source == SOURCE_AI else 0
-    score += 5 if any(ch.isdigit() for ch in topic) else 0
-    if extra and extra.get("viral_score"):
-        score += min(10, int(extra["viral_score"]) // 10)
+    score += {
+        SOURCE_VAULT: 5,
+        SOURCE_YOUTUBE: 8,
+        SOURCE_TREND: 5,
+        SOURCE_REDDIT: 4,
+        SOURCE_AI: 2,
+        SOURCE_GOOGLE_TRENDS: 8,
+        SOURCE_RSS: 6,
+    }.get(source, 0)
+    score += 2 if any(ch.isdigit() for ch in topic) else 0
 
-    confidence = min(99, max(50, score))
+    confidence = min(95, max(50, score))
     profile = get_niche_production_profile(niche_id)
     is_tr = (language or "tr").lower()[:2] != "en"
     if is_tr:
@@ -233,7 +251,7 @@ def _score_candidate(
         },
     }
     if extra:
-        for key in ("youtube_url", "channel", "view_count"):
+        for key in ("youtube_url", "channel", "view_count", "source_detail"):
             if extra.get(key):
                 item[key] = extra[key]
     return item
@@ -277,7 +295,7 @@ def _fetch_youtube_candidates(niche_id: str, language: str, limit: int, topic_hi
     try:
         seen_ac = set()
         for q in autocomplete_queries:
-            raw_suggs = fetch_youtube_autocomplete_suggestions(q)
+            raw_suggs = fetch_youtube_autocomplete_suggestions(q, lang="en" if is_en else "tr")
             for s in raw_suggs:
                 clean_s = s.strip()
                 if clean_s.lower() not in seen_ac and _is_valid_candidate(clean_s):
@@ -286,6 +304,7 @@ def _fetch_youtube_candidates(niche_id: str, language: str, limit: int, topic_hi
                     out.append({
                         "title": title_formatted,
                         "source": SOURCE_YOUTUBE,
+                        "source_detail": "YouTube arama önerisi",
                         "viral_score": 92,
                     })
     except Exception as ac_err:
@@ -293,22 +312,88 @@ def _fetch_youtube_candidates(niche_id: str, language: str, limit: int, topic_hi
 
     # 2. Trending Shorts scanner
     try:
-        trends = scan_youtube_shorts_trends(primary_query, time_filter="week", sort_by="views")
+        trends = scan_youtube_shorts_trends(
+            primary_query,
+            time_filter="week",
+            sort_by="views",
+            region="US" if is_en else "TR",
+        )
         for t in trends[: limit * 2]:
             t_title = t.get("title", "")
-            if _is_valid_candidate(t_title):
+            video_id = str(t.get("video_id") or "")
+            channel = str(t.get("channel") or "")
+            # The scanner's fallback cards are synthetic, not live YouTube evidence.
+            if _is_valid_candidate(t_title) and video_id and not video_id.startswith("trend_") and channel != "Viral Studio":
+                view_count = t.get("view_count")
                 out.append({
                     "title": t_title,
                     "source": SOURCE_YOUTUBE,
                     "youtube_url": t.get("url"),
-                    "channel": t.get("channel"),
-                    "view_count": t.get("view_count"),
+                    "channel": channel,
+                    "view_count": view_count,
+                    "source_detail": f"{channel} · {view_count}" if view_count else "YouTube Shorts",
                     "viral_score": t.get("viral_score", 90),
                 })
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("YouTube Shorts topic signals unavailable: %s", exc)
 
     return out
+
+
+def _fetch_google_trend_candidates(language: str = "tr", limit: int = 8) -> List[Dict[str, Any]]:
+    """Fetch region-specific live Google Trends RSS signals."""
+    try:
+        from services.autonomous_topic_engine import AutonomousTopicEngine
+
+        geo = "US" if (language or "tr").lower().startswith("en") else "TR"
+        candidates = AutonomousTopicEngine(timeout=4.0).fetch_google_trends(geo=geo, limit=limit)
+        out: List[Dict[str, Any]] = []
+        for candidate in candidates:
+            item = candidate.to_dict()
+            title = (item.get("title") or "").strip()
+            if not title:
+                continue
+            traffic = item.get("metadata", {}).get("traffic")
+            out.append({
+                "title": title,
+                "source": SOURCE_GOOGLE_TRENDS,
+                "source_detail": f"Google Trends · yaklaşık trafik {traffic}" if traffic else "Google Trends",
+                "viral_score": round(float(item.get("trending_score") or 0.5) * 100),
+            })
+        return out
+    except Exception as exc:
+        logger.warning("Google Trends topic signals unavailable: %s", exc)
+        return []
+
+
+def _fetch_rss_candidates(niche_id: str, language: str = "tr", limit: int = 5) -> List[Dict[str, Any]]:
+    """Fetch RSS only for niches with an explicit, relevant feed mapping."""
+    if (language or "tr").lower().startswith("tr") and niche_id != "1_news_flash":
+        return []
+    feed_key = {
+        "8_crypto_market": "finance",
+        "21_ai_tools_hacks": "tech",
+    }.get(niche_id, niche_id)
+    try:
+        from services.autonomous_topic_engine import AutonomousTopicEngine, NICHE_RSS_FEEDS
+
+        feed_urls = NICHE_RSS_FEEDS.get(feed_key)
+        if not feed_urls:
+            return []
+        candidates = AutonomousTopicEngine(timeout=4.0).fetch_rss_topics(feed_urls=feed_urls, limit=limit)
+        return [
+            {
+                "title": candidate.title,
+                "source": SOURCE_RSS,
+                "source_detail": "BBC News RSS" if niche_id == "1_news_flash" else "Nişe özel RSS",
+                "viral_score": round(candidate.trending_score * 100),
+            }
+            for candidate in candidates
+            if candidate.title
+        ]
+    except Exception as exc:
+        logger.warning("RSS topic signals unavailable for %s: %s", niche_id, exc)
+        return []
 
 
 def _fetch_trend_candidates(niche_id: str, language: str = "tr") -> List[Dict[str, Any]]:
@@ -321,8 +406,8 @@ def _fetch_trend_candidates(niche_id: str, language: str = "tr") -> List[Dict[st
             from rss_scanner import get_breaking_news_topics
             items = get_breaking_news_topics("aa_guncel", max_items=8)
             return [{"title": it["title"], "source": SOURCE_TREND, "viral_score": 95} for it in items if it.get("title")]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("News RSS topic signals unavailable: %s", exc)
     try:
         from hybrid_niches import HYBRID_NICHES
     except ImportError:
@@ -337,7 +422,8 @@ def _fetch_reddit_candidates(language: str, limit: int) -> List[Dict[str, Any]]:
         from reddit_client import fetch_public_posts
         posts = fetch_public_posts("AITA", limit=limit * 2, lang=language)
         return [{"title": p["title"], "source": SOURCE_REDDIT, "viral_score": 94} for p in posts if p.get("title")]
-    except Exception:
+    except Exception as exc:
+        logger.warning("Reddit topic signals unavailable: %s", exc)
         return []
 
 
@@ -378,7 +464,8 @@ def _generate_ai_candidates(
                 f"Language: {lang_label}\nTone: {profile['tone']}\nKeywords: {keywords}\n"
                 f"Format requirement: Titles must cite the source book or surah in parentheses, e.g. 'Peygamber Efendimiz\\'in Ameller Niyetlere Göredir Hadisi (Buhari)'.{hint}\n\n"
                 "Rules:\n"
-                "- Authentic Islamic Hadiths and Quranic Ayahs with book reference (Buhari, Müslim, Tirmizi, etc.)\n"
+                "- Never invent a Hadith, verse, surah, or source citation; omit references unless certain they are authentic\n"
+                "- Make each title about a distinct religious lesson; do not repeat one seed with different religious prefixes\n"
                 "- High CTR, emotionally peaceful, inspiring curiosity and spiritual reflection\n"
                 "- Under 75 characters per title, punchy and clear\n"
                 "- Return ONLY a JSON array of title strings, no markdown\n"
@@ -401,6 +488,7 @@ def _generate_ai_candidates(
                 f"Hook reference: {hook_ref}{hint}\n\n"
                 "Rules:\n"
                 "- Specific, high CTR, emotional hook or curiosity gap\n"
+                "- Cover distinct subtopics; do not rephrase the same seed topic across the list\n"
                 "- Under 75 characters per title, punchy and clear\n"
                 f"{anti_cliche}\n"
                 f"{lang_rule}\n"
@@ -418,7 +506,7 @@ def _generate_ai_candidates(
                 return [
                     {"title": t.strip(), "source": SOURCE_AI, "viral_score": 96}
                     for t in titles
-                    if isinstance(t, str) and 8 <= len(t.strip()) <= 160 and not _is_generic(t)
+                    if isinstance(t, str) and 8 <= len(t.strip()) <= 75 and not _is_generic(t)
                 ]
     except Exception as exc:
         logger.debug("AI topic generation notice: %s", exc)
@@ -429,7 +517,6 @@ def _generate_ai_candidates(
 
 def _template_fallback_candidates(niche_id: str, topic_hint: str = "", language: str = "tr") -> List[Dict[str, Any]]:
     """Guaranteed rich, non-cliche candidates from curated vault and dynamic seed engine."""
-    canonical_id = resolve_canonical_niche(niche_id)
     out: List[Dict[str, Any]] = []
 
     # 1. If topic hint given by user, generate dynamic framed titles
@@ -497,19 +584,47 @@ def suggest_topics(
     if canonical_niche not in NICHES:
         return {"status": "error", "message": "Geçersiz niş.", "suggestions": [], "count": 0}
 
+    topic_hint = (topic_hint or "").strip()
+    topic_hint_ignored = bool(topic_hint) and not _topic_hint_matches_niche(topic_hint, canonical_niche)
+    if topic_hint_ignored:
+        logger.info("Ignoring topic hint outside selected niche %s", canonical_niche)
+        topic_hint = ""
+
     context_words = _niche_context_words(canonical_niche)
     used = _collect_used_topics()
 
     raw: List[Dict[str, Any]] = []
 
     # 1. Custom user seed topics (highest priority if user typed a keyword)
-    if topic_hint and len(topic_hint.strip()) >= 3:
-        raw.extend(_generate_seed_based_topics(topic_hint.strip(), raw_niche, count=count, language=language))
+    if topic_hint and len(topic_hint) >= 3:
+        raw.extend(_generate_seed_based_topics(topic_hint, canonical_niche, count=1, language=language))
 
-    # 2. AI Generation (with reasoning tag stripping and multi-angle prompts)
-    raw.extend(_generate_ai_candidates(raw_niche, language, count, topic_hint))
+    # 2. Gather independent live sources concurrently to bound endpoint latency.
+    source_jobs = [
+        ("YouTube", _fetch_youtube_candidates, (canonical_niche, language, count, topic_hint)),
+        ("Google Trends", _fetch_google_trend_candidates, (language, 8)),
+        ("RSS", _fetch_rss_candidates, (canonical_niche, language, 5)),
+        ("niche trends", _fetch_trend_candidates, (canonical_niche, language)),
+    ]
+    if canonical_niche == "2_reddit_confessions":
+        source_jobs.append(("Reddit", _fetch_reddit_candidates, (language, count)))
 
-    # Score and filter all candidates
+    with ThreadPoolExecutor(max_workers=len(source_jobs)) as executor:
+        futures = {
+            executor.submit(fetcher, *args): source_name
+            for source_name, fetcher, args in source_jobs
+        }
+        for future in as_completed(futures):
+            source_name = futures[future]
+            try:
+                raw.extend(future.result())
+            except Exception as exc:
+                logger.warning("%s topic source failed: %s", source_name, exc)
+
+    # 3. AI Generation (with reasoning tag stripping and multi-angle prompts)
+    raw.extend(_generate_ai_candidates(canonical_niche, language, count, topic_hint))
+
+    # 4. Score and filter all candidates
     scored: List[Dict[str, Any]] = []
     seen_titles: Set[str] = set()
     for cand in raw:
@@ -532,7 +647,7 @@ def suggest_topics(
 
     # In case count not met, fill from curated vault
     if len(suggestions) < count:
-        for fb in _template_fallback_candidates(raw_niche, topic_hint, language=language):
+        for fb in _template_fallback_candidates(raw_niche, "", language=language):
             if len(suggestions) >= count:
                 break
             item = _score_candidate(
@@ -555,11 +670,14 @@ def suggest_topics(
         else (niche_obj.get("name") or profile.get("name", raw_niche))
     )
     
+    source_counts = Counter(item["source"] for item in suggestions[:count])
     return {
         "status": "ok",
         "niche_id": raw_niche,
         "niche_name": niche_display_name,
         "language": language,
+        "topic_hint_ignored": topic_hint_ignored,
+        "source_counts": dict(source_counts),
         "count": len(suggestions[:count]),
         "suggestions": suggestions[:count],
     }

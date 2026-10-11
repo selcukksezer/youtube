@@ -25,6 +25,8 @@ def update_config(data: ConfigUpdateModel):
     saved = []
     if data.elevenlabs_key:
         saved.append("elevenlabs")
+    if data.sonilo_key:
+        saved.append("sonilo")
     return {
         "status": "ok",
         "message": "Configuration updated successfully",

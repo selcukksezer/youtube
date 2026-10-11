@@ -31,7 +31,6 @@ def prompt_hash(prompt: str, aspect: str = "9:16", duration: float = 5.0, provid
 def cache_lookup(key: str, dest_path: str, base_dir: Optional[str] = None) -> Optional[str]:
     root = cache_root(base_dir)
     src = os.path.join(root, f"{key}.mp4")
-    meta = os.path.join(root, f"{key}.json")
     if not (os.path.isfile(src) and os.path.getsize(src) > 10_000):
         return None
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)

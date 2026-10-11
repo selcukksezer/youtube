@@ -5,6 +5,7 @@ idea via Pixabay (same API key) + Mixkit CDN + bundled ambient packs.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -13,6 +14,8 @@ from typing import Any, Dict, List, Optional
 import requests
 
 import config
+
+logger = logging.getLogger(__name__)
 
 VOICELAB_DIR = os.path.join(config.BASE_DIR, "voicelab")
 BGM_CACHE = os.path.join(config.BGM_DIR, "pixabay")
@@ -82,7 +85,8 @@ def search_pixabay_sfx(query: str, per_page: int = 10) -> List[Dict[str, Any]]:
         )
         r = requests.get(url, timeout=12, headers={"User-Agent": "ShortsVideoCreators/2.0"})
         if r.status_code != 200:
-            return search_pixabay_music(query, per_page=per_page)
+            logger.warning("Pixabay SFX search returned HTTP %s", r.status_code)
+            return []
         hits = r.json().get("hits") or []
         out = []
         for h in hits:
@@ -96,7 +100,8 @@ def search_pixabay_sfx(query: str, per_page: int = 10) -> List[Dict[str, Any]]:
                     "license": "Pixabay Content License",
                 })
         return out
-    except Exception:
+    except Exception as exc:
+        logger.warning("Pixabay SFX search failed: %s", exc)
         return []
 
 

@@ -30,6 +30,7 @@ Minimum keys for render:
 Optional:
 
 - `PEXELS_API_KEY`, `PIXABAY_API_KEY` — stock fallback
+- `TWELVELABS_API_KEY` — optional video-and-audio-aware clip suggestions. Enable the TwelveLabs checkbox in the clipper only for videos you are authorized to send to that provider.
 - `DB_BACKUP_PASSPHRASE` + `ENABLE_DB_BACKUP=true` — encrypted SQLite backup
 
 ## 2. Build & run (Docker)
@@ -58,6 +59,11 @@ pip install -r requirements.txt
 2. Run render → confirm MP4 in `output/<channel>/`.
 3. Check SEO operator pack: `GET /api/seo/operator-pack?keyword=Test`
 4. Check growth pack: `GET /api/growth/operator-pack?topic=Test`
+
+For the local media pipeline smoke, run `python -m pytest tests/test_render_pipeline_smoke.py -q`.
+It validates a procedural plan and real FFmpeg MP4 output, including a short 1080×1920 encode,
+using synthetic audio/video fixtures. It does not call live AI, TTS, or stock providers and does
+not upload to YouTube; validate those integrations separately in staging with approved credentials.
 
 ## 5. Operator upload (manual)
 

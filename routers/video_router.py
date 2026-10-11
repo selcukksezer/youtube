@@ -1,11 +1,13 @@
 """
 Video pipeline, gallery, events SSE, and render status router.
 """
+import hashlib
 import json
 import os
 import time
 import asyncio
 import subprocess
+import logging
 from typing import Any, Dict, Optional
 import imageio_ffmpeg
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Query
@@ -13,6 +15,7 @@ from fastapi.responses import StreamingResponse
 import config
 import database
 from api_models import VideoRenderRequest, PlanValidateRequest, PlanRepairRequest, ShareDecisionRequest
+from services.path_security import UnsafePathError, validate_task_id
 from server_core import (
     render_lock,
     is_rendering_active,
@@ -23,9 +26,19 @@ from server_core import (
 )
 from server_core import state
 from scenes.narration_validate import sanitize_plan_scene_descriptions
-from production.quality import validate_script_quality
+from production.quality import validate_scene_durations, validate_script_quality
 
 router = APIRouter(tags=["Video"])
+logger = logging.getLogger(__name__)
+
+
+def _gallery_thumbnail_cache_key(filename: str) -> str:
+    """Keep legacy render filenames within the secure thumbnail-ID contract."""
+    task_key = os.path.splitext(os.path.basename(filename or ""))[0]
+    try:
+        return validate_task_id(task_key)
+    except UnsafePathError:
+        return f"video_{hashlib.sha256(task_key.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _quality_gate_summary_for_filename(filename: str) -> Optional[Dict[str, Any]]:
@@ -77,7 +90,7 @@ def api_get_videos(limit: int = 50):
                 video["quality_gate"] = qg
             try:
                 from services.gallery_cache import gallery_cache
-                task_key = os.path.splitext(os.path.basename(video["filename"]))[0]
+                task_key = _gallery_thumbnail_cache_key(video["filename"])
                 thumb_path = gallery_cache.ensure_thumb(task_key, video_path)
                 if thumb_path:
                     video["thumbnail_url"] = gallery_cache.get_thumb_url(task_key)
@@ -117,14 +130,38 @@ def api_get_video_thumbnail(task_id: str):
 
 @router.post("/api/video/render")
 def api_render_video(req: VideoRenderRequest, background_tasks: BackgroundTasks):
+    if req.enable_sonilo_sfx and not str(getattr(config, "SONILO_API_KEY", "") or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="AI Görüntü SFX için Ayarlar bölümünde Sonilo API Key tanımlayın.",
+        )
+    quality_repair = None
     if req.plan is not None:
         script_quality = validate_script_quality(req.plan)
+        from production.script_repair import repair_script_quality_plan
+
+        repair_result = repair_script_quality_plan(
+            req.plan,
+            script_quality,
+            title=req.keyword,
+            niche_id=req.niche or req.plan.get("niche_id") or "1_news_flash",
+            language=req.language or "tr",
+        )
+        quality_repair = repair_result["quality_repair"]
+        if quality_repair["status"] in ("repaired", "partially_repaired"):
+            req.plan = repair_result["plan"]
+            req.keyword = req.plan.get("title") or req.keyword
+            script_quality = repair_result["script_quality"]
+            req.plan.setdefault("meta", {})
+            req.plan["meta"]["script_quality"] = script_quality
+            req.plan["meta"]["script_quality_repair"] = quality_repair
         if script_quality.get("hard_fail"):
             raise HTTPException(
                 status_code=422,
                 detail={
                     "message": "Senaryo üretim kalite kapısından geçemedi.",
                     "script_quality": script_quality,
+                    "script_quality_repair": quality_repair,
                 },
             )
 
@@ -136,8 +173,17 @@ def api_render_video(req: VideoRenderRequest, background_tasks: BackgroundTasks)
             )
         state.is_rendering_active = True
 
-    background_tasks.add_task(process_video_task, req)
-    return {"status": "started", "message": "Video rendering pipeline launched."}
+    try:
+        background_tasks.add_task(process_video_task, req)
+    except Exception:
+        with state.render_lock:
+            state.is_rendering_active = False
+        raise
+    return {
+        "status": "started",
+        "message": "Video rendering pipeline launched.",
+        "script_quality_repair": quality_repair,
+    }
 
 
 @router.get("/api/events")
@@ -331,6 +377,101 @@ def _plan_gate_result(
     plan_in = dict(raw or {})
     fixes: list = []
     repaired = False
+    raw_scenes = plan_in.get("scenes")
+    scene_shape_invalid = raw_scenes is not None and (
+        not isinstance(raw_scenes, list)
+        or any(not isinstance(scene, dict) for scene in raw_scenes)
+    )
+    scene_rows = (
+        [scene for scene in raw_scenes if isinstance(scene, dict)]
+        if isinstance(raw_scenes, list)
+        else []
+    )
+    _duration, duration_issues = validate_scene_durations(scene_rows)
+    intent_issues = [
+        f"scene_{index}_visual_intent_invalid"
+        for index, scene in enumerate(scene_rows)
+        if scene.get("visual_intent") is not None
+        and not isinstance(scene.get("visual_intent"), dict)
+    ]
+    narration_issues = [
+        f"scene_{index}_narration_invalid"
+        for index, scene in enumerate(scene_rows)
+        if not isinstance(scene.get("narration"), str)
+    ]
+    description_issues = [
+        f"scene_{index}_visual_description_invalid"
+        for index, scene in enumerate(scene_rows)
+        if not isinstance(scene.get("scene_description"), str)
+    ]
+    text_issues = narration_issues + description_issues
+    if scene_shape_invalid or duration_issues or intent_issues or text_issues:
+        script_quality = validate_script_quality(plan_in)
+        quality_repair = {
+            "status": "not_needed",
+            "findings_before": [],
+            "findings_after": [],
+        }
+        if auto_repair:
+            from production.script_repair import repair_script_quality_plan
+
+            repair_result = repair_script_quality_plan(
+                plan_in,
+                script_quality,
+                title=title,
+                niche_id=niche,
+                language=language,
+            )
+            quality_repair = repair_result["quality_repair"]
+            if quality_repair["status"] in ("repaired", "partially_repaired"):
+                result = _plan_gate_result(
+                    repair_result["plan"],
+                    title=repair_result["plan"].get("title") or title,
+                    niche=niche,
+                    language=language,
+                    recompile=True,
+                    auto_repair=False,
+                )
+                result["quality_repair"] = quality_repair
+                result["repaired"] = True
+                result["plan"].setdefault("meta", {})
+                result["plan"]["meta"]["script_quality_repair"] = quality_repair
+                return result
+        narration_ok = not narration_issues and plan_narration_ok({
+            "scenes": [
+                {
+                    **scene,
+                    "narration": str(scene.get("narration") or ""),
+                }
+                for scene in scene_rows
+            ]
+        })
+        plan_in.setdefault("meta", {})
+        plan_in["meta"]["script_quality"] = script_quality
+        plan_in["meta"]["render_allowed"] = (
+            narration_ok and not script_quality.get("hard_fail")
+        )
+        plan_in["meta"]["script_quality_repair"] = quality_repair
+        return {
+            "ok": narration_ok,
+            "narration_ok": narration_ok,
+            "repaired": False,
+            "fixes": [],
+            "narration_integrity": [],
+            "scene_continuity_advisories": [],
+            "script_quality": script_quality,
+            "quality_repair": quality_repair,
+            "pre_render_score": {
+                "ok": False,
+                "score": 0,
+                "issues": (
+                    ["scenes_invalid"] if scene_shape_invalid else []
+                ) + duration_issues + intent_issues + text_issues,
+                "phase": "pre",
+            },
+            "plan": plan_in,
+            "plan_narration_ok": narration_ok,
+        }
 
     if auto_repair and plan_in.get("scenes"):
         plan_in, fixes, repaired = apply_auto_repair_if_needed(plan_in)
@@ -340,7 +481,10 @@ def _plan_gate_result(
             from scenes.enrichment import enrich_plan_scenes
             plan_in = enrich_plan_scenes(plan_in, lang=language, niche_id=niche)
         except Exception:
-            pass
+            logger.warning(
+                "Scene enrichment failed during plan validation; continuing without enrichment",
+                exc_info=True,
+            )
 
     if recompile:
         director = compile_director_plan(
@@ -365,6 +509,29 @@ def _plan_gate_result(
     plan_out = sanitize_plan_scene_descriptions(plan_out or {})
     scene_continuity_advisories = detect_repeated_topic_discontinuities(plan_out.get("scenes") or [])
     script_quality = validate_script_quality(plan_out)
+    quality_repair = {
+        "status": "not_needed",
+        "findings_before": [],
+        "findings_after": [],
+    }
+    if auto_repair:
+        from production.script_repair import repair_script_quality_plan
+
+        repair_result = repair_script_quality_plan(
+            plan_out,
+            script_quality,
+            title=title,
+            niche_id=niche,
+            language=language,
+        )
+        quality_repair = repair_result["quality_repair"]
+        if quality_repair["status"] in ("repaired", "partially_repaired"):
+            plan_out = repair_result["plan"]
+            director = repair_result["director"]
+            script_quality = repair_result["script_quality"]
+            scene_continuity_advisories = detect_repeated_topic_discontinuities(
+                plan_out.get("scenes") or []
+            )
 
     integrity = check_narration_integrity(director)
     pre = pre_render_score(director)
@@ -373,6 +540,12 @@ def _plan_gate_result(
         if i.startswith("fragment") or i.startswith("low_words")
         or i.startswith("empty_narration") or i.startswith("no_terminal")
     ]
+    plan_out.setdefault("meta", {})
+    plan_out["meta"]["script_quality"] = script_quality
+    plan_out["meta"]["render_allowed"] = bool(
+        not narr_block and not script_quality.get("hard_fail")
+    )
+    plan_out["meta"]["script_quality_repair"] = quality_repair
     return {
         "ok": not narr_block,
         "narration_ok": not narr_block,
@@ -381,6 +554,7 @@ def _plan_gate_result(
         "narration_integrity": integrity,
         "scene_continuity_advisories": scene_continuity_advisories,
         "script_quality": script_quality,
+        "quality_repair": quality_repair,
         "pre_render_score": pre,
         "plan": plan_out,
         "plan_narration_ok": plan_narration_ok(plan_out),
@@ -437,6 +611,7 @@ def repair_plan(req: PlanRepairRequest):
             "narration_integrity": gate["narration_integrity"],
             "scene_continuity_advisories": gate["scene_continuity_advisories"],
             "script_quality": gate["script_quality"],
+            "quality_repair": gate.get("quality_repair"),
             "pre_render_score": gate["pre_render_score"],
             "plan_narration_ok": plan_narration_ok(gate["plan"]),
         }
@@ -561,6 +736,41 @@ def get_database_videos():
     return {"status": "ok", "videos": videos, "stats": stats}
 
 
+@router.post("/api/video/title-ideas/refine")
+def api_refine_video_title_idea(payload: Dict[str, Any]):
+    """Refines a selected post-render title using concise creator feedback."""
+    current_title = payload.get("current_title")
+    feedback = payload.get("feedback")
+    summary = payload.get("summary", "")
+    language = payload.get("language", "tr")
+    if not all(isinstance(value, str) for value in (current_title, feedback, summary, language)):
+        raise HTTPException(
+            status_code=422,
+            detail="current_title, feedback, summary ve language metin olmalı.",
+        )
+
+    from services.video_title_ideas import (
+        TitleIdeaRefinementError,
+        TitleIdeaRefinementUnavailable,
+        refine_video_title_idea,
+    )
+
+    try:
+        refinement = refine_video_title_idea(
+            current_title=current_title,
+            feedback=feedback,
+            summary=summary,
+            language=language,
+        )
+    except TitleIdeaRefinementUnavailable as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+    except TitleIdeaRefinementError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    return {"status": "ok", "refinement": refinement}
+
+
 @router.post("/api/script/virality_audit")
 def api_audit_script_virality(payload: Dict[str, Any]):
     """8-signal virality and slop audit adapted from Anil-matcha highlights engine."""
@@ -579,23 +789,69 @@ def api_clipper_analyze(payload: Dict[str, Any]):
     if not url:
         raise HTTPException(status_code=400, detail="YouTube URL gerekli.")
 
+    from services.multimodal_clipper import (
+        MultimodalConfigurationError,
+        analyze_video_highlights,
+        multimodal_analysis_requested,
+    )
+    try:
+        use_multimodal = multimodal_analysis_requested(payload)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    if use_multimodal and not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="TwelveLabs analizi için HTTP(S) video URL gerekli.")
+
     try:
         from services.youtube_clipper import youtube_clipper
         info = youtube_clipper.extract_youtube_info(url)
-        # Fetch subtitles or transcribe
-        subs = youtube_clipper.fetch_subtitles_or_transcribe(url, "")
-        transcript_text = " ".join(s["text"] for s in subs) if subs else info.get("description", "")
         duration = float(info.get("duration") or 300)
-        raw_highlights = youtube_clipper.detect_highlights_with_llm(
-            transcript_text=transcript_text,
-            num_clips=max(1, min(5, num_clips)),
-            video_duration=duration,
-        )
+        if use_multimodal:
+            try:
+                raw_highlights = analyze_video_highlights(
+                    url,
+                    video_duration=duration,
+                    num_clips=num_clips,
+                )
+            except MultimodalConfigurationError as err:
+                raise HTTPException(status_code=503, detail=str(err)) from err
+            except ValueError as err:
+                raise HTTPException(status_code=400, detail=str(err)) from err
+            except Exception as err:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"TwelveLabs video analizi başarısız: {err}",
+                ) from err
+        else:
+            from services.youtube_clipper import normalize_transcription_hotwords
+            try:
+                hotwords = normalize_transcription_hotwords(payload.get("hotwords", ""))
+            except ValueError as err:
+                raise HTTPException(status_code=400, detail=str(err)) from err
+            subs = youtube_clipper.fetch_subtitles_or_transcribe(
+                url,
+                "",
+                hotwords=hotwords,
+            )
+            transcript_text = youtube_clipper.format_transcript_segments(subs)
+            if not transcript_text:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Videoda klip zamanlarını belirlemek için kullanılabilir zaman damgalı altyazı bulunamadı.",
+                )
+            raw_highlights = youtube_clipper.detect_highlights_with_llm(
+                transcript_text=transcript_text,
+                num_clips=max(1, min(5, num_clips)),
+                video_duration=duration,
+            )
+            raw_highlights = youtube_clipper.ground_highlights_in_transcript(
+                raw_highlights,
+                subs,
+            )
         from services.highlight_clipper import select_highlights
         words = [
             {"w": row.get("text") or "", "s": row.get("start"), "e": row.get("end")}
             for row in (subs or [])
-        ]
+        ] if not use_multimodal else []
         highlights = select_highlights(
             raw_highlights,
             duration=duration,
@@ -609,6 +865,10 @@ def api_clipper_analyze(payload: Dict[str, Any]):
             "highlights": highlights,
             "words": words,
         }
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=f"Klip analizi başarısız: {e}") from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Clipper analizi başarısız: {e}")
 

@@ -9,10 +9,12 @@ import copy
 import re
 from typing import Any, Dict, List, Tuple
 
+# Keep the repair/scene-density target separate from production's hard floor.
 MIN_WORDS_PER_SCENE = 10
+HARD_MIN_WORDS_PER_SCENE = 7
 MIN_WORDS_DRAMA_SCENE = 12
 MIN_WORDS_PER_SENTENCE = 5
-MIN_WORDS_AI_TARGET = 10
+MIN_PLAN_WORDS = 85
 
 SHORTS_MIN_DURATION = 38.0
 SHORTS_MAX_DURATION = 60.0
@@ -37,26 +39,6 @@ _MOOD_LABEL_RE = re.compile(
     r"\*\*(?:URGENT|DRAMATIC|EPIC|CALM|MYSTERIOUS|ENERGETIC|DARK|BRIGHT|SECRET|WARNING|HOOK|CTA)\*\*\s*",
     re.IGNORECASE,
 )
-
-_TAIL_COMPLETIONS = {
-    "için": "bu kuralı uygula.",
-    "icin": "bu kuralı uygula.",
-    "asla": "bozamaz.",
-    "çünkü": "her şey bir seçimdir.",
-    "cunku": "her şey bir seçimdir.",
-    "onlara": "verdiğin anlamı belirler.",
-    "değil": "senin tavrını belirler.",
-    "degil": "senin tavrını belirler.",
-    "senin": "tavrını belirler.",
-    "ve": "devam eder.",
-    "ama": "gerçek budur.",
-    "ilan": "etti.",
-    "terk": "etti.",
-    "fark": "etti.",
-    "kabul": "etti.",
-    "yardım": "etti.",
-    "teslim": "oldu.",
-}
 
 _FRAGMENT_ENDING_RE = re.compile(
     r"(?:çünkü|asla|ama|ve|için|senin|kendi|ise|derin|olan|hiçbir|burada|"
@@ -121,17 +103,6 @@ def _strip_dangling_clause(text: str) -> Tuple[str, bool]:
     return " ".join(words), stripped
 
 
-def _append_minimal_completion(text: str) -> str:
-    text = (text or "").strip().rstrip(",;:")
-    words = text.split()
-    if not words:
-        return "Bunu aklında tut."
-    tail = words[-1].lower().rstrip(".,!?;:")
-    suffix = _TAIL_COMPLETIONS.get(tail, "Bunu aklında tut.")
-    base = text.rstrip(".!? ")
-    return _ensure_terminal(f"{base} {suffix}")
-
-
 _MOOD_ONLY_RE = re.compile(
     r"^(?:urgent|dramatic|epic|calm|mysterious|energetic|dark|bright|tense|secret|warning|hook|cta)"
     r"(?:\s+(?:urgent|dramatic|epic|calm|mysterious|energetic|dark|bright|tense|energetic))?\s*[.!?]*$",
@@ -139,14 +110,16 @@ _MOOD_ONLY_RE = re.compile(
 )
 
 
-def scene_narration_usable(text: str) -> bool:
+def scene_narration_usable(
+    text: str, *, min_words: int = MIN_WORDS_PER_SCENE
+) -> bool:
     """True when narration has enough semantic content for a Shorts scene."""
     raw = (text or "").strip()
     if not raw or raw in {".", "-", "—", "..."}:
         return False
     norm = normalize_narration_for_validation(raw)
     words = norm.split()
-    if len(words) < MIN_WORDS_PER_SCENE:
+    if len(words) < min_words:
         return False
     if _MOOD_ONLY_RE.match(norm):
         return False
@@ -235,11 +208,20 @@ def sanitize_plan_scene_descriptions(plan: Dict[str, Any]) -> Dict[str, Any]:
     return plan
 
 
-def plan_narration_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0) -> bool:
+def plan_narration_usable(
+    scenes: List[Dict[str, Any]],
+    *,
+    min_ratio: float = 1.0,
+    min_words: int = MIN_WORDS_PER_SCENE,
+) -> bool:
     """All scenes must pass scene_narration_usable (guards AI placeholder / half-empty plans)."""
     if not scenes:
         return False
-    good = sum(1 for s in scenes if scene_narration_usable(s.get("narration") or ""))
+    good = sum(
+        1
+        for s in scenes
+        if scene_narration_usable(s.get("narration") or "", min_words=min_words)
+    )
     return good >= max(1, int(len(scenes) * min_ratio))
 
 
@@ -247,7 +229,7 @@ def plan_needs_procedural_inject(scenes: List[Dict[str, Any]]) -> bool:
     """Director/render inject — empty, placeholder visuals, or uniform AI stub narrations."""
     if not scenes:
         return True
-    if not plan_narration_usable(scenes):
+    if not plan_narration_usable(scenes, min_words=HARD_MIN_WORDS_PER_SCENE):
         return True
     bad_desc = 0
     word_counts: List[int] = []
@@ -259,9 +241,6 @@ def plan_needs_procedural_inject(scenes: List[Dict[str, Any]]) -> bool:
             bad_desc += 1
         word_counts.append(len(normalize_narration_for_validation(s.get("narration") or "").split()))
     if bad_desc >= max(1, len(scenes) // 2):
-        return True
-    avg = sum(word_counts) / max(1, len(word_counts))
-    if max(word_counts) < MIN_WORDS_PER_SCENE and avg < MIN_WORDS_AI_TARGET:
         return True
     return False
 
@@ -277,7 +256,9 @@ def plan_quality_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0)
     for s in scenes:
         norm = normalize_narration_for_validation(s.get("narration") or "")
         word_counts.append(len(norm.split()))
-        narr_ok = scene_narration_usable(s.get("narration") or "")
+        narr_ok = scene_narration_usable(
+            s.get("narration") or "", min_words=HARD_MIN_WORDS_PER_SCENE
+        )
         desc = (s.get("scene_description") or "").strip()
         if not desc and s.get("search_queries"):
             desc = str((s.get("search_queries") or [""])[0])
@@ -286,11 +267,12 @@ def plan_quality_usable(scenes: List[Dict[str, Any]], *, min_ratio: float = 1.0)
             good += 1
     if good < max(1, int(len(scenes) * min_ratio)):
         return False
-    # Reject AI-style stub plans: any scene under 8 words or average below target
-    if any(w < 8 for w in word_counts):
+    total_words = sum(word_counts)
+    if total_words < MIN_PLAN_WORDS or any(
+        w < HARD_MIN_WORDS_PER_SCENE for w in word_counts
+    ):
         return False
-    avg = sum(word_counts) / max(1, len(word_counts))
-    return avg >= MIN_WORDS_AI_TARGET
+    return True
 
 
 def scene_narration_issues(text: str, *, normalized: bool = False) -> List[str]:
@@ -364,17 +346,10 @@ def auto_repair_scene_narration(narration: str) -> Tuple[str, List[str]]:
         fixes.append("added_terminal")
 
     if scene_narration_issues(text, normalized=True):
-        words = text.split()
-        if len(words) < MIN_WORDS_PER_SCENE:
-            completed = _append_minimal_completion(text)
-            if not scene_narration_issues(completed, normalized=True):
-                text = completed
-                fixes.append("appended_completion")
-            else:
-                fixed = trim_to_valid_sentences(text)
-                if fixed and not scene_narration_issues(fixed, normalized=True):
-                    text = fixed
-                    fixes.append("trimmed_to_valid")
+        fixed = trim_to_valid_sentences(text)
+        if fixed and not scene_narration_issues(fixed, normalized=True):
+            text = fixed
+            fixes.append("trimmed_to_valid")
 
     if text and not scene_narration_issues(text, normalized=True):
         return text, fixes
@@ -404,16 +379,42 @@ def auto_repair_scenes(scenes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any
 
         if scene_narration_issues(sc.get("narration") or ""):
             words = (sc.get("narration") or "").split()
-            if len(words) < MIN_WORDS_PER_SCENE and i + 1 < len(scenes):
-                nxt = (scenes[i + 1].get("narration") or "").strip()
-                merged = f"{sc['narration'].rstrip('.!?')} {nxt.lstrip()}"
+            if len(words) < MIN_WORDS_PER_SCENE and len(scenes) > 1:
+                target_index = i if i + 1 < len(scenes) else i - 1
+                source_index = target_index + 1
+                target = scenes[target_index]
+                source = scenes[source_index]
+                left = (target.get("narration") or "").strip()
+                right = (source.get("narration") or "").strip()
+                merged = f"{left} {right}".strip()
                 merged, mfixes = auto_repair_scene_narration(merged)
-                sc["narration"] = merged
-                dur = float(sc.get("duration") or 3.0) + float(scenes[i + 1].get("duration") or 3.0)
-                sc["duration"] = round(dur, 1)
-                scenes.pop(i + 1)
-                fixes.append(f"merged_scene_{i}_with_{i + 1}")
-                fixes.extend(f"scene_{i}:{f}" for f in mfixes)
+                target["narration"] = merged
+                target["duration"] = round(
+                    float(target.get("duration") or 3.0)
+                    + float(source.get("duration") or 3.0),
+                    1,
+                )
+                descriptions = [
+                    str(target.get("scene_description") or "").strip(),
+                    str(source.get("scene_description") or "").strip(),
+                ]
+                descriptions = list(dict.fromkeys(value for value in descriptions if value))
+                if descriptions:
+                    target["scene_description"] = "; ".join(descriptions)
+                queries = []
+                for query in (
+                    list(target.get("search_queries") or [])
+                    + list(source.get("search_queries") or [])
+                ):
+                    clean_query = str(query or "").strip()
+                    if clean_query and clean_query not in queries:
+                        queries.append(clean_query)
+                if queries:
+                    target["search_queries"] = queries[:4]
+                scenes.pop(source_index)
+                fixes.append(f"merged_scene_{target_index}_with_{source_index}")
+                fixes.extend(f"scene_{target_index}:{f}" for f in mfixes)
+                i = target_index
                 continue
 
         i += 1

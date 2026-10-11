@@ -9,7 +9,7 @@ Ensures consecutive scenes in a Short do not use visually redundant stock assets
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 
 
 def compute_clip_fingerprint(clip: Dict[str, Any]) -> Dict[str, Any]:
@@ -30,7 +30,7 @@ def compute_clip_fingerprint(clip: Dict[str, Any]) -> Dict[str, Any]:
 def is_visually_too_similar(clip_a: Dict[str, Any], clip_b: Dict[str, Any]) -> bool:
     """
     Evaluates whether two candidate clips are too similar to be placed back-to-back.
-    Returns True if either the same creator produced both, or both have identical queries and color tones.
+    Returns True for the same creator or repeated queries without explicitly different color tones.
     """
     if not clip_a or not clip_b:
         return False
@@ -42,12 +42,86 @@ def is_visually_too_similar(clip_a: Dict[str, Any], clip_b: Dict[str, Any]) -> b
     if fp_a["creator_id"] and fp_b["creator_id"] and fp_a["creator_id"] == fp_b["creator_id"]:
         return True
 
-    # 2. Identical search query and identical dominant color tone
+    # Unknown tone metadata should not make an identical query appear diverse.
     if fp_a["query"] and fp_a["query"] == fp_b["query"]:
-        if fp_a["color_tone"] and fp_a["color_tone"] == fp_b["color_tone"] and fp_a["color_tone"] != "neutral":
+        if (
+            fp_a["color_tone"] == fp_b["color_tone"]
+            or "neutral" in (fp_a["color_tone"], fp_b["color_tone"])
+        ):
             return True
 
     return False
+
+
+def diversify_scene_search_queries(scenes: List[Dict[str, Any]]) -> int:
+    """Prioritize an existing alternate query when adjacent scenes repeat a visual."""
+    adjusted_count = 0
+    previous_visual: Optional[Dict[str, Any]] = None
+
+    for scene in scenes:
+        intent = scene.get("visual_intent")
+        raw_queries = scene.get("search_queries")
+        if not raw_queries and isinstance(intent, dict):
+            raw_queries = intent.get("search_queries")
+        if isinstance(raw_queries, str):
+            raw_queries = [raw_queries]
+        if not isinstance(raw_queries, (list, tuple)):
+            previous_visual = None
+            continue
+
+        queries = [
+            query.strip()
+            for query in raw_queries
+            if isinstance(query, str) and query.strip()
+        ]
+        if not queries:
+            previous_visual = None
+            continue
+
+        color_tone = (
+            scene.get("dominant_color")
+            or scene.get("color_tone")
+            or (intent.get("color_tone") if isinstance(intent, dict) else None)
+            or "neutral"
+        )
+        color_tone = str(color_tone).strip().casefold() or "neutral"
+        current_visual = {"query": queries[0], "color_tone": color_tone}
+
+        if previous_visual and is_visually_too_similar(previous_visual, current_visual):
+            alternatives = [
+                {"query": query, "color_tone": color_tone}
+                for query in queries[1:]
+                if query.casefold() != queries[0].casefold()
+            ]
+            adjusted_pair = enforce_visual_clip_diversity(
+                [previous_visual, current_visual],
+                candidate_pools={1: alternatives},
+            )
+            selected_query = adjusted_pair[1]["query"]
+            if selected_query != queries[0]:
+                reordered = [selected_query] + [
+                    query for query in queries if query.casefold() != selected_query.casefold()
+                ]
+                scene["search_queries"] = reordered
+                if isinstance(intent, dict):
+                    intent_queries = intent.get("search_queries")
+                    if isinstance(intent_queries, list) and any(
+                        isinstance(query, str)
+                        and query.casefold() == selected_query.casefold()
+                        for query in intent_queries
+                    ):
+                        intent["search_queries"] = [selected_query] + [
+                            query for query in intent_queries
+                            if not isinstance(query, str)
+                            or query.casefold() != selected_query.casefold()
+                        ]
+                scene["visual_diversity_adjusted"] = True
+                current_visual = {"query": selected_query, "color_tone": color_tone}
+                adjusted_count += 1
+
+        previous_visual = current_visual
+
+    return adjusted_count
 
 
 def enforce_visual_clip_diversity(

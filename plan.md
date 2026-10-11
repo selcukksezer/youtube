@@ -99,10 +99,9 @@ Bu belge, **ShortsVideoCreators** üretim motorunun tüm bileşenlerini 20 açı
     - 32.5 ✅ 54 Hibrit Niş Kanonik Çözümleyicisi (services/niche_topic_vault.py)
     - 32.6 ✅ Test ve Kalite Doğrulama Matrisi
 33. [✅ Bölüm 33: Referans Koddan Geliştirme Planı](#bölüm-33-referans-koddan-geliştirme-planı)
-34. [✅ Bölüm 34: Yerel Sesli Video Üretimi (MiniMax-H3) ve Genel API Kaynak Kataloğu (Public-APIs)](#bölüm-34-yerel-sesli-video-üretimi-minimax-h3-ve-genel-api-kaynak-kataloğu-public-apis)
-    - 34.1 ✅ Yerel MiniMax-H3 (Hugging Face) Entegrasyon Mimarisi
-    - 34.2 ✅ Public APIs Entegrasyon Kataloğu ve Fallback Zinciri
-    - 34.3 ✅ Güvenlik, Donanım Gereksinimleri ve Uygulama Yol Haritası
+34. [✅ Bölüm 34: Genel API Kaynak Kataloğu (Public APIs)](#bölüm-34-genel-api-kaynak-kataloğu-public-apis)
+    - 34.1 ✅ Public APIs Entegrasyon Kataloğu ve Fallback Zinciri
+    - 34.2 ✅ Güvenlik ve Uygulama Doğrulaması
 
 ---
 
@@ -140,7 +139,7 @@ Bu kayıt, yukarıdaki ✅ tiklerin kodda, canlı render yolunda ve stüdyo aray
 | 6.4 SHA-256 | `visuals/fetch.py` dosya özetini SHA-256 tutar. | Aynı klip ikinci sahneye tekrar seçilmez. |
 | 6.5 K1 yeniden indirme | Skor 0.08 altındaysa yeni sorgu. `render_worker` ikinci geçişi de `fetch_scene_clip` ile yapar. | Otomatik. |
 | 31 Konu öner | `static/js/studio.js` `POST /api/topics/suggest`. | **Konu Öner** butonu `index.html` içinde bağlı. |
-| 32.2 Kelime bandı | `production/quality.py`: sert sınır 85–195, ideal 120–170. | Kapı renderı keser veya uyarıyla geçirir. Ayrı ekran yok. |
+| 32.2 Kelime bandı | `production/quality.py`: sert sınır 85–195, ideal 85–110; Director doğal TTS tavanını 110 kelimede uygular. | Kapı renderı keser veya uyarıyla geçirir. Ayrı ekran yok. |
 | 32.3 Dolgu | `_FILLER_RE` eşleşmesi `warnings` listesine gider, `issues` listesine gitmez. | CTA cümlesi tek başına renderı düşürmez. |
 | 32.4 Esneklik | `render_worker.py` `non_fatal` listesi planla aynı. Sahne sayısı 4 ve üzeriyse yumuşak sapma geçer. | Kullanıcı hata kutusunda sert reddi görür. |
 | 32.5 Hibrit niş | `cosmic_epic_hans_zimmer` ve `mystery_earth_zoom` `NICHE_ALIASES` içinde. | Stüdyo niş listesinden seçilir. |
@@ -2182,7 +2181,7 @@ Bu bölüm, uçtan uca fiziksel MP4 çıktısı ve format doğrulaması (`tests/
 | **ADR-005** | Lisans Denetimi | Katı Manifest + Self-Healing Fallback | Hata Fırlatıp İşi Durdurma | %59'da render'ın iptal olması kullanıcı deneyimini mahveder. Bilinmeyen varlıklar otomatik `AI_GENERATED` / `CC0` atanarak kurtarılır. |
 | **ADR-006** | Niş Mimarisi | Kanonik 54 Niş Takma Ad Haritası | Serbest Metin veya LLM Tahmini | Kullanıcı veya API farklı niş adları girdiğinde sistem çökmek yerine deterministik kanonik profile haritalanır. |
 | **ADR-007** | Veri Güvenliği | AES-256-GCM + RAM Temizliği + Log Redaksiyonu | Düz Metin `.env` ve Ham Loglar | Token sızıntılarını ve log/SSE üzerinden API anahtarı ifşasını sıfıra indirir. |
-| **ADR-008** | Acil Durum API | MiniMax-H3 Yerel + Public-APIs Fallback | Tek Sağlayıcı Bağımlılığı | Harici API kesintilerinde veya kota dolumlarında render akışının sıfır maliyetle devam etmesini sağlar. |
+| **ADR-008** | Acil Durum API | Public-APIs Fallback Kataloğu | Tek Sağlayıcı Bağımlılığı | Harici API kesintilerinde veya kota dolumlarında desteklenen açık API fallback'leri kullanılabilir. |
 
 ---
 
@@ -3410,25 +3409,11 @@ Her madde kendi testini getirir. Ürün kodu bu bölüm yazılırken değiştiri
 
 ---
 
-## ✅ BÖLÜM 34: YEREL SESLİ VİDEO ÜRETİMİ (MINIMAX-H3) VE GENEL API KAYNAK KATALOĞU (PUBLIC-APIS)
+## ✅ BÖLÜM 34: GENEL API KAYNAK KATALOĞU (PUBLIC APIS)
 
-Bu bölüm, harici kota/maliyet bağımlılıklarını sıfırlamak ve sistemin kendi kendine yeten (self-hosted / zero-cost) üretim gücünü artırmak amacıyla planlanmış ve uygulanmıştır.
+Bu bölüm, doğrulanmış ve kimlik doğrulaması gerektirmeyen açık API fallback'lerini belgeler.
 
-### 34.1 ✅ Yerel MiniMax-H3 (Hugging Face) Entegrasyon Mimarisi
-
-- **Model Tanımı:** MiniMax-H3 (Hugging Face: `MiniMaxAI/MiniMax-H3`), yüksek kaliteli doğal konuşma/ses ve senkronize video üretebilen açık ağırlıklı multimodal yapay zeka modelidir.
-- **Yerel Çalışma Prensibi (Local-First):**
-  - **Servis Modülü:** `services/minimax_h3_local.py`
-  - **İletişim:** `http://127.0.0.1:30010` üzerinden çalışan yerel SGLang motoru (`scripts/start_minimax_h3_local.ps1`).
-  - **VRAM & Bellek Yönetimi:**
-    - GPU bellek tespiti (`hardware_detector.py`) ile VRAM 16GB+ ise FP16, 8-12GB arası ise 4-bit / 8-bit kuantizasyon (AWQ / bitsandbytes) profili önerilir.
-    - Düşük VRAM (<8GB) veya CPU sistemlerde kilitlenmeyi önlemek için otomatik Edge-TTS + FFmpeg FilterComplex fallback'e devredilir.
-  - **Üretim Akışı:**
-    1. Metin/anlatım (`narration_text`) ve sahne duygusu (`mood`) yerel MiniMax-H3 motoruna iletilir.
-    2. Motor, doğal ses dalgasını ve dudak/hareket senkronize video karesi dizisini doğrudan diskteki geçici dizine kaydeder (`output/.../s00x_minimax_h3.mp4`).
-    3. Elde edilen yerel klip, `visuals/ai_video/providers/minimax_h3.py` ve `services/minimax_h3_local.py` üzerinden hatta bağlanır.
-
-### 34.2 ✅ Public APIs Entegrasyon Kataloğu ve Fallback Zinciri
+### 34.1 ✅ Public APIs Entegrasyon Kataloğu ve Fallback Zinciri
 
 - **Kaynak Depo:** `https://github.com/public-apis/public-apis`
 - **Entegrasyon Amacı:** Kota aşımı, internet kesintisi veya harici servislerin (Gemini, Pollinations, Pexels, vb.) 429 verdiği durumlarda, doğrulanmış ve kimlik doğrulama gerektirmeyen (Auth: No / HTTPS: Yes) ücretsiz açık API'lerin devreye alınması.
@@ -3446,11 +3431,10 @@ Bu bölüm, harici kota/maliyet bağımlılıklarını sıfırlamak ve sistemin 
 - **Circuit Breaker Entegrasyonu:**
   - `system_resilience.py:CircuitBreaker.get_public_fallback_endpoint` ve `execute_with_fallback` ile harici API arızalandığında otomatik devreye girer.
 
-### 34.3 ✅ Güvenlik, Donanım Gereksinimleri ve Uygulama Doğrulaması
+### 34.2 ✅ Güvenlik ve Uygulama Doğrulaması
 
 - **Uygulama Adımları Tamamlanma Kanıtı:**
-  1. ✅ **Adım 1:** `services/public_apis_catalog.py` oluşturuldu. 8 adet sıfır maliyetli ve keyless uç nokta devrede.
-  2. ✅ **Adım 2:** `system_resilience.py` (CircuitBreaker fallback köprüsü) ve `visuals/fetch.py` (Openverse / Met Museum telifsiz medya düşüş zinciri) bağlandı.
-  3. ✅ **Adım 3:** `services/minimax_h3_local.py` servis katmanı oluşturuldu. `assess_minimax_h3_hardware()` ile VRAM (8192 MB -> 4bit) ve yerel sunucu çevrimdışı/çevrimiçi kontrolü sağlandı.
-  4. ✅ **Adım 4:** Ön yüz Stüdyo motoru (`static/index.html` + `static/js/render-monitor.js`) içinde `minimax_h3` ve `mixed` seçenekleri bağlandı. `GET /api/system/minimax-h3/status` ve `GET /api/system/public-apis/status` uç noktaları eklendi.
-  5. ✅ **Adım 5:** Test paketi `tests/test_minimax_public_apis.py` oluşturuldu ve 10/10 test başarıyla geçti (Ran 10 tests in 4.542s, OK). Regresyon testleri (`test_batch3_completion_sprint_wiring`, `test_section7_system_resilience`, `test_scenario_contract_repair`) 26/26 yeşil.
+  1. ✅ `services/public_apis_catalog.py` açık API adapter'larını sağlar.
+  2. ✅ `system_resilience.py` CircuitBreaker fallback'lerini; `visuals/fetch.py` Openverse / Met Museum medya fallback'lerini kullanır.
+  3. ✅ `GET /api/system/public-apis/status` katalog durumunu sunar.
+  4. ✅ Public API, fallback ve artık kaldırılmış yerel video motoru rotaları `tests/test_minimax_public_apis.py` ile doğrulanır.

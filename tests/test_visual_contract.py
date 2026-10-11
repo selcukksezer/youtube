@@ -60,6 +60,15 @@ class TestVisualContract(unittest.TestCase):
         self.assertEqual(build_shot_queries(), [])
         self.assertEqual(queries_for_scene(existing=["nature stock footage"]), [])
 
+    def test_nonpositive_query_limit_returns_no_queries(self):
+        for narration in ("A storm destroys the city", "Gökdelenler rüzgarı nasıl keser"):
+            for max_queries in (0, -1):
+                with self.subTest(narration=narration, max_queries=max_queries):
+                    self.assertEqual(
+                        build_shot_queries(narration=narration, max_queries=max_queries),
+                        [],
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,8 @@ from visuals.ai_video.mixer import (
 from visuals.ai_video.prompt import build_cinematic_prompt
 from visuals.ai_video.cache import prompt_hash, cache_store, cache_lookup
 from visuals.ai_video import chain as ai_chain
+from visuals.ai_video.providers.agnes import AgnesVideoProvider
+from visuals.ai_video.providers import ALL_PROVIDER_CLASSES
 from visuals.ai_video.providers.fal import FalVideoProvider
 from visuals.ai_video.providers.huggingface import HuggingFaceVideoProvider
 from visuals.ai_video.providers.replicate import ReplicateVideoProvider
@@ -27,6 +29,7 @@ from visuals.ai_video.providers.higgsfield import (
     _clamp_duration,
     _aspect_ratio,
 )
+from visuals.ai_video.http_util import download_url, write_bytes
 
 
 class MixerTests(unittest.TestCase):
@@ -85,12 +88,188 @@ class CacheTests(unittest.TestCase):
             self.assertTrue(os.path.isfile(dest))
 
 
+class HttpUtilityTests(unittest.TestCase):
+    def test_successful_download_replaces_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "clip.mp4")
+            with open(path, "wb") as fh:
+                fh.write(b"previous valid video" * 1000)
+
+            response = MagicMock()
+            response.__enter__.return_value = response
+            response.iter_content.return_value = [b"new video" * 2000]
+            with patch(
+                "visuals.ai_video.http_util.requests.get",
+                return_value=response,
+            ):
+                self.assertTrue(download_url("https://example.invalid/clip", path))
+
+            with open(path, "rb") as fh:
+                self.assertEqual(fh.read(), b"new video" * 2000)
+            self.assertEqual(os.listdir(td), ["clip.mp4"])
+
+    def test_interrupted_download_preserves_existing_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "clip.mp4")
+            previous = b"previous valid video" * 1000
+            with open(path, "wb") as fh:
+                fh.write(previous)
+
+            response = MagicMock()
+            response.__enter__.return_value = response
+
+            def interrupted_chunks(chunk_size):
+                yield b"x" * chunk_size
+                raise OSError("simulated interrupted transfer")
+
+            response.iter_content.side_effect = interrupted_chunks
+            with patch(
+                "visuals.ai_video.http_util.requests.get",
+                return_value=response,
+            ):
+                self.assertFalse(download_url("https://example.invalid/clip", path))
+
+            with open(path, "rb") as fh:
+                self.assertEqual(fh.read(), previous)
+            self.assertEqual(os.listdir(td), ["clip.mp4"])
+
+    def test_successful_bytes_replace_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "clip.mp4")
+            data = b"new video" * 2000
+            with open(path, "wb") as fh:
+                fh.write(b"previous valid video" * 1000)
+
+            self.assertTrue(write_bytes(data, path))
+
+            with open(path, "rb") as fh:
+                self.assertEqual(fh.read(), data)
+            self.assertEqual(os.listdir(td), ["clip.mp4"])
+
+    def test_rejected_small_bytes_preserve_existing_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = os.path.join(td, "clip.mp4")
+            previous = b"previous valid video" * 1000
+            with open(path, "wb") as fh:
+                fh.write(previous)
+
+            self.assertFalse(write_bytes(b"too small", path))
+
+            with open(path, "rb") as fh:
+                self.assertEqual(fh.read(), previous)
+            self.assertEqual(os.listdir(td), ["clip.mp4"])
+
+
 class AdapterMockTests(unittest.TestCase):
     def _fake_mp4(self, path):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "wb") as fh:
             fh.write(b"\x00" * 12_000)
         return True
+
+    @patch("visuals.ai_video.providers.agnes.download_url")
+    @patch("visuals.ai_video.providers.agnes.requests.get")
+    @patch("visuals.ai_video.providers.agnes.requests.post")
+    @patch(
+        "visuals.ai_video.providers.agnes.env_key",
+        side_effect=lambda *names: {
+            "AGNES_API_KEY": "agnes-test-key",
+            "AGNES_BASE_URL": "https://agnes.example/v1",
+            "AGNES_VIDEO_MODEL": "agnes-video-2.5-flash",
+        }.get(names[0], ""),
+    )
+    def test_agnes_video_25_adapter(self, _env_key, mock_post, mock_get, mock_dl):
+        mock_post.return_value = MagicMock(
+            status_code=202,
+            json=lambda: {"video_id": "task-test-123"},
+        )
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"status": "completed", "data": {"video_url": "https://example.com/a.mp4"}},
+        )
+        mock_dl.return_value = True
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "agnes.mp4")
+            result = AgnesVideoProvider().generate(
+                "cinematic mountain sunrise",
+                duration=15,
+                aspect="portrait",
+                seed=17,
+                output_path=out,
+            )
+
+            self.assertIsNotNone(result)
+            self.assertEqual(result.provider, "agnes")
+            self.assertEqual(result.model, "agnes-video-2.5-flash")
+            self.assertEqual(result.duration, 12.0)
+            self.assertEqual(result.aspect, "9:16")
+            submit_args = mock_post.call_args
+            self.assertEqual(submit_args.args[0], "https://agnes.example/v1/videos")
+            self.assertEqual(submit_args.kwargs["headers"]["Authorization"], "Bearer agnes-test-key")
+            payload = submit_args.kwargs["json"]
+            self.assertEqual(payload["mode"], "text")
+            self.assertEqual(payload["seconds"], "12")
+            self.assertEqual(payload["size"], "720P")
+            self.assertEqual(payload["aspect_ratio"], "9:16")
+            self.assertEqual(payload["seed"], 17)
+            self.assertNotIn("width", payload)
+            self.assertNotIn("num_frames", payload)
+            poll_url = mock_get.call_args.args[0]
+            self.assertIn("video_id=task-test-123", poll_url)
+            self.assertIn("model_name=agnes-video-2.5-flash", poll_url)
+            mock_dl.assert_called_once_with("https://example.com/a.mp4", out)
+            _env_key.assert_any_call("AGNES_API_KEY")
+
+    def test_agnes_availability_requires_explicit_api_key(self):
+        self.assertIn(AgnesVideoProvider, ALL_PROVIDER_CLASSES)
+        with patch("visuals.ai_video.providers.agnes.env_key", return_value=""):
+            self.assertFalse(AgnesVideoProvider().is_available())
+        with patch(
+            "visuals.ai_video.providers.agnes.env_key",
+            side_effect=lambda *names: "agnes-test-key" if names[0] == "AGNES_API_KEY" else "",
+        ):
+            self.assertTrue(AgnesVideoProvider().is_available())
+
+    @patch("visuals.ai_video.providers.agnes.download_url", return_value=True)
+    @patch("visuals.ai_video.providers.agnes.requests.get")
+    @patch("visuals.ai_video.providers.agnes.requests.post")
+    @patch(
+        "visuals.ai_video.providers.agnes.env_key",
+        side_effect=lambda *names: {
+            "AGNES_API_KEY": "agnes-key-1",
+            "AGNES_API_KEY_2": "agnes-key-2",
+            "AGNES_BASE_URL": "https://agnes.example/v1",
+            "AGNES_VIDEO_MODEL": "agnes-video-2.5-flash",
+        }.get(names[0], ""),
+    )
+    def test_agnes_rotates_keys_after_submit_and_poll_429(
+        self, _env_key, mock_post, mock_get, mock_dl
+    ):
+        mock_post.side_effect = [
+            MagicMock(status_code=429, text="rate limited"),
+            MagicMock(status_code=202, json=lambda: {"video_id": "task-rotated"}),
+        ]
+        mock_get.side_effect = [
+            MagicMock(status_code=429, text="rate limited"),
+            MagicMock(
+                status_code=200,
+                json=lambda: {"status": "completed", "url": "https://example.com/rotated.mp4"},
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "agnes-rotated.mp4")
+            result = AgnesVideoProvider().generate(
+                "cinematic mountain sunrise",
+                output_path=out,
+            )
+
+        self.assertIsNotNone(result)
+        submit_auth = [call.kwargs["headers"]["Authorization"] for call in mock_post.call_args_list]
+        poll_auth = [call.kwargs["headers"]["Authorization"] for call in mock_get.call_args_list]
+        self.assertEqual(submit_auth, ["Bearer agnes-key-1", "Bearer agnes-key-2"])
+        self.assertEqual(poll_auth, ["Bearer agnes-key-2", "Bearer agnes-key-1"])
+        mock_dl.assert_called_once_with("https://example.com/rotated.mp4", out)
+        _env_key.assert_any_call("AGNES_API_KEY_2")
 
     @patch("visuals.ai_video.providers.fal.download_url")
     @patch("visuals.ai_video.providers.fal.requests.post")

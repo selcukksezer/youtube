@@ -11,6 +11,8 @@ import shutil
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import config
@@ -24,6 +26,7 @@ from services.path_security import (
     sanitize_filename,
 )
 from services.gallery_cache import GalleryCache
+from routers.video_router import _gallery_thumbnail_cache_key, api_get_videos
 
 
 class TestChapter28PathSecurity(unittest.TestCase):
@@ -103,6 +106,51 @@ class TestChapter28PathSecurity(unittest.TestCase):
             validate_task_id("-rf")
         with self.assertRaises(UnsafePathError):
             validate_task_id("task;rm -rf")
+
+    def test_long_gallery_filename_maps_to_stable_safe_cache_key(self):
+        filename = f"{'long legacy render title ' * 4}.mp4"
+        cache_key = _gallery_thumbnail_cache_key(filename)
+
+        self.assertEqual(cache_key, _gallery_thumbnail_cache_key(filename))
+        self.assertEqual(validate_task_id(cache_key), cache_key)
+        self.assertLessEqual(len(cache_key), 64)
+        self.assertNotEqual(cache_key, filename[:-4])
+
+    def test_gallery_list_builds_thumbnail_for_long_legacy_filename(self):
+        filename = f"{'long legacy render title ' * 4}.mp4"
+        video_path = os.path.join(self.tmp_dir, filename)
+        with open(video_path, "wb") as handle:
+            handle.write(b"x" * 100_001)
+
+        with (
+            patch.object(config, "OUTPUT_DIR", self.tmp_dir),
+            patch("database.get_recent_videos", return_value=[{
+                "status": "completed",
+                "filename": filename,
+            }]),
+            patch("routers.video_router.imageio_ffmpeg.get_ffmpeg_exe", return_value="ffmpeg"),
+            patch(
+                "routers.video_router.subprocess.run",
+                return_value=SimpleNamespace(returncode=0),
+            ),
+            patch("routers.video_router._quality_gate_summary_for_filename", return_value=None),
+            patch(
+                "services.gallery_cache.gallery_cache.ensure_thumb",
+                return_value=os.path.join(self.tmp_dir, "thumb.jpg"),
+            ) as ensure_thumb,
+            patch(
+                "services.gallery_cache.gallery_cache.get_thumb_url",
+                side_effect=lambda task_key: f"/output/gallery_cache/{task_key}.jpg",
+            ),
+        ):
+            result = api_get_videos(limit=1)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(result["videos"]), 1)
+        self.assertIn("thumbnail_url", result["videos"][0])
+        cache_key = ensure_thumb.call_args.args[0]
+        self.assertTrue(cache_key.startswith("video_"))
+        self.assertEqual(validate_task_id(cache_key), cache_key)
 
     def test_sanitize_filename(self):
         self.assertEqual(sanitize_filename("my cool music (1).mp3"), "my_cool_music__1_.mp3")

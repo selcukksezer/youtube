@@ -2,12 +2,15 @@
 RSS News & Web Content Scanner for Automated Shorts (Items 1, 57, 122)
 Fetches breaking news from RSS/Atom feeds and formats them into viral question hooks.
 """
+import logging
 import re
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import requests
 
 from headline_transformer import convert_headline_to_question
+
+logger = logging.getLogger(__name__)
 
 # Popular news, tech, science, history & finance RSS feeds
 DEFAULT_RSS_FEEDS = {
@@ -60,7 +63,8 @@ def fetch_rss_feed(feed_url: str, max_items: int = 6) -> List[Dict[str, Any]]:
     try:
         resp = requests.get(feed_url, headers=headers, timeout=10)
         if resp.status_code != 200:
-            return _get_fallback_feed_items(feed_url)
+            logger.warning("RSS feed returned HTTP %s: %s", resp.status_code, feed_url)
+            return _get_fallback_feed_items()
 
         content = resp.content
         root = ET.fromstring(content)
@@ -119,14 +123,14 @@ def fetch_rss_feed(feed_url: str, max_items: int = 6) -> List[Dict[str, Any]]:
 
         if items:
             return items
-        return _get_fallback_feed_items(feed_url)
+        return _get_fallback_feed_items()
 
-    except Exception as e:
-        print(f"  [RSS Scanner] Warning for '{feed_url}': {e}")
-        return _get_fallback_feed_items(feed_url)
+    except Exception as exc:
+        logger.warning("RSS feed fetch failed for %s: %s", feed_url, exc)
+        return _get_fallback_feed_items()
 
 
-def _get_fallback_feed_items(feed_url: str) -> List[Dict[str, Any]]:
+def _get_fallback_feed_items() -> List[Dict[str, Any]]:
     """Safe fallback news items when external feed is rate-limited or unreachable."""
     return [
         {

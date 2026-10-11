@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from datetime import datetime, timezone
@@ -15,7 +17,6 @@ import requests
 
 from .license import License, LicenseInfo, attribution_line, is_commercial_safe
 from .palettes import family_for_niche
-from .providers import Candidate
 from .query_builder import build_shot_queries
 from .registry import is_used, mark_used, ordered_providers, reset_used, score_candidate, search_provider
 
@@ -129,6 +130,15 @@ def claim_job_asset(uid: str, file_hash: str) -> bool:
         if file_hash:
             _job_file_hashes.add(file_hash)
         return True
+
+
+def _rank_scored_candidates(scored: List[tuple]) -> List[tuple]:
+    best_by_uid = {}
+    for row in scored:
+        uid = row[1].uid
+        if uid not in best_by_uid or row[0] > best_by_uid[uid][0]:
+            best_by_uid[uid] = row
+    return sorted(best_by_uid.values(), key=lambda row: row[0], reverse=True)
 
 
 def add_manifest_entry(entry: Dict[str, Any]) -> None:
@@ -326,6 +336,7 @@ def _normalize_clip(
     width: int = 1080,
     height: int = 1920,
     fps: int = 30,
+    start_sec: float = 0.0,
 ) -> Optional[str]:
     """Crop/scale to 9:16. Stills get a cheap crop-pan, not zoompan."""
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
@@ -345,15 +356,20 @@ def _normalize_clip(
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an", dst,
         ]
     else:
+        seek_start = float(start_sec)
+        if not math.isfinite(seek_start) or seek_start < 0:
+            seek_start = 0.0
         vf = (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height},fps={fps},format=yuv420p"
         )
-        cmd = [
-            ffmpeg, "-y", "-loglevel", "error",
+        cmd = [ffmpeg, "-y", "-loglevel", "error"]
+        if seek_start > 0:
+            cmd.extend(["-ss", f"{seek_start:.3f}"])
+        cmd.extend([
             "-i", src, "-t", f"{dur:.3f}", "-vf", vf,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an", dst,
-        ]
+        ])
     try:
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
     except Exception as exc:
@@ -362,6 +378,158 @@ def _normalize_clip(
     if res.returncode != 0 or not (os.path.isfile(dst) and os.path.getsize(dst) > 10_000):
         return None
     return dst
+
+
+def _best_window_start_from_metrics(
+    metrics: List[Dict[str, float]],
+    target_duration: float,
+    source_duration: float,
+    *,
+    sample_interval: float = 0.5,
+    max_start_sec: float = 20.0,
+) -> float:
+    """Pick a sharp, properly exposed, steady window without changing its subject."""
+    if (
+        not math.isfinite(target_duration)
+        or not math.isfinite(source_duration)
+        or not math.isfinite(sample_interval)
+        or target_duration <= 0
+        or source_duration <= target_duration
+        or sample_interval <= 0
+    ):
+        return 0.0
+
+    frames_per_window = max(1, math.ceil(target_duration / sample_interval))
+    last_index = min(
+        len(metrics) - frames_per_window,
+        int((min(max_start_sec, source_duration - target_duration) + 1e-9) / sample_interval),
+    )
+    if last_index < 1:
+        return 0.0
+
+    best_score = float("-inf")
+    best_start = 0.0
+    for index in range(last_index + 1):
+        window = metrics[index:index + frames_per_window]
+        try:
+            sharpness = sum(float(row["sharpness"]) for row in window) / len(window)
+            brightness = sum(float(row["brightness"]) for row in window) / len(window)
+            motion = sum(float(row["motion"]) for row in window) / len(window)
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            continue
+        if not all(math.isfinite(value) for value in (sharpness, brightness, motion)):
+            continue
+
+        exposure_penalty = max(0.0, 60.0 - brightness) * 0.8
+        exposure_penalty += max(0.0, brightness - 210.0) * 0.8
+        score = sharpness * 1.6 - motion * 1.1 - exposure_penalty
+        if score > best_score:
+            best_score = score
+            best_start = float(metrics[index].get("time_sec", index * sample_interval))
+    return round(best_start, 2) if math.isfinite(best_score) else 0.0
+
+
+def _best_hook_window_start(
+    video_path: str,
+    target_duration: float,
+    source_duration: float,
+    *,
+    max_start_sec: float = 20.0,
+) -> float:
+    """Analyze low-resolution frames in a bounded prefix of the opening shot."""
+    from PIL import Image, ImageChops, ImageFilter, ImageStat
+
+    sample_interval = 0.5
+    scan_duration = min(source_duration, target_duration + max_start_sec)
+    frame_limit = int(math.floor(scan_duration / sample_interval)) + 1
+    frames_per_window = max(1, math.ceil(target_duration / sample_interval))
+    if frame_limit < frames_per_window or scan_duration <= target_duration:
+        return 0.0
+
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    with tempfile.TemporaryDirectory(prefix="shorts-hook-window-") as temp_dir:
+        pattern = os.path.join(temp_dir, "frame_%03d.jpg")
+        command = [
+            ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", video_path,
+            "-t", f"{scan_duration:.3f}",
+            "-vf", f"fps={1.0 / sample_interval:.3f},scale=120:-2:flags=area,format=gray",
+            "-frames:v", str(frame_limit),
+            "-q:v", "3",
+            pattern,
+        ]
+        try:
+            result = subprocess.run(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            print(f"    [visuals:hook-window] frame scan failed: {exc}")
+            return 0.0
+        if result.returncode != 0:
+            detail = result.stderr.decode("utf-8", errors="replace")[-300:]
+            print(f"    [visuals:hook-window] frame scan failed: {detail}")
+            return 0.0
+
+        frame_names = sorted(
+            name for name in os.listdir(temp_dir) if name.endswith(".jpg")
+        )
+        metrics: List[Dict[str, float]] = []
+        previous = None
+        for index, name in enumerate(frame_names):
+            frame_path = os.path.join(temp_dir, name)
+            try:
+                with Image.open(frame_path) as image:
+                    gray = image.convert("L")
+                    sharpness = ImageStat.Stat(gray.filter(ImageFilter.FIND_EDGES)).stddev[0]
+                    brightness = ImageStat.Stat(gray).mean[0]
+                    motion = (
+                        ImageStat.Stat(ImageChops.difference(gray, previous)).mean[0]
+                        if previous is not None
+                        else 0.0
+                    )
+                    metrics.append({
+                        "time_sec": index * sample_interval,
+                        "sharpness": sharpness,
+                        "brightness": brightness,
+                        "motion": motion,
+                    })
+                    previous = gray.copy()
+            except OSError as exc:
+                print(f"    [visuals:hook-window] unreadable sample {name}: {exc}")
+
+    return _best_window_start_from_metrics(
+        metrics,
+        target_duration,
+        source_duration,
+        sample_interval=sample_interval,
+        max_start_sec=max_start_sec,
+    )
+
+
+def _normalize_candidate(
+    src: str,
+    dst: str,
+    target_duration: float,
+    candidate: Any,
+    scene_index: int,
+    *,
+    optimize_hook: bool = True,
+) -> Optional[str]:
+    """Use the quality-selected source window for the opening stock shot only."""
+    start_sec = 0.0
+    source_duration = float(getattr(candidate, "duration", 0.0) or 0.0)
+    if (
+        optimize_hook
+        and scene_index == 0
+        and getattr(candidate, "kind", "") == "video"
+        and math.isfinite(source_duration)
+        and source_duration > target_duration + 1.0
+    ):
+        start_sec = _best_hook_window_start(src, target_duration, source_duration)
+    if start_sec > 0:
+        print(f"    [visuals:hook-window] opening shot starts at {start_sec:.2f}s")
+        return _normalize_clip(src, dst, target_duration, candidate.kind, start_sec=start_sec)
+    return _normalize_clip(src, dst, target_duration, candidate.kind)
 
 
 _K1_HARD_FLOOR = 0.03
@@ -379,7 +547,7 @@ def _procedural_enabled() -> bool:
     return os.getenv("ALLOW_PROCEDURAL_VISUALS", "").lower() in ("1", "true", "yes", "on")
 
 
-def _broaden_queries(qlist: List[str], niche_id: str, narration: str = "") -> List[str]:
+def _broaden_queries(qlist: List[str], niche_id: str) -> List[str]:
     """Shorter / more generic variants of the failed queries plus family-level themes."""
     out: List[str] = []
     for q in qlist:
@@ -504,7 +672,8 @@ def fetch_open_visual(
                     if sc > 0:
                         scored.append((sc, c, query))
 
-    scored.sort(key=lambda x: x[0], reverse=True)
+    scored = _rank_scored_candidates(scored)
+    hook_window_attempted = False
     for sc, cand, query in scored[:15]:
         if not cand.license or not is_commercial_safe(cand.license.license):
             continue
@@ -526,7 +695,16 @@ def fetch_open_visual(
                 except OSError:
                     pass
                 continue
-        norm = _normalize_clip(raw, out, target_duration, cand.kind)
+        norm = _normalize_candidate(
+            raw, out, target_duration, cand, scene_index,
+            optimize_hook=not hook_window_attempted,
+        )
+        if (
+            scene_index == 0
+            and cand.kind == "video"
+            and float(cand.duration or 0.0) > target_duration + 1.0
+        ):
+            hook_window_attempted = True
         try:
             if os.path.isfile(raw) and raw != norm:
                 os.remove(raw)
@@ -542,7 +720,6 @@ def fetch_open_visual(
         # 6.5 K1-Semantic narrative relevance validation (< 8% triggers narrative re-fetch)
         if not _expanded and cand.topic_match_score < 0.08 and len(narration.strip().split()) >= 3:
             print(f"    [visuals:k1] Candidate score ({cand.topic_match_score:.2f}) < 0.08 threshold, triggering K1 re-fetch...")
-            from .query_builder import build_shot_queries
             narrative_queries = build_shot_queries(
                 narration=narration,
                 scene_description=scene_description or narration,
@@ -575,7 +752,16 @@ def fetch_open_visual(
                                         except OSError:
                                             pass
                                         continue
-                                n_norm = _normalize_clip(n_raw, n_out, target_duration, nc.kind)
+                                n_norm = _normalize_candidate(
+                                    n_raw, n_out, target_duration, nc, scene_index,
+                                    optimize_hook=not hook_window_attempted,
+                                )
+                                if (
+                                    scene_index == 0
+                                    and nc.kind == "video"
+                                    and float(nc.duration or 0.0) > target_duration + 1.0
+                                ):
+                                    hook_window_attempted = True
                                 try:
                                     if os.path.isfile(n_raw) and n_raw != n_norm:
                                         os.remove(n_raw)
@@ -715,7 +901,7 @@ def fetch_open_visual(
 
     # Broaden queries once before giving up; real footage beats any placeholder.
     if not _expanded:
-        wide = [q for q in _broaden_queries(qlist, niche_id, narration) if q not in qlist]
+        wide = [q for q in _broaden_queries(qlist, niche_id) if q not in qlist]
         if wide:
             print(f"    [visuals] stock miss, retrying with broader queries: {wide[:4]}")
             got = fetch_open_visual(

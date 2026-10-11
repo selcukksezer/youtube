@@ -12,11 +12,10 @@ Provides:
 from __future__ import annotations
 
 import logging
-import math
 import os
 import subprocess
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import imageio_ffmpeg
 from services.path_security import validate_asset_path

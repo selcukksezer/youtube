@@ -34,7 +34,7 @@ class HuggingFaceVideoProvider(AIVideoProvider):
         model = env_key("HF_VIDEO_MODEL") or _DEFAULT_MODEL
         # Prefer InferenceClient when installed
         try:
-            from huggingface_hub import InferenceClient
+            from huggingface_hub import InferenceClient  # type: ignore[reportMissingImports]
             client = InferenceClient(provider="fal-ai", api_key=token)
             video = client.text_to_video(prompt, model=model)
             data = video if isinstance(video, (bytes, bytearray)) else getattr(video, "data", None) or bytes(video)

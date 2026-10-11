@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from services.whiteboard_animator import (
     _whiteboard_theme,
+    _whiteboard_hand_motion,
     _wrap_whiteboard_text,
     animate_whiteboard_clip,
     create_whiteboard_scene_clip,
@@ -110,6 +111,28 @@ class WhiteboardAnimatorTests(unittest.TestCase):
                 )
 
             self.assertIn("xfade=transition=wiperight", captured["filter"])
+            self.assertIn("[2:v]scale=180:270,hflip[hand]", captured["filter"])
+
+    def test_marker_motion_follows_linear_wipe_direction(self):
+        right_filter, right_x, _, right_enable = _whiteboard_hand_motion(
+            "wiperight", 540, 960, 0.15, 2.2
+        )
+        down_filter, down_x, down_y, down_enable = _whiteboard_hand_motion(
+            "wipedown", 540, 960, 0.15, 2.2
+        )
+        radial_filter, _, _, radial_enable = _whiteboard_hand_motion(
+            "radial", 540, 960, 0.15, 2.2
+        )
+
+        self.assertIn("hflip", right_filter)
+        self.assertIn("496.8 - (t - 0.15) / 2.20 * 496.8", right_x)
+        self.assertIn("between(t,", right_enable)
+        self.assertIn("transpose=1", down_filter)
+        self.assertNotIn("(t - 0.15) / 2.20", down_x)
+        self.assertIn("(t - 0.15) / 2.20 * 883.2", down_y)
+        self.assertIn("between(t,", down_enable)
+        self.assertEqual(radial_filter, "scale=180:270")
+        self.assertEqual(radial_enable, "0")
 
 
 if __name__ == "__main__":

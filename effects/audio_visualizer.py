@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 import imageio_ffmpeg
 from services.path_security import validate_asset_path

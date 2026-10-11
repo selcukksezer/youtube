@@ -33,25 +33,52 @@
 .ssp-theme-picker {
     display: flex;
     align-items: center;
-    gap: 6px;
+    min-width: 0;
 }
 
-.theme-picker-label {
-    font-size: 10px;
-    color: var(--text-muted);
-    font-weight: 600;
+.theme-dots-sm {
+    gap: 0;
 }
 
 .theme-dots-sm .theme-dot {
+    appearance: none;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+}
+
+.theme-dots-sm .theme-dot::before {
+    content: "";
     width: 12px;
     height: 12px;
-    border-width: 1.5px;
+    border-radius: 50%;
+    background: currentColor;
+    transition: transform 160ms ease-out;
+}
+
+.theme-dots-sm .theme-dot:hover::before {
+    transform: scale(1.15);
 }
 
 .theme-dots-sm .theme-dot.active {
-    transform: scale(1.1);
-    box-shadow: 0 0 6px var(--primary-glow);
-    border-color: rgba(255, 255, 255, 0.85);
+    transform: none;
+    box-shadow: none;
+}
+
+.theme-dots-sm .theme-dot.active::before {
+    box-shadow: 0 0 0 2px var(--bg-surface), 0 0 0 3px currentColor;
+}
+
+.theme-dots-sm .theme-dot:focus-visible {
+    outline: 2px solid var(--text-main);
+    outline-offset: 1px;
 }
 
 /* Quota card */

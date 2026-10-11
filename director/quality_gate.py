@@ -7,15 +7,16 @@ import hashlib
 import os
 import re
 import subprocess
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import imageio_ffmpeg
 
 from .schema import DirectorPlan
+from .retention_engine import MAX_STATIC_DURATION_SEC, RetentionEngine
 from .visual_intent import semantic_relevance_score, text_contains_excluded
 
 from scenes.narration_validate import (
-    MIN_WORDS_PER_SCENE,
+    HARD_MIN_WORDS_PER_SCENE,
     MIN_WORDS_PER_SENTENCE,
     normalize_narration_for_validation,
     scene_narration_issues,
@@ -52,7 +53,9 @@ def check_narration_integrity(plan: DirectorPlan) -> List[str]:
             if code == "empty":
                 _add(f"empty_narration_scene_{s.index}")
             elif code == "low_words":
-                _add(f"low_words_scene_{s.index}")
+                word_count = len(normalize_narration_for_validation(narr).split())
+                if word_count < HARD_MIN_WORDS_PER_SCENE:
+                    _add(f"low_words_scene_{s.index}")
             elif code == "no_terminal":
                 _add(f"no_terminal_scene_{s.index}")
             elif code in ("fragment_ending", "fragment_sentence", "dangling_tail", "dangling_sentence"):
@@ -145,6 +148,15 @@ def pre_render_score(plan: DirectorPlan) -> Dict[str, Any]:
         issues.append(ni)
         score -= 15 if ni.startswith("fragment") else 10
 
+    retention_audit = RetentionEngine.audit_timeline(
+        [scene.to_dict() for scene in plan.scenes]
+    )
+    static_scene_indices = retention_audit["stale_scene_indices"]
+    retention_warnings = [
+        f"static_visual_gap_over_{MAX_STATIC_DURATION_SEC:g}s:{index}"
+        for index in static_scene_indices
+    ]
+
     hard_blockers = [
         i for i in issues
         if i == "duration_out_of_band"
@@ -159,6 +171,11 @@ def pre_render_score(plan: DirectorPlan) -> Dict[str, Any]:
         "ok": ok,
         "score": max(0, round(score, 1)),
         "issues": issues,
+        "warnings": retention_warnings,
+        "retention_audit": {
+            "max_static_duration_sec": MAX_STATIC_DURATION_SEC,
+            "static_scene_indices": static_scene_indices,
+        },
         "avg_alignment": round(avg_align, 3),
         "sfx_events": sfx_n,
         "duration": total,

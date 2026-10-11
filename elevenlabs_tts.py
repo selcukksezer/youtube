@@ -121,7 +121,7 @@ def fetch_voices_from_api() -> Tuple[List[Dict[str, Any]], Optional[str]]:
         return [], f"Bağlantı hatası: {exc}"
 
 
-def get_subscription_info(force: bool = False) -> Optional[Dict[str, Any]]:
+def get_subscription_info() -> Optional[Dict[str, Any]]:
     """Fetch character quota from /v1/user/subscription."""
     if not is_configured():
         return None
@@ -193,7 +193,11 @@ def generate_tts_wav(
         if not os.path.getsize(mp3_path):
             return False, "ElevenLabs returned empty audio"
 
-        wav_path = output_path if output_path.endswith(".wav") else output_path.rsplit(".", 1)[0] + ".wav"
+        wav_path = (
+            output_path
+            if output_path.endswith(".wav")
+            else os.path.splitext(output_path)[0] + ".wav"
+        )
         result = _mp3_to_wav(mp3_path, wav_path)
         if not result.endswith(".wav") or not os.path.isfile(wav_path):
             return False, "MP3→WAV conversion failed"

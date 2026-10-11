@@ -44,7 +44,18 @@ class TestSection2Items86To90(unittest.TestCase):
     def test_item_88_visual_cadence_14(self):
         """Item 88: For 45s+ video, scene count is divided/adjusted to reach >=14 visual cuts."""
         # 8 scenes totaling 48 seconds
-        scenes = [{"scene_number": i + 1, "duration": 6.0, "narration": f"Sahne {i+1}", "search_queries": ["stoic"]} for i in range(8)]
+        scenes = [
+            {
+                "scene_number": i + 1,
+                "duration": 6.0,
+                "narration": (
+                    f"Original sentence {i} describes a complete event with meaningful context. "
+                    f"Another distinct explanation for scene {i} adds useful supporting detail."
+                ),
+                "search_queries": ["stoic"],
+            }
+            for i in range(8)
+        ]
         adjusted = enforce_visual_cadence_14(scenes, min_cadence=14)
         self.assertGreaterEqual(len(adjusted), 14, "48s short should have at least 14 visual cadence cuts")
         # Total duration preserved

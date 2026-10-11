@@ -1390,12 +1390,12 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
     "general": {
         "tr": (
             "GENEL SHORTS YAPISI:\n"
-            "- 8-16 sahne, kanca → kanıt → sonuç → soru.\n"
+            "- 6 tam konuşma sahnesi, kanca → kanıt → sonuç → soru; toplam narration en fazla 110 kelime.\n"
             "Konu hangi nişse o görsel bankayı kullan; başka nişin şablonunu kopyalama."
         ),
         "en": (
             "GENERAL SHORTS STRUCTURE:\n"
-            "- 8-16 scenes, hook → proof → close → question.\n"
+            "- Six complete spoken scenes, hook → proof → close → question; total narration at most 110 words.\n"
             "Stay inside this niche's visual bank; do not clone another niche's template."
         ),
     },

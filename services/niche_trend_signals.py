@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import re
+import logging
 import urllib.parse
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import requests
 
 from niche_templates import NICHES, get_niche_family, get_niche_production_profile
 from research_service import is_stoic_banned_title
+
+logger = logging.getLogger(__name__)
 
 MAX_TREND_CARDS = 5
 
@@ -154,6 +157,7 @@ def fetch_public_youtube_trends(query: str, region: str = "TR", max_results: int
     trends: List[Dict[str, Any]] = []
     try:
         r = requests.get(url, headers=headers, timeout=8)
+        r.raise_for_status()
         match = re.search(r"var ytInitialData = ({.*?});</script>", r.text)
         if not match:
             return []
@@ -193,7 +197,7 @@ def fetch_public_youtube_trends(query: str, region: str = "TR", max_results: int
                     if len(trends) >= max_results:
                         return trends
     except Exception as scrape_err:
-        print(f"  [TrendScraper] Web scraper notu: {scrape_err}")
+        logger.warning("YouTube public trend scrape failed: %s", scrape_err)
     return trends
 
 
@@ -224,7 +228,8 @@ def generate_synthetic_trend_signals(niche_id: str) -> List[Dict[str, Any]]:
 
         result = suggest_topics(niche_id, language="tr", count=MAX_TREND_CARDS)
         suggestions = result.get("suggestions") or []
-    except Exception:
+    except Exception as exc:
+        logger.warning("AI trend suggestions unavailable for niche %s: %s", niche_id, exc)
         suggestions = []
 
     stoic = get_niche_family(niche_id) == "stoic"

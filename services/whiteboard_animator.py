@@ -407,6 +407,66 @@ def generate_whiteboard_sketch_image(prompt: str, output_path: str, width: int =
                 pass
 
 
+def _whiteboard_hand_motion(
+    transition: str,
+    width: int,
+    height: int,
+    start_offset: float,
+    draw_duration: float,
+) -> tuple[str, str, str, str]:
+    end_offset = start_offset + draw_duration
+    progress = f"(t - {start_offset:.2f}) / {draw_duration:.2f}"
+    draw_end = f"{end_offset:.2f}"
+    enable = f"between(t,{start_offset * 0.8:.2f},{end_offset + 0.6:.2f})"
+
+    if transition == "wiperight":
+        hand_filter = "scale=180:270,hflip"
+        tip_offset = 172.5
+        x = (
+            f"if(lt(t,{start_offset:.2f}), {width + 20}, "
+            f"if(lt(t,{draw_end}), {width * 0.92:.1f} - {progress} * {width * 0.92:.1f} - {tip_offset}, "
+            f"-{tip_offset} - (t - {draw_end}) * 650))"
+        )
+        y = (
+            f"if(lt(t,{start_offset:.2f}), 340, "
+            f"if(lt(t,{draw_end}), {height / 3:.1f} + 35*sin(18*t), "
+            f"{height / 3:.1f} + (t - {draw_end}) * 750))"
+        )
+    elif transition == "wipedown":
+        hand_filter = "scale=180:270,transpose=1"
+        tip_x = 261.0
+        tip_y = 7.5
+        center_x = width / 2 - tip_x
+        x = (
+            f"if(lt(t,{start_offset:.2f}), {center_x:.1f}, "
+            f"if(lt(t,{draw_end}), {center_x:.1f} + 12*sin(18*t), "
+            f"{center_x:.1f} + (t - {draw_end}) * 650))"
+        )
+        y = (
+            f"if(lt(t,{start_offset:.2f}), -200, "
+            f"if(lt(t,{draw_end}), {progress} * {height * 0.92:.1f} - {tip_y}, "
+            f"{height * 0.92:.1f} - {tip_y} + (t - {draw_end}) * 750))"
+        )
+    elif transition == "radial":
+        hand_filter = "scale=180:270"
+        x = y = "-250"
+        enable = "0"
+    else:
+        hand_filter = "scale=180:270"
+        x = (
+            f"if(lt(t,{start_offset:.2f}), -250, "
+            f"if(lt(t,{draw_end}), {progress} * {width * 0.92:.1f} - 15, "
+            f"{width * 0.92:.1f} + (t - {draw_end}) * 650))"
+        )
+        y = (
+            f"if(lt(t,{start_offset:.2f}), 340, "
+            f"if(lt(t,{draw_end}), {height / 3:.1f} + 35*sin(18*t), "
+            f"{height / 3:.1f} + (t - {draw_end}) * 750))"
+        )
+
+    return hand_filter, x, y, enable
+
+
 def animate_whiteboard_clip(
     sketch_image_path: str,
     output_video_path: str,
@@ -429,26 +489,17 @@ def animate_whiteboard_clip(
 
     draw_dur = min(2.5, max(1.2, duration * 0.55))
     start_offset = 0.15
-    end_offset = start_offset + draw_dur
-
-    # Hand overlay math:
-    # During [start_offset, end_offset], hand's marker tip stays glued to the wipe boundary.
-    # Hand dimensions: scale to 180x270 (tip is near top-left of hand image)
-    # Oscillation frequency: 18 rad/s, amplitude: 35px
-    wipe_x_expr = f"(t - {start_offset:.2f}) / {draw_dur:.2f} * {width * 0.92:.1f} - 15"
-    slide_out_x = f"{width * 0.92:.1f} + (t - {end_offset:.2f}) * 650"
-    slide_out_y = f"320 + (t - {end_offset:.2f}) * 750"
-
-    x_hand = f"if(lt(t,{start_offset:.2f}), -250, if(lt(t,{end_offset:.2f}), {wipe_x_expr}, {slide_out_x}))"
-    y_hand = f"if(lt(t,{start_offset:.2f}), 340, if(lt(t,{end_offset:.2f}), 320 + 35*sin(18*t), {slide_out_y}))"
 
     transition = transition_style if transition_style in WHITEBOARD_TRANSITIONS else WHITEBOARD_TRANSITIONS[0]
+    hand_filter, x_hand, y_hand, hand_enable = _whiteboard_hand_motion(
+        transition, width, height, start_offset, draw_dur
+    )
     filter_complex = (
         f"[0:v]scale={width}:{height},setsar=1[bg];"
         f"[1:v]scale={width}:{height},setsar=1[fg];"
         f"[bg][fg]xfade=transition={transition}:duration={draw_dur:.2f}:offset={start_offset:.2f},setsar=1[wiped];"
-        f"[2:v]scale=180:270[hand];"
-        f"[wiped][hand]overlay=x='{x_hand}':y='{y_hand}':enable='between(t,{start_offset * 0.8:.2f},{end_offset + 0.6:.2f})'[final]"
+        f"[2:v]{hand_filter}[hand];"
+        f"[wiped][hand]overlay=x='{x_hand}':y='{y_hand}':enable='{hand_enable}'[final]"
     )
 
     cmd = [

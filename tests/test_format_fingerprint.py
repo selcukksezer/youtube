@@ -53,7 +53,9 @@ class TestFormatFingerprint(unittest.TestCase):
             lang="tr",
         )
         self.assertIn("RAKİP FORMAT FİNGERPRINT", block)
-        self.assertIn("8", block)
+        self.assertIn("Hedef konuşma sahnesi sayısı: 6", block)
+        self.assertIn("Kanca stili: Liste", block)
+        self.assertIn("Ortalama sahne süresi: 5.2s", block)
 
 
 if __name__ == "__main__":
