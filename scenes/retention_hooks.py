@@ -41,8 +41,8 @@ def _resolve_loop_formula_id(niche_type: Optional[str]) -> str:
 _PLAN_HOOK_RE = (
     ("shock_stat", re.compile(r"%\s*\d|\d+\s*%|yüzde\s+\d|\b\d+\s*kişiden\b", re.I)),
     ("problem_agitation", re.compile(r"sebep|düşündüğünüz|yanlış yerde|wearing you down|not what you think", re.I)),
-    ("curiosity_gap", re.compile(r"söylemediği|kaydırmayın|nobody says|do not scroll|karar vermeyin", re.I)),
-    ("cognitive_dissonance", re.compile(r"öğrenene kadar|tam tersi|yanılıyor|deliberately backwards|yanılsama", re.I)),
+    ("curiosity_gap", re.compile(r"söylemediği|kaydırmayın|nobody says|do not scroll|karar vermeyin|saklanan|sakladığı|gizli|yasak|kapatmak|engelle|dava|tehlike|şok|inanılmaz|kimsenin|devrim|secret|banned|shut down|hidden|shocking|lawsuit|nobody knows", re.I)),
+    ("cognitive_dissonance", re.compile(r"öğrenene kadar|tam tersi|yanılıyor|deliberately backwards|yanılsama|tuzak", re.I)),
 )
 
 
@@ -155,7 +155,7 @@ def apply_retention_hooks_to_plan(
         else:
             first["narration"] = f"{clean_opening} {rest}".strip()
     elif _word_count(clean_body) >= 8:
-        first["narration"] = f"{clean_opening} {clean_body}".strip()
+        first["narration"] = clean_opening
     elif _word_count(clean_body) < 8:
         if clean_body and strategy != "zeigarnik":
             tail_parts = re.split(r"(?<=[.!?])\s+", clean_body, maxsplit=1)

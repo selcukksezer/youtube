@@ -50,6 +50,36 @@ def _finish_spoken_line(text: str) -> str:
     return spoken
 
 
+def _clean_hook_topic(topic: str, lang: str = "tr") -> str:
+    """Sanitize topic for mad-lib hook interpolation to avoid awkward sentence splices."""
+    raw = (topic or "").strip().rstrip(".!?:;,")
+    is_en = (lang or "tr").lower().startswith("en")
+    if not raw:
+        return "this topic" if is_en else "bu konu"
+    words = raw.split()
+    if len(words) <= 3:
+        if is_en:
+            return raw
+        past_verbs = (
+            "di", "dı", "du", "dü", "ti", "tı", "tu", "tü",
+            "miş", "mış", "muş", "müş",
+        )
+        if not any(words[-1].lower().endswith(v) for v in past_verbs):
+            return raw
+
+    low = raw.lower()
+    if any(k in low for k in ("yapay zeka", "ai", "chatgpt", "gemini", "claude")):
+        return "artificial intelligence" if is_en else "yapay zeka"
+    if any(k in low for k in ("yazılım", "kod", "programlama", "developer", "software", "code")):
+        return "software" if is_en else "yazılım"
+    if any(k in low for k in ("kripto", "bitcoin", "para", "borsa", "finans", "money", "crypto")):
+        return "finance" if is_en else "finans"
+    if any(k in low for k in ("psikoloji", "zihin", "mindset", "felsefe", "stoa")):
+        return "mindset" if is_en else "psikoloji"
+
+    return "this topic" if is_en else "bu konu"
+
+
 class ViralRetentionEngine:
     """Calculates and enhances video retention psychology for Shorts."""
 
@@ -280,19 +310,20 @@ class ViralRetentionEngine:
         Item 202: Bilişsel Çelişki Kancası (Cognitive Dissonance Hook).
         Kabul görmüş inancı veya alışılmış düşünceyi sarsan güçlü açılış cümlesi üretir.
         """
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             hooks = [
-                f"Until you learn this about {topic}, your mind was never truly under your control.",
-                f"Everything you've been taught about {topic} is deliberately backwards.",
-                f"What if I told you the truth about {topic} is the exact opposite of what you believe?",
-                f"You think you understand {topic}, but 99% of people fall for this exact cognitive trap."
+                f"Until you learn this about {t}, your mind was never truly under your control.",
+                f"Everything you've been taught about {t} is deliberately backwards.",
+                f"What if I told you the truth about {t} is the exact opposite of what you believe?",
+                f"You think you understand {t}, but 99% of people fall for this exact cognitive trap."
             ]
         else:
             hooks = [
-                f"Bunu öğrenene kadar {topic} konusunda bildiğiniz her şey sadece bir yanılsamaydı.",
-                f"Çoğu insan {topic} hakkında tamamen yanılıyor ve bu hata her gün tekrarlanıyor.",
-                f"{topic} hakkında size bugüne kadar anlatılanların tam tersi doğru olsaydı ne yapardınız?",
-                f"Bunu bilmeden geçen her gün, {topic} tuzağına biraz daha çekiliyorsunuz."
+                f"Bunu öğrenene kadar {t} konusunda bildiğiniz her şey sadece bir yanılsamaydı.",
+                f"Çoğu insan {t} hakkında tamamen yanılıyor ve bu hata her gün tekrarlanıyor.",
+                f"{t} hakkında size bugüne kadar anlatılanların tam tersi doğru olsaydı ne yapardınız?",
+                f"Bunu bilmeden geçen her gün, {t} tuzağına biraz daha çekiliyorsunuz."
             ]
         return random.choice(hooks)
 
@@ -335,32 +366,85 @@ class ViralRetentionEngine:
         """
         Item 210: Polarize Edici Soru (İzleyiciyi İkiye Bölme & Yorum Savaşı).
         """
-        if lang == "en":
-            dilemmas = [
-                {
-                    "question": f"When facing {topic}, would you choose 10 Million Dollars or turning back time 10 years?",
-                    "choice_a": "10 Million Dollars",
-                    "choice_b": "10 Years Back"
-                },
-                {
-                    "question": f"Regarding {topic}: Absolute freedom with zero certainty, or complete security with zero choices?",
-                    "choice_a": "Absolute Freedom",
-                    "choice_b": "Complete Security"
-                }
-            ]
+        t_low = (topic or "").lower()
+        is_en = (lang or "tr").lower().startswith("en")
+        is_tech = any(k in t_low for k in ("yapay zeka", "ai", "yazılım", "kod", "teknoloji", "tech", "site", "bot", "tool"))
+        is_money = any(k in t_low for k in ("para", "zengin", "milyon", "dolar", "finans", "money", "rich", "wealth", "crypto", "kripto"))
+
+        if is_en:
+            if is_tech:
+                dilemmas = [
+                    {
+                        "question": "Should advanced AI tools remain open to everyone, or strictly regulated by governments?",
+                        "choice_a": "Open to Everyone",
+                        "choice_b": "Strict Regulation"
+                    },
+                    {
+                        "question": "Will AI eventually replace human creators, or amplify them 10x?",
+                        "choice_a": "Replace Humans",
+                        "choice_b": "Amplify Creators"
+                    }
+                ]
+            elif is_money:
+                dilemmas = [
+                    {
+                        "question": "Would you choose $10 Million right now, or guaranteed $50K passive income every month forever?",
+                        "choice_a": "$10 Million Cash",
+                        "choice_b": "$50K Monthly Forever"
+                    }
+                ]
+            else:
+                clean = _clean_hook_topic(topic, lang="en")
+                ref = f"When facing {clean}" if clean != "this topic" else "In this situation"
+                dilemmas = [
+                    {
+                        "question": f"{ref}: Would you choose brutal truth or peaceful ignorance?",
+                        "choice_a": "Brutal Truth",
+                        "choice_b": "Peaceful Ignorance"
+                    },
+                    {
+                        "question": f"{ref}: Complete security with zero choices, or total freedom with zero safety?",
+                        "choice_a": "Total Freedom",
+                        "choice_b": "Complete Security"
+                    }
+                ]
         else:
-            dilemmas = [
-                {
-                    "question": f"{topic} konusunda siz olsaydınız: 10 Milyon Lira mı, yoksa 10 yıl gençleşmek mi?",
-                    "choice_a": "10 Milyon Lira",
-                    "choice_b": "10 Yıl Gençleşmek"
-                },
-                {
-                    "question": f"{topic} karşısında hangisini seçerdiniz: Acımasız gerçekler mi, huzurlu bir yanılsama mı?",
-                    "choice_a": "Acımasız Gerçekler",
-                    "choice_b": "Huzurlu Yanılsama"
-                }
-            ]
+            if is_tech:
+                dilemmas = [
+                    {
+                        "question": "Gelişmiş yapay zeka araçları tamamen serbest mi bırakılmalı, yoksa devletler tarafından sıkı denetlenmeli mi?",
+                        "choice_a": "Tamamen Serbest",
+                        "choice_b": "Sıkı Denetim"
+                    },
+                    {
+                        "question": "Yapay zeka gelecekte insan üretkenliğini katlayacak mı, yoksa meslekleri tamamen yok mu edecek?",
+                        "choice_a": "Üretkenliği Katlayacak",
+                        "choice_b": "Meslekleri Yok Edecek"
+                    }
+                ]
+            elif is_money:
+                dilemmas = [
+                    {
+                        "question": "Hemen şimdi 10 Milyon Lira nakit mi, yoksa ömür boyu her ay garantili 100.000 Lira pasif gelir mi?",
+                        "choice_a": "10 Milyon Nakit",
+                        "choice_b": "Aylık 100 Bin Lira"
+                    }
+                ]
+            else:
+                clean = _clean_hook_topic(topic, lang="tr")
+                ref = f"{clean} konusunda sizce hangisi" if clean != "bu konu" else "Siz olsaydınız hangisini seçerdiniz"
+                dilemmas = [
+                    {
+                        "question": f"{ref}: Acımasız gerçekler mi, yoksa huzurlu bir yanılsama mı?",
+                        "choice_a": "Acımasız Gerçekler",
+                        "choice_b": "Huzurlu Yanılsama"
+                    },
+                    {
+                        "question": f"{ref}: Sıfır riskli sıradan bir hayat mı, yoksa büyük belirsizliklerle dolu büyük başarı mı?",
+                        "choice_a": "Sıfır Risk",
+                        "choice_b": "Büyük Başarı"
+                    }
+                ]
         return random.choice(dilemmas)
 
     @classmethod
@@ -368,74 +452,103 @@ class ViralRetentionEngine:
         """
         Items 218, 219, 220: FOMO (Kaybetme Korkusu), Yasak Meyve & Sosyal Kanıt Kancaları.
         """
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             if category == "forbidden":
-                return f"3 dark principles of {topic} that psychologists warn people never to reveal publicly."
+                return f"3 dark principles of {t} that psychologists warn people never to reveal publicly."
             elif category == "social_proof":
-                return f"The hidden daily habit about {topic} practiced exclusively by the top 0.1% achievers."
-            return f"99% of people will fail at {topic} because nobody explained this single hidden rule."
+                return f"The hidden daily habit about {t} practiced exclusively by the top 0.1% achievers."
+            return f"99% of people will fail at {t} because nobody explained this single hidden rule."
         else:
             if category == "forbidden":
-                return f"{topic} konusunda uzmanların halka açıklanmasını istemediği 3 karanlık kural."
+                return f"{t} konusunda uzmanların halka açıklanmasını istemediği 3 karanlık kural."
             elif category == "social_proof":
-                return f"Dünyanın en başarılı insanlarının {topic} konusunda her gün uyguladığı gizli rutin."
-            return f"İnsanların %99'u {topic} konusunda bu kuralı bilmediği için kaybediyor."
+                return f"Dünyanın en başarılı insanlarının {t} konusunda her gün uyguladığı gizli rutin."
+            return f"İnsanların %99'u {t} konusunda bu kuralı bilmediği için kaybediyor."
 
     @classmethod
     def generate_challenge_hook(cls, topic: str, lang: str = "tr") -> str:
         """
         Item 228 & 268: Kullanıcıyı Harekete Geçiren Meydan Okuma & Zaman Baskısı.
         """
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
-            return f"Only people with an IQ above 125 can solve this {topic} puzzle on their first try: You have 5 seconds!"
-        return f"Bu {topic} bilmecesini sadece IQ'su 125 üstü olanlar ilk bakışta çözebiliyor: Cevap için sadece 5 saniyen var!"
+            return f"Only people with an IQ above 125 can solve this {t} puzzle on their first try: You have 5 seconds!"
+        return f"Bu {t} bilmecesini sadece IQ'su 125 üstü olanlar ilk bakışta çözebiliyor: Cevap için sadece 5 saniyen var!"
 
     @classmethod
     def generate_role_play_hook(cls, topic: str, lang: str = "tr") -> str:
         """
         Item 257: İzleyiciye Rol Biçme — dedektif / karar verici interaktif kanca.
         """
-        if lang == "en":
+        t_low = (topic or "").lower()
+        is_en = (lang or "tr").lower().startswith("en")
+        is_tech = any(k in t_low for k in ("yapay zeka", "ai", "yazılım", "kod", "teknoloji", "tech", "site", "bot", "tool"))
+
+        if is_tech:
+            if is_en:
+                return (
+                    "You are the lead engineer and this system is in your hands. "
+                    "Which protocol do you deploy first?"
+                )
             return (
-                f"You are the detective on this {topic} case — three suspects, one truth. "
+                "Sen bir yapay zeka mühendisisin ve sistem kontrolden çıkmak üzere. "
+                "İlk hangi protokolü devreye sokardın?"
+            )
+
+        clean = (topic or "").strip().rstrip(".!?:;,")
+        words = clean.split()
+        past_verbs = ("di", "dı", "du", "dü", "ti", "tı", "tu", "tü", "miş", "mış")
+        if len(words) > 4 or any(words[-1].lower().endswith(suffix) for suffix in past_verbs):
+            clean_tr = "bu gizemli olay"
+            clean_en = "this mystery"
+        else:
+            clean_tr = clean
+            clean_en = clean
+
+        if is_en:
+            return (
+                f"You are the detective on this {clean_en} case — three suspects, one truth. "
                 "Which clue do you trust first?"
             )
         return (
-            f"Sen bir dedektifsin ve {topic} dosyasında önünde 3 şüpheli var. "
+            f"Sen bir dedektifsin ve {clean_tr} dosyasında önünde 3 şüpheli var. "
             "İlk hangi ipucuna güvenerdin?"
         )
 
     @classmethod
     def generate_curiosity_gap_hook(cls, topic: str, lang: str = "tr") -> str:
         """Plan 7.1: withheld rule. No fake billionaire on a non-money topic."""
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             hooks = [
-                f"The one rule about {topic} that nobody says out loud.",
-                f"Do not decide on {topic} before this missing piece.",
-                f"The real part of {topic} is still ahead. Do not scroll.",
+                f"The one rule about {t} that nobody says out loud.",
+                f"Do not decide on {t} before this missing piece.",
+                f"The real part of {t} is still ahead. Do not scroll.",
             ]
         else:
             hooks = [
-                f"Kimsenin {topic} hakkında söylemediği o tek kural.",
-                f"Bunu bilmeden {topic} hakkında karar vermeyin.",
-                f"{topic} ile ilgili asıl parça daha gelmedi. Kaydırmayın.",
+                f"Kimsenin {t} hakkında söylemediği o tek kural.",
+                f"Bunu bilmeden {t} hakkında karar vermeyin.",
+                f"{t} ile ilgili asıl parça daha gelmedi. Kaydırmayın.",
             ]
         return random.choice(hooks)
 
     @classmethod
     def generate_problem_agitation_hook(cls, topic: str, lang: str = "tr") -> str:
         """Plan 7.1: the symptom is real, the assumed cause is not."""
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             hooks = [
-                f"If {topic} keeps wearing you down, the cause is not what you think.",
-                f"You have been fixing {topic} in the wrong place.",
-                f"The reason {topic} keeps returning is the habit everyone repeats.",
+                f"If {t} keeps wearing you down, the cause is not what you think.",
+                f"You have been fixing {t} in the wrong place.",
+                f"The reason {t} keeps returning is the habit everyone repeats.",
             ]
         else:
             hooks = [
-                f"{topic} sizi yoruyorsa sebep düşündüğünüz şey değil.",
-                f"{topic} sorununu yanlış yerde arıyorsunuz.",
-                f"{topic} neden dönüp duruyor? Herkesin tekrarladığı o alışkanlık.",
+                f"{t} sizi yoruyorsa sebep düşündüğünüz şey değil.",
+                f"{t} sorununu yanlış yerde arıyorsunuz.",
+                f"{t} neden dönüp duruyor? Herkesin tekrarladığı o alışkanlık.",
             ]
         return random.choice(hooks)
 
@@ -444,17 +557,18 @@ class ViralRetentionEngine:
         """
         Item 259: Şok Edici İstatistik Kancası — nadir yüzde / veri ile merak tetikleme.
         """
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             templates = [
-                f"Only 0.1% of the world's population shares this rare trait linked to {topic}.",
-                f"A Harvard study found that 97% of people get {topic} completely wrong on the first try.",
-                f"Less than 1 in 1,000 people know this hidden statistic about {topic}.",
+                f"Only 0.1% of the world's population shares this rare trait linked to {t}.",
+                f"A Harvard study found that 97% of people get {t} completely wrong on the first try.",
+                f"Less than 1 in 1,000 people know this hidden statistic about {t}.",
             ]
         else:
             templates = [
-                f"İnsanların %99'u {topic} konusunda bunu bilmeden devam ediyor.",
-                f"Dünya nüfusunun sadece %0.1'inin sahip olduğu o nadir özellik {topic} ile bağlantılı.",
-                f"1.000 kişiden sadece 1'i {topic} hakkında bu gizli istatistiği biliyor.",
+                f"İnsanların %99'u {t} konusunda bunu bilmeden devam ediyor.",
+                f"Dünya nüfusunun sadece %0.1'inin sahip olduğu o nadir özellik {t} ile bağlantılı.",
+                f"1.000 kişiden sadece 1'i {t} hakkında bu gizli istatistiği biliyor.",
             ]
         return random.choice(templates)
 
@@ -463,17 +577,18 @@ class ViralRetentionEngine:
         """
         Item 263: İzleyiciye Ters Köşe Yapma — yaygın inancın bilimle çürütülmesi.
         """
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             templates = [
-                f"Everyone says {topic} works one way — but a Harvard study showed the exact opposite.",
-                f"The popular belief about {topic} sounds logical, until you see what the data actually says.",
-                f"You were taught {topic} helps you win — research says it quietly does the reverse.",
+                f"Everyone says {t} works one way — but a Harvard study showed the exact opposite.",
+                f"The popular belief about {t} sounds logical, until you see what the data actually says.",
+                f"You were taught {t} helps you win — research says it quietly does the reverse.",
             ]
         else:
             templates = [
-                f"Herkes {topic} konusunda aynı şeyi söyler, ancak Harvard araştırması tam tersini gösterdi.",
-                f"{topic} hakkında duyduğunuz popüler inanç mantıklı görünür — ta ki veriler ortaya çıkana kadar.",
-                f"Size {topic} size kazandırır denildi; araştırmalar sessizce tam tersini söylüyor.",
+                f"Herkes {t} konusunda aynı şeyi söyler, ancak Harvard araştırması tam tersini gösterdi.",
+                f"{t} hakkında duyduğunuz popüler inanç mantıklı görünür — ta ki veriler ortaya çıkana kadar.",
+                f"Size {t} size kazandırır denildi; araştırmalar sessizce tam tersini söylüyor.",
             ]
         return random.choice(templates)
 
@@ -497,32 +612,37 @@ class ViralRetentionEngine:
         Item 233: Merak Uyandıran Ses Sorusu.
         "Şu sesi duyuyor musunuz? Bu ses..." kalıbıyla akustik merak kancası.
         """
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             return (
-                f"Do you hear that sound? That subtle signal about {topic} "
+                f"Do you hear that sound? That subtle signal about {t} "
                 "is the first clue nobody talks about..."
             )
         return (
-            f"Şu sesi duyuyor musunuz? {topic} hakkında kimsenin bahsetmediği "
+            f"Şu sesi duyuyor musunuz? {t} hakkında kimsenin bahsetmediği "
             "o ipucu tam da bu sesten geliyor..."
         )
 
     @classmethod
     def generate_share_cta(cls, topic: str = "", lang: str = "tr") -> str:
         """Item 235: Paylaşma Güdüsü Tetikleme."""
-        if lang == "en":
+        if (lang or "tr").lower().startswith("en"):
             return "Send this video right now to that one friend who needs to hear this."
-        if topic:
-            return f"Bu videoyu hayatında çok stres olan o arkadaşına hemen gönder — {topic} onun için."
-        return "Bu videoyu hayatında çok fazla stres olan o arkadaşına hemen gönder."
+        t_low = (topic or "").lower()
+        if "stres" in t_low:
+            return "Bu videoyu hayatında çok stres olan o arkadaşına hemen gönder."
+        return "Bu videoyu görmesi gereken o arkadaşına hemen gönder."
 
     @classmethod
     def generate_bookmark_cta(cls, topic: str = "", lang: str = "tr") -> str:
         """Item 236: Kaydetme (Bookmark) Güdüsü."""
-        if lang == "en":
+        if (lang or "tr").lower().startswith("en"):
             return "Save this video now so you never forget this list."
-        if topic:
-            return f"Bu {topic} listesini unutmamak için videoyu hemen kaydet."
+        t_clean = (topic or "").strip()
+        words = t_clean.split()
+        past_verbs = ("di", "dı", "du", "dü", "ti", "tı", "tu", "tü", "miş", "mış")
+        if words and len(words) <= 3 and not any(words[-1].lower().endswith(suffix) for suffix in past_verbs):
+            return f"Bu {t_clean} listesini unutmamak için videoyu hemen kaydet."
         return "Bu listeyi unutmamak için videoyu hemen kaydet."
 
     @classmethod
@@ -540,15 +660,16 @@ class ViralRetentionEngine:
         Item 239: Sürpriz Kapanış (Plot Twist).
         Beklenen sonun tersine çevrilmiş final cümlesi.
         """
+        t = _clean_hook_topic(topic, lang=lang)
         if lang == "en":
             twists = [
-                f"And the real twist about {topic}? Everything you assumed at the start was backwards.",
-                f"Plot twist: the villain in {topic} wasn't who you thought — it was the obvious answer all along.",
+                f"And the real twist about {t}? Everything you assumed at the start was backwards.",
+                f"Plot twist: the villain in {t} wasn't who you thought — it was the obvious answer all along.",
             ]
         else:
             twists = [
-                f"Ve {topic} konusundaki asıl sürpriz? Başta sandığınız her şey tam tersiydi.",
-                f"Ters köşe: {topic} hikayesindeki asıl suçlu sandığınız kişi değildi — ipucu en baştaydı.",
+                f"Ve {t} konusundaki asıl sürpriz? Başta sandığınız her şey tam tersiydi.",
+                f"Ters köşe: {t} hikayesindeki asıl suçlu sandığınız kişi değildi — ipucu en baştaydı.",
             ]
         return random.choice(twists)
 
@@ -568,14 +689,24 @@ class ViralRetentionEngine:
         """
         Items 234 & 269: Yorumlarda Cevap Arama Tuzağı & Yorum Sabitleme Kancası.
         """
-        if lang == "en":
+        clean = (topic or "").strip().rstrip(".!?:;,")
+        words = clean.split()
+        past_verbs = ("di", "dı", "du", "dü", "ti", "tı", "tu", "tü", "miş", "mış")
+        if len(words) > 4 or any(words[-1].lower().endswith(suffix) for suffix in past_verbs):
+            tr_topic = "Bu video"
+            en_topic = "this video"
+        else:
+            tr_topic = f"{clean} konusu"
+            en_topic = clean
+
+        if (lang or "tr").lower().startswith("en"):
             return {
                 "video_cta": "I pinned the surprising answer in the comments, let's see who guessed it first!",
-                "pinned_comment": f"The hidden detail about {topic} is revealed here! The most creative reply will get pinned."
+                "pinned_comment": f"The hidden detail about {en_topic} is revealed here! The most creative reply will get pinned."
             }
         return {
             "video_cta": "Cevabı yorumlara sabitledim, bakalım doğru tahmin edebilecek misiniz?",
-            "pinned_comment": f"{topic} konusundaki en şaşırtıcı detay burada! En yaratıcı cevabı veren ilk 3 kişiyi sabitliyorum."
+            "pinned_comment": f"{tr_topic}ndaki en şaşırtıcı detay burada! En yaratıcı cevabı veren ilk 3 kişiyi sabitliyorum." if tr_topic == "Bu video" else f"{clean} konusundaki en şaşırtıcı detay burada! En yaratıcı cevabı veren ilk 3 kişiyi sabitliyorum."
         }
 
     @classmethod
