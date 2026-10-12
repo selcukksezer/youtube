@@ -45,18 +45,22 @@ class _DDGHTMLParser(HTMLParser):
 
 def extract_search_keywords(topic: str) -> str:
     """Extract clean search terms from topic title for best DDG results."""
-    # Normalize Turkish accents for resilient matching
-    tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
-    norm = topic.translate(tr_map).lower()
+    norm = topic.lower()
 
     fillers = [
         r"bunu neden daha once almadim",
+        r"bunu neden daha önce almadım",
         r"hayatinizi kolaylastiracak",
+        r"hayatınızı kolaylaştıracak",
         r"diyeceginiz",
+        r"diyeceğiniz",
         r"mutlaka bilmeniz gereken",
         r"kimsenin bilmedigi",
+        r"kimsenin bilmediği",
         r"sok edici",
+        r"şok edici",
         r"inanilmaz",
+        r"inanılmaz",
         r"en iyi",
         r"top \d+",
     ]
@@ -171,7 +175,13 @@ def _query_wikipedia_snippets(query: str, lang: str = "tr", max_results: int = 3
         "utf8": 1,
         "srlimit": max_results,
     }
-    headers = {"User-Agent": "ShortsVideoCreatorsBot/1.0 (contact@example.com)"}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+    }
     resp = requests.get(url, params=params, headers=headers, timeout=5.0)
     if resp.status_code != 200:
         return []
