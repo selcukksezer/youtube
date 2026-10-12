@@ -222,10 +222,15 @@ Tüm 5 kök neden ve ek niş mimari borçları adım adım çözüldü, test edi
    - Vokal netliğini koruyan -18dB sidechain ducking, vokal EQ oyuğu (`VOCAL_CARVE_EQ` -4.5dB @ 1-3kHz) ve dramatik duraklardaki müzik kesintisi (`tape_stop_times`) tam olarak devreye alındı.
    - `bgm_manager.py` içinde `detect_audio_bpm_and_beats` fonksiyonunun istenen sürenin 10 saniye ötesine beat üretip BPM testlerini şaşırtması düzeltildi (24/24 audio/ducking testi %100 PASS).
 
+9. **Altyazı Mobil Güvenli Alanı ve Başlık Kalibrasyonu (Commit `ec8d089`):**
+   - `subtitle_generator.py` içindeki SRT fallback dikey marjini (`ffmpeg_force_style_from_opts`) `0.20 * H` (384px) değerinden YouTube Shorts UI güvenli alanı olan `0.25 * H` (480px) seviyesine hizalandı. Böylece altyazıların alt taraftaki kanal adı, abone ol butonu ve başlık örtüşmesi önlendi.
+   - `services/topic_suggester.py` içindeki seed tabanlı şablonlar mobil cihazlarda başlık kesilmesini önlemek ve 75 karakter tavanını aşarak adayların elenmesini engellemek için kompakt ve vurucu kanca yapılarıyla güncellendi (14/14 konu öneri testi %100 PASS).
+
 ### Canlı Üretim Kanıtı (Doğrulanan Video)
 * **Dosya:** `output/Google_bile_bu_3_yapay_zeka_sitesini_kapatmak_istedi.mp4` (66.69 MB, 43.47s, 1080x1920 @ 30 FPS, H.264/MF)
 * **Senaryo (Gemini TTS Charon):** 6 sahne, 98 kelime; otonom tasarım motoru, ses klonlama platformu ve akademik makale özetleme sistemini anlatan %100 konuya uygun özgün metin.
 * **Görseller (B-roll):** Server rack odası, developer çalışma istasyonu, DeepSeek yapay zeka arayüzü, server blade şasisi, fütüristik dijital yapay zeka kafası. (Salatalık, limon, mutfak: **%0**).
 * **Altyazı & Ses:** Anton font karaoke ASS (#FFD700), BGM `yt_safe_726_cyberpunk_city.mp3`, synth bass ve SFX ses tasarımı.
+
 
 
