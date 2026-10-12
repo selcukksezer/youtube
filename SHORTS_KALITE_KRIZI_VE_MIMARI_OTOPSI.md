@@ -211,9 +211,16 @@ Tüm 5 kök neden ve ek niş mimari borçları adım adım çözüldü, test edi
 5. **Retention Mad-Lib Temizliği:** `viral_retention_engine.py` içinde `_clean_hook_topic` eklendi. Konu cümleleri kancalara ve SEO açıklamalarına yapıştırılırken oluşan dilbilgisel bozukluklar ("ve Google bile... dosyasında", "10 Milyon Lira mı 10 yıl gençleşmek mi?") giderildi; teknolojiye özel ikilemler ve rol biçme kancaları tanımlandı.
 6. **Web Arama Gecikmesi İyileştirildi:** DuckDuckGo bağlantı timeout'ları 2.0 saniyeye çekildi, lüzumsuz GET tekrarları silindi. Ağ gecikmesi 17s'den 2s'ye düşürüldü.
 
+7. **B-Roll Arama Semantiği ve Görsel Eşleşme Güçlendirildi (Commit `a266ee3`):**
+   - `visuals/query_builder.py` içindeki `_TR_EN` tablosundan mutfak tuzağına yol açan `"kolaylık": "life hack lifestyle"` ve `"araç": "car gadget tech"` eşleşmeleri kaldırıldı. Modern yapay zeka, kodlama, web, hukuk, fitness ve ebeveynlik Türkçe kavramları eklendi.
+   - `visuals/subject_lock.py` içine `ai_tech` (`artificial intelligence neural network`, `future ai digital technology`), `software_coding` (`software developer coding screen`) ve `parenting_child` (`happy family parents and child`, `toddler learning playing`) somut çekim aileleri tanımlandı.
+   - Mikroskop ailesindeki `"deney"` anahtar kelimesi `"bilimsel deney"` olarak netleştirilerek Türkçe emir kipi `"deneyin"` (denemek) ve `"deneyim"` kelimelerinin mikroskop B-roll'u indirmesi engellendi.
+   - `production/schemas.py` içinde ticari olmayan lisansların reddedilmesi ve mükerrer video UID'lerinin engellenmesi kontrata bağlandı (`test_visual_contract.py` ve `test_quality_policy_pipeline.py` %100 PASS).
+
 ### Canlı Üretim Kanıtı (Doğrulanan Video)
 * **Dosya:** `output/Google_bile_bu_3_yapay_zeka_sitesini_kapatmak_istedi.mp4` (66.69 MB, 43.47s, 1080x1920 @ 30 FPS, H.264/MF)
 * **Senaryo (Gemini TTS Charon):** 6 sahne, 98 kelime; otonom tasarım motoru, ses klonlama platformu ve akademik makale özetleme sistemini anlatan %100 konuya uygun özgün metin.
 * **Görseller (B-roll):** Server rack odası, developer çalışma istasyonu, DeepSeek yapay zeka arayüzü, server blade şasisi, fütüristik dijital yapay zeka kafası. (Salatalık, limon, mutfak: **%0**).
 * **Altyazı & Ses:** Anton font karaoke ASS (#FFD700), BGM `yt_safe_726_cyberpunk_city.mp3`, synth bass ve SFX ses tasarımı.
+
 
