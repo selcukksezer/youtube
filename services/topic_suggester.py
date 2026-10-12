@@ -139,26 +139,28 @@ def _generate_seed_based_topics(
     
     if not is_tr:
         templates = [
-            f"5 Shocking Facts About {cap_seed} You Were Never Told",
-            f"The Hidden Truth About {cap_seed} Nobody Talks About",
-            f"3 Critical Mistakes Most People Make With {cap_seed}",
+            f"3 Shocking Facts About {cap_seed}",
+            f"The Hidden Truth About {cap_seed}",
+            f"3 Critical Mistakes With {cap_seed}",
+            f"The Untold Secret of {cap_seed}",
+            f"3 Golden Rules for {cap_seed}",
+            f"What Nobody Tells You About {cap_seed}",
+            f"3 Powerful Tips to Master {cap_seed}",
             f"The Dark Side of {cap_seed} Experts Won't Tell You",
-            f"Everything You Thought You Knew About {cap_seed} Is Completely Wrong",
-            f"The Untold Secret of {cap_seed} That Changes Everything",
-            f"How {cap_seed} Quietly Controls 99% of People Without Them Knowing",
-            f"The Beginner's Guide to {cap_seed}: 3 Golden Rules You Must Follow",
         ]
     else:
         templates = [
-            f"{cap_seed} Hakkında Muhtemelen Bilmediğiniz 5 Şaşırtıcı Gerçek",
-            f"Kimsenin Bahsetmediği Gizli {cap_seed} Sırrı ve Doğrusu",
-            f"{cap_seed} Konusunda Çoğu İnsanın Yaptığı En Yaygın 3 Hata",
-            f"Bunu Öğrenene Kadar {cap_seed} Hakkında Bildiğiniz Her Şey Yanlıştı",
-            f"Sıfırdan Başlayanlar İçin {cap_seed} Rehberi: 3 Altın Kural",
-            f"Günde Sadece 10 Dakika Ayırarak {cap_seed} ile Sonuç Alın",
-            f"{cap_seed} ile İlgili Hayatınızı Kolaylaştıracak 3 Pratik Yöntem",
-            f"Uzmanların {cap_seed} Hakkında Asla Açıklamak İstemediği O Gerçek",
+            f"{cap_seed} Hakkında 3 Şaşırtıcı Gerçek",
+            f"{cap_seed} Konusunda En Yaygın 3 Hata",
+            f"Kimsenin Bahsetmediği Gizli {cap_seed} Sırrı",
+            f"{cap_seed} İçin 3 Altın Kural",
+            f"{cap_seed} ile Hayatınızı Kolaylaştıracak 3 Yöntem",
+            f"{cap_seed} Hakkında Bilmeniz Gereken 3 Şey",
+            f"{cap_seed}: Çoğu İnsanın Bilmediği O Gerçek",
+            f"Sıfırdan Başlayanlar İçin {cap_seed} Rehberi",
         ]
+    # Filter strictly to mobile-safe title length (<= 75 chars)
+    templates = [t for t in templates if len(t) <= 75]
     random.shuffle(templates)
     
     out: List[Dict[str, Any]] = []

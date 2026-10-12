@@ -170,7 +170,7 @@ def ffmpeg_force_style_from_opts(opts: dict = None, play_h: int = None) -> str:
     outline_w = 0 if int(opts.get("stroke_width") or 0) <= 0 else int(opts.get("stroke_width"))
     y_pos = opts.get("y_position")
     if y_pos is None:
-        margin_v = int(round(0.2 * play_h))
+        margin_v = int(round(0.25 * play_h))
     else:
         margin_v = int(round((1.0 - float(y_pos)) * play_h))
     return (
