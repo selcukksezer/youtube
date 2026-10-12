@@ -577,19 +577,20 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
                     tape_stop_times.append(elapsed)
                 elapsed += float(scene.get("duration", 0.0))
             
-            # Item 180: İlk 1s müzik %100 vuruşu + anında ducking; Item 166: fade-out yok
-            punch_audio = output_path.rsplit(".", 1)[0] + "_intro_punch.wav"
-            final_audio = mix_intro_punch_bgm(
-                processed_audio, bgm_p, punch_audio,
-                intro_blast_sec=1.0, blast_volume=0.85, ducked_volume=vol
+            # Item 180: Intro blast (whoosh anında) + Item 144: Sidechain Ducking + Item 166: Fade-out yok
+            intro_blast = 0.85 if bool(kwargs.get("enable_intro_whoosh", False)) else 0.0
+            final_audio = mix_narration_and_bgm(
+                processed_audio, bgm_p, mixed_audio, volume=vol,
+                tape_stop_times=tape_stop_times, allow_fade_out=False,
+                intro_blast=intro_blast,
             )
             if not final_audio or not os.path.exists(final_audio):
-                final_audio = mix_narration_and_bgm(
-                    processed_audio, bgm_p, mixed_audio, volume=vol,
-                    tape_stop_times=tape_stop_times, allow_fade_out=False
-                )
+                final_audio = processed_audio
             else:
-                print("  [Composer] [Item 180] Müzik giriş vuruşu (%100 ilk 1s) + ducking uygulandı.")
+                if intro_blast > 0:
+                    print("  [Composer] [Item 180] Müzik giriş vuruşu (Whoosh anında) + ducking uygulandı.")
+                else:
+                    print(f"  [Composer] Müzik mikslendi (Vokal ducking: {vol:.2f}, tape-stop: {len(tape_stop_times)} durak).")
 
             # Item 170: Ses Katmanlarının Faz Uyumu (Phase Alignment: Mono Bas Kilidi <120Hz)
             if final_audio and os.path.exists(final_audio):

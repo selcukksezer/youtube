@@ -802,7 +802,7 @@ def detect_audio_bpm_and_beats(
                     if M[i] > M[i - 1] and M[i] >= M[i + 1] and M[i] > -42.0
                 ]
                 if len(peaks) >= 4:
-                    peak_times = [round(p * 0.1, 3) for p in peaks if p * 0.1 <= duration + 5.0]
+                    peak_times = [round(p * 0.1, 3) for p in peaks if p * 0.1 <= duration + 0.05]
                     actual_beats = peak_times
                     dur_span = (peaks[-1] - peaks[0]) * 0.1
                     if dur_span > 1.0:
@@ -819,7 +819,7 @@ def detect_audio_bpm_and_beats(
         beat_interval = 60.0 / final_bpm
         actual_beats = []
         curr = beat_interval
-        while curr < duration + 10.0:
+        while curr <= duration + 0.05:
             actual_beats.append(round(curr, 3))
             curr += beat_interval
 
