@@ -158,8 +158,20 @@ def compile_director_plan(
     locked_niche = topic_intel["resolved_niche"]
 
     try:
+        import os
         from scenes.fallback import _generate_procedural_fallback_scenes
         from scenes.narration_validate import plan_needs_procedural_inject
+
+        force_fb = os.environ.get("SHORTS_FORCE_PROCEDURAL_FALLBACK", "").strip().lower() in {"1", "true", "yes", "on"}
+        if not raw_plan.get("scenes") and not force_fb:
+            try:
+                from scene_generator import generate_scenes
+                ai_plan = generate_scenes(title, niche_type=locked_niche, language=language)
+                if ai_plan and ai_plan.get("scenes") and not ai_plan.get("procedural_fallback"):
+                    raw_plan.update(ai_plan)
+                    print("  [Director] Boş plan için AI senaryosu başarıyla üretildi")
+            except Exception as ai_err:
+                print(f"  [Director] AI senaryo üretimi atlandı/başarısız: {ai_err}")
 
         if plan_needs_procedural_inject(raw_plan.get("scenes") or []):
             print("  [Director] Anlatım boş veya placeholder — prosedürel fallback enjekte ediliyor")

@@ -1092,7 +1092,7 @@ NICHE_FAMILY_MAP: Dict[str, str] = {
     "18_astrology_horoscope": "astrology",
     "19_historical_battles": "stoic",
     "20_whatsapp_chat_story": "whatsapp",
-    "21_ai_tools_hacks": "product",
+    "21_ai_tools_hacks": "tech",
     "22_emoji_guess_game": "quiz",
     "23_fitness_nutrition_hacks": "product",
     "24_sigma_character_study": "stoic",
@@ -1371,6 +1371,24 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
             "- Scene 1: problem+fix hook.\n"
             "- Middle: how it works, who it's for.\n"
             "- Last: save/comment. FORBIDDEN: horror, unrelated charts."
+        ),
+    },
+    "tech": {
+        "tr": (
+            "YAPAY ZEKA & TEKNOLOJİ REHBERİ YAPISI:\n"
+            "- Sahne 1: Hayatı veya işi kökten değiştiren teknoloji / yapay zeka kancası.\n"
+            "- Orta sahneler: 2-3 kilit araç/yöntem; her araç için somut fayda, ne işe yaradığı ve pratik kullanım.\n"
+            "- Son sahne: 'Siz en çok hangisini kullanıyorsunuz?' sorusu + döngü.\n"
+            "GÖRSEL: modern laptop, kodlama, yapay zeka grafik arayüzü, sunucu odası, fütüristik UI.\n"
+            "YASAK görseller: mutfak, limon, salatalık, yemek tavası, burç yorumu, korku."
+        ),
+        "en": (
+            "AI & TECH GUIDE STRUCTURE:\n"
+            "- Scene 1: Game-changing AI / technology breakthrough hook.\n"
+            "- Middle scenes: 2-3 key tools or workflows; concrete real-world benefits and use cases.\n"
+            "- Last scene: 'Which tool would you use most?' question + seamless loop.\n"
+            "VISUALS: modern laptop, code editing, AI interface, glowing screens, data center.\n"
+            "FORBIDDEN visuals: kitchen, lemons, cucumbers, cooking pots, astrology, horror."
         ),
     },
     "entertainment": {

@@ -1431,7 +1431,7 @@ def _subject_visuals(pack: dict, subject: str) -> list:
 
 def _topic_bound_narrations(subject: str, is_tr: bool, family: str = "", nid: str = "") -> list:
     """One subject, ten distinct beats. Natural human storytelling progression without mechanical repetitions."""
-    if family == "product" or nid == "12_amazon_affiliate":
+    if nid == "12_amazon_affiliate":
         if is_tr:
             return [
                 "Gündelik hayatınızı inanılmaz derecede kolaylaştıracak ve gördüğünüzde hemen denemek isteyeceğiniz 3 harika ürün var.",
@@ -1456,6 +1456,44 @@ def _topic_bound_narrations(subject: str, is_tr: bool, family: str = "", nid: st
             "These three practical solutions save you hours of frustration throughout your busy routine.",
             "Small innovations like these make a massive difference in your daily living comfort and focus.",
             "Which of these three viral finds would you use most around your home? Let us know below.",
+        ]
+
+    if family == "tech" or nid == "21_ai_tools_hacks":
+        if is_tr:
+            return [
+                f"{subject} alanında işinizi ve üretkenliğinizi katlayacak devrim niteliğinde yapay zeka araçları var.",
+                "İlk araç, saatler süren karmaşık araştırmaları ve veri analizini saniyeler içinde kaynaklı olarak önünüze getiriyor.",
+                "İkinci araç, tek bir komutla profesyonel sunumlar, arayüzler ve içerikler üreterek iş akışınızı baştan sona hızlandırıyor.",
+                "Üçüncü platform ise yaratıcı üretimi ve otomasyonu stüdyo kalitesinde zahmetsizce yönetmenizi sağlıyor.",
+                "Bu akıllı çözümler sayesinde geleneksel ve yorucu çalışma alışkanlıkları tamamen geride kalıyor.",
+                "Peki siz günlük işlerinizde en çok hangi yapay zeka aracını kullanıyorsunuz? Yorumlarda paylaşın.",
+            ]
+        return [
+            f"Here are groundbreaking AI tools that will completely supercharge your workflow in {subject}.",
+            "The first tool automates hours of tedious research and synthesizes verified facts in seconds.",
+            "The second platform generates professional presentations, code, and content from a single prompt.",
+            "The third tool delivers studio-quality creative assets and intelligent automation effortlessly.",
+            "Integrating these smart tools completely transforms how much you can achieve each day.",
+            "Which of these AI tools are you most excited to try? Let us know in the comments.",
+        ]
+
+    if family == "product":
+        if is_tr:
+            return [
+                f"{subject} konusunda günlük hayatınızı kolaylaştıracak ve fark yaratacak harika çözümler var.",
+                "İlk çözüm, sık karşılaşılan pratik bir sorunu saniyeler içinde zahmetsizce ortadan kaldırıyor.",
+                "İkinci araç, çalışma alanınızdaki verimliliği artırarak zamandan ve enerjiden tasarruf sağlıyor.",
+                "Üçüncü yöntem ise ergonomik yapısıyla en zorlu rutinleri bile son derece konforlu hale getiriyor.",
+                "Bu yenilikçi yaklaşımlar sayesinde günlük işlerinizi çok daha keyifli ve hızlı tamamlayabilirsiniz.",
+                "Peki sizce bu pratik çözümlerden hangisi en çok işinize yarardı? Yorumlarda buluşalım.",
+            ]
+        return [
+            f"Here are practical solutions that solve everyday problems and upgrade your routine in {subject}.",
+            "The first item solves a frustrating daily hassle in just a few seconds with zero effort.",
+            "The second tool maximizes efficiency in your daily workflow while saving precious time.",
+            "The third solution provides ergonomic comfort for demanding tasks you deal with every day.",
+            "These practical innovations completely elevate your daily lifestyle and productivity.",
+            "Which of these practical finds would you use most? Let us know in the comments.",
         ]
 
     if is_tr:

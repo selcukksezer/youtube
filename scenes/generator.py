@@ -737,21 +737,21 @@ def generate_scenes(
             f"Create a high-retention English YouTube Shorts video script for this topic: '{clean_title}'.\n"
             f"Original title context (hashtags stripped): '{title}'.\n"
             f"CRITICAL REQUIREMENT: The 'narration' field in EVERY scene MUST be written 100% in fluent, natural ENGLISH. "
-            f"Each narration MUST be 1-2 complete, concise sentences — never mood labels, dots, or emoji-only placeholders. "
+            f"Each narration MUST be 1-2 complete, concise sentences (15-20 words per scene) — never mood labels, dots, or emoji-only placeholders. "
             f"Each scene_description MUST be a concrete English visual sentence, never a placeholder. "
             f"Do NOT output Turkish narration. Translate and adapt the topic into an immersive English script.\n"
-            f"CRITICAL LENGTH RULE: Write exactly {MIN_SCENE_COUNT} scenes. Total narration MUST NOT exceed "
-            f"{word_cap} words. Use the available budget for topic-specific details without filler; never exceed 60 seconds."
+            f"CRITICAL LENGTH RULE: Write 8-10 scenes. Total narration MUST be at least 110-130 words (maximum {word_cap} words). "
+            f"Scripts under 85 words are rejected. Use the available budget for topic-specific details without filler; never exceed 60 seconds."
         )
     else:
         user_msg = (
             f"Bu başlık için Türkçe YouTube Shorts senaryosu oluştur: '{clean_title}'.\n"
             f"Orijinal başlık (hashtag/emojisiz): '{title}'.\n"
             f"KRİTİK: Her sahnenin 'narration' alanı kısa, doğal ve TAM Türkçe cümle(ler) olmalı; "
-            f"sadece mood etiketi, nokta veya emoji placeholder YASAK. "
+            f"her sahne 15-20 kelimelik zengin içerik taşımalı, sadece mood etiketi, nokta veya emoji placeholder YASAK. "
             f"scene_description gerçek İngilizce görsel cümle olmalı — placeholder YASAK. "
-            f"UZUNLUK KURALI: Tam {MIN_SCENE_COUNT} konuşma sahnesi yaz. Seslendirme toplamı "
-            f"{word_cap} kelimeyi ASLA aşmasın; bütçeyi konuya özgü bilgilerle kullan, dolgu ekleme."
+            f"UZUNLUK KURALI: Tam 8 ila 10 konuşma sahnesi yaz (Sahne 1 Kanca, ardından tanıtılan 3 araç/madde için her birine en az 2 detaylı sahne ve son sahne Kapanış). "
+            f"Seslendirme toplamı KESİNLİKLE en az 110-130 kelime olsun (85 kelimenin altı sistemce reddedilir). Bütçeyi konuya özgü somut bilgilerle kullan, dolgu ekleme."
         )
         try:
             from scenes.hadith_overlay import is_sacred_niche

@@ -382,6 +382,24 @@ NICHE_MOTIFS: Dict[str, Dict[str, Any]] = {
         "must_include": ["smartphone", "person", "shadow", "rain"],
         "must_exclude": ["ancient rome", "space nebula", "supercar"],
     },
+    "21_ai_tools_hacks": {
+        "motif": "ai_tools_software",
+        "era": "contemporary digital",
+        "mood": "innovative futuristic energetic",
+        "mood_palette": ["curious", "focused", "energetic", "analytical", "bright"],
+        "subjects": [
+            "artificial intelligence neural network glowing digital brain",
+            "developer typing code on glowing laptop in modern office",
+            "futuristic user interface digital software screen closeup",
+            "server room data center blue led lights rack",
+            "ai chat prompt glowing screen interface typing",
+        ],
+        "must_include": ["tech", "computer", "screen", "digital", "ai"],
+        "must_exclude": [
+            "kitchen", "lemon", "cucumber", "vegetable", "cooking", "pan",
+            "horror", "skull", "ghost", "ancient rome", "statue",
+        ],
+    },
 }
 
 _DEFAULT_MOTIF = {
@@ -488,6 +506,24 @@ FAMILY_MOTIFS: Dict[str, Dict[str, Any]] = {
         ],
         "must_include": ["product", "hands", "lifestyle"],
         "must_exclude": ["horror", "skull", "ghost", "candlestick"],
+    },
+    "tech": {
+        "motif": "tech_ai_software",
+        "era": "contemporary digital",
+        "mood": "innovative futuristic energetic",
+        "subjects": [
+            "person typing code glowing laptop screen",
+            "artificial intelligence neural network digital brain",
+            "modern computer workspace dual monitors glowing",
+            "futuristic digital interface holographic software screen",
+            "server room data center blue led lights rack",
+            "smartphone app screen interactive ui",
+        ],
+        "must_include": ["tech", "screen", "computer", "ai", "digital"],
+        "must_exclude": [
+            "horror", "skull", "ghost", "kitchen", "cucumber", "lemon",
+            "cooking", "pan", "cutting board", "candlestick",
+        ],
     },
     "entertainment": {
         "motif": "story_world",

@@ -562,10 +562,10 @@ class GeneratedSceneSchema(BaseModel):
         if not str(value).strip():
             raise ValueError("narration must not be blank")
         try:
-            from scenes.narration_validate import scene_narration_usable
+            from scenes.narration_validate import scene_narration_usable, HARD_MIN_WORDS_PER_SCENE
         except ImportError:
             return value
-        if not scene_narration_usable(value):
+        if not scene_narration_usable(value, min_words=HARD_MIN_WORDS_PER_SCENE):
             raise ValueError("narration too short or placeholder-only")
         return value
 

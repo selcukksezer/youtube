@@ -70,6 +70,8 @@ def normalize_narration_for_validation(text: str) -> str:
             t = m.group(1)
     t = re.sub(r"\s+([.!?,;:])", r"\1", t)
     t = re.sub(r"\s+", " ", t).strip()
+    if t and t[-1] not in ".!?":
+        t += "."
     return t
 
 

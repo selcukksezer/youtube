@@ -74,7 +74,7 @@ def extract_search_keywords(topic: str) -> str:
 def research_topic_facts(
     topic: str,
     max_snippets: int = 6,
-    timeout_sec: float = 6.0,
+    timeout_sec: float = 2.0,
 ) -> List[str]:
     """
     Search DuckDuckGo HTML and extract verified factual snippets.
@@ -102,14 +102,6 @@ def research_topic_facts(
             headers=headers,
             timeout=timeout_sec,
         )
-        if resp.status_code != 200:
-            # Fallback to GET
-            resp = requests.get(
-                f"https://html.duckduckgo.com/html/?q={urllib.parse.quote_plus(query)}",
-                headers=headers,
-                timeout=timeout_sec,
-            )
-
         if resp.status_code == 200 and resp.text:
             parser = _DDGHTMLParser()
             parser.feed(resp.text)
@@ -150,7 +142,7 @@ def _query_duckduckgo_lite(query: str, max_results: int = 4) -> List[str]:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
-    resp = requests.post(url, data={"q": query}, headers=headers, timeout=5.0)
+    resp = requests.post(url, data={"q": query}, headers=headers, timeout=2.0)
     if resp.status_code != 200:
         return []
     text = resp.text

@@ -68,10 +68,17 @@ def run_cli(args: argparse.Namespace) -> int:
     print(f"  • Dry-Run:          {args.dry_run}")
     print(f"  • Çıktı Dizini:     {output_dir}\n")
 
-    # 1. Compile DirectorPlan
+    # 1. Generate AI Script & Compile DirectorPlan
     t0 = time.time()
-    print("[1/3] DirectorPlan derleniyor...")
+    print("[1/3] AI Senaryosu üretiliyor ve DirectorPlan derleniyor...")
+    from scene_generator import generate_scenes
+    raw_ai_plan = generate_scenes(
+        topic,
+        niche_type=niche,
+        language="tr",
+    )
     plan = compile_director_plan(
+        raw_ai_plan,
         title=topic,
         niche_id=niche,
         language="tr",
