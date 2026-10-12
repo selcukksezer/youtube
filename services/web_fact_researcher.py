@@ -161,6 +161,7 @@ def _query_duckduckgo_lite(query: str, max_results: int = 4) -> List[str]:
 
 def _query_wikipedia_snippets(query: str, lang: str = "tr", max_results: int = 3) -> List[str]:
     """Wikipedia Action API ile sıfır maliyetli ve güvenilir ansiklopedik veri arama."""
+    import html
     url = f"https://{lang}.wikipedia.org/w/api.php"
     params = {
         "action": "query",
@@ -180,7 +181,7 @@ def _query_wikipedia_snippets(query: str, lang: str = "tr", max_results: int = 3
     for item in items:
         snip = item.get("snippet", "")
         clean = re.sub(r"<[^>]+>", " ", snip)
-        clean = re.sub(r"&[a-z]+;", " ", clean)
+        clean = html.unescape(clean)
         clean = re.sub(r"\s+", " ", clean).strip()
         if clean and len(clean) >= 20:
             snippets.append(f"{item.get('title')}: {clean[:250]}")
