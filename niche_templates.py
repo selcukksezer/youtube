@@ -1094,7 +1094,7 @@ NICHE_FAMILY_MAP: Dict[str, str] = {
     "20_whatsapp_chat_story": "whatsapp",
     "21_ai_tools_hacks": "tech",
     "22_emoji_guess_game": "quiz",
-    "23_fitness_nutrition_hacks": "product",
+    "23_fitness_nutrition_hacks": "fitness",
     "24_sigma_character_study": "stoic",
     "25_celebrity_net_worth": "entertainment",
     "26_dangerous_places": "mystery",
@@ -1102,9 +1102,9 @@ NICHE_FAMILY_MAP: Dict[str, str] = {
     "28_dream_meanings": "astrology",
     "29_optical_illusions_iq": "quiz",
     "30_poetry_quotes": "stoic",
-    "31_supercars_automotive": "product",
-    "32_legal_consumer_hacks": "product",
-    "33_parenting_child_hacks": "product",
+    "31_supercars_automotive": "automotive",
+    "32_legal_consumer_hacks": "legal",
+    "33_parenting_child_hacks": "kids",
     "34_gaming_easter_eggs": "entertainment",
     "35_animal_kingdom_stories": "entertainment",
     "36_kids_animation": "kids",
@@ -1116,11 +1116,11 @@ SHOCK_QUERY_FAMILIES = frozenset({"mystery", "dark"})
 
 # Visual/copy bait — opt-in by family. Calm niches inherit False.
 CLICKBAIT_FAMILIES = frozenset({"quiz", "mystery", "dark"})
-POLARIZE_FAMILIES = frozenset({"quiz", "mystery", "dark", "news", "entertainment"})
+POLARIZE_FAMILIES = frozenset({"quiz", "mystery", "dark", "news", "entertainment", "fitness", "automotive"})
 DETECTIVE_BAIT_FAMILIES = frozenset({"quiz", "mystery", "dark"})
 SHOPPING_FAMILIES = frozenset({"product"})
-STICKY_BANNER_FAMILIES = frozenset({"quiz", "mystery", "dark", "news"})
-CALM_FAMILIES = frozenset({"stoic", "religious", "kids"})
+STICKY_BANNER_FAMILIES = frozenset({"quiz", "mystery", "dark", "news", "fitness", "automotive"})
+CALM_FAMILIES = frozenset({"stoic", "religious", "kids", "legal"})
 
 VISUAL_BAIT_MANIFEST_KEYS = (
     "item_211_blur_bait",
@@ -1403,6 +1403,60 @@ SCENE_FORMAT_TEMPLATES: Dict[str, Dict[str, str]] = {
             "- Scene 1: curiosity hook.\n"
             "- Middle: three on-niche details.\n"
             "- Last: comment ask. FORBIDDEN: Bitcoin charts, horror unless mystery family."
+        ),
+    },
+    "fitness": {
+        "tr": (
+            "FİTNESS & SAĞLIK REHBERİ YAPISI:\n"
+            "- Sahne 1: Yaygın bir fitness hatasını yıkan veya hızlı sonuç vadeden kanca.\n"
+            "- Orta sahneler: 2-3 bilimsel egzersiz/beslenme kuralı; somut kas/yağ yakım mantığı.\n"
+            "- Son sahne: 'Siz bu kuralı uyguluyor musunuz?' sorusu + döngü.\n"
+            "GÖRSEL: spor salonu, ağırlık çalışan atlet, açık hava koşu, sağlıklı beslenme, kas biyomekaniği.\n"
+            "YASAK: mutfak aletleri, poşet mühürleyici, fast food, korku, kripto."
+        ),
+        "en": (
+            "FITNESS & NUTRITION GUIDE STRUCTURE:\n"
+            "- Scene 1: Myth-busting or high-impact fitness/fat-loss hook.\n"
+            "- Middle scenes: 2-3 science-backed training or nutrition rules with clear mechanisms.\n"
+            "- Last scene: 'Do you practice this rule?' debate question + seamless loop.\n"
+            "VISUALS: gym barbell training, sprinting athlete, healthy meal prep, muscle biomechanics.\n"
+            "FORBIDDEN: kitchen gadgets, fast food, horror, crypto."
+        ),
+    },
+    "automotive": {
+        "tr": (
+            "SÜPER ARABA & OTOMOBİL YAPISI:\n"
+            "- Sahne 1: 0-100 hızlanması, motor gücü veya agresif tasarım kancası.\n"
+            "- Orta sahneler: 2-3 canavar otomobil detayı; beygir gücü, aerodinamik, pist performansı.\n"
+            "- Son sahne: 'Hangisini garajınızda görmek isterdiniz?' sorusu + döngü.\n"
+            "GÖRSEL: yarış pistinde süper araba, egzoz alevi, gece otoban çekimi, kokpit kadranı.\n"
+            "YASAK: mutfak, limon, salatalık, poşet mühürleyici, ev temizliği, korku."
+        ),
+        "en": (
+            "SUPERCAR & AUTOMOTIVE STRUCTURE:\n"
+            "- Scene 1: High-octane acceleration, horsepower, or aggressive design hook.\n"
+            "- Middle scenes: 2-3 hypercar performance specs, aerodynamics, track records.\n"
+            "- Last scene: 'Which one belongs in your dream garage?' question + seamless loop.\n"
+            "VISUALS: track supercar rolling shot, exhaust flame, highway night cruise, cockpit tachometer.\n"
+            "FORBIDDEN: kitchen, lemons, cucumbers, pantry gadgets, cleaning tools, horror."
+        ),
+    },
+    "legal": {
+        "tr": (
+            "HUKUKİ HAKLAR & TÜKETİCİ REHBERİ YAPISI:\n"
+            "- Sahne 1: Günlük hayatta vatandaşın haklarını koruyan şok edici yasal kanca.\n"
+            "- Orta sahneler: 2-3 somut kanun maddesi / tüketici hakkı; poliste, mağazada veya iş yerinde pratik çözüm.\n"
+            "- Son sahne: 'Bu hakkınızı daha önce kullandınız mı?' sorusu + döngü.\n"
+            "GÖRSEL: adalet terazisi, tokmak, sözleşme imzalayan avukat, resmi belge, iş merkezi.\n"
+            "YASAK: mutfak aletleri, poşet mühürleyici, limon, salatalık, korku, kripto."
+        ),
+        "en": (
+            "LEGAL RIGHTS & CONSUMER HACKS STRUCTURE:\n"
+            "- Scene 1: Shocking everyday legal right / consumer protection hook.\n"
+            "- Middle scenes: 2-3 actionable rights, consumer laws, practical protection steps.\n"
+            "- Last scene: 'Have you ever used this right?' question + seamless loop.\n"
+            "VISUALS: scales of justice, gavel, lawyer signing contract, official legal documents.\n"
+            "FORBIDDEN: kitchen gadgets, lemons, cucumbers, pantry tools, horror, crypto."
         ),
     },
     "general": {

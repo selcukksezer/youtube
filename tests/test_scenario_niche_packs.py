@@ -173,6 +173,34 @@ class TestScenarioNichePacks(unittest.TestCase):
         under = sum(1 for s in plan["scenes"] if float(s.get("duration") or 0) < 3.2)
         self.assertLessEqual(under, 2)
 
+    def test_supercars_fallback_is_not_kitchen(self):
+        plan = _generate_procedural_fallback_scenes(
+            "Ferrari F8 vs Lamborghini Huracan", niche_type="31_supercars_automotive", language="tr"
+        )
+        joined = " ".join(s["narration"] for s in plan["scenes"]).lower()
+        self.assertNotIn("poşet", joined)
+        self.assertNotIn("mutfak", joined)
+        self.assertNotIn("mühürleyici", joined)
+        self.assertTrue("araba" in joined or "hız" in joined or "motor" in joined or "canavar" in joined)
+
+    def test_fitness_fallback_is_not_kitchen(self):
+        plan = _generate_procedural_fallback_scenes(
+            "Hızlı Yağ Yakımı ve Kas Gelişimi", niche_type="23_fitness_nutrition_hacks", language="tr"
+        )
+        joined = " ".join(s["narration"] for s in plan["scenes"]).lower()
+        self.assertNotIn("poşet", joined)
+        self.assertNotIn("mühürleyici", joined)
+        self.assertTrue("antrenman" in joined or "kas" in joined or "beslenme" in joined or "vücut" in joined)
+
+    def test_ai_tools_fallback_is_not_kitchen(self):
+        plan = _generate_procedural_fallback_scenes(
+            "3 Gizli Yapay Zeka Sitesi", niche_type="21_ai_tools_hacks", language="tr"
+        )
+        joined = " ".join(s["narration"] for s in plan["scenes"]).lower()
+        self.assertNotIn("poşet", joined)
+        self.assertNotIn("mühürleyici", joined)
+        self.assertTrue("yapay zeka" in joined or "araç" in joined)
+
 
 if __name__ == "__main__":
     unittest.main()

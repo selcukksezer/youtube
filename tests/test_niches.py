@@ -105,6 +105,11 @@ class TestNiches(unittest.TestCase):
         self.assertEqual(get_niche_family("1_news_flash"), "news")
         self.assertEqual(get_niche_family("9_five_facts"), "quiz")
         self.assertEqual(get_niche_family("10_religious_quotes"), "religious")
+        self.assertEqual(get_niche_family("21_ai_tools_hacks"), "tech")
+        self.assertEqual(get_niche_family("31_supercars_automotive"), "automotive")
+        self.assertEqual(get_niche_family("23_fitness_nutrition_hacks"), "fitness")
+        self.assertEqual(get_niche_family("32_legal_consumer_hacks"), "legal")
+        self.assertEqual(get_niche_family("33_parenting_child_hacks"), "kids")
 
     def test_list_all_niches_includes_family(self):
         for n in list_all_niches():
@@ -115,6 +120,12 @@ class TestNiches(unittest.TestCase):
         self.assertIn("KURAL 1", st)
         wa = get_niche_scene_structure("20_whatsapp_chat_story", "tr")
         self.assertIn("mesajlaşma", wa.lower())
+        tech = get_niche_scene_structure("21_ai_tools_hacks", "tr")
+        self.assertIn("yapay zeka", tech.lower())
+        auto = get_niche_scene_structure("31_supercars_automotive", "tr")
+        self.assertIn("araba", auto.lower())
+        fit = get_niche_scene_structure("23_fitness_nutrition_hacks", "tr")
+        self.assertIn("fitness", fit.lower())
 
 if __name__ == "__main__":
     unittest.main()

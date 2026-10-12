@@ -400,6 +400,64 @@ NICHE_MOTIFS: Dict[str, Dict[str, Any]] = {
             "horror", "skull", "ghost", "ancient rome", "statue",
         ],
     },
+    "23_fitness_nutrition_hacks": {
+        "motif": "fitness_workout_nutrition",
+        "era": "contemporary athletic",
+        "mood": "powerful energetic disciplined",
+        "mood_palette": ["energetic", "focused", "disciplined", "dramatic"],
+        "subjects": [
+            "athlete lifting heavy barbell gym workout sweat",
+            "runner sprinting track sunset cinematic slow motion",
+            "crossfit training intense gym athlete",
+            "healthy meal prep vegetables protein fitness diet",
+            "boxing fighter heavy bag punch powerful impact",
+        ],
+        "must_include": ["fitness", "gym", "workout", "athlete", "exercise", "training"],
+        "must_exclude": ["kitchen pan cooking", "horror", "skull", "ghost", "candlestick chart"],
+    },
+    "31_supercars_automotive": {
+        "motif": "supercar_hypercar_speed",
+        "era": "modern luxury automotive",
+        "mood": "high-octane roaring sleek fast",
+        "mood_palette": ["urgent", "energetic", "dramatic", "epic"],
+        "subjects": [
+            "supercar accelerating high speed race track",
+            "luxury sports car cinematic rolling shot highway",
+            "engine bay roaring exhaust flame closeup",
+            "sleek modern hypercar aerodynamic curves glossy",
+            "sports car dashboard speedometer cockpit night",
+        ],
+        "must_include": ["car", "supercar", "automotive", "vehicle", "speed", "highway"],
+        "must_exclude": ["kitchen", "cucumber", "lemon", "cooking", "pan", "horror", "skull", "ghost"],
+    },
+    "32_legal_consumer_hacks": {
+        "motif": "legal_consumer_rights",
+        "era": "contemporary corporate",
+        "mood": "authoritative protective analytical smart",
+        "mood_palette": ["focused", "analytical", "calm", "authoritative"],
+        "subjects": [
+            "courtroom wooden gavel scales of justice legal document",
+            "lawyer reviewing contract document office desk",
+            "consumer rights official paperwork signing pen",
+            "businessman shaking hands corporate building lobby",
+        ],
+        "must_include": ["law", "legal", "document", "contract", "justice", "court"],
+        "must_exclude": ["kitchen", "cucumber", "lemon", "cooking", "horror", "skull", "ghost"],
+    },
+    "33_parenting_child_hacks": {
+        "motif": "parenting_child_psychology",
+        "era": "warm contemporary",
+        "mood": "heartwarming gentle advisory reassuring",
+        "mood_palette": ["warm", "peaceful", "calm", "hopeful"],
+        "subjects": [
+            "parent teaching toddler learning blocks playful",
+            "happy family walking park sunny day together",
+            "child smiling playing creative toys nursery",
+            "mother reading bedtime story child bedroom",
+        ],
+        "must_include": ["child", "parent", "family", "baby", "play", "home"],
+        "must_exclude": ["kitchen pan cooking", "horror", "skull", "ghost", "blood", "nightclub", "cyberpunk"],
+    },
 }
 
 _DEFAULT_MOTIF = {
@@ -556,6 +614,9 @@ FAMILY_MOTIFS: Dict[str, Dict[str, Any]] = {
             "photoreal child", "real kid face", "dark psychology", "gore",
         ],
     },
+    "fitness": NICHE_MOTIFS["23_fitness_nutrition_hacks"],
+    "automotive": NICHE_MOTIFS["31_supercars_automotive"],
+    "legal": NICHE_MOTIFS["32_legal_consumer_hacks"],
     "general": _DEFAULT_MOTIF,
 }
 

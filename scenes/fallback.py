@@ -1477,6 +1477,63 @@ def _topic_bound_narrations(subject: str, is_tr: bool, family: str = "", nid: st
             "Which of these AI tools are you most excited to try? Let us know in the comments.",
         ]
 
+    if family == "automotive" or nid == "31_supercars_automotive":
+        if is_tr:
+            return [
+                f"{subject} dünyasında sınırları zorlayan ve nefes kesen inanılmaz mühendislik harikaları var.",
+                "İlk canavar, 0'dan 100'e 2 saniyenin altında çıkarak yer çekimine adeta meydan okuyor.",
+                "İkinci model, aerodinamik gövdesi ve çift turbo motoruyla yarış pistlerini titretiyor.",
+                "Üçüncü hiper araba ise milyon dolarlık fiyat etiketi ve benzersiz karbonfiber tasarımıyla zirvede yer alıyor.",
+                "Bu olağanüstü makineler, saf gücün ve ileri otomotiv teknolojisinin en uç noktasını temsil ediyor.",
+                "Peki bu 3 süper arabadan hangisini garajınızda görmek isterdiniz? Yorumlarda buluşalım.",
+            ]
+        return [
+            f"Here are breathtaking engineering masterpieces pushing absolute limits in {subject}.",
+            "The first beast shatters expectations by launching from 0 to 60 in under 2 seconds.",
+            "The second machine dominates the track with twin-turbo performance and active aerodynamics.",
+            "The third hypercar stands at the pinnacle with multi-million dollar exclusivity and carbon fiber mastery.",
+            "These mechanical beasts represent the extreme frontier of speed, design, and raw power.",
+            "Which of these dream supercars would you park in your garage? Let us know in the comments.",
+        ]
+
+    if family == "fitness" or nid == "23_fitness_nutrition_hacks":
+        if is_tr:
+            return [
+                f"{subject} konusunda vücudunuzu dönüştürecek ve yağ yakımını hızlandıracak bilimsel tüyolar var.",
+                "İlk kural, antrenman öncesi doğru beslenerek enerji depolarını maksimum seviyeye çıkarmaktır.",
+                "İkinci prensip, kas hipertrofisini tetikleyen progressive overload tekniğini doğru formla uygulamaktır.",
+                "Üçüncü adım ise kaliteli uyku ve toparlanma süreciyle kas onarımını en üst seviyeye taşımaktır.",
+                "Bu basit ama etkili kuralları disiplinle uyguladığınızda sonuçları çok daha kısa sürede görebilirsiniz.",
+                "Peki siz antrenmanlarınızda bu kurallardan hangisini aksatıyorsunuz? Yorumlarda tartışalım.",
+            ]
+        return [
+            f"Here are science-backed training and nutrition hacks to transform your physique in {subject}.",
+            "The first rule is optimizing your pre-workout nutrition to fuel maximum power and fat oxidation.",
+            "The second principle is progressive overload executed with strict form to stimulate continuous growth.",
+            "The third key is prioritizing deep sleep and active recovery for peak muscle synthesis.",
+            "Consistently applying these fundamentals produces dramatic physical changes in record time.",
+            "Which of these fitness habits do you struggle with most? Let us know in the comments.",
+        ]
+
+    if family == "legal" or nid == "32_legal_consumer_hacks":
+        if is_tr:
+            return [
+                f"{subject} alanında her vatandaşın ve tüketicinin mutlaka bilmesi gereken hayati haklar var.",
+                "İlk hak, haksız veya ayıplı ürünlerde sorgusuz sualsiz değişim veya tam para iadesi hakkınızdır.",
+                "İkinci kural, sözleşmelerde gizlenen haksız şartların kanunen tamamen geçersiz sayılmasıdır.",
+                "Üçüncü önemli nokta ise yasal süreler içinde resmi itiraz hakkınızı kullanarak mağduriyeti önlemektir.",
+                "Bu temel kuralları bildiğinizde hiçbir mağaza veya kurum sizi mağdur edemez.",
+                "Peki bu tüketici haklarından herhangi birini daha önce kullandınız mı? Yorumlarda paylaşın.",
+            ]
+        return [
+            f"Here are critical consumer and everyday legal rights everyone must know regarding {subject}.",
+            "The first protection guarantees an immediate refund or replacement for defective purchases.",
+            "The second rule renders unfair clauses and hidden contract penalties legally null and void.",
+            "The third safeguard ensures statutory timelines to dispute unauthorized charges and protect your money.",
+            "Knowing these essential legal rules keeps you protected in everyday transactions.",
+            "Have you ever had to enforce any of these consumer rights? Share your story below.",
+        ]
+
     if family == "product":
         if is_tr:
             return [
