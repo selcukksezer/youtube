@@ -151,7 +151,7 @@ def launch_web():
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=port, reload=False)
+    uvicorn.run("server:app", host="127.0.0.1", port=port, reload=True)
 
 
 def launch_cli():

@@ -99,6 +99,12 @@ app.mount("/bgm_audio", StaticFiles(directory=config.BGM_DIR), name="bgm_audio")
 # Serve output static directory
 app.mount("/output", StaticFiles(directory=config.OUTPUT_DIR), name="output")
 
+# Serve assets directory for in-browser scene video and media preview
+if not os.path.exists(config.ASSETS_DIR):
+    os.makedirs(config.ASSETS_DIR, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=config.ASSETS_DIR), name="assets")
+
+
 # Serve proofs dossier directory
 PROOFS_DIR = os.path.join(config.BASE_DIR, "proofs")
 os.makedirs(PROOFS_DIR, exist_ok=True)

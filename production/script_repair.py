@@ -98,6 +98,15 @@ def repair_script_quality_plan(
             **(plan.get("meta") if isinstance(plan.get("meta"), dict) else {}),
             **(repaired_plan.get("meta") if isinstance(repaired_plan.get("meta"), dict) else {}),
         }
+        # Preserve visual selections from original scenes
+        orig_scenes = plan.get("scenes") or []
+        for i, rep_sc in enumerate(repaired_plan.get("scenes") or []):
+            if i < len(orig_scenes):
+                orig_sc = orig_scenes[i]
+                for v_key in ("selected_video", "video_url", "path", "video_path", "visual_mode"):
+                    if orig_sc.get(v_key) and not rep_sc.get(v_key):
+                        rep_sc[v_key] = orig_sc[v_key]
+
         repaired_plan = sanitize_plan_scene_descriptions(repaired_plan)
         repaired_report = validate_script_quality(
             repaired_plan,

@@ -335,10 +335,41 @@ def api_generate_script(req: ScriptGenerateRequest):
             from director.quality_gate import check_narration_integrity
             from scenes.enrichment import enrich_plan_scenes
 
-            # P2-03: auto-repair first — quality gate helps, never blocks normal scripts
+            # Apply human craft and retention hooks to ensure top-notch quality script upfront
             plan_in = dict(plan)
+            try:
+                from craft import apply_human_craft
+                plan_in = apply_human_craft(
+                    plan_in,
+                    title=req.keyword or "Video",
+                    niche_id=locked_niche,
+                    language=req.language or config.LANGUAGE,
+                    variation=getattr(req, "variation_attempt", 0) or 0,
+                )
+            except Exception as hc_err:
+                logger.warning("apply_human_craft skip in api_generate_script: %s", hc_err)
+
+            try:
+                from scenes.retention_hooks import ensure_retention_hooks_on_plan
+                plan_in = ensure_retention_hooks_on_plan(
+                    plan_in,
+                    req.keyword or "Video",
+                    lang=req.language or config.LANGUAGE,
+                    niche_type=locked_niche,
+                    variation_attempt=getattr(req, "variation_attempt", 0) or 0,
+                    enable_outro=getattr(req, "enable_outro", True) is not False,
+                )
+            except Exception as hook_err:
+                logger.warning("ensure_retention_hooks skip in api_generate_script: %s", hook_err)
+
             if plan_in.get("scenes"):
                 plan_in = enrich_plan_scenes(plan_in, lang=req.language or config.LANGUAGE, niche_id=locked_niche)
+                try:
+                    from scenes.enrichment import enforce_specific_search_queries
+                    enforce_specific_search_queries(plan_in["scenes"])
+                except Exception:
+                    pass
+
             fixes: list = []
             repaired = False
             if plan_in.get("scenes"):

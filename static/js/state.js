@@ -483,6 +483,7 @@ function updateScriptActionButtons() {
     const btnRegenerateStudio = document.getElementById('btn-regenerate-script-studio');
     const btnRegenerateTimeline = document.getElementById('btn-regenerate-scenario');
     const btnTranslateScript = document.getElementById('btn-translate-script');
+    const btnCopyStudio = document.getElementById('btn-copy-script-studio');
     if (!btn) return;
 
     const ready = hasExistingPlan();
@@ -497,6 +498,7 @@ function updateScriptActionButtons() {
     btnRegenerateStudio?.classList.toggle('hidden', !ready);
     btnRegenerateTimeline?.classList.toggle('hidden', !ready);
     btnTranslateScript?.classList.toggle('hidden', !ready || sourceLanguage === targetLanguage);
+    btnCopyStudio?.classList.toggle('hidden', !ready);
     btn.disabled = isGenerating || (!ready && !currentTopic);
     if (btnTranslateScript && sourceLanguage !== targetLanguage) {
         const targetName = targetLanguage === 'en' ? 'İngilizceye' : 'Türkçeye';

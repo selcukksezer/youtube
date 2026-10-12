@@ -61,12 +61,30 @@ YOUTUBE_39_LANGUAGES = {
 }
 
 
-def translate_free_text(text: str, source_lang: str = "tr", target_lang: str = "en", timeout: float = 4.0) -> str:
-    """Free MyMemory translation with no API key and zero cost."""
-    if not text.strip() or target_lang == source_lang:
-        return text
-    clean_target = target_lang.split("-")[0]
-    clean_source = source_lang.split("-")[0]
+def _translate_via_google(text: str, source_lang: str, target_lang: str, timeout: float = 4.0) -> Optional[str]:
+    """Free Google Translate endpoint (client=gtx) with zero API key."""
+    clean_target = target_lang.split("-")[0].lower()
+    clean_source = source_lang.split("-")[0].lower()
+    encoded = urllib.parse.quote(text[:1000])
+    url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl={clean_source}&tl={clean_target}&dt=t&q={encoded}"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    try:
+        r = requests.get(url, headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            res = r.json()
+            if isinstance(res, list) and res and isinstance(res[0], list):
+                translated = "".join(part[0] for part in res[0] if isinstance(part, list) and part and part[0])
+                if translated and translated.strip():
+                    return translated.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _translate_via_mymemory(text: str, source_lang: str, target_lang: str, timeout: float = 4.0) -> Optional[str]:
+    """Free MyMemory translation fallback."""
+    clean_target = target_lang.split("-")[0].lower()
+    clean_source = source_lang.split("-")[0].lower()
     encoded_text = urllib.parse.quote(text[:300])
     url = f"https://api.mymemory.translated.net/get?q={encoded_text}&langpair={clean_source}|{clean_target}"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ShortsAI/3.0"}
@@ -75,10 +93,28 @@ def translate_free_text(text: str, source_lang: str = "tr", target_lang: str = "
         if r.status_code == 200:
             data = r.json()
             translated = data.get("responseData", {}).get("translatedText")
-            if translated and not translated.startswith("MYMEMORY WARNING:"):
+            if translated and not translated.startswith("MYMEMORY WARNING:") and translated.strip() != text.strip():
                 return translated.strip()
     except Exception:
         pass
+    return None
+
+
+def translate_free_text(text: str, source_lang: str = "tr", target_lang: str = "en", timeout: float = 4.0) -> str:
+    """Translates text without API key using Google Translate primary + MyMemory fallback."""
+    if not text or not text.strip() or target_lang == source_lang:
+        return text
+
+    # 1. Primary: Google Translate (0 TL, handles all 39 languages reliably)
+    res = _translate_via_google(text, source_lang=source_lang, target_lang=target_lang, timeout=timeout)
+    if res and res.strip():
+        return res
+
+    # 2. Fallback: MyMemory
+    res = _translate_via_mymemory(text, source_lang=source_lang, target_lang=target_lang, timeout=timeout)
+    if res and res.strip():
+        return res
+
     return text
 
 

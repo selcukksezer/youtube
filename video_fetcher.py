@@ -22,9 +22,9 @@ _source_counter: int = 0  # Round-robin counter
 # K3: thread lock — paralel asyncio.gather fetch'lerinde race condition önlemi
 _fetch_lock = _threading.Lock()
 _SELECTED_VIDEO_HOSTS = {
-    "pexels": frozenset({"videos.pexels.com"}),
-    "pixabay": frozenset({"cdn.pixabay.com"}),
-    "coverr": frozenset({"cdn.coverr.co"}),
+    "pexels": frozenset({"videos.pexels.com", "images.pexels.com", "player.vimeo.com"}),
+    "pixabay": frozenset({"cdn.pixabay.com", "pixabay.com", "i.vimeocdn.com"}),
+    "coverr": frozenset({"cdn.coverr.co", "coverr.co"}),
 }
 _MAX_SELECTED_VIDEO_BYTES = 256 * 1024 * 1024
 _USED_PERSIST_PATH = os.path.join(
@@ -1043,6 +1043,10 @@ def fetch_selected_stock_video(
     source = str(selected_video.get("source") or "").strip().casefold()
     kind = str(selected_video.get("kind") or "").strip().casefold()
     url = str(selected_video.get("url") or "").strip()
+    local_p = selected_video.get("path") or selected_video.get("video_path") or selected_video.get("file_path")
+    if local_p and os.path.isfile(local_p) and os.path.getsize(local_p) > 1000:
+        return local_p
+
     allowed_hosts = _SELECTED_VIDEO_HOSTS.get(source)
     if kind != "video":
         print(f"    [SelectedStock] {source or 'unknown'} selection is {kind or 'untyped'}, not video; falling back.")
@@ -1056,13 +1060,14 @@ def fetch_selected_stock_video(
     except ValueError as exc:
         print(f"    [SelectedStock] invalid selected URL: {exc}; falling back.")
         return None
+    path_lower = parsed_url.path.lower()
     if (
         parsed_url.scheme != "https"
         or parsed_url.username
         or parsed_url.password
         or parsed_url.hostname not in allowed_hosts
         or port not in (None, 443)
-        or not parsed_url.path.lower().endswith(".mp4")
+        or not (path_lower.endswith(".mp4") or ".mp4" in path_lower or ".mp4" in url.lower())
     ):
         print(f"    [SelectedStock] rejected URL outside the {source} MP4 CDN; falling back.")
         return None
@@ -1078,9 +1083,19 @@ def fetch_selected_stock_video(
         "id": source_id,
         "contributor": selected_video.get("contributor") or "",
     }
-    if _stock_candidate_blocked(candidate) or database.source_asset_was_used(source_key):
-        print(f"    [SelectedStock] {source_key} is blocked or already used; falling back.")
+    # Explicitly selected clips are never rejected for prior usage; only for copyright blocklist
+    if database.is_stock_blocklisted(source_key, source_id, candidate.get("contributor") or ""):
+        print(f"    [SelectedStock] {source_key} is copyright-blocklisted; falling back.")
         return None
+
+    os.makedirs(project_dir, exist_ok=True)
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", source_id)[:80] or "selected"
+    clip_path = os.path.join(project_dir, f"s{scene_index:03d}_{source}_{safe_id}_selected.mp4")
+
+    # Fast-path: Reuse existing cached selected clip if already downloaded and valid
+    if _usable_clip(clip_path):
+        print(f"    [SelectedStock] Using existing cached clip: {os.path.basename(clip_path)}")
+        return clip_path
 
     from visuals.license import License, LicenseInfo, is_commercial_safe
 
@@ -1104,9 +1119,6 @@ def fetch_selected_stock_video(
         print(f"    [SelectedStock] invalid license metadata for {source_key}; falling back.")
         return None
 
-    os.makedirs(project_dir, exist_ok=True)
-    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", source_id)[:80] or "selected"
-    clip_path = os.path.join(project_dir, f"s{scene_index:03d}_{source}_{safe_id}_selected.mp4")
     temp_path = None
     try:
         fd, temp_path = tempfile.mkstemp(
@@ -1186,17 +1198,6 @@ def fetch_selected_stock_video(
 
     clip_hash = _file_hash(clip_path)
     with _fetch_lock:
-        if (
-            clip_hash in _used_hashes
-            or source_id in _job_used_ids
-            or database.source_asset_was_used(source_key, clip_hash)
-        ):
-            print(f"    [SelectedStock] duplicate {source_key}; falling back.")
-            try:
-                os.remove(clip_path)
-            except OSError as exc:
-                print(f"    [SelectedStock] duplicate clip cleanup failed: {exc}")
-            return None
         database.record_source_asset(source_key, url, clip_hash, source)
         _job_used_ids.add(source_id)
         _used_hashes.add(clip_hash)

@@ -460,7 +460,7 @@ function initSSE() {
     };
 
     // Canonical Section 10.1 SSE event listeners
-    ['progress', 'log', 'complete', 'error'].forEach((evt) => {
+    ['progress', 'log', 'complete', 'error', 'plan_updated'].forEach((evt) => {
         eventSource.addEventListener(evt, (e) => {
             parseAndDispatch(evt, e.data);
         });
@@ -482,6 +482,12 @@ function handleServerEvent(type, data) {
         dockLogSnippet.textContent = data;
         terminalBody.textContent += `[${new Date().toLocaleTimeString()}] ${data}\n`;
         terminalBody.scrollTop = terminalBody.scrollHeight;
+    } else if (type === 'plan_updated') {
+        if (data && data.plan) {
+            console.log('🎬 SSE plan_updated alındı, kurgu senkronize ediliyor...', data);
+            if (typeof setCurrentPlan === 'function') setCurrentPlan(data.plan);
+            if (typeof showToast === 'function') showToast('🎬 Senaryo ve gerçek video klipleri kurgu editörüne bağlandı!');
+        }
     } else if (type === 'complete') {
         dockProgressFill.style.width = `100%`;
         dockProgressPct.textContent = `%100`;
@@ -490,6 +496,12 @@ function handleServerEvent(type, data) {
         isRendering = false;
         setCancelButtonState('close');
         updateTerminalTriggers(false, 100);
+
+        if (data.plan && typeof setCurrentPlan === 'function') {
+            setCurrentPlan(data.plan);
+        } else if (typeof loadLatestRenderedProjectToTimeline === 'function') {
+            loadLatestRenderedProjectToTimeline(true);
+        }
 
         // Always land on Studio so preview + SEO are visible
         switchTab('studio');

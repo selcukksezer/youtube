@@ -605,6 +605,12 @@
                                 <i class="fa-solid fa-language"></i>
                                 <span>Senaryoyu Çevir</span>
                             </button>
+                            <button type="button" class="btn btn-outline btn-lg hidden btn-copy-full-script"
+                                id="btn-copy-script-studio" style="flex: 1 1 180px;"
+                                title="Tüm senaryo metnini panoya kopyala">
+                                <i class="fa-solid fa-copy"></i>
+                                <span>Senaryoyu Kopyala</span>
+                            </button>
                         </div>
                         <details class="studio-render-settings" id="studio-render-settings">
                             <summary class="studio-render-settings__summary">
@@ -1191,121 +1197,162 @@
                 </div>
             </section>
 
-            <!-- SEKME 2:
-
-            <!-- SEKME 2: SAHNE & ZAMAN ÇİZELGESİ EDİTÖRÜ — 500 Madde Uyumlu -->
+            <!-- SEKME 2: SAHNE & KURGU STÜDYOSU (v3.0 — Gerçek Render Verileri) -->
             <section class="tab-pane" id="pane-timeline">
-                <div class="timeline-header glass-box mb-3">
-                    <div class="timeline-meta">
+
+                <!-- ═══ HEADER ═══ -->
+                <div class="tl-header">
+                    <div class="tl-header-left">
+                        <div class="tl-header-icon"><i class="fa-solid fa-clapperboard"></i></div>
                         <div>
-                            <h3 id="timeline-project-title">Aktif Proje Senaryosu</h3>
-                            <p id="timeline-project-desc">Her sahnenin metnini, süresini, arama terimlerini ve mood'unu
-                                özelleştirin.</p>
-                        </div>
-                        <div class="timeline-chips">
-                            <div class="chip">Toplam Sahne: <strong id="timeline-total-scenes">0</strong></div>
-                            <div class="chip">Tahmini Süre: <strong id="timeline-total-duration">0 sn</strong></div>
+                            <h2 id="tl-project-title">Sahne &amp; Kurgu Stüdyosu</h2>
+                            <p class="tl-header-sub">
+                                Gerçek render verileriyle oluşturulmuş sahne editörü
+                                <span class="tl-niche-pill" id="tl-niche-badge"><i class="fa-solid fa-shapes"></i> <span id="tl-niche-name"></span></span>
+                            </p>
                         </div>
                     </div>
-
-                    <!-- Compliance Dashboard — Madde 76, 88, 247, 274, 494 -->
-                    <div class="compliance-dashboard" id="compliance-dashboard">
-                        <div class="compliance-chip" id="chip-duration-band" title="Madde 494: izin 38-60s, tavan 60s">
-                            <i class="fa-solid fa-stopwatch"></i>
-                            <span id="chip-duration-text">Süre: —</span>
-                        </div>
-                        <div class="compliance-chip" id="chip-cadence"
-                            title="Director hedefi: 6 konuşma sahnesi; farklı sayılar hedef dışı işaretlenir.">
-                            <i class="fa-solid fa-film"></i>
-                            <span id="chip-cadence-text">Cadence: —</span>
-                        </div>
-                        <div class="compliance-chip" id="chip-32s-violations"
-                            title="Madde 76: 3.2sn üstü sahneler uyarı — AI tempo serbest">
-                            <i class="fa-solid fa-triangle-exclamation"></i>
-                            <span id="chip-32s-text">3.2sn Uyarı: 0</span>
-                        </div>
-                        <div class="compliance-chip" id="chip-duplicates"
-                            title="Madde 247: Arka arkaya aynı tip görsel yasak">
-                            <i class="fa-solid fa-clone"></i>
-                            <span id="chip-duplicates-text">Tekrar: 0</span>
-                        </div>
-                    </div>
-
-                    <!-- Hikaye Arkı — Madde 274: Giriş→Çatışma→Doruk→Döngü -->
-                    <div class="story-arc-bar" id="story-arc-bar">
-                        <div class="arc-segment intro" id="arc-intro" style="width: 7%"></div>
-                        <div class="arc-segment conflict" id="arc-conflict" style="width: 36%"></div>
-                        <div class="arc-segment climax" id="arc-climax" style="width: 33%"></div>
-                        <div class="arc-segment loop" id="arc-loop" style="width: 24%"></div>
-                    </div>
-                    <div class="story-arc-labels">
-                        <span id="arc-label-intro">🎬 Giriş (0-4sn)</span>
-                        <span id="arc-label-conflict">⚔️ Çatışma (4-27sn)</span>
-                        <span id="arc-label-climax">🔥 Doruk (27-45sn)</span>
-                        <span id="arc-label-loop">🔄 Döngü (45-60sn)</span>
-                    </div>
-
-                    <!-- Smart Action Buttons — Madde 88, 89, 90, 130, 443, 494 + 0 TL Flux & Whiteboard -->
-                    <div class="smart-actions-bar">
-                        <button class="btn-smart accent-purple" id="btn-batch-flux-ai"
-                            title="Tüm sahneler için 0 TL Pollinations Flux SDXL 9:16 görsel üret (Stok video derdini bitirir!)">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i> 0 TL Flux AI Görselleri
-                        </button>
-                        <button class="btn-smart accent-orange" id="btn-batch-whiteboard"
-                            title="Tüm sahneleri Whiteboard el çizim line-art animasyonuna çevir">
-                            <i class="fa-solid fa-pen-nib"></i> Whiteboard Çizim Modu
-                        </button>
-                        <button class="btn-smart accent-blue" id="btn-fetch-stock-clips"
-                            title="Tüm sahneler için Pexels/Pixabay'den otomatik stok videoları çek">
-                            <i class="fa-solid fa-cloud-arrow-down"></i> Stok Videoları Otomatik Çek
-                        </button>
-                        <button class="btn-smart accent-cyan" id="btn-fix-cadence"
-                            title="Madde 88: 14 görsel parçaya otomatik düzelt">
-                            <i class="fa-solid fa-scissors"></i> Cadence Düzelt (14+)
-                        </button>
-                        <button class="btn-smart accent-green" id="btn-enrich-queries"
-                            title="Madde 89: Arama terimlerine sinematik sıfatlar ekle">
-                            <i class="fa-solid fa-wand-sparkles"></i> Arama Terimi Zenginleştir
-                        </button>
-                        <button class="btn-smart accent-amber" id="btn-balance-durations"
-                            title="Madde 494: Süreleri 38-60sn bandına çek (tavan 60)">
-                            <i class="fa-solid fa-scale-balanced"></i> Süreleri Dengele
-                        </button>
-                        <button class="btn-smart" id="btn-hallucination-check"
-                            title="Madde 90: Tarih/isim halüsinasyon kontrolü">
-                            <i class="fa-solid fa-magnifying-glass-chart"></i> Halüsinasyon Kontrolü
-                        </button>
-                    </div>
-
-                    <div class="timeline-actions"
-                        style="margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                        <button class="btn btn-secondary" id="btn-add-scene-manual"><i class="fa-solid fa-plus"></i>
-                            Sahne Ekle</button>
-                        <button type="button" class="btn btn-outline" id="btn-open-seo39"
-                            title="Videoyu tek tıkla 39 YouTube diline çevir ve YouTube Data API v3 paketi oluştur">
-                            <i class="fa-solid fa-language"></i> 39 Dilli YouTube SEO
-                        </button>
-                        <button type="button" class="btn btn-outline" id="btn-open-thumbnail-gen"
-                            title="PIL destekli yüksek CTR'lı viral kapak resmi üret">
-                            <i class="fa-solid fa-image"></i> Viral Thumbnail Üretici
-                        </button>
-                        <button type="button" class="btn btn-outline hidden" id="btn-regenerate-scenario"
-                            title="Senaryoyu sıfırdan yeniden üret (önbelleği temizler)">
-                            <i class="fa-solid fa-arrows-rotate"></i> Senaryoyu Yeniden Üret
-                        </button>
-                        <button class="btn btn-primary" id="btn-render-from-timeline"><i
-                                class="fa-solid fa-clapperboard"></i> Bu Senaryo İle Render Al <span
-                                class="kbd-hint">Ctrl+Enter</span></button>
+                    <div class="tl-header-stats">
+                        <div class="tl-stat-pill" id="tl-chip-scenes"><i class="fa-solid fa-film"></i> <span id="tl-scene-value">0 Sahne</span></div>
+                        <div class="tl-stat-pill" id="tl-chip-duration"><i class="fa-solid fa-stopwatch"></i> <span id="tl-dur-value">0s</span></div>
+                        <div class="tl-stat-pill"><i class="fa-solid fa-align-left"></i> <span id="tl-word-value">0</span> Kelime</div>
+                        <div class="tl-stat-pill" id="tl-chip-clips"><i class="fa-solid fa-circle-check"></i> <span id="tl-clip-value">0/0</span> Klip</div>
+                        <div class="tl-stat-pill" id="tl-chip-longcuts"><i class="fa-solid fa-triangle-exclamation"></i> <span id="tl-longcut-value">—</span></div>
+                        <div class="tl-stat-pill" id="tl-chip-dupes"><i class="fa-solid fa-clone"></i> <span id="tl-dupe-value">—</span></div>
                     </div>
                 </div>
 
-                <div class="scenes-grid" id="scenes-timeline-container">
-                    <div class="empty-state-box">
-                        <i class="fa-solid fa-film"></i>
-                        <p>Henüz bir senaryo oluşturulmadı. Hızlı Üretim sekmesinden senaryo üretebilirsiniz.</p>
+                <!-- ═══ TOOLBAR ═══ -->
+                <div class="tl-toolbar">
+                    <div class="tl-toolbar-left">
+                        <button type="button" class="tl-btn tl-btn-ghost btn-copy-full-script" id="btn-copy-script-timeline" title="Senaryoyu kopyala">
+                            <i class="fa-solid fa-copy"></i> Kopyala
+                        </button>
+                        <button type="button" class="tl-btn tl-btn-secondary" id="btn-sync-latest-render" title="Son render verilerini yükle">
+                            <i class="fa-solid fa-cloud-arrow-down"></i> Son Renderı Yükle
+                        </button>
+                        <button type="button" class="tl-btn tl-btn-secondary" id="btn-prepare-timeline" title="AI senaryo + klipleri hazırla">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Hazırla
+                        </button>
+                        <button type="button" class="tl-btn tl-btn-ghost" id="btn-add-scene-manual" title="Boş sahne ekle">
+                            <i class="fa-solid fa-plus"></i> Sahne Ekle
+                        </button>
+                    </div>
+                    <div class="tl-toolbar-right">
+                        <button type="button" class="tl-btn tl-btn-ghost" id="btn-open-seo39" title="39 dilli SEO">
+                            <i class="fa-solid fa-language"></i> SEO
+                        </button>
+                        <button type="button" class="tl-btn tl-btn-ghost" id="btn-open-thumbnail-gen" title="Thumbnail üret">
+                            <i class="fa-solid fa-image"></i> Thumb
+                        </button>
+                        <button type="button" class="tl-btn tl-btn-ghost hidden" id="btn-regenerate-scenario" title="Yeniden yaz">
+                            <i class="fa-solid fa-arrows-rotate"></i> Yeniden Yaz
+                        </button>
+                        <button type="button" class="tl-btn tl-btn-render" id="btn-render-from-timeline">
+                            <i class="fa-solid fa-clapperboard"></i> Render Al <span class="tl-kbd">Ctrl+Enter</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ═══ STORY ARC BAR ═══ -->
+                <div class="tl-arc-container">
+                    <div class="tl-arc-bar">
+                        <div class="tl-arc-seg tl-arc-intro" id="tl-arc-intro" style="width: 7%"></div>
+                        <div class="tl-arc-seg tl-arc-conflict" id="tl-arc-conflict" style="width: 36%"></div>
+                        <div class="tl-arc-seg tl-arc-climax" id="tl-arc-climax" style="width: 33%"></div>
+                        <div class="tl-arc-seg tl-arc-loop" id="tl-arc-loop" style="width: 24%"></div>
+                    </div>
+                    <div class="tl-arc-labels">
+                        <span id="tl-arc-lbl-intro">🎬 Kanca</span>
+                        <span id="tl-arc-lbl-conflict">⚔️ Çatışma</span>
+                        <span id="tl-arc-lbl-climax">🔥 Doruk</span>
+                        <span id="tl-arc-lbl-loop">🔄 Kapanış</span>
+                    </div>
+                </div>
+
+                <!-- ═══ SMART ACTION BUTTONS ═══ -->
+                <div class="tl-smart-bar">
+                    <button class="tl-smart-btn purple" id="btn-batch-flux-ai" title="Tüm sahneleri Flux AI moduna çevir">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> Flux AI
+                    </button>
+                    <button class="tl-smart-btn orange" id="btn-batch-whiteboard" title="Whiteboard moduna çevir">
+                        <i class="fa-solid fa-pen-nib"></i> Whiteboard
+                    </button>
+                    <button class="tl-smart-btn blue" id="btn-fetch-stock-clips" title="Stok videoları otomatik indir">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Stok Çek
+                    </button>
+                    <button class="tl-smart-btn cyan" id="btn-fix-cadence" title="Cadence düzelt">
+                        <i class="fa-solid fa-scissors"></i> Cadence
+                    </button>
+                    <button class="tl-smart-btn green" id="btn-enrich-queries" title="Arama terimlerini zenginleştir">
+                        <i class="fa-solid fa-wand-sparkles"></i> Zenginleştir
+                    </button>
+                    <button class="tl-smart-btn amber" id="btn-balance-durations" title="Süreleri dengele">
+                        <i class="fa-solid fa-scale-balanced"></i> Dengele
+                    </button>
+                    <button class="tl-smart-btn" id="btn-hallucination-check" title="Halüsinasyon kontrolü">
+                        <i class="fa-solid fa-magnifying-glass-chart"></i> Kontrol
+                    </button>
+                </div>
+
+                <!-- ═══ SCENES CONTAINER ═══ -->
+                <div class="tl-scenes-grid" id="scenes-timeline-container">
+                    <div class="tl-empty-state">
+                        <div class="tl-empty-icon"><i class="fa-solid fa-clapperboard"></i></div>
+                        <h3>Henüz sahne verisi yok</h3>
+                        <p>Render Al butonuna tıklayın — son senaryo ve gerçek video klipleri otomatik yüklenecek.</p>
+                        <div class="tl-empty-actions">
+                            <button type="button" class="tl-btn tl-btn-primary" id="btn-empty-load-latest">
+                                <i class="fa-solid fa-cloud-arrow-down"></i> Son Renderı Yükle
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ═══ MODAL: GÖRSEL DEĞİŞTİR ═══ -->
+                <div class="modal-backdrop-v2 hidden" id="modal-change-scene-visual">
+                    <div class="modal-dialog-v2">
+                        <div class="modal-header-v2">
+                            <h4 id="modal-change-visual-title"><i class="fa-solid fa-film text-primary"></i> Sahne Görselini Değiştir</h4>
+                            <button type="button" class="btn-close-modal" id="btn-close-visual-modal" style="background:transparent;border:none;color:#94a3b8;font-size:18px;cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="modal-body-v2">
+                            <div class="modal-tabs-strip">
+                                <button type="button" class="modal-tab-btn active" data-tab="stock"><i class="fa-solid fa-magnifying-glass"></i> Stok Video</button>
+                                <button type="button" class="modal-tab-btn" data-tab="flux"><i class="fa-solid fa-wand-magic-sparkles"></i> Flux AI</button>
+                                <button type="button" class="modal-tab-btn" data-tab="whiteboard"><i class="fa-solid fa-pen-nib"></i> Whiteboard</button>
+                            </div>
+
+                            <div class="modal-tab-content" id="tab-content-stock">
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" class="tl-input" id="modal-stock-search-input" placeholder="Arama terimi (örn: supercar speed)..." style="flex:1;">
+                                    <button type="button" class="tl-btn tl-btn-primary" id="btn-modal-do-stock-search"><i class="fa-solid fa-magnifying-glass"></i> Ara</button>
+                                </div>
+                                <div class="tl-stock-grid" id="modal-stock-results-grid">
+                                    <div class="tl-stock-loading"><i class="fa-solid fa-search"></i><span>Arama yapın</span></div>
+                                </div>
+                            </div>
+
+                            <div class="modal-tab-content hidden" id="tab-content-flux">
+                                <div class="tl-field">
+                                    <label>Flux SDXL Prompt (İngilizce önerilir)</label>
+                                    <textarea class="tl-textarea" id="modal-flux-prompt-input" rows="3" placeholder="Cinematic 9:16 vertical video shot of..."></textarea>
+                                </div>
+                                <button type="button" class="tl-btn tl-btn-primary" id="btn-modal-generate-flux" style="margin-top:10px;"><i class="fa-solid fa-wand-magic-sparkles"></i> Flux Klip Üret</button>
+                            </div>
+
+                            <div class="modal-tab-content hidden" id="tab-content-whiteboard">
+                                <div class="tl-field">
+                                    <label>Whiteboard Çizim Açıklaması</label>
+                                    <textarea class="tl-textarea" id="modal-whiteboard-prompt-input" rows="3" placeholder="Minimalist line art sketch animation of..."></textarea>
+                                </div>
+                                <button type="button" class="tl-btn tl-btn-primary" id="btn-modal-generate-whiteboard" style="margin-top:10px;"><i class="fa-solid fa-pen-nib"></i> Whiteboard Üret</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
+
 
             <!-- SEKME 3: 35 NİŞ & VİRAL KÜTÜPHANE (Advanced v2.0) -->
             <section class="tab-pane" id="pane-niches">

@@ -301,6 +301,20 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
     # 0) Direct assigned clip (AI preview, Whiteboard preview, or selected stock clip)
     selected_vid = scene.get("selected_video") or {}
     local_candidate = selected_vid.get("path") or scene.get("video_path") or selected_vid.get("file_path")
+
+    # If selected_video doesn't have a distinct remote URL, check if scene['path'] or scene['video_url'] is valid locally
+    if not local_candidate and scene.get("path") and os.path.exists(scene.get("path")):
+        if not (selected_vid and selected_vid.get("url") and not selected_vid.get("path")):
+            local_candidate = scene.get("path")
+
+    if not local_candidate and scene.get("video_url") and not str(scene.get("video_url")).startswith("http"):
+        rel_p = str(scene["video_url"]).replace("\\", "/").lstrip("/")
+        if rel_p.startswith("assets/"):
+            rel_p = rel_p[7:]
+        cand_p = os.path.join(config.ASSETS_DIR, rel_p)
+        if os.path.isfile(cand_p):
+            local_candidate = cand_p
+
     if local_candidate and os.path.exists(local_candidate):
         cand_name = os.path.basename(local_candidate).lower()
         if visual_mode in ("whiteboard", "sketch", "cizim") and "whiteboard" not in cand_name:
@@ -308,6 +322,17 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
         else:
             p = local_candidate
             _log(f"[Visual] Sahne #{i+1}: Önceden üretilen yerel klip kullanılıyor: {os.path.basename(p)}")
+
+    # Synthesize selected_vid if not provided as object but video_url is a remote stock URL
+    if not p and not selected_vid and scene.get("video_url") and str(scene["video_url"]).startswith("http"):
+        v_url = str(scene["video_url"])
+        src = "pexels" if "pexels" in v_url else ("pixabay" if "pixabay" in v_url else "stock")
+        selected_vid = {
+            "url": v_url,
+            "source": src,
+            "kind": "video",
+            "id": f"clip_{hashlib.sha256(v_url.encode()).hexdigest()[:16]}"
+        }
 
     if not p and selected_vid and visual_mode not in ("whiteboard", "sketch", "cizim"):
         p = fetch_selected_stock_video(
@@ -317,6 +342,11 @@ def _fetch_single_scene_visual(i, scene, plan, proj, total_s, gameplay_path=None
             target_duration=d,
             cancel_check=_is_cancelled,
         )
+        if p and os.path.isfile(p):
+            scene["path"] = p
+            scene["video_path"] = p
+            selected_vid["path"] = p
+            _log(f"[Visual] Sahne #{i+1}: Timeline seçimi stok klip indirildi: {os.path.basename(p)}")
 
     if not p and visual_mode in ("whiteboard", "sketch", "cizim"):
         from services.whiteboard_animator import create_whiteboard_scene_clip
@@ -1303,6 +1333,24 @@ def process_video_task(
         coverage = clip_coverage_report(clips)
         ok_clips = coverage["ok"]
         _log(f"[Visual] Stok klip indirme tamamlandi: {ok_clips}/{total_s}", 58)
+
+        # Broadcast plan_updated with real clips so the editor screen immediately updates
+        try:
+            from routers.video_router import normalize_scene_paths_for_web
+            if plan and "scenes" in plan:
+                for idx, sc_item in enumerate(plan["scenes"]):
+                    if idx < len(clips) and clips[idx].get("path"):
+                        sc_item["path"] = clips[idx]["path"]
+            with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f_up:
+                json.dump(plan, f_up, ensure_ascii=False, indent=2)
+            norm_plan = normalize_scene_paths_for_web(dict(plan), render_job_prefix)
+            state.broadcast_event("plan_updated", {
+                "slug": render_job_prefix,
+                "title": keyword,
+                "plan": norm_plan,
+            })
+        except Exception as _sync_err:
+            _log(f"[TimelineSync] note: {_sync_err}")
 
         # ─── Pre-render pipeline audit ────────────────────────────────
         try:

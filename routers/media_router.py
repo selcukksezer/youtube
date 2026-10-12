@@ -313,6 +313,10 @@ def _fetch_single_scene_video(args):
 
     if best_video:
         sc_copy["selected_video"] = _candidate_to_selected(best_video, matched_query)
+        sc_copy["video_url"] = best_video.get("url") or ""
+        # Clear stale local paths so the newly selected video is fetched and rendered
+        sc_copy.pop("path", None)
+        sc_copy.pop("video_path", None)
     return sc_copy
 
 
