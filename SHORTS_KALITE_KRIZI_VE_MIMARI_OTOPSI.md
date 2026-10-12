@@ -217,6 +217,11 @@ Tüm 5 kök neden ve ek niş mimari borçları adım adım çözüldü, test edi
    - Mikroskop ailesindeki `"deney"` anahtar kelimesi `"bilimsel deney"` olarak netleştirilerek Türkçe emir kipi `"deneyin"` (denemek) ve `"deneyim"` kelimelerinin mikroskop B-roll'u indirmesi engellendi.
    - `production/schemas.py` içinde ticari olmayan lisansların reddedilmesi ve mükerrer video UID'lerinin engellenmesi kontrata bağlandı (`test_visual_contract.py` ve `test_quality_policy_pipeline.py` %100 PASS).
 
+8. **BGM Sidechain Ducking ve Beat Senkronizasyonu Düzeltildi (Commit `a27b664`):**
+   - `video_composer.py` içinde konuşma başlangıcında (t=0.0s) %85 sesle patlayarak kancayı boğan `mix_intro_punch_bgm` baypası kaldırıldı; `enable_intro_whoosh` kontrolüne bağlandı.
+   - Vokal netliğini koruyan -18dB sidechain ducking, vokal EQ oyuğu (`VOCAL_CARVE_EQ` -4.5dB @ 1-3kHz) ve dramatik duraklardaki müzik kesintisi (`tape_stop_times`) tam olarak devreye alındı.
+   - `bgm_manager.py` içinde `detect_audio_bpm_and_beats` fonksiyonunun istenen sürenin 10 saniye ötesine beat üretip BPM testlerini şaşırtması düzeltildi (24/24 audio/ducking testi %100 PASS).
+
 ### Canlı Üretim Kanıtı (Doğrulanan Video)
 * **Dosya:** `output/Google_bile_bu_3_yapay_zeka_sitesini_kapatmak_istedi.mp4` (66.69 MB, 43.47s, 1080x1920 @ 30 FPS, H.264/MF)
 * **Senaryo (Gemini TTS Charon):** 6 sahne, 98 kelime; otonom tasarım motoru, ses klonlama platformu ve akademik makale özetleme sistemini anlatan %100 konuya uygun özgün metin.
