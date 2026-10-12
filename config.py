@@ -183,12 +183,12 @@ def get_target_resolution():
 #  True: Ağır per-frame Python efektleri devre dışı, FFmpeg tabanlı filtreler kullanılır
 #  False: Tüm efektler aktif (güçlü PC gerektirir)
 # ══════════════════════════════════════════════════════════════
-RENDER_SAFE_MODE = os.getenv("RENDER_SAFE_MODE", "false").lower() in ("true", "1", "yes")
+RENDER_SAFE_MODE = os.getenv("RENDER_SAFE_MODE", "true").lower() in ("true", "1", "yes")
 
 # Item 423: FFmpeg encode thread cap (PC donmasını önler; donanım profili override edebilir)
 FFMPEG_THREADS = int(os.getenv("FFMPEG_THREADS", "4"))
-# MoviePy / compose path thread budget (FFMPEG_THREADS ile hizalı varsayılan)
-RENDER_THREADS = int(os.getenv("RENDER_THREADS", str(FFMPEG_THREADS)))
+# MoviePy / compose path thread budget (FFMPEG_THREADS ile hizalı varsayılan, maks 4 thread ile stabil)
+RENDER_THREADS = min(4, max(1, int(os.getenv("RENDER_THREADS", str(FFMPEG_THREADS)))))
 
 # NVIDIA RTX / NVENC (Windows) · VideoToolbox (macOS) · libx264 fallback (Item 73, 411)
 USE_GPU_ACCELERATION = os.getenv("USE_GPU_ACCELERATION", "true").lower() in ("true", "1", "yes")

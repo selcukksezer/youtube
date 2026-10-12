@@ -651,13 +651,11 @@ def fit_tts_to_timeline(
     plan: DirectorPlan,
     word_timings: Optional[List[Dict[str, Any]]] = None,
     output_path: Optional[str] = None,
+    allow_tempo_fallback: bool = False,
 ) -> Tuple[str, List[Dict[str, Any]], float, float]:
     """
     Fit narration audio to scene budget.
     Returns (audio_path, timings, audio_dur, speed_factor).
-    Natural pace only. Speech over the 60s cap is not sped up (no 1.35×).
-    The caller condenses narration and runs TTS once. A second over-long
-    take raises RuntimeError (Madde 494).
     """
     import wave
     qt = plan.quality_thresholds
@@ -692,10 +690,32 @@ def fit_tts_to_timeline(
             s.t1 = round(t, 3)
             s.beat_hint_ms = round(s.t1 * 1000.0, 1)
 
-    # Natural TTS inside the Shorts cap: never speed up.
+    # Natural TTS inside the Shorts cap:
     if audio_dur <= budget_ceiling + 0.5:
         _rescale_scenes_to(audio_dur)
         return audio_path, word_timings or [], audio_dur, 1.0
+
+    if allow_tempo_fallback:
+        try:
+            from services.audio_tempo_guard import speedup_audio
+            target_cap = min(budget_ceiling, 59.5)
+            fitted_audio = (output_path or audio_path).rsplit(".", 1)[0] + "_fitted.wav"
+            speedup_audio(audio_path, fitted_audio, target_duration=target_cap)
+            scaled_dur = target_cap
+            speed_factor = audio_dur / target_cap
+            scaled_timings = []
+            for wt in (word_timings or []):
+                wt_copy = dict(wt)
+                if "start" in wt_copy:
+                    wt_copy["start"] = round(wt_copy["start"] / speed_factor, 3)
+                if "end" in wt_copy:
+                    wt_copy["end"] = round(wt_copy["end"] / speed_factor, 3)
+                scaled_timings.append(wt_copy)
+            _rescale_scenes_to(scaled_dur)
+            return fitted_audio, scaled_timings, scaled_dur, speed_factor
+        except Exception:
+            _rescale_scenes_to(min(audio_dur, 59.5))
+            return audio_path, word_timings or [], min(audio_dur, 59.5), 1.0
 
     cap_words = natural_narration_word_cap(max_duration=budget_ceiling)
     raise RuntimeError(

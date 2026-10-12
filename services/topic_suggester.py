@@ -502,7 +502,10 @@ def _generate_ai_candidates(
             cleaned = _clean_llm_text(text)
             match = re.search(r"\[[\s\S]*?\]", cleaned)
             if match:
-                titles = json.loads(match.group())
+                try:
+                    titles = json.loads(match.group())
+                except Exception:
+                    titles = re.findall(r'["\']([^"\']{8,75})["\']', match.group())
                 return [
                     {"title": t.strip(), "source": SOURCE_AI, "viral_score": 96}
                     for t in titles
@@ -510,9 +513,9 @@ def _generate_ai_candidates(
                 ]
     except Exception as exc:
         logger.debug("AI topic generation notice: %s", exc)
-        return [{"title": "API Limitine Takıldı (Çok fazla istek). Lütfen 1-2 dakika bekleyip tekrar deneyin.", "source": SOURCE_AI, "viral_score": 0}]
+        return []
 
-    return [{"title": "Yapay zeka öneri üretemedi. (API Hatası veya Limit)", "source": SOURCE_AI, "viral_score": 0}]
+    return []
 
 
 def _template_fallback_candidates(niche_id: str, topic_hint: str = "", language: str = "tr") -> List[Dict[str, Any]]:

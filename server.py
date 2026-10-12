@@ -119,6 +119,11 @@ def favicon():
     return Response(status_code=204)
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "app": "ShortsVideoCreators", "render_threads": config.RENDER_THREADS}
+
+
 def _static_mtime_version(filename: str) -> str:
     path = os.path.join(STATIC_DIR, filename)
     try:

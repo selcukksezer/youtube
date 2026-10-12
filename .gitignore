@@ -25,6 +25,7 @@ tokens/
 _tmp_*/
 _pytest_*.txt
 reddit_debug*.html
+cache/
 
 # Cursor local
 .cursor/

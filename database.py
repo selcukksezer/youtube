@@ -349,9 +349,30 @@ def record_source_asset(source_key: str, source_url: str = "", content_hash: str
         conn.commit()
 
 def cleanup_stale_tasks():
-    """Marks in-flight tasks as failed when the server restarts or crashes."""
+    """Marks in-flight tasks as failed when the server restarts or crashes, recovering completed outputs if found."""
     restart_error = "Sunucu yeniden başlatıldı; render işi tamamlanamadı."
     with get_connection() as conn:
+        try:
+            processing_videos = conn.execute("SELECT id, keyword, filename FROM videos WHERE status = 'processing'").fetchall()
+            for vid_id, kw, fn in processing_videos:
+                recovered_path = None
+                if fn and os.path.exists(fn) and os.path.getsize(fn) > 10000:
+                    recovered_path = fn
+                elif os.path.exists("output"):
+                    for candidate in os.listdir("output"):
+                        if candidate.endswith(".mp4") and str(vid_id) in candidate:
+                            full_p = os.path.join("output", candidate)
+                            if os.path.getsize(full_p) > 10000:
+                                recovered_path = full_p
+                                break
+                if recovered_path:
+                    conn.execute(
+                        "UPDATE videos SET status = 'completed', filename = ?, error_message = NULL WHERE id = ?",
+                        (recovered_path, vid_id)
+                    )
+        except Exception:
+            pass
+
         stale_render_jobs = conn.execute("""
             SELECT id FROM render_jobs
             WHERE status IN ('queued', 'rendering', 'cancelling')

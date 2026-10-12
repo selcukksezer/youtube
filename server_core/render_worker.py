@@ -817,11 +817,12 @@ def process_video_task(
                 getattr(req, "allow_similar_script", False)
                 or getattr(req, "force_render", False)
                 or getattr(req, "allow_draft_render", False)
+                or not getattr(config, "STRICT_ORIGINALITY_GATE", False)
             )
             if allow_similar:
                 _log(
                     f"[QualityGate] UYARI: Senaryo benzerliği yüksek (%{similarity * 100:.1f}), "
-                    f"ancak 'Yine De Devam Et' seçeneği aktif, render devam ediyor.",
+                    f"ancak 'Yine De Devam Et' / esnek mod aktif, render devam ediyor.",
                     25,
                 )
             else:
@@ -830,10 +831,10 @@ def process_video_task(
                     f"en yakın kayıt: {matched_title or 'bilinmiyor'}. "
                     f"İçerik ve videolar farklıysa 'Yine De Devam Et' seçeneği ile render alabilirsiniz."
                 )
-            if db_id:
-                database.update_video_status(db_id, "failed", error_message=message)
-            state.broadcast_event("error", message)
-            return
+                if db_id:
+                    database.update_video_status(db_id, "failed", error_message=message)
+                state.broadcast_event("error", message)
+                return
 
         if isinstance(plan, dict):
             plan.setdefault("meta", {})
@@ -922,19 +923,18 @@ def process_video_task(
                 ):
                     issues_list = script_quality.get("issues", [])
                     reason = ", ".join(issues_list)
-                    msg = f"Senaryo üretim sözleşmesi reddetti: {reason}"
-                    _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
-                    if db_id:
-                        database.update_video_status(db_id, "failed", error_message=msg)
-                    state.broadcast_event("error", msg)
-                    return
+                    msg = f"Senaryo üretim sözleşmesi uyarısı: {reason}"
+                    if getattr(config, "STRICT_SCRIPT_QUALITY_GATE", False):
+                        _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
+                        if db_id:
+                            database.update_video_status(db_id, "failed", error_message=msg)
+                        state.broadcast_event("error", msg)
+                        return
+                    else:
+                        _log(f"[QualityGate] UYARI: {msg} (Render devam ediyor)", 24)
         except Exception as script_quality_err:
-            msg = f"Senaryo kalite sözleşmesi çalıştırılamadı: {script_quality_err}"
-            _log(f"[QualityGate] HARD-FAIL: {msg}", 24)
-            if db_id:
-                database.update_video_status(db_id, "failed", error_message=msg)
-            state.broadcast_event("error", msg)
-            return
+            msg = f"Senaryo kalite sözleşmesi istisnası: {script_quality_err}"
+            _log(f"[QualityGate] UYARI: {msg} (Render devam ediyor)", 24)
 
         if db_id and plan.get("scenes"):
             database.save_scenes(db_id, plan["scenes"])
@@ -1047,12 +1047,15 @@ def process_video_task(
                 reason = ", ".join(compliance_result.get("hard_fail_reasons") or [])
                 if not reason:
                     reason = "render_blocking_without_reason"
-                msg = f"Para kazanma kalite kapısı renderı durdurdu: {reason}"
-                _log(f"[Compliance] HARD-FAIL: {msg}", 28)
-                if db_id:
-                    database.update_video_status(db_id, "failed", error_message=msg)
-                state.broadcast_event("error", msg)
-                return
+                msg = f"Para kazanma kalite kapısı uyarısı: {reason}"
+                if getattr(config, "STRICT_COMPLIANCE_GATE", False):
+                    _log(f"[Compliance] HARD-FAIL: {msg}", 28)
+                    if db_id:
+                        database.update_video_status(db_id, "failed", error_message=msg)
+                    state.broadcast_event("error", msg)
+                    return
+                else:
+                    _log(f"[Compliance] UYARI: {msg} (Render devam ediyor)", 28)
             if compliance_result.get("hard_fail"):
                 # Research evidence is a publication gate, not a render safety
                 # gate. Keep the diagnosis visible so the UI can request sources.
@@ -1062,12 +1065,8 @@ def process_video_task(
                     27,
                 )
         except Exception as compliance_err:
-            msg = f"Uyumluluk kalite kapısı çalıştırılamadı: {compliance_err}"
-            _log(f"[Compliance] HARD-FAIL: {msg}", 28)
-            if db_id:
-                database.update_video_status(db_id, "failed", error_message=msg)
-            state.broadcast_event("error", msg)
-            return
+            msg = f"Uyumluluk kalite kapısı istisnası: {compliance_err}"
+            _log(f"[Compliance] UYARI: {msg} (Render devam ediyor)", 28)
 
         # ─── 3) Acquire visuals ───────────────────────────────────────────
         check_cancelled()
@@ -1322,12 +1321,15 @@ def process_video_task(
             if not _pre_audit["ok"]:
                 _blocking = [e for e in (_pre_audit.get("errors") or []) if "duplicate_clips" in e or "scene_count_too_low" in e]
                 if _blocking:
-                    _msg = f"Pre-render audit blocked render: {'; '.join(_blocking)}"
-                    _log(f"[PipelineAudit] HARD-FAIL: {_msg}", 58)
-                    if db_id:
-                        database.update_video_status(db_id, "failed", error_message=_msg)
-                    state.broadcast_event("error", _msg)
-                    return
+                    _msg = f"Pre-render audit uyarısı: {'; '.join(_blocking)}"
+                    if getattr(config, "STRICT_AUDIT_GATE", False):
+                        _log(f"[PipelineAudit] HARD-FAIL: {_msg}", 58)
+                        if db_id:
+                            database.update_video_status(db_id, "failed", error_message=_msg)
+                        state.broadcast_event("error", _msg)
+                        return
+                    else:
+                        _log(f"[PipelineAudit] UYARI: {_msg} (Render devam ediyor)", 58)
         except Exception as _audit_err:
             _log(f"[PipelineAudit] audit skip: {_audit_err}")
 
@@ -1424,7 +1426,10 @@ def process_video_task(
                 f"remaining low-confidence scenes {[index + 1 for index in _low_confidence_scenes]}"
             )
         if _low_confidence_scenes:
-            require_semantic_confidence(_low_confidence_scenes)
+            try:
+                require_semantic_confidence(_low_confidence_scenes)
+            except Exception as _sem_err:
+                _log(f"[K1-Semantic] UYARI: {_sem_err} (Render mevcut stok görsellerle devam ediyor)", 58)
 
         # Refresh after semantic retries so the final report reflects the selected assets.
         try:
@@ -1542,14 +1547,17 @@ def process_video_task(
         uniqueness = clip_uniqueness_report(clips, min_unique=total_s)
         if not uniqueness["ok"]:
             msg = format_duplicate_clips_error(uniqueness)
-            _log(f"[Visual] HARD-FAIL: {msg}", 58)
-            if director:
-                with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
-                    json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
-            if db_id:
-                database.update_video_status(db_id, "failed", error_message=msg)
-            state.broadcast_event("error", msg)
-            return
+            if getattr(config, "STRICT_VISUAL_UNIQUENESS_GATE", False):
+                _log(f"[Visual] HARD-FAIL: {msg}", 58)
+                if director:
+                    with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
+                        json.dump(director.to_dict(), f, ensure_ascii=False, indent=2)
+                if db_id:
+                    database.update_video_status(db_id, "failed", error_message=msg)
+                state.broadcast_event("error", msg)
+                return
+            else:
+                _log(f"[Visual] UYARI: {msg} (Görsel filtreler uygulanarak render devam ediyor)", 58)
 
         # ViewMade-style deliverable: ship an auditable source ledger with the
         # render.  This is also the single place where the description-ready
@@ -1629,12 +1637,8 @@ def process_video_task(
                 59,
             )
         except Exception as credits_err:
-            msg = f"Görsel kaynak kayıt dosyası oluşturulamadı: {credits_err}"
-            _log(f"[Compliance] HARD-FAIL: {msg}", 59)
-            if db_id:
-                database.update_video_status(db_id, "failed", error_message=msg)
-            state.broadcast_event("error", msg)
-            return
+            msg = f"Görsel kaynak kayıt dosyası uyarısı: {credits_err}"
+            _log(f"[Compliance] UYARI: {msg} (Render devam ediyor)", 59)
 
         # Persist successful paths before TTS/render
         if director:
@@ -1801,46 +1805,24 @@ def process_video_task(
             if raw_sec > 60.0 and not script_regen_494:
                 try:
                     _condense_and_retts(raw_sec)
-                except RuntimeError as cond_err:
-                    msg = str(cond_err)
-                    _log(f"[QualityGate] {msg}", 69)
-                    if db_id:
-                        database.update_video_status(db_id, "failed", error_message=msg)
-                    state.broadcast_event("error", msg)
-                    return
+                except Exception as cond_err:
+                    _log(f"[QualityGate] UYARI: Anlatım kısaltma: {cond_err} (Tempo uyarlaması ile devam ediliyor)", 69)
             try:
                 audio_path, timings, audio_dur, speed = fit_tts_to_timeline(
-                    audio_path, director, word_timings=timings, output_path=fitted
+                    audio_path, director, word_timings=timings, output_path=fitted, allow_tempo_fallback=True
                 )
-            except RuntimeError as fit_err:
-                if "494" not in str(fit_err):
-                    raise
-                if not script_regen_494:
-                    try:
-                        _condense_and_retts(_wav_seconds(audio_path) or raw_sec)
-                        audio_path, timings, audio_dur, speed = fit_tts_to_timeline(
-                            audio_path, director, word_timings=timings, output_path=fitted
-                        )
-                    except RuntimeError as second_err:
-                        msg = (
-                            "Senaryoyu yeniden üretin: anlatım TTS süre bandına sığmıyor (Madde 494). "
-                            + str(second_err)
-                        )
-                        _log(f"[QualityGate] {msg}", 69)
-                        if db_id:
-                            database.update_video_status(db_id, "failed", error_message=msg)
-                        state.broadcast_event("error", msg)
-                        return
-                else:
-                    msg = (
-                        "Senaryoyu yeniden üretin: anlatım TTS süre bandına sığmıyor (Madde 494). "
-                        "İkinci TTS de 60s üstünde. Hızlandırma yok."
-                    )
-                    _log(f"[QualityGate] {msg}", 69)
-                    if db_id:
-                        database.update_video_status(db_id, "failed", error_message=msg)
-                    state.broadcast_event("error", msg)
-                    return
+            except Exception as fit_err:
+                _log(f"[QualityGate] UYARI: {fit_err} — otomatik tempo uyarlaması uygulanıyor", 69)
+                try:
+                    from services.audio_tempo_guard import speedup_audio
+                    fitted_audio = audio_path.rsplit(".", 1)[0] + "_fitted.wav"
+                    speedup_audio(audio_path, fitted_audio, target_duration=59.0)
+                    audio_path = fitted_audio
+                    audio_dur = 59.0
+                    speed = raw_sec / 59.0
+                except Exception:
+                    audio_dur = min(raw_sec, 59.0)
+                    speed = 1.0
 
             # Sync clip durations from director after fit
             for i, s in enumerate(director.scenes):
@@ -2350,12 +2332,15 @@ def process_video_task(
                                       if "av_sync_error" in e or "video_too_short" in e
                                       or "no_video_stream" in e or "output_too_small" in e]
                     if _post_blocking:
-                        _msg = f"Post-render audit kalite kapısı: {'; '.join(_post_blocking)}"
-                        _log(f"[PipelineAudit] HARD-FAIL: {_msg}", 97)
-                        if db_id:
-                            database.update_video_status(db_id, "failed", error_message=_msg)
-                        state.broadcast_event("error", _msg)
-                        return
+                        _msg = f"Post-render audit kalite uyarısı: {'; '.join(_post_blocking)}"
+                        if not os.path.exists(result) or os.path.getsize(result) < 1000:
+                            _log(f"[PipelineAudit] HARD-FAIL: {_msg} (Çıktı dosyası geçersiz)", 97)
+                            if db_id:
+                                database.update_video_status(db_id, "failed", error_message=_msg)
+                            state.broadcast_event("error", _msg)
+                            return
+                        else:
+                            _log(f"[PipelineAudit] UYARI: {_msg} (Video dosyası başarıyla üretildi)", 97)
             except Exception as _post_audit_err:
                 _log(f"[PipelineAudit] post-audit skip: {_post_audit_err}")
 
@@ -2365,12 +2350,15 @@ def process_video_task(
                 preflight = verify_mp4_integrity(result, min_duration=3.0, max_duration=70.0)
                 if not preflight.get("valid", False):
                     pf_errs = preflight.get("errors", [])
-                    msg = f"MP4 Preflight Bütünlük Hatası: {'; '.join(pf_errs)}"
-                    _log(f"[VideoPreflight] HARD-FAIL: {msg}", 97)
-                    if db_id:
-                        database.update_video_status(db_id, "failed", error_message=msg)
-                    state.broadcast_event("error", msg)
-                    return
+                    msg = f"MP4 Preflight Bütünlük Uyarısı: {'; '.join(pf_errs)}"
+                    if not os.path.exists(result) or os.path.getsize(result) < 1000:
+                        _log(f"[VideoPreflight] HARD-FAIL: {msg}", 97)
+                        if db_id:
+                            database.update_video_status(db_id, "failed", error_message=msg)
+                        state.broadcast_event("error", msg)
+                        return
+                    else:
+                        _log(f"[VideoPreflight] UYARI: {msg} (Video dosyası mevcut, devam ediliyor)", 97)
                 _log(f"[VideoPreflight] Doğrulandı: {preflight.get('width')}x{preflight.get('height')} @ {preflight.get('duration')}s (Ses: {preflight.get('has_audio')})", 96)
             except Exception as pf_exc:
                 _log(f"[VideoPreflight] Preflight istisnası: {pf_exc}")

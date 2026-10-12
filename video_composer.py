@@ -58,8 +58,18 @@ from viral_retention_engine import ViralRetentionEngine
 from proglog import ProgressBarLogger
 
 class MoviePyProgressLogger(ProgressBarLogger):
-    def __init__(self, callback=None, cancel_check=None):
-        super().__init__(init_state=None, bars=None, ignored_bars=None, logged_bars='all', min_time_interval=0, ignore_bars_under=0)
+    def __init__(self, callback=None, cancel_check=None, *args, **kwargs):
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k not in ("ignore_new_bars",)}
+        try:
+            super().__init__(*args, **filtered_kwargs)
+        except TypeError:
+            try:
+                super().__init__(bars=None, ignored_bars=None, logged_bars='all', min_time_interval=0, ignore_bars_under=0)
+            except Exception:
+                try:
+                    super().__init__()
+                except Exception:
+                    pass
         self.ui_callback = callback
         self.cancel_check = cancel_check
         self.last_log_time = 0.0
@@ -900,14 +910,10 @@ def compose_video(scene_clips, audio_path, word_timings, output_path, title="",
         else:
             export_fps = 30.0
 
-        cpu_cores = os.cpu_count() or 16
-        render_threads = int(
-            kwargs.get("render_threads")
-            if kwargs.get("render_threads") is not None
-            else (getattr(config, "RENDER_THREADS", 8) or 8)
-        )
-        if render_threads <= 1:
-            render_threads = max(4, min(8, cpu_cores // 2))
+        cpu_cores = os.cpu_count() or 8
+        configured_threads = getattr(config, "RENDER_THREADS", 4) or 4
+        render_threads = int(kwargs.get("render_threads") if kwargs.get("render_threads") is not None else configured_threads)
+        render_threads = max(2, min(4, render_threads))
 
         from system_resilience import get_export_codec_settings
         use_gpu = (
@@ -1432,72 +1438,76 @@ def _face_centered_source(clip, path, target_w, target_h):
 
 def _prep(path, dur, tw, th, split_screen=False, enable_section2=True, badge_label=None, badge_icon="💡", enable_pip=False, pip_path=None, gameplay_path=None, enable_face_center=False):
     c = VideoFileClip(path, audio=False)
-    selected_gameplay = gameplay_path or os.path.join(config.ASSETS_DIR, "gameplay_loop.mp4")
-    split_active = bool(split_screen and os.path.exists(selected_gameplay))
-    face_centered = False
-    if enable_face_center:
-        panel_h = int(th * 0.58) if split_active else th
-        c, face_centered = _face_centered_source(c, path, tw, panel_h)
-    # Downscale high-resolution/4K videos early to 1080p to save RAM and CPU
-    if c.w > tw and c.h > th:
-        c = c.resize(width=tw) if c.w >= c.h else c.resize(height=th)
-    elif c.w > tw * 1.2:
-        c = c.resize(width=tw)
-    elif c.h > th * 1.2:
-        c = c.resize(height=th)
+    try:
+        selected_gameplay = gameplay_path or os.path.join(config.ASSETS_DIR, "gameplay_loop.mp4")
+        split_active = bool(split_screen and os.path.exists(selected_gameplay))
+        face_centered = False
+        if enable_face_center:
+            panel_h = int(th * 0.58) if split_active else th
+            c, face_centered = _face_centered_source(c, path, tw, panel_h)
+        # Downscale high-resolution/4K videos early to 1080p to save RAM and CPU
+        if c.w > tw and c.h > th:
+            c = c.resize(width=tw) if c.w >= c.h else c.resize(height=th)
+        elif c.w > tw * 1.2:
+            c = c.resize(width=tw)
+        elif c.h > th * 1.2:
+            c = c.resize(height=th)
 
-    # Item 79: Hız Varyasyonu (Speed Ramp %97 veya %103)
-    if enable_section2:
-        c = apply_speed_ramp(c)
+        # Item 79: Hız Varyasyonu (Speed Ramp %97 veya %103)
+        if enable_section2:
+            c = apply_speed_ramp(c)
 
-    # Item 78: Görsel Aynalama (Horizontal Flip Content ID Koruması)
-    # Metin kartları (Reddit açılış kartı vb.) ters dönmemesi için hariç tutulur
-    is_text_card = any(k in path.lower() for k in ("reddit", "card", "text", "title"))
-    if enable_section2 and not is_text_card:
-        c = apply_horizontal_flip(c)
+        # Item 78: Görsel Aynalama (Horizontal Flip Content ID Koruması)
+        # Metin kartları (Reddit açılış kartı vb.) ters dönmemesi için hariç tutulur
+        is_text_card = any(k in path.lower() for k in ("reddit", "card", "text", "title"))
+        if enable_section2 and not is_text_card:
+            c = apply_horizontal_flip(c)
 
-    # Süre senkronizasyonu
-    if c.duration > dur:
-        st = (c.duration - dur) / 2
-        c = c.subclip(st, st + dur)
-    elif c.duration < dur:
-        f = c.duration / dur
-        c = c.fx(vfx.speedx, f) if f >= 0.5 else c.loop(duration=dur)
+        # Süre senkronizasyonu
+        if c.duration > dur:
+            st = (c.duration - dur) / 2
+            c = c.subclip(st, st + dur)
+        elif c.duration < dur:
+            f = c.duration / dur
+            c = c.fx(vfx.speedx, f) if f >= 0.5 else c.loop(duration=dur)
 
-    # Item 77: Yatay kaynakları 9:16 yaparken Akıllı Kırpma (%40 Gaussian Blur Arka Plan)
-    if split_screen:
-        if os.path.exists(selected_gameplay):
-            c = create_split_screen_clip(c, selected_gameplay, tw, th)
+        # Item 77: Yatay kaynakları 9:16 yaparken Akıllı Kırpma (%40 Gaussian Blur Arka Plan)
+        if split_screen:
+            if os.path.exists(selected_gameplay):
+                c = create_split_screen_clip(c, selected_gameplay, tw, th)
+            else:
+                c = apply_smart_crop(c, tw, th, blur_intensity=0.40)
         else:
             c = apply_smart_crop(c, tw, th, blur_intensity=0.40)
-    else:
-        c = apply_smart_crop(c, tw, th, blur_intensity=0.40)
 
-    # Item 95: Çift Stok Katmanı (Picture-in-Picture)
-    if enable_pip:
-        c = apply_pip_overlay(c, pip_clip_or_path=pip_path)
+        # Item 95: Çift Stok Katmanı (Picture-in-Picture)
+        if enable_pip:
+            c = apply_pip_overlay(c, pip_clip_or_path=pip_path)
 
-    # Item 76: 3 Saniye Kuralı Kurgusu (3.2s üzeri sahnelerde mikro-kesit ve punch-in)
-    if enable_section2 and c.duration > 3.2:
-        c = enforce_3s_broll_rule(c, max_duration=3.2)
+        # Item 76: 3 Saniye Kuralı Kurgusu (3.2s üzeri sahnelerde mikro-kesit ve punch-in)
+        if enable_section2 and c.duration > 3.2:
+            c = enforce_3s_broll_rule(c, max_duration=3.2)
 
-    # Item 82: Metin İçi Görsel Çıkartmalar & Sayaç Rozetleri (Stickers/Badges)
-    if badge_label:
-        c = overlay_graphic_badge(c, label=badge_label, icon=badge_icon)
+        # Item 82: Metin İçi Görsel Çıkartmalar & Sayaç Rozetleri (Stickers/Badges)
+        if badge_label:
+            c = overlay_graphic_badge(c, label=badge_label, icon=badge_icon)
 
-    # Item 75: Görsel Katmanlama (Multi-Layer B-Roll %10 opaklıkta ışık sızıntısı/toz)
-    if enable_section2:
-        c = apply_multi_layer_overlay(c, opacity=0.10)
+        # Item 75: Görsel Katmanlama (Multi-Layer B-Roll %10 opaklıkta ışık sızıntısı/toz)
+        if enable_section2:
+            c = apply_multi_layer_overlay(c, opacity=0.10)
 
-    # Item 106: Ana sahne köşe yuvarlama (corner radius)
-    if enable_section2:
-        c = apply_corner_radius_to_clip(c, radius=28)
+        # Item 106: Ana sahne köşe yuvarlama (corner radius)
+        if enable_section2:
+            c = apply_corner_radius_to_clip(c, radius=28)
 
-    # Item 72 & 71: Renk Derecelendirme ve pHash Gürültüsü — sadece FFmpeg merge aşamasında uygulanır
-    # (RENDER_SAFE_MODE: _prep içinde bypass, _merge'deki FFmpeg filtreleri zaten var)
-
-    c._face_centered = face_centered
-    return c
+        c._face_centered = face_centered
+        return c
+    except Exception:
+        try:
+            c.close()
+        except Exception:
+            pass
+        raise
 
 def _fit(c, tw, th):
     """Fallback legacy helper delegating directly to smart crop with 40% blur."""

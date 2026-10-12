@@ -615,25 +615,35 @@ async def _tts(text, mp3_path, rate=None, volume=None, pitch=None):
     return mp3_path, sanitized
 
 async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volume=None, pitch=None):
-    """Try spoken text; on NoAudioReceived retry plain cleaned text once."""
+    """Try spoken text; on NoAudioReceived retry cleaned text, then fallback voice."""
     try:
         return await _tts(spoken_text, mp3_path, rate=rate, volume=volume, pitch=pitch)
     except Exception as first_err:
         err_name = type(first_err).__name__
-        if err_name not in ("NoAudioReceived", "ValueError") and "NoAudioReceived" not in str(first_err):
-            # Network blip: one plain retry still helps
-            if "No audio" not in str(first_err) and err_name not in ("ClientResponseError", "WSServerHandshakeError"):
-                raise
         fallback = (plain_text or spoken_text or "").strip()
-        if not fallback or fallback == spoken_text:
-            raise
-        print(f"  [TTS] Retry plain text after {err_name}: {first_err}")
+        cleaned_fallback = re.sub(r"[^\w\s.,!?-]", " ", fallback).strip()
+        if not cleaned_fallback:
+            raise first_err
+        print(f"  [TTS] Retry cleaned text after {err_name}: {first_err}")
         if os.path.exists(mp3_path):
             try:
                 os.remove(mp3_path)
             except OSError:
                 pass
-        return await _tts(fallback, mp3_path, rate=rate, volume=volume, pitch=pitch)
+        try:
+            return await _tts(cleaned_fallback, mp3_path, rate=rate, volume=volume, pitch=pitch)
+        except Exception as retry_err:
+            if config.TTS_VOICE != "tr-TR-AhmetNeural":
+                orig_voice = config.TTS_VOICE
+                config.TTS_VOICE = "tr-TR-AhmetNeural"
+                try:
+                    print(f"  [TTS] Retry with default voice tr-TR-AhmetNeural...")
+                    return await _tts(cleaned_fallback, mp3_path, rate=rate, volume=volume, pitch=pitch)
+                except Exception:
+                    pass
+                finally:
+                    config.TTS_VOICE = orig_voice
+            raise retry_err
 
 def _concat_wavs(wav_paths, output_path, pause_seconds=0.28):
     """Concatenates matching PCM WAV files while preserving a deterministic duration."""

@@ -1044,3 +1044,8 @@ def export_seo_operator_pack(
         "notification_bell_cta": notification_cta,
         "manual_studio_only": True,
     }
+
+
+# Backwards-compatibility aliases expected by legacy callers and regression tests
+from copyright_risk import scan_copyright_risk
+from headline_transformer import convert_headline_to_question

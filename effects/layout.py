@@ -2,7 +2,7 @@
 Layout, Sizing & Cropping Effects
 Covers items: 3, 40, 49, 77, 95, 97, 106, 124
 """
-import os, random, subprocess
+import os, random, subprocess, tempfile
 from typing import Optional, Tuple, Any
 from moviepy.editor import (
     VideoFileClip, ColorClip, CompositeVideoClip, ImageClip,

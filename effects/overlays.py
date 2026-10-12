@@ -2,7 +2,7 @@
 Graphic Overlays, Watermarks, Badges, Avatars & UI Cards
 Covers items: 59, 60, 75, 82, 87, 92, 105, 118, 125, 126, 131, 138, 212, 232, 238, 246
 """
-import os, random, math, subprocess
+import os, random, math, subprocess, tempfile
 from typing import Optional, Tuple, Any
 from moviepy.editor import (
     VideoFileClip, ColorClip, CompositeVideoClip, ImageClip,

@@ -215,6 +215,7 @@ def search_pixabay(query: str, per_page: int = 12) -> List[Candidate]:
     return out
 
 
+
 # ─── Coverr ──────────────────────────────────────────────────────────────────
 
 def search_coverr(query: str, per_page: int = 10) -> List[Candidate]:
@@ -417,11 +418,15 @@ _IA_SEARCH = "https://archive.org/advancedsearch.php"
 
 
 def search_archive_org(query: str, per_page: int = 6) -> List[Candidate]:
-    q = f"mediatype:movies AND ({query})"
-    params = {"q": q, "fl[]": ["identifier", "title", "licenseurl", "creator", "description"], "rows": per_page, "output": "json"}
-    r = _session.get(_IA_SEARCH, params=params, timeout=TIMEOUT)
-    r.raise_for_status()
-    docs = ((r.json().get("response") or {}).get("docs") or [])
+    try:
+        q = f"mediatype:movies AND ({query})"
+        params = {"q": q, "fl[]": ["identifier", "title", "licenseurl", "creator", "description"], "rows": per_page, "output": "json"}
+        r = _session.get(_IA_SEARCH, params=params, timeout=3.5)
+        if r.status_code != 200:
+            return []
+        docs = ((r.json().get("response") or {}).get("docs") or [])
+    except Exception:
+        return []
     out: List[Candidate] = []
     for d in docs:
         ident = d.get("identifier", "")
@@ -525,10 +530,14 @@ _MET_API = "https://collectionapi.metmuseum.org/public/collection/v1"
 
 
 def search_met_images(query: str, per_page: int = 6) -> List[Candidate]:
-    r = _session.get(f"{_MET_API}/search", params={"q": query, "hasImages": "true", "isPublicDomain": "true"},
-                     timeout=TIMEOUT)
-    r.raise_for_status()
-    ids = list((r.json() or {}).get("objectIDs") or [])
+    try:
+        r = _session.get(f"{_MET_API}/search", params={"q": query, "hasImages": "true", "isPublicDomain": "true"},
+                         timeout=3.0)
+        if r.status_code != 200:
+            return []
+        ids = list((r.json() or {}).get("objectIDs") or [])
+    except Exception:
+        return []
     random.shuffle(ids)
     out: List[Candidate] = []
     for oid in ids[: max(per_page, 1) * 2]:
