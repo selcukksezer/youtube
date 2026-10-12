@@ -226,11 +226,20 @@ Tüm 5 kök neden ve ek niş mimari borçları adım adım çözüldü, test edi
    - `subtitle_generator.py` içindeki SRT fallback dikey marjini (`ffmpeg_force_style_from_opts`) `0.20 * H` (384px) değerinden YouTube Shorts UI güvenli alanı olan `0.25 * H` (480px) seviyesine hizalandı. Böylece altyazıların alt taraftaki kanal adı, abone ol butonu ve başlık örtüşmesi önlendi.
    - `services/topic_suggester.py` içindeki seed tabanlı şablonlar mobil cihazlarda başlık kesilmesini önlemek ve 75 karakter tavanını aşarak adayların elenmesini engellemek için kompakt ve vurucu kanca yapılarıyla güncellendi (14/14 konu öneri testi %100 PASS).
 
-### Canlı Üretim Kanıtı (Doğrulanan Video)
+### Canlı Üretim Kanıtı 1 (Teknoloji & Yapay Zeka)
 * **Dosya:** `output/Google_bile_bu_3_yapay_zeka_sitesini_kapatmak_istedi.mp4` (66.69 MB, 43.47s, 1080x1920 @ 30 FPS, H.264/MF)
 * **Senaryo (Gemini TTS Charon):** 6 sahne, 98 kelime; otonom tasarım motoru, ses klonlama platformu ve akademik makale özetleme sistemini anlatan %100 konuya uygun özgün metin.
 * **Görseller (B-roll):** Server rack odası, developer çalışma istasyonu, DeepSeek yapay zeka arayüzü, server blade şasisi, fütüristik dijital yapay zeka kafası. (Salatalık, limon, mutfak: **%0**).
 * **Altyazı & Ses:** Anton font karaoke ASS (#FFD700), BGM `yt_safe_726_cyberpunk_city.mp3`, synth bass ve SFX ses tasarımı.
+
+### Canlı Üretim Kanıtı 2 (Otomotiv & Süper Arabalar)
+* **Dosya:** `output/Dunyanin_En_Hizli_3_Super_Arabasi.mp4` (68.85 MB, 45.48s, 1080x1920 @ 29.97 FPS, Windows Media Foundation `h264_mf`)
+* **Senaryo (Gemini TTS Charon):** 6 sahne, 96 kelime (hız x1.00 doğal tempo); Bugatti Chiron Super Sport (1600 hp, 490 km/s), Koenigsegg Jesko Absolut (531 km/s) ve Hennessey Venom F5 anlatımı.
+* **Görseller (B-roll):** 6/6 stok video (Pexels #36597202, #31191835, #30706135, #34349410, #28837090, Pixabay #2592859); otoyolda yarışan süper arabalar, motor bloğu alev ve egzoz yakın çekimleri. (Mutfak, salatalık, poşet mühürleyici: **%0**).
+* **Kalite Puanı:** QualityGate Post-score: **100.0/100** (Dav=0.07, issues=[]).
+* **Altyazı & Ses:** Anton font karaoke ASS (#FFD700), BGM `yt_safe_329_documentary.mp3`, -18.4 dB ducking, 2 SFX geçişi, sıfır fade-out döngü koruması.
+* **Ek Çıktılar:** 9:16 ve 16:9 kapak görselleri (`Dunyanin_En_Hizli_3_Super_Arabasi_thumb.jpg`), 15 etiketli Gemini viral SEO paketi (`Dunyanin_En_Hizli_3_Super_Arabasi_seo.json`).
+
 
 
 
