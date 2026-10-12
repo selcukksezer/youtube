@@ -583,11 +583,11 @@ PROVIDERS: Dict[str, ProviderSpec] = {
     "coverr": ProviderSpec("coverr", search_coverr, "video", "COVERR_API_KEY", 0.85),
     "wikimedia": ProviderSpec("wikimedia", search_wikimedia, "video", None, 0.7),
     "wikimedia_img": ProviderSpec("wikimedia_img", search_wikimedia_images, "image", None, 0.6),
-    "nasa": ProviderSpec("nasa", search_nasa, "video", None, 0.75, ["mystery", "astrology", "science", "general", "news"]),
+    "nasa": ProviderSpec("nasa", search_nasa, "video", None, 0.75, ["mystery", "astrology", "science"]),
     "nasa_img": ProviderSpec("nasa_img", search_nasa_images, "image", None, 0.6, ["mystery", "astrology", "science"]),
     "openverse": ProviderSpec("openverse", search_openverse, "image", None, 0.5),
     "archive_org": ProviderSpec("archive_org", search_archive_org, "video", None, 0.45),
     "pexels_img": ProviderSpec("pexels_img", search_pexels_images, "image", "PEXELS_API_KEY", 0.7),
     "pixabay_img": ProviderSpec("pixabay_img", search_pixabay_images, "image", "PIXABAY_API_KEY", 0.65),
-    "met_img": ProviderSpec("met_img", search_met_images, "image", None, 0.55, ["religious", "history", "mystery", "general"]),
+    "met_img": ProviderSpec("met_img", search_met_images, "image", None, 0.55, ["religious", "history", "mystery"]),
 }

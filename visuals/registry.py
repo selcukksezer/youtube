@@ -125,7 +125,7 @@ def ordered_providers(niche_id: str = "") -> List[ProviderSpec]:
         spec = PROVIDERS.get(k)
         if not spec:
             continue
-        if spec.families and family not in spec.families and family != "general":
+        if spec.families and family not in spec.families:
             continue
         if not provider_available(spec):
             continue

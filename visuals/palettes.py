@@ -96,6 +96,38 @@ PALETTES: Dict[str, Dict] = {
         "particles": "dust",
         "sources": ["pexels", "pixabay"],  # kid-safe animal/nature stock only
     },
+    "automotive": {
+        "colors": [(15, 15, 20), (220, 20, 40), (255, 215, 0)],
+        "accent": (255, 60, 40),
+        "text": (255, 255, 255),
+        "motion": "fast_cut",
+        "particles": "smoke",
+        "sources": ["pexels", "pixabay", "coverr", "pexels_img", "pixabay_img"],
+    },
+    "tech": {
+        "colors": [(10, 15, 30), (0, 245, 212), (123, 44, 191)],
+        "accent": (0, 245, 212),
+        "text": (240, 248, 255),
+        "motion": "pulse",
+        "particles": "grid",
+        "sources": ["pexels", "pixabay", "coverr", "pexels_img", "pixabay_img"],
+    },
+    "fitness": {
+        "colors": [(20, 20, 25), (255, 107, 0), (255, 230, 0)],
+        "accent": (255, 107, 0),
+        "text": (255, 255, 255),
+        "motion": "fast_cut",
+        "particles": "dust",
+        "sources": ["pexels", "pixabay", "coverr", "pexels_img", "pixabay_img"],
+    },
+    "legal": {
+        "colors": [(18, 22, 34), (40, 50, 75), (212, 175, 55)],
+        "accent": (212, 175, 55),
+        "text": (245, 245, 250),
+        "motion": "slow_zoom",
+        "particles": "dust",
+        "sources": ["pexels", "pixabay", "wikimedia", "openverse", "pexels_img"],
+    },
     "general": {
         "colors": [(10, 12, 20), (24, 30, 52), (40, 60, 90)],
         "accent": (120, 200, 255),
@@ -115,6 +147,10 @@ _FAMILY_ALIASES = {
     "wealth": "stoic",
     "gaming": "quiz",
     "kids": "kids",
+    "automotive": "automotive",
+    "tech": "tech",
+    "fitness": "fitness",
+    "legal": "legal",
 }
 
 _NICHE_ID_FAMILY_HINT = [
@@ -135,6 +171,16 @@ _NICHE_ID_FAMILY_HINT = [
     ("emoji", "quiz"),
     ("kids", "kids"),
     ("36_kids", "kids"),
+    ("automotive", "automotive"),
+    ("supercar", "automotive"),
+    ("car", "automotive"),
+    ("ai_tools", "tech"),
+    ("tech", "tech"),
+    ("fitness", "fitness"),
+    ("workout", "fitness"),
+    ("legal", "legal"),
+    ("consumer", "legal"),
+    ("parenting", "kids"),
 ]
 
 
