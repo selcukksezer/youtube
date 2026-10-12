@@ -32,7 +32,7 @@ def _has_phrase(folded: str, needle: str) -> bool:
     if " " in n:
         return n in folded
     # Long stems keep Turkish suffixes: gökdelen / gökdelenlerin / gökdeleni.
-    # Short stems stay whole words so "kale" does not hit "kalem".
+    # Short stems stay whole words so "kale" does not hit "kalem", and "okul" does not hit "okulda söylemezler".
     if len(n) >= 6:
         return re.search(rf"(?<![a-z0-9]){re.escape(n)}", folded) is not None
     return re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", folded) is not None
@@ -185,7 +185,7 @@ FAMILIES: tuple = (
         "microscope",
         "microscope laboratory",
         ("laboratory glassware", "scientist lab coat"),
-        ("mikroskop", "laboratuvar", "microscope", "deney"),
+        ("mikroskop", "laboratuvar", "microscope", "bilimsel deney", "laboratuvar deneyi"),
     ),
     ShotFamily(
         "train",
@@ -208,8 +208,8 @@ FAMILIES: tuple = (
     ShotFamily(
         "car",
         "sports car driving",
-        ("car engine close up", "night city driving", "supercar detail"),
-        ("ferrari", "lamborghini", "supercar", "hypercar", "spor araba", "otomobil"),
+        ("car engine close up", "night city driving", "supercar detail", "hypercar track"),
+        ("ferrari", "lamborghini", "supercar", "hypercar", "spor araba", "otomobil", "araba", "surus", "kokpit"),
     ),
     ShotFamily(
         "phone",
@@ -250,8 +250,8 @@ FAMILIES: tuple = (
     ShotFamily(
         "gym",
         "gym workout",
-        ("runner on road", "barbell close up"),
-        ("fitness", "spor salonu", "halter", "kosu", "gym"),
+        ("runner on road", "barbell close up", "athletic training", "dumbbells workout"),
+        ("fitness", "spor salonu", "halter", "kosu", "gym", "antrenman", "kas", "egzersiz", "diyet", "beslenme"),
     ),
     ShotFamily(
         "football",
@@ -304,8 +304,8 @@ FAMILIES: tuple = (
     ShotFamily(
         "court",
         "courtroom interior",
-        ("judge gavel", "law books shelf"),
-        ("mahkeme", "hakim", "courtroom", "gavel"),
+        ("judge gavel", "law books shelf", "scales of justice", "legal document sign"),
+        ("mahkeme", "hakim", "courtroom", "gavel", "avukat", "hukuk", "dava", "kanun", "tazminat"),
     ),
     ShotFamily(
         "hospital",
@@ -324,6 +324,24 @@ FAMILIES: tuple = (
         "server room lights",
         ("data center aisle", "computer code screen"),
         ("sunucu", "server room", "data center", "yazilim kodu"),
+    ),
+    ShotFamily(
+        "ai_tech",
+        "artificial intelligence neural network",
+        ("computer code developer screen", "future ai digital technology", "software engineer workstation", "digital data cyber interface"),
+        ("yapay zeka", "artificial intelligence", "chatgpt", "midjourney", "deepseek", "makine ogrenimi", "sinir agi", "neural network"),
+    ),
+    ShotFamily(
+        "software_coding",
+        "software developer coding screen",
+        ("programming code monitor", "web design user interface", "developer typing keyboard", "data analysis dashboard"),
+        ("yazilim", "kodlama", "programlama", "web sitesi", "website", "yazilimci", "developer", "source code"),
+    ),
+    ShotFamily(
+        "parenting_child",
+        "happy family parents and child",
+        ("toddler learning playing", "mother baby caring gentle", "kids playground indoor"),
+        ("ebeveyn", "ebeveynler", "bebek", "bebekler", "bebegi", "bebeginiz", "cocuk", "cocuklar", "cocugunuz", "anne", "anneler", "baba", "babalar", "aile", "toddler", "parenting"),
     ),
     ShotFamily(
         "robot",

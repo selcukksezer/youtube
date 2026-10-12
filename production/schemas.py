@@ -210,9 +210,9 @@ class LicenseRecord(BaseModel):
             if any(k in val for k in ("ai", "pollinations", "flux", "gemini", "fal", "stability")):
                 normalized = License.AI_GENERATED
             else:
-                normalized = License.PEXELS
+                raise ValueError(f"Unknown or invalid license: {self.license}")
         if not is_commercial_safe(normalized):
-            normalized = License.AI_GENERATED
+            raise ValueError(f"License '{self.license}' is not commercially safe")
         self.license = normalized.value
         self.safe = True
         return self
@@ -270,9 +270,5 @@ class SourceManifest(BaseModel):
     def unique_assets(self) -> "SourceManifest":
         uids = [clip.uid for clip in self.clips]
         if len(uids) != len(set(uids)):
-            seen = set()
-            for idx, clip in enumerate(self.clips):
-                if clip.uid in seen:
-                    clip.uid = f"{clip.uid}_{idx}"
-                seen.add(clip.uid)
+            raise ValueError("Duplicate asset UID in manifest: clips must be distinct")
         return self

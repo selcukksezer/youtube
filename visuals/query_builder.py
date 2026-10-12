@@ -40,6 +40,22 @@ _TR_EN: Dict[str, str] = {
     "metro": "subway train underground station", "tren": "train railway motion",
     "okyanus": "ocean waves coastline", "deniz": "ocean waves coastline",
     "orman": "forest trees winding path", "çöl": "desert dunes wind", "col": "desert dunes wind",
+    # Modern Tech / AI / Software / Web concepts
+    "yapay zeka": "artificial intelligence neural network",
+    "yazılım": "software code computer screen", "yazilim": "software code computer screen",
+    "kodlama": "coding programming developer monitor", "kod": "computer coding screen",
+    "site": "website digital interface browsing", "web": "modern web application screen",
+    "sunum": "presentation digital slides screen", "otomasyon": "automation digital workflow",
+    "klonlama": "voice cloning digital waveform", "makale": "academic paper research document",
+    "özet": "data summary analytics document", "ozet": "data summary analytics document",
+    "algoritma": "algorithm digital network graphics", "veri": "data dashboard screen",
+    # Automotive / Fitness / Legal / Kids concepts
+    "hukuk": "scales of justice legal courtroom", "avukat": "lawyer attorney professional",
+    "tazminat": "consumer compensation legal contract", "mahkeme": "courtroom judge gavel",
+    "antrenman": "athletic gym workout fitness", "beslenme": "sports nutrition meal prep",
+    "kas": "muscle fitness bodybuilding", "diyet": "healthy diet nutrition",
+    "bebek": "cute baby toddler gentle", "çocuk": "happy children playing", "cocuk": "happy children playing",
+    "ebeveyn": "caring family parenting moments", "aile": "happy family lifestyle",
     # Product / Affiliate / Gadget / Tech / Home concepts
     "ürün": "smart product gadget", "urun": "smart product gadget",
     "alet": "innovative gadget tool", "cihaz": "compact electronic device",
@@ -49,15 +65,15 @@ _TR_EN: Dict[str, str] = {
     "masa": "clean desk workspace", "düzenleyici": "desk organizer accessory",
     "duzenleyici": "desk organizer accessory", "kablo": "cable organizer neat",
     "temizlik": "cleaning tool home", "pratik": "smart daily gadget",
-    "kolaylık": "life hack lifestyle", "kolaylik": "life hack lifestyle",
-    "tasarım": "minimalist product design", "tasarim": "minimalist product design",
+    "kolaylık": "effortless workflow productivity", "kolaylik": "effortless workflow productivity",
+    "tasarım": "creative ui digital design", "tasarim": "creative ui digital design",
     "şarj": "charging station accessory", "sarj": "charging station accessory",
     "kulaklık": "wireless earbuds audio", "kulaklik": "wireless earbuds audio",
     "telefon": "smartphone desk holder", "kamera": "camera lens tech",
     "ışık": "ring light ambient led", "isik": "ring light ambient led",
     "paket": "unboxing packaging box", "kutu": "product unboxing package",
     "kahve": "espresso coffee maker kitchen", "bardak": "thermal tumbler mug",
-    "araba": "car interior accessory", "araç": "car gadget tech",
+    "araba": "car interior driving", "araç": "smart modern tool gadget",
 }
 
 # Religious must never pull Stoic/Roman
