@@ -20,8 +20,16 @@ import PIL.Image
 if not hasattr(PIL.Image, 'ANTIALIAS'):
     PIL.Image.ANTIALIAS = getattr(PIL.Image, 'Resampling', PIL.Image).LANCZOS
 
-# Load environment variables from .env file
-_ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+# Load environment variables from .env file (auto-unseal .env.vault in cloud if .env is missing)
+_BASE_DIR_EARLY = os.path.dirname(os.path.abspath(__file__))
+_ENV_PATH = os.path.join(_BASE_DIR_EARLY, ".env")
+_VAULT_PATH = os.path.join(_BASE_DIR_EARLY, ".env.vault")
+if not os.path.isfile(_ENV_PATH) and os.path.isfile(_VAULT_PATH):
+    try:
+        from scripts.env_vault import unseal as _unseal_env_vault
+        _unseal_env_vault(os.getenv("ENV_VAULT_PASSPHRASE", "shorts-studio-vault-2026"), force=True)
+    except Exception:
+        pass
 try:
     load_dotenv(_ENV_PATH)
 except UnicodeDecodeError:
@@ -342,7 +350,7 @@ WHISPER_ALIGN = os.getenv("WHISPER_ALIGN", "false").lower() in ("true", "1", "ye
 # ══════════════════════════════════════════════════════════════
 STUDIO_AUTH_ENABLED = os.getenv("STUDIO_AUTH_ENABLED", "true").lower() in ("true", "1", "yes")
 STUDIO_USERNAME = os.getenv("STUDIO_USERNAME", "admin")
-STUDIO_PASSWORD = os.getenv("STUDIO_PASSWORD", "shorts2026")
+STUDIO_PASSWORD = os.getenv("STUDIO_PASSWORD", "123Selcuk123...")
 STUDIO_AUTH_SECRET = os.getenv("STUDIO_AUTH_SECRET", "shorts-studio-hmac-secret-2026")
 AUTO_GIT_UPDATE = os.getenv("AUTO_GIT_UPDATE", "true").lower() in ("true", "1", "yes")
 AUTO_GIT_UPDATE_INTERVAL_SEC = int(os.getenv("AUTO_GIT_UPDATE_INTERVAL_SEC", "300"))
