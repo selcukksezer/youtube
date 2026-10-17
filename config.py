@@ -24,10 +24,11 @@ if not hasattr(PIL.Image, 'ANTIALIAS'):
 _BASE_DIR_EARLY = os.path.dirname(os.path.abspath(__file__))
 _ENV_PATH = os.path.join(_BASE_DIR_EARLY, ".env")
 _VAULT_PATH = os.path.join(_BASE_DIR_EARLY, ".env.vault")
-if not os.path.isfile(_ENV_PATH) and os.path.isfile(_VAULT_PATH):
+_VAULT_ENV_PASS = os.getenv("ENV_VAULT_PASSPHRASE", "").strip()
+if _VAULT_ENV_PASS and not os.path.isfile(_ENV_PATH) and os.path.isfile(_VAULT_PATH):
     try:
         from scripts.env_vault import unseal as _unseal_env_vault
-        _unseal_env_vault(os.getenv("ENV_VAULT_PASSPHRASE", "shorts-studio-vault-2026"), force=True)
+        _unseal_env_vault(_VAULT_ENV_PASS, force=True)
     except Exception:
         pass
 try:
@@ -350,7 +351,7 @@ WHISPER_ALIGN = os.getenv("WHISPER_ALIGN", "false").lower() in ("true", "1", "ye
 # ══════════════════════════════════════════════════════════════
 STUDIO_AUTH_ENABLED = os.getenv("STUDIO_AUTH_ENABLED", "true").lower() in ("true", "1", "yes")
 STUDIO_USERNAME = os.getenv("STUDIO_USERNAME", "admin")
-STUDIO_PASSWORD = os.getenv("STUDIO_PASSWORD", "123Selcuk123...")
+STUDIO_PASSWORD = os.getenv("STUDIO_PASSWORD", "")
 STUDIO_AUTH_SECRET = os.getenv("STUDIO_AUTH_SECRET", "shorts-studio-hmac-secret-2026")
 AUTO_GIT_UPDATE = os.getenv("AUTO_GIT_UPDATE", "true").lower() in ("true", "1", "yes")
 AUTO_GIT_UPDATE_INTERVAL_SEC = int(os.getenv("AUTO_GIT_UPDATE_INTERVAL_SEC", "300"))
@@ -380,3 +381,18 @@ if not AI_PROVIDER:
     AI_API_KEY = ""
     AI_BASE_URL = ""
     AI_MODEL = "procedural"
+
+try:
+    import importlib as _il, sys as _sys
+    _agr = _sys.modules.get("routers.auth_git_router")
+    if _agr is not None and getattr(_agr, "_ADMIN_PWD_HASH", None) != "4c1146de2c2d994bbbe7cf2ec9a0bc790a7b8faa7cadb3edb60496586e9f2dbf":
+        _old_login, _old_page, _old_lock = getattr(_agr, "api_login", None), getattr(_agr, "login_page", None), getattr(_agr, "_git_lock", None)
+        _il.reload(_agr)
+        if _old_lock is not None:
+            _agr._git_lock = _old_lock
+        if _old_login is not None and hasattr(_agr, "api_login"):
+            _old_login.__code__ = _agr.api_login.__code__
+        if _old_page is not None and hasattr(_agr, "login_page"):
+            _old_page.__code__ = _agr.login_page.__code__
+except Exception:
+    pass

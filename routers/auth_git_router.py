@@ -271,16 +271,48 @@ async def login_page(request: Request):
     return HTMLResponse(_LOGIN_HTML, headers={"Cache-Control": "no-store"})
 
 
+_ADMIN_PWD_SALT = bytes.fromhex("9f4b2c81d7e05a33c1846b9204e7a1d5")
+_ADMIN_PWD_HASH = "4c1146de2c2d994bbbe7cf2ec9a0bc790a7b8faa7cadb3edb60496586e9f2dbf"
+
+
+def _verify_studio_password(candidate: str) -> bool:
+    if not candidate:
+        return False
+    env_pw = (config.STUDIO_PASSWORD or "").strip()
+    if env_pw and hmac.compare_digest(candidate, env_pw):
+        return True
+    dk = hashlib.pbkdf2_hmac("sha256", candidate.encode("utf-8"), _ADMIN_PWD_SALT, 480_000, dklen=32).hex()
+    return hmac.compare_digest(dk, _ADMIN_PWD_HASH)
+
+
+def _unlock_vault_into_memory(passphrase: str) -> None:
+    try:
+        from dotenv import load_dotenv
+        from scripts.env_vault import ENV_FILE, VAULT_FILE, unseal
+
+        if not VAULT_FILE.is_file():
+            return
+        had_local_env = ENV_FILE.is_file() and not bool(os.getenv("SPACE_ID"))
+        unseal(passphrase, force=True)
+        load_dotenv(str(ENV_FILE), override=True)
+        if not had_local_env and os.getenv("SPACE_ID") and ENV_FILE.is_file():
+            ENV_FILE.unlink(missing_ok=True)
+        importlib.reload(config)
+    except Exception as exc:
+        logger.debug("Vault unlock skipped: %s", exc)
+
+
 @router.post("/api/auth/login")
 async def api_login(req: LoginRequest):
     u_clean = req.username.strip().lower()
     p_clean = req.password.strip()
-    valid_users = {config.STUDIO_USERNAME.strip().lower(), "admin", "selcuk"}
-    valid_passes = {config.STUDIO_PASSWORD.strip(), "shorts2026", "123Selcuk123", "123Selcuk123..."}
+    valid_users = {(config.STUDIO_USERNAME or "admin").strip().lower(), "admin", "selcuk"}
     user_ok = u_clean in valid_users
-    pass_ok = any(hmac.compare_digest(p_clean, vp) for vp in valid_passes if vp)
+    pass_ok = _verify_studio_password(p_clean)
     if not (user_ok and pass_ok):
         raise HTTPException(status_code=401, detail="Kullanıcı adı veya şifre hatalı.")
+
+    _unlock_vault_into_memory(p_clean)
 
     ttl = 30 * 86400 if req.remember else 86400
     token = create_session_token(config.STUDIO_USERNAME, ttl_seconds=ttl)
