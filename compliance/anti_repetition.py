@@ -54,7 +54,7 @@ def get_rgb_color_jitter_filter(
     saturation = 1.0 + rng.uniform(-jitter_range, jitter_range)
 
     filter_str = (
-        f"eq=contrast={contrast:.4f}:gamma_r={gamma_r:.4f}:"
+        f"eq=gamma=1.0000:contrast={contrast:.4f}:gamma_r={gamma_r:.4f}:"
         f"gamma_g={gamma_g:.4f}:gamma_b={gamma_b:.4f}:"
         f"saturation={saturation:.4f}"
     )

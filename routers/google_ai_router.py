@@ -81,7 +81,10 @@ def api_google_ai_generate_video(req: GoogleAIGenerateVideoRequest):
 
 @router.get("/api/voicelab/library")
 def api_voicelab_library():
-    return list_voicelab_library()
+    res = list_voicelab_library()
+    if isinstance(res, dict) and "tracks" not in res:
+        res["tracks"] = res.get("local_voices_or_beds") or res.get("bgm_tracks") or []
+    return res
 
 
 @router.post("/api/voicelab/seed")
@@ -91,15 +94,25 @@ def api_voicelab_seed():
 
 
 @router.get("/api/audio/royalty-free/search")
-def api_rf_search(query: str = "ambient", prefer: str = "auto"):
-    pix = search_pixabay_music(query) if prefer in ("auto", "pixabay") else []
-    mix = search_mixkit(query)
-    return {"status": "ok", "pixabay": pix[:15], "mixkit": mix[:15], "query": query}
+def api_rf_search(query: str = "ambient", mood: str = "", prefer: str = "auto"):
+    effective_query = (query or mood or "ambient").strip()
+    pix = search_pixabay_music(effective_query) if prefer in ("auto", "pixabay") else []
+    mix = search_mixkit(effective_query)
+    combined = [*pix[:15], *mix[:15]]
+    return {
+        "status": "ok",
+        "pixabay": pix[:15],
+        "mixkit": mix[:15],
+        "results": combined,
+        "tracks": combined,
+        "query": effective_query,
+    }
 
 
 @router.post("/api/audio/royalty-free/fetch")
 def api_rf_fetch(req: RoyaltyFreeBgmRequest):
-    name = fetch_royalty_free_bgm(req.query or "ambient cinematic", prefer=req.prefer or "auto")
+    effective_query = (req.query or req.mood or "ambient cinematic").strip()
+    name = fetch_royalty_free_bgm(effective_query, prefer=req.prefer or "auto")
     if not name:
         raise HTTPException(404, "Telifsiz BGM bulunamadi")
     return {"status": "ok", "filename": name, "path": os.path.join(config.BGM_DIR, name)}

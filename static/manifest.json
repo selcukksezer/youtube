@@ -1,0 +1,32 @@
+{
+  "name": "Shorts Studio — YouTube Shorts Üretim",
+  "short_name": "Shorts Studio",
+  "description": "Konu gir, senaryo üret, kalite kontrolünden geçir ve Shorts render al.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#080d0f",
+  "theme_color": "#080d0f",
+  "lang": "tr",
+  "icons": [
+    {
+      "src": "/static/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

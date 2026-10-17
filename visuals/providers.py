@@ -28,7 +28,7 @@ import requests
 
 from .license import License, LicenseInfo, parse_cc_license
 
-USER_AGENT = "youtubeoto-shorts/1.0 (open-license visual sourcing; local dev)"
+USER_AGENT = "YouTubeShortsStudio/1.0 (https://github.com/youtubeoto/studio; contact@youtubeoto.local) python-requests/2.31"
 TIMEOUT = 8
 _PEXELS_RETRY_DELAYS = (0.25, 0.75)
 
@@ -422,7 +422,7 @@ def search_archive_org(query: str, per_page: int = 6) -> List[Candidate]:
         q = f"mediatype:movies AND ({query})"
         params = {"q": q, "fl[]": ["identifier", "title", "licenseurl", "creator", "description"], "rows": per_page, "output": "json"}
         r = _session.get(_IA_SEARCH, params=params, timeout=3.5)
-        if r.status_code != 200:
+        if getattr(r, "status_code", 200) != 200:
             return []
         docs = ((r.json().get("response") or {}).get("docs") or [])
     except Exception:

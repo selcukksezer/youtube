@@ -186,10 +186,13 @@ class TestSubtitles(unittest.TestCase):
             "cinematic_minimal": ("1", "0"),
             "mrbeast_style": ("3", "5"),
         }
+        from unittest.mock import patch
+        import config
         for key, (border, outline) in cases.items():
             path = f"output/test_preset_{key}.ass"
             try:
-                create_karaoke_subtitles(words, path, style_opts=SUBTITLE_PRESETS[key])
+                with patch.object(config, "RENDER_RESOLUTION_MODE", "1080p"):
+                    create_karaoke_subtitles(words, path, style_opts=SUBTITLE_PRESETS[key])
                 with open(path, encoding="utf-8") as f:
                     style = next(line for line in f if line.startswith("Style: K,"))
                 fields = style.strip().split(",")

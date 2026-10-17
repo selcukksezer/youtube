@@ -6,6 +6,7 @@
 
 (function () {
     let lastSpecs = null;
+    let inFlightSpecsPromise = null;
 
     function showHwToast(msg, type = 'success') {
         const container = document.getElementById('toast-container');
@@ -27,6 +28,14 @@
     }
 
     async function loadHardwareSpecs(forceRefresh = false) {
+        if (!forceRefresh && lastSpecs) {
+            renderHardwareUI(lastSpecs);
+            return lastSpecs;
+        }
+        if (!forceRefresh && inFlightSpecsPromise) {
+            return inFlightSpecsPromise;
+        }
+
         const elCpuName = document.getElementById('hw-cpu-name');
         const elCpuThreads = document.getElementById('hw-cpu-threads');
         const elGpuName = document.getElementById('hw-gpu-name');
@@ -40,32 +49,36 @@
         if (elGpuName) elGpuName.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Taranıyor...';
         if (elRamTotal) elRamTotal.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Taranıyor...';
 
-        try {
-            const res = await fetch('/api/hardware/specs');
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            if (data && data.specs) {
-                lastSpecs = data.specs;
-                renderHardwareUI(data.specs);
-                return data.specs;
+        inFlightSpecsPromise = (async () => {
+            try {
+                const res = await fetch('/api/hardware/specs');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                if (data && data.specs) {
+                    lastSpecs = data.specs;
+                    renderHardwareUI(data.specs);
+                    return data.specs;
+                }
+            } catch (err) {
+                console.error('Donanim tespit hatasi:', err);
+                const fallbackSpecs = {
+                    cpu: { name: 'Sistem Islemcisi (Cok Cekirdekli)', threads: navigator.hardwareConcurrency || 8, physical_cores: Math.max(2, Math.floor((navigator.hardwareConcurrency || 8) / 2)) },
+                    gpu: { name: 'Standart Grafik Birimi', has_nvenc: false, vram_gb: 4.0 },
+                    ram: { total_gb: 16.0, avail_gb: 8.0 },
+                    recommended_profile: 'cpu_multithread',
+                    recommended_label: 'Cok Cekirdekli CPU Render Hizlandirma',
+                    recommended_threads: Math.max(2, Math.floor((navigator.hardwareConcurrency || 8) / 2)),
+                    recommended_use_gpu: false,
+                    current_config: { use_gpu: false, gpu_codec: 'libx264', render_threads: 4, fps_diversify: true }
+                };
+                lastSpecs = fallbackSpecs;
+                renderHardwareUI(fallbackSpecs);
+                return fallbackSpecs;
+            } finally {
+                inFlightSpecsPromise = null;
             }
-        } catch (err) {
-            console.error('Donanim tespit hatasi:', err);
-            // Guvenli dinamik yerel fallback
-            const fallbackSpecs = {
-                cpu: { name: 'Sistem Islemcisi (Cok Cekirdekli)', threads: navigator.hardwareConcurrency || 8, physical_cores: Math.max(2, Math.floor((navigator.hardwareConcurrency || 8) / 2)) },
-                gpu: { name: 'Standart Grafik Birimi', has_nvenc: false, vram_gb: 4.0 },
-                ram: { total_gb: 16.0, avail_gb: 8.0 },
-                recommended_profile: 'cpu_multithread',
-                recommended_label: 'Cok Cekirdekli CPU Render Hizlandirma',
-                recommended_threads: Math.max(2, Math.floor((navigator.hardwareConcurrency || 8) / 2)),
-                recommended_use_gpu: false,
-                current_config: { use_gpu: false, gpu_codec: 'libx264', render_threads: 4, fps_diversify: true }
-            };
-            lastSpecs = fallbackSpecs;
-            renderHardwareUI(fallbackSpecs);
-            return fallbackSpecs;
-        }
+        })();
+        return inFlightSpecsPromise;
     }
 
     function renderHardwareUI(specs) {

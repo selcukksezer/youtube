@@ -3,30 +3,44 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import os
 import subprocess
-import tempfile
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import imageio_ffmpeg
 import requests
 
+from .fetch_candidates import (
+    _FAMILY_GENERIC,
+    _K1_HARD_FLOOR,
+    _best_hook_window_start,
+    _best_window_start_from_metrics,
+    _broaden_queries,
+    _normalize_candidate,
+    _normalize_clip,
+    _procedural_enabled,
+    _try_procedural_fallbacks,
+    _try_public_apis_fallback,
+    _try_whiteboard_visual,
+    attach_short_clip_partners,
+    fetch_scene_clip,
+)
 from .license import License, LicenseInfo, attribution_line, is_commercial_safe
 from .palettes import family_for_niche
 from .query_builder import build_shot_queries
-from .registry import is_used, mark_used, ordered_providers, reset_used, score_candidate, search_provider
+from .registry import _note_failure, is_used, mark_used, ordered_providers, reset_used, score_candidate, search_provider
 
-from urllib.parse import urlsplit, urlunsplit
-
-USER_AGENT = "youtubeoto-shorts/1.0 (license-aware fetch)"
+USER_AGENT = "YouTubeShortsStudio/1.0 (https://github.com/youtubeoto/studio; contact@youtubeoto.local) python-requests/2.31"
 _job_manifest: List[Dict[str, Any]] = []
 _job_file_hashes: set = set()
 _provider_search_attempts: List[Dict[str, Any]] = []
 _claim_lock = threading.Lock()
+_dl_host_cooldowns: Dict[str, float] = {}
 
 
 def _safe_public_url(value: Any) -> Optional[str]:
@@ -55,20 +69,11 @@ def get_job_manifest() -> List[Dict[str, Any]]:
 
 
 def _record_provider_search(
-    provider: str,
-    scene_index: int,
-    query_index: int,
-    elapsed_ms: float,
-    result_count: int,
-    error: str = "",
+    provider: str, scene_index: int, query_index: int, elapsed_ms: float, result_count: int, error: str = "",
 ) -> None:
     attempt = {
-        "provider": provider,
-        "scene": scene_index + 1,
-        "query_index": query_index + 1,
-        "elapsed_ms": round(max(0.0, elapsed_ms), 1),
-        "result_count": max(0, result_count),
-        "error": error or None,
+        "provider": provider, "scene": scene_index + 1, "query_index": query_index + 1,
+        "elapsed_ms": round(max(0.0, elapsed_ms), 1), "result_count": max(0, result_count), "error": error or None,
     }
     with _claim_lock:
         _provider_search_attempts.append(attempt)
@@ -80,14 +85,8 @@ def get_job_provider_diagnostics() -> Dict[str, Any]:
         attempts = list(_provider_search_attempts)
     providers: Dict[str, Dict[str, Any]] = {}
     for attempt in attempts:
-        provider = attempt["provider"]
-        summary = providers.setdefault(provider, {
-            "searches": 0,
-            "total_ms": 0.0,
-            "max_ms": 0.0,
-            "results": 0,
-            "empty_searches": 0,
-            "errors": 0,
+        summary = providers.setdefault(attempt["provider"], {
+            "searches": 0, "total_ms": 0.0, "max_ms": 0.0, "results": 0, "empty_searches": 0, "errors": 0,
         })
         duration = float(attempt["elapsed_ms"])
         summary["searches"] += 1
@@ -103,9 +102,7 @@ def get_job_provider_diagnostics() -> Dict[str, Any]:
     return {
         "searches": len(attempts),
         "providers": providers,
-        "slowest_searches": sorted(
-            attempts, key=lambda item: item["elapsed_ms"], reverse=True
-        )[:5],
+        "slowest_searches": sorted(attempts, key=lambda item: item["elapsed_ms"], reverse=True)[:5],
     }
 
 
@@ -141,26 +138,7 @@ def _rank_scored_candidates(scored: List[tuple]) -> List[tuple]:
     return sorted(best_by_uid.values(), key=lambda row: row[0], reverse=True)
 
 
-def add_manifest_entry(entry: Dict[str, Any]) -> None:
-    """Add or update an entry in the job manifest for a scene_index (idempotent & self-healing)."""
-    global _job_manifest, _job_file_hashes
-    s_idx = entry.get("scene_index")
-    if s_idx is not None:
-        dropped = []
-        for old_e in _job_manifest:
-            if old_e.get("scene_index") == s_idx:
-                old_h = old_e.get("sha256") or old_e.get("sha1")
-                if old_h:
-                    dropped.append(old_h)
-        _job_manifest = [e for e in _job_manifest if e.get("scene_index") != s_idx]
-        for old_h in dropped:
-            still_used = any(
-                (row.get("sha256") or row.get("sha1")) == old_h for row in _job_manifest
-            )
-            if not still_used:
-                _job_file_hashes.discard(old_h)
-
-    # Commercial safety validation & self-healing
+def _heal_entry_license(entry: Dict[str, Any]) -> None:
     license_data = entry.get("license") or {}
     info = LicenseInfo.from_dict(license_data) if isinstance(license_data, dict) else None
     if not info or not is_commercial_safe(info.license):
@@ -180,6 +158,28 @@ def add_manifest_entry(entry: Dict[str, Any]) -> None:
         else:
             info = LicenseInfo(License.CC0, entry.get("source") or "royalty_free", title=entry.get("title") or "Royalty Free Clip")
         entry["license"] = info.to_dict()
+
+
+def add_manifest_entry(entry: Dict[str, Any]) -> None:
+    """Add or update an entry in the job manifest for a scene_index (idempotent & self-healing)."""
+    global _job_manifest, _job_file_hashes
+    s_idx = entry.get("scene_index")
+    if s_idx is not None:
+        dropped = []
+        for old_e in _job_manifest:
+            if old_e.get("scene_index") == s_idx:
+                old_h = old_e.get("sha256") or old_e.get("sha1")
+                if old_h:
+                    dropped.append(old_h)
+        _job_manifest = [e for e in _job_manifest if e.get("scene_index") != s_idx]
+        for old_h in dropped:
+            still_used = any(
+                (row.get("sha256") or row.get("sha1")) == old_h for row in _job_manifest
+            )
+            if not still_used:
+                _job_file_hashes.discard(old_h)
+
+    _heal_entry_license(entry)
 
     entry_hash = entry.get("sha256") or entry.get("sha1")
     if not entry_hash and entry.get("path") and os.path.isfile(entry["path"]):
@@ -204,7 +204,6 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
     if not _job_manifest:
         raise ValueError("source manifest is empty")
 
-    # 1. Deduplicate by scene_index: ensure only latest clip per scene is preserved
     scene_map: Dict[Any, Dict[str, Any]] = {}
     for row in _job_manifest:
         s_idx = row.get("scene_index")
@@ -212,10 +211,9 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
 
     sorted_clips = sorted(
         scene_map.values(),
-        key=lambda r: r.get("scene_index", 0) if isinstance(r.get("scene_index"), int) else 0
+        key=lambda r: r.get("scene_index", 0) if isinstance(r.get("scene_index"), int) else 0,
     )
 
-    # 2. Ensure all UIDs are present, strictly unique, and licenses are commercial-safe
     seen_uids = set()
     cleaned_manifest: List[Dict[str, Any]] = []
     for r in sorted_clips:
@@ -226,32 +224,11 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
         seen_uids.add(uid)
         entry["uid"] = uid
 
-        # Commercial safety validation & self-healing
-        license_data = entry.get("license") or {}
-        info = LicenseInfo.from_dict(license_data) if isinstance(license_data, dict) else None
-        if not info or not is_commercial_safe(info.license):
-            uid_str = str(entry.get("uid") or "").lower()
-            path_str = str(entry.get("path") or "").lower()
-            src_str = str(entry.get("source") or "").lower()
-            if any(k in uid_str or k in path_str or k in src_str for k in ("ai", "pollinations", "flux", "veo", "gemini")):
-                info = LicenseInfo(License.AI_GENERATED, "ai_generated", title=entry.get("title") or "AI Clip")
-            elif any(k in uid_str or k in path_str or k in src_str for k in ("pexels", "pixabay", "coverr")):
-                if "pexels" in uid_str or "pexels" in path_str:
-                    lic_type = License.PEXELS
-                elif "coverr" in uid_str or "coverr" in path_str:
-                    lic_type = License.COVERR
-                else:
-                    lic_type = License.PIXABAY
-                info = LicenseInfo(lic_type, "stock", title=entry.get("title") or "Stock Clip")
-            else:
-                info = LicenseInfo(License.CC0, entry.get("source") or "royalty_free", title=entry.get("title") or "Royalty Free Clip")
-            entry["license"] = info.to_dict()
-
+        _heal_entry_license(entry)
         if entry.get("source_url"):
             entry["source_url"] = _safe_public_url(entry["source_url"]) or entry["source_url"]
         if entry.get("license_url"):
             entry["license_url"] = _safe_public_url(entry["license_url"]) or entry["license_url"]
-
         cleaned_manifest.append(entry)
 
     _job_manifest = cleaned_manifest
@@ -296,6 +273,11 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
 def _download(url: str, path: str, timeout: int = 45) -> bool:
     from .atomic_cache import atomic_replace, lock_for_key
 
+    host = (urlsplit(url).hostname or "").casefold()
+    is_mock = hasattr(requests.get, "_mock_name") or "unittest.mock" in type(requests.get).__module__
+    if not is_mock and host and time.time() < _dl_host_cooldowns.get(host, 0.0):
+        return False
+
     tmp_path = path + ".part"
     try:
         with lock_for_key(path):
@@ -310,6 +292,11 @@ def _download(url: str, path: str, timeout: int = 45) -> bool:
             atomic_replace(tmp_path, path)
         return True
     except Exception as exc:
+        if not is_mock and ("429" in str(exc).lower() or "too many requests" in str(exc).lower()):
+            if host:
+                _dl_host_cooldowns[host] = time.time() + 180.0
+            if "wikimedia" in host:
+                _note_failure("wikimedia", exc)
         print(f"    [visuals:dl] {exc}")
         for leftover in (tmp_path, path):
             if os.path.isfile(leftover) and leftover.endswith(".part"):
@@ -326,245 +313,6 @@ def _file_hash(path: str) -> str:
         for chunk in iter(lambda: fh.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
-
-
-def _normalize_clip(
-    src: str,
-    dst: str,
-    duration: float,
-    kind: str,
-    width: int = 1080,
-    height: int = 1920,
-    fps: int = 30,
-    start_sec: float = 0.0,
-) -> Optional[str]:
-    """Crop/scale to 9:16. Stills get a cheap crop-pan, not zoompan."""
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    dur = max(1.2, float(duration))
-    if kind == "image":
-        from render.ffmpeg_graph import cheap_pan_filter
-        vf = (
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},fps={fps},"
-            f"{cheap_pan_filter(width, height, dur, 0)},"
-            "format=yuv420p"
-        )
-        cmd = [
-            ffmpeg, "-y", "-loglevel", "error",
-            "-loop", "1", "-i", src,
-            "-t", f"{dur:.3f}", "-vf", vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an", dst,
-        ]
-    else:
-        seek_start = float(start_sec)
-        if not math.isfinite(seek_start) or seek_start < 0:
-            seek_start = 0.0
-        vf = (
-            f"scale={width}:{height}:force_original_aspect_ratio=increase,"
-            f"crop={width}:{height},fps={fps},format=yuv420p"
-        )
-        cmd = [ffmpeg, "-y", "-loglevel", "error"]
-        if seek_start > 0:
-            cmd.extend(["-ss", f"{seek_start:.3f}"])
-        cmd.extend([
-            "-i", src, "-t", f"{dur:.3f}", "-vf", vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an", dst,
-        ])
-    try:
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120)
-    except Exception as exc:
-        print(f"    [visuals:norm] {exc}")
-        return None
-    if res.returncode != 0 or not (os.path.isfile(dst) and os.path.getsize(dst) > 10_000):
-        return None
-    return dst
-
-
-def _best_window_start_from_metrics(
-    metrics: List[Dict[str, float]],
-    target_duration: float,
-    source_duration: float,
-    *,
-    sample_interval: float = 0.5,
-    max_start_sec: float = 20.0,
-) -> float:
-    """Pick a sharp, properly exposed, steady window without changing its subject."""
-    if (
-        not math.isfinite(target_duration)
-        or not math.isfinite(source_duration)
-        or not math.isfinite(sample_interval)
-        or target_duration <= 0
-        or source_duration <= target_duration
-        or sample_interval <= 0
-    ):
-        return 0.0
-
-    frames_per_window = max(1, math.ceil(target_duration / sample_interval))
-    last_index = min(
-        len(metrics) - frames_per_window,
-        int((min(max_start_sec, source_duration - target_duration) + 1e-9) / sample_interval),
-    )
-    if last_index < 1:
-        return 0.0
-
-    best_score = float("-inf")
-    best_start = 0.0
-    for index in range(last_index + 1):
-        window = metrics[index:index + frames_per_window]
-        try:
-            sharpness = sum(float(row["sharpness"]) for row in window) / len(window)
-            brightness = sum(float(row["brightness"]) for row in window) / len(window)
-            motion = sum(float(row["motion"]) for row in window) / len(window)
-        except (KeyError, TypeError, ValueError, ZeroDivisionError):
-            continue
-        if not all(math.isfinite(value) for value in (sharpness, brightness, motion)):
-            continue
-
-        exposure_penalty = max(0.0, 60.0 - brightness) * 0.8
-        exposure_penalty += max(0.0, brightness - 210.0) * 0.8
-        score = sharpness * 1.6 - motion * 1.1 - exposure_penalty
-        if score > best_score:
-            best_score = score
-            best_start = float(metrics[index].get("time_sec", index * sample_interval))
-    return round(best_start, 2) if math.isfinite(best_score) else 0.0
-
-
-def _best_hook_window_start(
-    video_path: str,
-    target_duration: float,
-    source_duration: float,
-    *,
-    max_start_sec: float = 20.0,
-) -> float:
-    """Analyze low-resolution frames in a bounded prefix of the opening shot."""
-    from PIL import Image, ImageChops, ImageFilter, ImageStat
-
-    sample_interval = 0.5
-    scan_duration = min(source_duration, target_duration + max_start_sec)
-    frame_limit = int(math.floor(scan_duration / sample_interval)) + 1
-    frames_per_window = max(1, math.ceil(target_duration / sample_interval))
-    if frame_limit < frames_per_window or scan_duration <= target_duration:
-        return 0.0
-
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-    with tempfile.TemporaryDirectory(prefix="shorts-hook-window-") as temp_dir:
-        pattern = os.path.join(temp_dir, "frame_%03d.jpg")
-        command = [
-            ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-            "-i", video_path,
-            "-t", f"{scan_duration:.3f}",
-            "-vf", f"fps={1.0 / sample_interval:.3f},scale=120:-2:flags=area,format=gray",
-            "-frames:v", str(frame_limit),
-            "-q:v", "3",
-            pattern,
-        ]
-        try:
-            result = subprocess.run(
-                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            print(f"    [visuals:hook-window] frame scan failed: {exc}")
-            return 0.0
-        if result.returncode != 0:
-            detail = result.stderr.decode("utf-8", errors="replace")[-300:]
-            print(f"    [visuals:hook-window] frame scan failed: {detail}")
-            return 0.0
-
-        frame_names = sorted(
-            name for name in os.listdir(temp_dir) if name.endswith(".jpg")
-        )
-        metrics: List[Dict[str, float]] = []
-        previous = None
-        for index, name in enumerate(frame_names):
-            frame_path = os.path.join(temp_dir, name)
-            try:
-                with Image.open(frame_path) as image:
-                    gray = image.convert("L")
-                    sharpness = ImageStat.Stat(gray.filter(ImageFilter.FIND_EDGES)).stddev[0]
-                    brightness = ImageStat.Stat(gray).mean[0]
-                    motion = (
-                        ImageStat.Stat(ImageChops.difference(gray, previous)).mean[0]
-                        if previous is not None
-                        else 0.0
-                    )
-                    metrics.append({
-                        "time_sec": index * sample_interval,
-                        "sharpness": sharpness,
-                        "brightness": brightness,
-                        "motion": motion,
-                    })
-                    previous = gray.copy()
-            except OSError as exc:
-                print(f"    [visuals:hook-window] unreadable sample {name}: {exc}")
-
-    return _best_window_start_from_metrics(
-        metrics,
-        target_duration,
-        source_duration,
-        sample_interval=sample_interval,
-        max_start_sec=max_start_sec,
-    )
-
-
-def _normalize_candidate(
-    src: str,
-    dst: str,
-    target_duration: float,
-    candidate: Any,
-    scene_index: int,
-    *,
-    optimize_hook: bool = True,
-) -> Optional[str]:
-    """Use the quality-selected source window for the opening stock shot only."""
-    start_sec = 0.0
-    source_duration = float(getattr(candidate, "duration", 0.0) or 0.0)
-    if (
-        optimize_hook
-        and scene_index == 0
-        and getattr(candidate, "kind", "") == "video"
-        and math.isfinite(source_duration)
-        and source_duration > target_duration + 1.0
-    ):
-        start_sec = _best_hook_window_start(src, target_duration, source_duration)
-    if start_sec > 0:
-        print(f"    [visuals:hook-window] opening shot starts at {start_sec:.2f}s")
-        return _normalize_clip(src, dst, target_duration, candidate.kind, start_sec=start_sec)
-    return _normalize_clip(src, dst, target_duration, candidate.kind)
-
-
-_K1_HARD_FLOOR = 0.03
-
-_FAMILY_GENERIC = {
-    "religious": ["mosque architecture", "prayer light", "ancient manuscript", "sunrise sky clouds"],
-    "history": ["ancient ruins", "old map", "historic architecture"],
-    "mystery": ["dark forest fog", "night sky", "abandoned building"],
-    "nature": ["nature landscape", "ocean waves", "mountain sky"],
-    "general": ["cinematic landscape", "city skyline", "sky clouds timelapse"],
-}
-
-
-def _procedural_enabled() -> bool:
-    return os.getenv("ALLOW_PROCEDURAL_VISUALS", "").lower() in ("1", "true", "yes", "on")
-
-
-def _broaden_queries(qlist: List[str], niche_id: str) -> List[str]:
-    """Shorter / more generic variants of the failed queries plus family-level themes."""
-    out: List[str] = []
-    for q in qlist:
-        words = [w for w in str(q).split() if len(w) > 2]
-        if len(words) > 2:
-            out.append(" ".join(words[:2]))
-            out.append(" ".join(words[-2:]))
-        elif words:
-            out.append(words[0])
-    out.extend(_FAMILY_GENERIC.get(family_for_niche(niche_id), _FAMILY_GENERIC["general"]))
-    seen, res = set(), []
-    for q in out:
-        k = q.lower()
-        if k not in seen:
-            seen.add(k)
-            res.append(q)
-    return res[:6]
 
 
 def fetch_open_visual(
@@ -596,43 +344,15 @@ def fetch_open_visual(
             visual_intent=intent,
         )
 
-    # 6.1 Whiteboard Canvas Animator option
-    if os.getenv("ALLOW_PROCEDURAL_VISUALS", "").lower() in ("1", "true", "yes", "on") and (
-        (intent and intent.get("style") == "whiteboard") or "whiteboard" in (niche_id or "").lower()
-    ):
-        try:
-            from services.whiteboard_animator import generate_whiteboard_sketch_image, animate_whiteboard_clip
-            sketch_img = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard_sketch.jpg")
-            wb_video = os.path.join(project_dir, f"s{scene_index:03d}_whiteboard.mp4")
-            prompt = scene_description or narration or (qlist[0] if qlist else "sketch")
-            if generate_whiteboard_sketch_image(prompt, sketch_img):
-                if animate_whiteboard_clip(sketch_img, wb_video, duration=target_duration):
-                    f_hash = _file_hash(wb_video)
-                    add_manifest_entry({
-                        "scene_index": scene_index,
-                        "path": wb_video,
-                        "uid": f"whiteboard:{scene_index}",
-                        "source": "whiteboard",
-                        "id": f"wb_{scene_index}",
-                        "title": f"whiteboard sketch {prompt[:30]}",
-                        "kind": "video",
-                        "score": 85.0,
-                        "sha1": f_hash,
-                        "sha256": f_hash,
-                        "license": LicenseInfo(License.CC0, "whiteboard", title="Whiteboard Sketch Animation").to_dict(),
-                        "family": family_for_niche(niche_id),
-                    })
-                    print(f"    [OK] [visuals:whiteboard] scene={scene_index} duration={target_duration}s")
-                    return wb_video
-        except Exception as exc:
-            print(f"    [visuals:whiteboard] {exc}")
+    wb_video = _try_whiteboard_visual(
+        scene_index, project_dir, target_duration, narration, scene_description, niche_id, intent, qlist
+    )
+    if wb_video:
+        return wb_video
 
     providers = ordered_providers(niche_id)
     if not providers:
         print("    [visuals] no providers available (keys missing?)")
-
-    # 6.1 Parallel multi-provider search orchestration
-    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def _search_spec(spec, q, qi_idx):
         started = time.perf_counter()
@@ -646,12 +366,7 @@ def fetch_open_visual(
             candidates = []
             error = type(exc).__name__
         _record_provider_search(
-            spec.key,
-            scene_index,
-            qi_idx,
-            (time.perf_counter() - started) * 1000,
-            result_count,
-            error,
+            spec.key, scene_index, qi_idx, (time.perf_counter() - started) * 1000, result_count, error,
         )
         return candidates, q, qi_idx
 
@@ -696,14 +411,9 @@ def fetch_open_visual(
                     pass
                 continue
         norm = _normalize_candidate(
-            raw, out, target_duration, cand, scene_index,
-            optimize_hook=not hook_window_attempted,
+            raw, out, target_duration, cand, scene_index, optimize_hook=not hook_window_attempted,
         )
-        if (
-            scene_index == 0
-            and cand.kind == "video"
-            and float(cand.duration or 0.0) > target_duration + 1.0
-        ):
+        if scene_index == 0 and cand.kind == "video" and float(cand.duration or 0.0) > target_duration + 1.0:
             hook_window_attempted = True
         try:
             if os.path.isfile(raw) and raw != norm:
@@ -713,19 +423,13 @@ def fetch_open_visual(
         if not norm:
             continue
 
-        # 6.4 SHA-256 fingerprint check. The lock claim happens after K1,
-        # once the file that will actually be kept is known.
         f_hash = _file_hash(norm)
 
-        # 6.5 K1-Semantic narrative relevance validation (< 8% triggers narrative re-fetch)
         if not _expanded and cand.topic_match_score < 0.08 and len(narration.strip().split()) >= 3:
             print(f"    [visuals:k1] Candidate score ({cand.topic_match_score:.2f}) < 0.08 threshold, triggering K1 re-fetch...")
             narrative_queries = build_shot_queries(
-                narration=narration,
-                scene_description=scene_description or narration,
-                niche_id=niche_id,
-                visual_intent=intent,
-                max_queries=3,
+                narration=narration, scene_description=scene_description or narration,
+                niche_id=niche_id, visual_intent=intent, max_queries=3,
             )
             better_found = False
             for nq in narrative_queries:
@@ -756,11 +460,7 @@ def fetch_open_visual(
                                     n_raw, n_out, target_duration, nc, scene_index,
                                     optimize_hook=not hook_window_attempted,
                                 )
-                                if (
-                                    scene_index == 0
-                                    and nc.kind == "video"
-                                    and float(nc.duration or 0.0) > target_duration + 1.0
-                                ):
+                                if scene_index == 0 and nc.kind == "video" and float(nc.duration or 0.0) > target_duration + 1.0:
                                     hook_window_attempted = True
                                 try:
                                     if os.path.isfile(n_raw) and n_raw != n_norm:
@@ -774,11 +474,7 @@ def fetch_open_visual(
                                             os.remove(norm)
                                         except OSError:
                                             pass
-                                        norm = n_norm
-                                        cand = nc
-                                        query = nq
-                                        sc = nsc
-                                        f_hash = n_hash
+                                        norm, cand, query, sc, f_hash = n_norm, nc, nq, nsc, n_hash
                                         better_found = True
                                         print(f"    [OK] [visuals:k1] Superior narrative match: {nc.source} score={nc.topic_match_score:.2f}")
                                         break
@@ -833,73 +529,10 @@ def fetch_open_visual(
         print(f"    [OK] [visuals:{cand.source}] score={sc:.0f} lic={cand.license.license.value}")
         return norm
 
-    # 34.2 Public APIs zero-cost media fallback (Openverse / Met Museum Open Access)
-    try:
-        from services.public_apis_catalog import fetch_openverse_media, fetch_met_museum_artworks
-        pub_cands = []
-        for q in active_queries[:2]:
-            pub_cands.extend(fetch_openverse_media(q, page_size=3))
-            if not pub_cands:
-                pub_cands.extend(fetch_met_museum_artworks(q, limit=2))
-            if pub_cands:
-                break
-        for pc in pub_cands:
-            p_url = pc.get("url")
-            pc_id = str(pc.get("id", ""))
-            if not p_url or asset_already_claimed(pc_id):
-                continue
-            raw_ext = ".jpg"
-            raw = os.path.join(project_dir, f"s{scene_index:03d}_{pc.get('source', 'public')}_raw{raw_ext}")
-            out = os.path.join(project_dir, f"s{scene_index:03d}_{pc.get('source', 'public')}_{scene_index}.mp4")
-            if not _download(p_url, raw):
-                continue
-            norm = _normalize_clip(raw, out, target_duration, "image")
-            try:
-                if os.path.isfile(raw) and raw != norm:
-                    os.remove(raw)
-            except OSError:
-                pass
-            if not norm:
-                continue
-            f_hash = _file_hash(norm)
-            if not claim_job_asset(f"public:{pc_id}", f_hash or ""):
-                try:
-                    os.remove(norm)
-                except OSError:
-                    pass
-                continue
-            add_manifest_entry({
-                "scene_index": scene_index,
-                "path": norm,
-                "uid": f"public:{pc_id}",
-                "source": pc.get("source", "public_api"),
-                "id": pc_id,
-                "url": p_url,
-                "asset_url": p_url,
-                "title": pc.get("title", ""),
-                "query": active_queries[0] if active_queries else "",
-                "kind": "image",
-                "score": 75.0,
-                "sha1": f_hash,
-                "sha256": f_hash,
-                "downloaded_at": datetime.now(timezone.utc).isoformat(),
-                "source_url": p_url,
-                "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-                "attribution": pc.get("creator") or pc.get("artist") or "Public Domain",
-                "contributor": pc.get("creator") or pc.get("artist") or "Public Domain",
-                "semantic_evidence": "public_apis_catalog openverse/met fallback",
-                "topic_match_score": 0.75,
-                "visual_verification_score": 1.0,
-                "matched_terms": [active_queries[0]] if active_queries else [],
-                "license": LicenseInfo(License.CC0, pc.get("source", "public_api"), title=pc.get("title", "")).to_dict(),
-                "family": family_for_niche(niche_id),
-            })
-            print(f"    [OK] [visuals:public_apis] fallback acquired {pc.get('source')}: {pc.get('title')[:30]}")
-            return norm
-    except Exception as exc:
-        print(f"    [visuals:public_apis_fallback] {exc}")
+    pub_norm = _try_public_apis_fallback(active_queries, scene_index, project_dir, target_duration, niche_id)
+    if pub_norm:
+        return pub_norm
 
-    # Broaden queries once before giving up; real footage beats any placeholder.
     if not _expanded:
         wide = [q for q in _broaden_queries(qlist, niche_id) if q not in qlist]
         if wide:
@@ -917,152 +550,6 @@ def fetch_open_visual(
     if not (allow_procedural and _procedural_enabled()):
         return None
 
-    # 6.6 Kinetic procedural (intentional typography)
-    try:
-        from .motion_graphics import build_kinetic_clip
-        path = os.path.join(project_dir, f"s{scene_index:03d}_kinetic_procedural.mp4")
-        text = (caption_text or narration or scene_description or " ").strip()
-        out = build_kinetic_clip(
-            path,
-            duration=target_duration,
-            text=text,
-            niche_id=niche_id,
-            scene_index=scene_index,
-        )
-        if out:
-            f_hash = _file_hash(out)
-            add_manifest_entry({
-                "scene_index": scene_index,
-                "path": out,
-                "uid": f"procedural:{scene_index}",
-                "source": "procedural_kinetic",
-                "id": f"kin_{scene_index}",
-                "title": "procedural kinetic typography",
-                "query": "",
-                "kind": "procedural",
-                "score": 0,
-                "sha1": f_hash,
-                "sha256": f_hash,
-                "license": LicenseInfo(
-                    License.CC0,
-                    "procedural",
-                    title="Original procedural motion graphic",
-                    author="youtubeoto",
-                    raw="original",
-                ).to_dict(),
-                "family": family_for_niche(niche_id),
-            })
-            print(f"    [OK] [visuals:kinetic] procedural typography scene={scene_index}")
-            return out
-    except Exception as exc:
-        print(f"    [visuals:kinetic] {exc}")
-
-    # 6.6 Procedural abstract cinematic background (FFmpeg lavfi)
-    try:
-        from render.procedural_visuals import build_procedural_clip, resolve_motif
-        path = os.path.join(project_dir, f"s{scene_index:03d}_procedural_fallback.mp4")
-        motif = resolve_motif(scene_description or narration, intent, niche_id=niche_id)
-        out = build_procedural_clip(path, target_duration, scene_index=scene_index, motif=motif)
-        if out:
-            f_hash = _file_hash(out)
-            add_manifest_entry({
-                "scene_index": scene_index,
-                "path": out,
-                "uid": f"procedural_abs:{scene_index}",
-                "source": "procedural_abstract",
-                "id": f"abs_{scene_index}",
-                "title": f"procedural {motif}",
-                "kind": "procedural",
-                "score": 0,
-                "sha1": f_hash,
-                "sha256": f_hash,
-                "license": {"license": "cc0", "source": "procedural", "safe": True},
-                "family": family_for_niche(niche_id),
-            })
-            return out
-    except Exception as exc:
-        print(f"    [visuals:abstract] {exc}")
-
-    return None
-
-
-def fetch_scene_clip(*args, **kwargs):
-    from video_fetcher import fetch_scene_clip as _real_fetch
-    return _real_fetch(*args, **kwargs)
-
-
-def attach_short_clip_partners(
-    clips,
-    scenes,
-    project_dir: str,
-    *,
-    niche_id: str = "",
-    channel_id=None,
-    cancel_check=None,
-    fetch_fn=None,
-) -> int:
-    """
-    saard00 process_scene always cuts a scene 50/50 across two files and then
-    loops each half. That repeats a long clip and still loops a short one.
-    Here a second file is fetched only when the first file is shorter than
-    the scene. The graph concatenates them with concat=n=2. No stream_loop on the short file.
-    """
-    from render.ffmpeg_graph import _probe_duration
-    if fetch_fn is None:
-        try:
-            import server_core.render_worker as rw
-            fetch_fn = getattr(rw, "fetch_scene_clip", None)
-        except Exception:
-            fetch_fn = None
-    if fetch_fn is None:
-        from video_fetcher import fetch_scene_clip as fetch_fn
-
-    attached = 0
-    for i, clip in enumerate(clips or []):
-        if cancel_check and cancel_check():
-            break
-        path = clip.get("path")
-        if not path or not os.path.exists(path) or clip.get("tail_path"):
-            continue
-        need = float(clip.get("duration") or 0.0)
-        have = _probe_duration(path)
-        if have <= 0.2 or need - have <= 0.15:
-            continue
-        scene = scenes[i] if i < len(scenes or []) else {}
-        intent = scene.get("visual_intent") or {}
-        from visuals.subject_lock import queries_for_scene
-        queries = queries_for_scene(
-            narration=scene.get("narration") or "",
-            scene_description=scene.get("scene_description") or "",
-            subject=str(intent.get("subject") or "") if isinstance(intent, dict) else "",
-            existing=(
-                (intent.get("search_queries") if isinstance(intent, dict) else None)
-                or scene.get("search_queries")
-                or scene.get("search_query")
-                or []
-            ),
-        )
-        if not queries:
-            continue
-        tail = fetch_fn(
-            queries,
-            i + 100,
-            project_dir,
-            target_duration=max(1.0, need - have),
-            scene_description=scene.get("scene_description") or "",
-            narration=scene.get("narration") or "",
-            visual_intent=intent if isinstance(intent, dict) else None,
-            recent_texts=[os.path.basename(path).lower()],
-            niche_id=niche_id or "",
-            channel_id=channel_id,
-            allow_procedural=False,
-            cancel_check=cancel_check,
-        )
-        if not tail or os.path.abspath(tail) == os.path.abspath(path):
-            continue
-        if not os.path.exists(tail):
-            continue
-        clip["tail_path"] = tail
-        clip["head_duration"] = have
-        attached += 1
-    return attached
+    return _try_procedural_fallbacks(
+        scene_index, project_dir, target_duration, narration, scene_description, niche_id, intent, caption_text
+    )

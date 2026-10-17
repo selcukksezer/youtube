@@ -56,7 +56,12 @@ class AntiDetectEngine:
 
     def __init__(self, profiles_dir: str = "tokens/browser_profiles"):
         self.profiles_dir = profiles_dir
-        os.makedirs(self.profiles_dir, exist_ok=True)
+        try:
+            os.makedirs(self.profiles_dir, exist_ok=True)
+        except OSError:
+            root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            self.profiles_dir = os.path.join(root_dir, profiles_dir)
+            os.makedirs(self.profiles_dir, exist_ok=True)
 
     def generate_profile(self, channel_id: str, proxy_url: Optional[str] = None, lang: str = "en") -> BrowserProfile:
         """Generates a consistent, isolated browser profile for a channel (Item 9, 13, 21)."""

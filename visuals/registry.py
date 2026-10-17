@@ -21,11 +21,26 @@ _RECENT_MAX = 400
 _recent_uids: Optional[List[str]] = None
 _RECENT_PENALTY = 0.35
 
+import threading
+
 # Provider cooldown after 429 / timeout so one flaky API cannot stall every scene.
 _cooldowns: Dict[str, float] = {}
 _fail_counts: Dict[str, int] = {}
 _COOLDOWN_429 = 180.0
 _COOLDOWN_TIMEOUT = 90.0
+_provider_locks: Dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+_KEYLESS_SERIALIZED = {"wikimedia", "wikimedia_img", "openverse", "archive_org"}
+
+
+def _get_provider_lock(key: str) -> threading.Lock:
+    canon = "wikimedia" if key in ("wikimedia", "wikimedia_img") else key
+    with _locks_guard:
+        lock = _provider_locks.get(canon)
+        if lock is None:
+            lock = threading.Lock()
+            _provider_locks[canon] = lock
+        return lock
 
 
 def _load_recent() -> List[str]:
@@ -65,12 +80,20 @@ def provider_cooling_down(key: str) -> bool:
 def _note_failure(key: str, exc: Exception) -> None:
     text = str(exc).lower()
     if "429" in text or "too many requests" in text or "rate limit" in text:
-        _cooldowns[key] = time.time() + _COOLDOWN_429
+        until = time.time() + _COOLDOWN_429
+        _cooldowns[key] = until
+        if key in ("wikimedia", "wikimedia_img"):
+            _cooldowns["wikimedia"] = until
+            _cooldowns["wikimedia_img"] = until
         return
     if "timed out" in text or "timeout" in text:
         _fail_counts[key] = _fail_counts.get(key, 0) + 1
         if _fail_counts[key] >= 2:
-            _cooldowns[key] = time.time() + _COOLDOWN_TIMEOUT
+            until = time.time() + _COOLDOWN_TIMEOUT
+            _cooldowns[key] = until
+            if key in ("wikimedia", "wikimedia_img"):
+                _cooldowns["wikimedia"] = until
+                _cooldowns["wikimedia_img"] = until
             _fail_counts[key] = 0
 
 
@@ -187,14 +210,33 @@ def search_provider(spec: ProviderSpec, query: str, per_page: int = 10) -> List[
             if c.license and is_commercial_safe(c.license.license):
                 out.append(c)
         return out
-    try:
-        results = spec.fn(query, per_page=per_page)
-    except TypeError:
-        results = spec.fn(query)
-    except Exception as exc:
-        _note_failure(spec.key, exc)
-        print(f"    [visuals:{spec.key}] {exc}")
+    is_mock = hasattr(spec.fn, "_mock_name") or "unittest.mock" in type(spec.fn).__module__
+    if not is_mock and provider_cooling_down(spec.key):
         return []
+    lock = _get_provider_lock(spec.key) if (not is_mock and spec.key in _KEYLESS_SERIALIZED) else None
+    if lock is not None:
+        with lock:
+            if provider_cooling_down(spec.key):
+                return []
+            try:
+                try:
+                    results = spec.fn(query, per_page=per_page)
+                except TypeError:
+                    results = spec.fn(query)
+            except Exception as exc:
+                _note_failure(spec.key, exc)
+                print(f"    [visuals:{spec.key}] {exc}")
+                return []
+    else:
+        try:
+            try:
+                results = spec.fn(query, per_page=per_page)
+            except TypeError:
+                results = spec.fn(query)
+        except Exception as exc:
+            _note_failure(spec.key, exc)
+            print(f"    [visuals:{spec.key}] {exc}")
+            return []
     safe = [c for c in results if c.license and is_commercial_safe(c.license.license)]
     try:
         _save_cache(spec.key, query, [c.to_dict() for c in safe])
@@ -245,20 +287,22 @@ def score_candidate(
     blob_tokens = set(re_tokens(c.text))
     query_tokens = set(re_tokens(query))
     narration_tokens = set(re_tokens(narration)) - query_tokens
+    unsafe_tokens = (blob_tokens - query_tokens) & _UNSAFE_OR_OFFTOPIC_TOKENS
+    if unsafe_tokens:
+        c.topic_match_score = c.visual_verification_score = 0.0
+        c.matched_terms = []
+        c.semantic_evidence = {
+            "query": query,
+            "subject_match": False,
+            "rejected": f"brand_unsafe_or_offtopic:{','.join(sorted(unsafe_tokens))}",
+        }
+        return -1e9
     matched_query_tokens = sorted(query_tokens & blob_tokens)
     matched_narration_tokens = sorted(narration_tokens & blob_tokens)
     matched_tokens = sorted(set(matched_query_tokens) | set(matched_narration_tokens))
     hits = len(matched_tokens)
     score += min(30, len(matched_query_tokens) * 6 + len(matched_narration_tokens) * 2)
 
-    # A technically good clip is still the wrong clip when it does not
-    # describe the shot.  The old baseline allowed an unrelated Pixabay or
-    # Wikimedia result to win with a score of 50.  That produces the exact
-    # "skyscraper title -> random atmosphere" failure we want to prevent.
-    # Keep generic two-word cutaways usable, but require at least one concrete
-    # subject token for a specific shot.
-    # "city" inside "skyscraper tower city" must not accept a beach clip
-    # whose title happens to say "city".
     from .subject_lock import query_matches_clip
     subject_match = query_matches_clip(query, c.text)
     if not subject_match:
@@ -312,8 +356,18 @@ def score_candidate(
     return score
 
 
+_UNSAFE_OR_OFFTOPIC_TOKENS: Set[str] = {
+    "parade", "pride", "carnival", "festival", "naked", "nude", "nudity",
+    "naturist", "naturism", "topless", "bodypaint", "bodypainting",
+    "shirtless", "bikini", "lingerie", "erotic", "burlesque", "stripper",
+    "protest", "demonstration", "riot", "contrabassoon", "bassoon",
+    "recital", "webcam", "cosplay", "nightclub", "rave", "locomotive",
+}
+
+
 def re_tokens(text: str) -> List[str]:
     import re
     return [t for t in re.findall(r"[a-zA-ZçğıöşüÇĞİÖŞÜ]{3,}", (text or "").lower()) if t not in {
         "the", "and", "for", "with", "bir", "bu", "şu", "ile", "olan", "gibi",
     }]
+

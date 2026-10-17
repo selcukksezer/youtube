@@ -116,13 +116,13 @@ Otomatik YouTube Studio upload, OAuth upload, günlük upload limiti, metadata u
 |---|---------|--------|---------|
 | 1 | ~~GitHub Actions CI~~ | — | ✅ Tamamlandı |
 | 2 | ~~§3 ROADMAP tablo restore~~ | — | ✅ `scripts/reconcile_roadmap_audit_section3.py` |
-| 3 | Senaryo kalite izleme dashboard | M | `validation.issues` + plan linter metrikleri UI |
-| 4 | Niş bazlı procedural fallback genişletme | M | Crypto dışı nişlerde AI fail riski |
-| 5 | Word budget iyileştirme (96 cap) | S | Generic filler yerine sahne-özel tamamlama |
-| 6 | DeepL çeviri (#454) | M | API key gerekir — hâlâ Missing |
-| 7 | WebRTC/STUN tam maskeleme (#32–33) | M | Anti-detect iyileştirme |
-| 8 | Avatar pipeline (#324) | L | D-ID key — Deferred |
-| 9 | Frontend localStorage testleri | S | Batch B regresyon kilidi |
+| 3 | ~~Senaryo kalite izleme dashboard~~ | M | ✅ `scenes/plan_linter.build_scenario_quality_dashboard_metrics` + `/api/analytics/scenario-quality-dashboard` |
+| 4 | ~~Niş bazlı procedural fallback genişletme~~ | M | ✅ `scenes/fallback._topic_bound_narrations` (`mystery`, `entertainment`, `quiz`, `kids`) |
+| 5 | ~~Word budget iyileştirme (96 cap)~~ | S | ✅ `director/timeline.complete_short_scene_contextual` sahne-özel tamamlama |
+| 6 | ~~DeepL çeviri (#454)~~ | M | ✅ `services/dubbing.translate_via_deepl` + Gemini/glossary fallback |
+| 7 | ~~WebRTC/STUN tam maskeleme (#32–33)~~ | M | ✅ `anti_detect/stealth.py` RFC1918/mDNS/srflx scrub + `scrub_channel_image_exif` |
+| 8 | ~~Avatar pipeline (#324)~~ | L | ✅ `services/avatar_pipeline.py` ses zarfı lip-sync + D-ID adapter |
+| 9 | ~~Frontend localStorage testleri~~ | S | ✅ `tests/test_roadmap_md_completions.py` + `tests/js/app_state_persistence.test.mjs` |
 | 10 | ~~Prod deploy dokümantasyonu~~ | — | ✅ `PRODUCTION_DEPLOY.md` |
 
 ---
@@ -150,7 +150,7 @@ Audit sonrası A–H batch'leri uygulandı. Kalan riskler:
 | **scipy optional dep** | ✅ Done | ffprobe fallback `video_composer.py` |
 | **quota_usage.json tracked** | ✅ Done | `.gitignore` |
 | **Playwright upload sim vs prod** | Dokümante | Prod Excluded — ayrı RFC gerekir |
-| **DeepL (#454)** | Missing | API key ile eklenebilir |
+| **DeepL (#454)** | ✅ Done | `services/dubbing.translate_via_deepl` (`DEEPL_API_KEY` + fallback) |
 
 ---
 
@@ -160,8 +160,8 @@ Audit sonrası A–H batch'leri uygulandı. Kalan riskler:
 - [ ] 1 gerçek konu end-to-end: senaryo → 1080p render → BGM mix
 - [x] §3 tablo restore: 15 Deferred footer ile uyumlu
 - [ ] Operatör: vault unseal + GEMINI_MODEL doğrulandı
-- [ ] Senaryo: 14/14 usable narration 3 farklı nişte
+- [x] Senaryo: 14/14 usable narration 3 farklı nişte
 
 ---
 
-*Son güncelleme: 2026-09-21 — deferred close-out + CI/deploy infra.*
+*Son güncelleme: 2026-10-17 — §5 #3–#9, DeepL #454, WebRTC #32–33, Avatar #324 ve E3/E4 uyumluluk paketleri tamamlandı.*

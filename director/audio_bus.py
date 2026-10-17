@@ -348,13 +348,18 @@ def master_audio_one_pass(
     # BGM. allow_bgm False is the studio mute switch. Empty track still auto-picks.
     if allow_bgm:
         try:
-            from bgm_manager import get_cached_bgm_path, get_bgm_path, mix_narration_and_bgm, match_bgm_track_to_niche
-            chosen = bgm_track
+            from bgm_manager import _is_auto_bgm_token, get_cached_bgm_path, get_bgm_path, mix_narration_and_bgm, match_bgm_track_to_niche
+            chosen = "" if _is_auto_bgm_token(bgm_track) else bgm_track
+            bgm_p = None
             if not chosen:
                 hint = (plan.niche_id or "") + " " + (plan.title or "")
                 matched = match_bgm_track_to_niche(hint)
-                chosen = os.path.basename(matched) if matched else ""
-            bgm_p = get_bgm_path(chosen) if chosen else None
+                if matched and os.path.isfile(matched):
+                    bgm_p = matched
+                else:
+                    chosen = os.path.basename(matched) if matched else ""
+            if not bgm_p and chosen:
+                bgm_p = get_bgm_path(chosen)
             if not bgm_p:
                 bgm_p = get_cached_bgm_path(chosen) if chosen else get_cached_bgm_path("")
             if bgm_p and os.path.exists(bgm_p) and os.path.getsize(bgm_p) > 2000:

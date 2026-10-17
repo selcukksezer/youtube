@@ -67,10 +67,15 @@ USE_GEMINI_GROUNDING = os.getenv("USE_GEMINI_GROUNDING", "false").lower() in ("t
 USE_GEMINI_EMBEDDINGS = os.getenv("USE_GEMINI_EMBEDDINGS", "false").lower() in ("true", "1", "yes")
 PREFER_GEMINI_SCENE_IMAGES = os.getenv("PREFER_GEMINI_SCENE_IMAGES", "false").lower() in ("true", "1", "yes")
 AUTO_FETCH_ROYALTY_FREE_BGM = os.getenv("AUTO_FETCH_ROYALTY_FREE_BGM", "true").lower() in ("true", "1", "yes")
+BGM_AUDIO_LIBRARY_ONLY = os.getenv("BGM_AUDIO_LIBRARY_ONLY", "false").lower() in ("true", "1", "yes")
 YOUTUBE_DATA_API_KEY = os.getenv("YOUTUBE_DATA_API_KEY", "")
 REDDIT_USER_AGENT = os.getenv("REDDIT_USER_AGENT", "YouTubeShortsStudio/1.0 (research workflow)")
 REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID", "")
 REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET", "")
+
+# Item 454: DeepL Translation API (Free :fx or Pro)
+DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "") or os.getenv("DEEPL_AUTH_KEY", "")
+DEEPL_API_URL = os.getenv("DEEPL_API_URL", "")
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_MODEL = "deepseek-chat"
@@ -331,6 +336,16 @@ ENABLE_DIRECTOR_PLAN = os.getenv("ENABLE_DIRECTOR_PLAN", "true").lower() in ("tr
 # P2-23: optional Whisper word-level subtitle alignment (stub — default off)
 WHISPER_ALIGN = os.getenv("WHISPER_ALIGN", "false").lower() in ("true", "1", "yes")
 
+
+# ══════════════════════════════════════════════════════════════
+#  AUTH & GIT AUTO-UPDATE SETTINGS (Cloud / iOS PWA Security)
+# ══════════════════════════════════════════════════════════════
+STUDIO_AUTH_ENABLED = os.getenv("STUDIO_AUTH_ENABLED", "true").lower() in ("true", "1", "yes")
+STUDIO_USERNAME = os.getenv("STUDIO_USERNAME", "admin")
+STUDIO_PASSWORD = os.getenv("STUDIO_PASSWORD", "shorts2026")
+STUDIO_AUTH_SECRET = os.getenv("STUDIO_AUTH_SECRET", "shorts-studio-hmac-secret-2026")
+AUTO_GIT_UPDATE = os.getenv("AUTO_GIT_UPDATE", "true").lower() in ("true", "1", "yes")
+AUTO_GIT_UPDATE_INTERVAL_SEC = int(os.getenv("AUTO_GIT_UPDATE_INTERVAL_SEC", "300"))
 
 # ══════════════════════════════════════════════════════════════
 #  YOUTUBE PUBLISH SETTINGS

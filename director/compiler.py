@@ -25,6 +25,7 @@ def _apply_beat_hints_advisory(plan: DirectorPlan) -> None:
     if not plan.scenes:
         return
     try:
+        import os
         from bgm_manager import (
             get_bgm_path,
             list_bgm_tracks,
@@ -35,7 +36,12 @@ def _apply_beat_hints_advisory(plan: DirectorPlan) -> None:
         )
 
         track = match_bgm_track_to_niche(plan.niche_id, list_bgm_tracks())
-        bgm_path = get_bgm_path(track) if track else None
+        if track and os.path.isfile(track):
+            bgm_path = track
+        elif track:
+            bgm_path = get_bgm_path(os.path.basename(track))
+        else:
+            bgm_path = None
         
         # 80-120 BPM hipnotik kurgu aralığına kilitlenmiş timeline beat-snapping
         plan.scenes = snap_timeline_to_beat_grid(
@@ -93,6 +99,8 @@ def _apply_fact_verification(plan: DirectorPlan) -> None:
         )
         plan.rebuild_full_narration()
         plan.meta["fact_verification"] = fact_report
+        if "snippets" in fact_report and fact_report["snippets"] is not None:
+            plan.meta["fact_snippets"] = list(fact_report["snippets"])
         if fact_report.get("sanitized_count", 0) > 0:
             print(
                 f"  [FactResearcher] Anti-hallucination: {fact_report['sanitized_count']} teyitsiz iddia güvenli forma dönüştürüldü."
@@ -201,10 +209,22 @@ def compile_director_plan(
             print(f"  [Director] Hibrit niş: {hybrid_id} ({topic_intel.get('match_method')})")
         except ImportError:
             hybrid_meta = {"hybrid_niche": hybrid_id}
+    if locked_niche in ("20_whatsapp_confessions", "20_whatsapp_chat_story") and not hybrid_meta.get("hybrid_render_overlay"):
+        hybrid_meta["hybrid_render_overlay"] = {
+            "ui_type": "imessage",
+            "header": "WhatsApp İtiraf",
+            "body": str(title or "Gizli Mesaj...")[:64],
+            "item": 20,
+            "hybrid_id": locked_niche,
+        }
+    if raw_plan.get("procedural_fallback"):
+        hybrid_meta["procedural_fallback"] = True
     if raw_plan.get("retention_metadata"):
         hybrid_meta["retention_metadata"] = raw_plan["retention_metadata"]
     if "fact_snippets" in raw_plan:
         hybrid_meta["fact_snippets"] = raw_plan.get("fact_snippets") or []
+    elif isinstance(raw_plan.get("meta"), dict) and "fact_snippets" in raw_plan["meta"]:
+        hybrid_meta["fact_snippets"] = raw_plan["meta"].get("fact_snippets") or []
     if raw_plan.get("hybrid_split_screen") and hybrid_id:
         hybrid_meta["hybrid_split_screen"] = True
 
@@ -309,6 +329,7 @@ def compile_director_plan(
             plan = solve_timeline(plan)
 
     apply_visual_intents(plan.scenes, plan.niche_id, title=plan.title)
+    _apply_story_arc_and_retention(plan)
     build_audio_events(plan)
     _apply_beat_hints_advisory(plan)
     _apply_fact_verification(plan)
@@ -327,3 +348,52 @@ def compile_director_plan(
         f"SFX={len(plan.audio_events)}, valid={plan.validation.get('ok')}"
     )
     return plan
+
+
+def _apply_story_arc_and_retention(plan: DirectorPlan) -> None:
+    """
+    Chapter 28.2, 28.18 & 28.20:
+    1. StoryArcAnalyzer (dramaclaw pattern): Computes tension_score and beat_category per scene.
+    2. RetentionEngine (video-autopilot-kit pattern): Audits 3-second stimulus rule and heals static shots.
+    3. detect_punch_in_cues & RoleBasedPromptChain (ai-content-studio pattern): Plans center punch-in zoom cues.
+    """
+    if not plan.scenes:
+        return
+    try:
+        from dataclasses import asdict as _dc_asdict
+        from .story_analyzer import StoryArcAnalyzer
+        from .retention_engine import RetentionEngine
+        from .prompt_chains import RoleBasedPromptChain, detect_punch_in_cues
+
+        arc_metrics = StoryArcAnalyzer.analyze_story_arc(
+            [s.narration or "" for s in plan.scenes]
+        )
+        tension_curve = []
+        for idx, metric in enumerate(arc_metrics):
+            if idx < len(plan.scenes):
+                plan.scenes[idx].tension_score = metric.tension_score
+                plan.scenes[idx].beat_category = metric.beat_category
+                tension_curve.append(_dc_asdict(metric))
+        plan.meta["story_arc_metrics"] = tension_curve
+        if isinstance(plan.story_arc, dict):
+            plan.story_arc["tension_curve"] = [m["tension_score"] for m in tension_curve]
+            plan.story_arc["peak_tension"] = max((m["tension_score"] for m in tension_curve), default=0.5)
+
+        # Audit retention & heal any static scene > 3.0s
+        for idx, sc in enumerate(plan.scenes):
+            if sc.duration > 3.0 and (not sc.camera_direction or sc.camera_direction in ("static", "none")):
+                sc.camera_direction = "zoom_in" if idx % 2 == 0 else "pan_right"
+        retention_report = RetentionEngine.audit_timeline([s.to_dict() for s in plan.scenes])
+        plan.meta["retention_audit"] = retention_report
+
+        full_text = " ".join(s.narration or "" for s in plan.scenes)
+        punch_cues = detect_punch_in_cues(full_text, max_cues=4)
+        plan.meta["punch_in_cues"] = punch_cues
+        plan.meta["role_prompt_chain"] = RoleBasedPromptChain.generate_chain(
+            topic=plan.title or "Shorts",
+            niche=plan.niche_id,
+            target_duration=max(38.0, plan.total_duration() or 45.0),
+            language=plan.language or "tr",
+        )
+    except Exception as exc:
+        print(f"  [Director] StoryArc/Retention enrichment notice: {exc}")

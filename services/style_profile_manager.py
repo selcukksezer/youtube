@@ -199,16 +199,18 @@ class StyleProfileManager:
             return ContentStyle.HORROR
         if "kid" in clean or "çocuk" in clean:
             return ContentStyle.KIDS_STORY
-        if "doc" in clean or "belgesel" in clean:
+        if "doc" in clean or "belgesel" in clean or "editorial" in clean:
             return ContentStyle.DOCUMENTARY
         if "podcast" in clean or "sohbet" in clean:
             return ContentStyle.PODCAST
-        if "stoic" in clean or "felsefe" in clean or "stoa" in clean:
+        if "stoic" in clean or "felsefe" in clean or "stoa" in clean or "cinematic_dark" in clean or "noir" in clean:
             return ContentStyle.STOIC_FACTS
-        if "ad" in clean or "product" in clean or "reklam" in clean:
+        if "ad" in clean or "product" in clean or "reklam" in clean or "commercial" in clean:
             return ContentStyle.PRODUCT_AD
         if "story" in clean or "hikaye" in clean:
             return ContentStyle.STORY
+        if "neon" in clean or "kinetic" in clean:
+            return ContentStyle.VIRAL_VIDEO
 
         return self.default_style
 

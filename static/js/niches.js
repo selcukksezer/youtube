@@ -3,27 +3,19 @@
  * Covers 35 Niche templates, catalog rendering, search/sort/filter, collision matrix and profile application.
  */
 
-
-// ══════════════════════════════════════════════════════════════
-// 2. 35 NİŞİ YÜKLEME VE KARTLARI BASMA (Items 1 - 35)
-// ══════════════════════════════════════════════════════════════
-// ══════════════════════════════════════════════════════════════
 // 2. NİŞ KÜTÜPHANESİ — Advanced v2.0
 // ══════════════════════════════════════════════════════════════
 let currentNicheViewMode = 'grid'; // 'grid' | 'list'
 let currentModalNicheId = null;
 
-// Helper: parse RPM string to max numeric value for sorting
 function parseRpmMax(rpmStr) {
     if (!rpmStr) return 0;
     const nums = rpmStr.replace(/[$]/g, '').split('-').map(Number);
     return Math.max(...nums.filter(n => !isNaN(n)));
 }
 
-// Helper: competition level to sort order (low = best)
 function compToNum(lvl) { return lvl === 'low' ? 3 : lvl === 'medium' ? 2 : 1; }
 
-// Helper: Nişleri ana kategorilere eşleyen sınıflandırıcı
 function getNicheCategoryGroup(n) {
     if (!n) return 'Diğer & Genel';
     const cat = (n.category || '').toLowerCase();
@@ -31,63 +23,25 @@ function getNicheCategoryGroup(n) {
     const nid = (n.id || '').toLowerCase();
     const full = `${name} ${cat} ${nid}`;
 
-    // 1. Din & Maneviyat
     if (/din|maneviyat|ayet|hadis|huzur|dini/.test(full)) return 'Din & Maneviyat';
-
-    // 2. Çocuk & Aile
     if (/çocuk|pedagoji|ebeveyn|aile animasyon/.test(full)) return 'Çocuk & Aile';
-
-    // 3. Alışveriş & Ürünler
     if (/affiliate|ürün|alışveriş|e-ticaret|amazon|trendyol/.test(full)) return 'Alışveriş & Ürünler';
-
-    // 4. Bilim, Uzay & Teknoloji (Quiz'den önce test edilmeli, 'yapay zeka' zeka ile karışmasın)
     if (/yapay zeka|ai araç|teknoloji & yapay zeka|astronomi|bilim & evren|gelecek simülasyonu|mit avcısı|bilim &/.test(full)) return 'Bilim, Uzay & Teknoloji';
-
-    // 5. Gizem, Gerilim & Suç (Finans'tan önce test edilmeli, 'paranormal' para ile karışmasın)
     if (/paranormal|komplo teorileri|komplo|gerçek suç|cctv|gizli mikrofon|sızıntı/.test(full)) return 'Gizem, Gerilim & Suç';
-
-    // 6. Psikoloji & Zihin (Oyun'dan önce test edilmeli)
     if (/psikoloji|beden dili|rüya tabir|manipülasyon|bilinçaltı|korku/.test(full)) return 'Psikoloji & Zihin';
-
-    // 7. Felsefe & Kişisel Gelişim
     if (/felsefe|stoa|kişisel gelişim|karakter analizi|kitap özeti|sigma|motivasyon/.test(full)) return 'Felsefe & Kişisel Gelişim';
-
-    // 8. Tarih & Mitoloji
     if (/tarih|mitoloji|medeniyet|arkeoloji|savaş|zaman makinesi|askeri taktik|tarihi şahsiyet/.test(full)) return 'Tarih & Mitoloji';
-
-    // 9. Finans, Ekonomi & İş Dünyası
     if (/finans|kripto|borsa|\bpara\b|ekonomi|iş dünyası|girişim|zengin|şirket|fiyat/.test(full)) return 'Finans, Ekonomi & İş Dünyası';
-
-    // 10. Sağlık, Spor & Fitness
     if (/sağlık|spor|fitness|futbol|beslenme|rekor/.test(full)) return 'Sağlık, Spor & Fitness';
-
-    // 11. Quiz, Zeka & Bulmaca
     if (/quiz|zeka|bulmaca|tahmin|test|would you rather|tercih et|bilmece|illüzyon/.test(full)) return 'Quiz, Zeka & Bulmaca';
-
-    // 12. Oyun & Gaming
     if (/oyun|gaming|easter egg|gameplay|split-screen/.test(full)) return 'Oyun & Gaming';
-
-    // 13. Coğrafya, Seyahat & Kültür
     if (/coğrafya|seyahat|ülke|tehlikeli yerler|yasak|harita/.test(full)) return 'Coğrafya, Seyahat & Kültür';
-
-    // 14. Sinema, Dizi & Sanat
     if (/sinema|dizi|film|sanat|edebiyat|şiir/.test(full)) return 'Sinema, Dizi & Sanat';
-
-    // 15. Ses, Müzik & ASMR
     if (/ses|asmr|müzik|frekans|gece modu|dark mode|rahatlatıcı/.test(full)) return 'Ses, Müzik & ASMR';
-
-    // 16. Doğa & Hayvanlar
     if (/hayvan|doğa|vahşi|deniz|talasofobi/.test(full)) return 'Doğa & Hayvanlar';
-
-    // 17. Sosyal Medya, Mizah & Eğlence
     if (/sosyal|reddit|mizah|eğlence|itiraf|diyalog|röportaj|yorum|durdurma/.test(full)) return 'Sosyal Medya, Mizah & Eğlence';
-
-    // 18. Haber, Gündem & Trendler
     if (/haber|gündem|trend|flaş|son dakika/.test(full)) return 'Haber, Gündem & Trendler';
-
-    // 19. Yaşam, Eğitim & Otomobil
     if (/eğitim|dil|ingilizce|astroloji|otomobil|araba|hukuk|nostalji|hap bilgi/.test(full)) return 'Yaşam, Eğitim & Otomobil';
-
     return 'Diğer & Genel';
 }
 
@@ -97,37 +51,27 @@ async function loadNiches() {
         const data = await res.json();
         allNiches = data.niches || [];
 
-        // Hibrit Nişleri de Çekip Birleştir (Items 276-345)
         try {
             const hRes = await fetch('/api/hybrid_niches');
             const hData = await hRes.json();
-            if (hData.hybrid_niches) {
-                allNiches = [...allNiches, ...hData.hybrid_niches];
-            }
+            if (hData.hybrid_niches) allNiches = [...allNiches, ...hData.hybrid_niches];
         } catch (he) {
             console.warn("Hibrit niş yükleme uyarısı:", he);
         }
 
-        // Select dropdown'ları doldur
-        selectNiche.innerHTML = '';
+        if (selectNiche) selectNiche.innerHTML = '';
         const batchNicheSelect = document.getElementById('batch-default-niche');
         const compareA = document.getElementById('compare-niche-a');
         const compareB = document.getElementById('compare-niche-b');
         const collisionA = document.getElementById('collision-niche-a');
         const collisionB = document.getElementById('collision-niche-b');
-        if (batchNicheSelect) batchNicheSelect.innerHTML = '';
-        if (compareA) compareA.innerHTML = '';
-        if (compareB) compareB.innerHTML = '';
-        if (collisionA) collisionA.innerHTML = '';
-        if (collisionB) collisionB.innerHTML = '';
+        [batchNicheSelect, compareA, compareB, collisionA, collisionB].forEach(el => { if (el) el.innerHTML = ''; });
 
-        // Başlık etiketini güncelle
         const nicheLabelSpan = document.querySelector('label[for="select-niche"] span:first-child');
         if (nicheLabelSpan) {
             nicheLabelSpan.innerHTML = `<i class="fa-solid fa-shapes text-warning"></i> Niş Şablonu (${allNiches.length} Niş)`;
         }
 
-        // Kategorilere göre grupla ve her kategoride alfabetik sırala
         const nicheGroups = {};
         allNiches.forEach(n => {
             const groupName = getNicheCategoryGroup(n);
@@ -135,45 +79,35 @@ async function loadNiches() {
             nicheGroups[groupName].push(n);
         });
 
-        // Kategorileri Türkçe alfabetik sırala
         const sortedGroupNames = Object.keys(nicheGroups).sort((a, b) => a.localeCompare(b, 'tr'));
-
         sortedGroupNames.forEach(groupName => {
             const groupNiches = nicheGroups[groupName];
-            // Kategori içindeki nişleri Türkçe alfabetik sırala
             groupNiches.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'tr'));
-
             const optgroup = document.createElement('optgroup');
             optgroup.label = `📁 ${groupName} (${groupNiches.length})`;
-
             groupNiches.forEach(n => {
                 const opt = document.createElement('option');
                 opt.value = n.id;
                 opt.textContent = `${n.name} (${n.category})`;
                 optgroup.appendChild(opt);
             });
-
-            selectNiche.appendChild(optgroup);
-            if (batchNicheSelect) batchNicheSelect.appendChild(optgroup.cloneNode(true));
-            if (compareA) compareA.appendChild(optgroup.cloneNode(true));
-            if (compareB) compareB.appendChild(optgroup.cloneNode(true));
-            if (collisionA) collisionA.appendChild(optgroup.cloneNode(true));
-            if (collisionB) collisionB.appendChild(optgroup.cloneNode(true));
+            selectNiche?.appendChild(optgroup);
+            [batchNicheSelect, compareA, compareB, collisionA, collisionB].forEach(el => {
+                if (el) el.appendChild(optgroup.cloneNode(true));
+            });
         });
 
-        // Default compare B to second niche
         if (compareB && compareB.options.length > 1) compareB.selectedIndex = 1;
         if (collisionB && collisionB.options.length > 1) collisionB.selectedIndex = 2;
 
-        // Render cards & update stats
         applyNicheFiltersAndRender();
         updateNicheStats(allNiches);
         const savedSettings = restoreStudioSettings();
         const preferredNiche = (savedSettings && savedSettings.niche) || (currentPlan && (currentPlan.niche_id || currentPlan.niche_profile?.id));
-        if (preferredNiche && [...selectNiche.options].some(o => o.value === preferredNiche)) {
+        if (preferredNiche && selectNiche && [...selectNiche.options].some(o => o.value === preferredNiche)) {
             selectNiche.value = preferredNiche;
         }
-        if (selectNiche.value) await applyNicheProfile(selectNiche.value);
+        if (selectNiche?.value) await applyNicheProfile(selectNiche.value);
         if (savedSettings?.subtitlePreset && selectSubPreset) selectSubPreset.value = savedSettings.subtitlePreset;
         if (savedSettings?.kenBurns !== undefined && chkKenBurns) chkKenBurns.checked = !!savedSettings.kenBurns;
         if (savedSettings?.splitScreen !== undefined && chkSplitScreen) {
@@ -223,7 +157,6 @@ function applyNicheFiltersAndRender() {
         return true;
     });
 
-    // Sort
     filtered.sort((a, b) => {
         if (sortBy === 'viral_score') return (b.viral_score || 75) - (a.viral_score || 75);
         if (sortBy === 'rpm') return parseRpmMax(b.rpm_tier) - parseRpmMax(a.rpm_tier);
@@ -238,10 +171,10 @@ function applyNicheFiltersAndRender() {
 }
 
 function getViralScoreColor(score) {
-    if (score >= 90) return '#f59e0b'; // gold — elite
-    if (score >= 80) return '#10b981'; // green — good
-    if (score >= 70) return '#06b6d4'; // cyan — decent
-    return '#64748b'; // grey
+    if (score >= 90) return '#f59e0b';
+    if (score >= 80) return '#10b981';
+    if (score >= 70) return '#06b6d4';
+    return '#64748b';
 }
 
 function getCompetitionBadge(level) {
@@ -275,12 +208,11 @@ function renderNicheCards(nichesToRender) {
     const isListMode = currentNicheViewMode === 'list';
     grid.className = isListMode ? 'niches-list-view' : 'niches-cards-grid';
 
-    nichesToRender.forEach((n, idx) => {
+    nichesToRender.forEach((n) => {
         const viralScore = n.viral_score || 75;
         const retention = n.avg_retention_pct || 70;
         const viralColor = getViralScoreColor(viralScore);
         const rpmColor = getRpmBadgeColor(n.rpm_tier);
-        const rank = idx + 1;
         const isTopTier = viralScore >= 90;
 
         const card = document.createElement('div');
@@ -305,8 +237,6 @@ function renderNicheCards(nichesToRender) {
                     <div style="font-size:9px;color:#64748b;text-align:right;">Viral Score</div>
                 </div>
             </div>
-
-            <!-- Viral Score Bar -->
             <div style="margin-bottom:10px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                     <span style="font-size:10px;color:#64748b;">🔥 Viral Potansiyel</span>
@@ -316,8 +246,6 @@ function renderNicheCards(nichesToRender) {
                     <div class="niche-score-bar" style="height:100%;width:0%;background:linear-gradient(90deg,${viralColor}aa,${viralColor});border-radius:4px;transition:width 0.8s ease;" data-target="${viralScore}"></div>
                 </div>
             </div>
-
-            <!-- Key Metrics Row -->
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
                 <div style="background:${rpmColor.bg};border:1px solid ${rpmColor.border};border-radius:7px;padding:5px 7px;text-align:center;">
                     <div style="font-size:11px;font-weight:700;color:${rpmColor.color};">${escapeHtml(n.rpm_tier || '$2-5')}</div>
@@ -332,21 +260,15 @@ function renderNicheCards(nichesToRender) {
                     <div style="font-size:9px;color:#64748b;">CTA Türü</div>
                 </div>
             </div>
-
-            <!-- Badges Row -->
             <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
                 ${getCompetitionBadge(n.competition_level)}
                 ${n.tier1_compatible ? '<span style="background:rgba(6,182,212,0.12);color:#67e8f9;border:1px solid rgba(6,182,212,0.25);border-radius:6px;padding:2px 7px;font-size:10px;">🌍 Tier-1</span>' : ''}
                 ${n.has_split_screen ? '<span style="background:rgba(139,92,246,0.12);color:#c4b5fd;border:1px solid rgba(139,92,246,0.25);border-radius:6px;padding:2px 7px;font-size:10px;">🎮 Split-Screen</span>' : ''}
                 ${n.episodic_capable ? '<span style="background:rgba(16,185,129,0.1);color:#6ee7b7;border:1px solid rgba(16,185,129,0.2);border-radius:6px;padding:2px 7px;font-size:10px;">📺 Seri</span>' : ''}
             </div>
-
-            <!-- Best Posting Time -->
             <div style="font-size:10px;color:#64748b;margin-bottom:10px;">
                 🕐 En İyi: <span style="color:#94a3b8;">${escapeHtml(n.best_posting_time || '12:00-15:00 TRT')}</span>
             </div>
-
-            <!-- Action Buttons -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
                 <button class="btn btn-primary niche-use-btn" data-niche-id="${n.id}" style="font-size:11px;padding:7px 10px;" onclick="event.stopPropagation()">
                     <i class="fa-solid fa-arrow-right"></i> Bu Nişle Üret
@@ -357,28 +279,24 @@ function renderNicheCards(nichesToRender) {
             </div>
         `;
 
-        // Click card body → open modal
         card.addEventListener('click', () => openNicheModal(n.id));
         grid.appendChild(card);
     });
 
-    // Animate viral score bars after render
     requestAnimationFrame(() => {
         document.querySelectorAll('.niche-score-bar').forEach(bar => {
             bar.style.width = bar.getAttribute('data-target') + '%';
         });
     });
 
-    // Action button events
     grid.querySelectorAll('.niche-use-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             const nId = e.currentTarget.getAttribute('data-niche-id');
             const selected = allNiches.find(x => x.id === nId);
             if (selected) {
-                selectNiche.value = selected.id;
+                if (selectNiche) selectNiche.value = selected.id;
                 applyNicheProfile(selected.id);
-                // Seed topic from niche hook if empty or generic
                 const hook = (selected.hook_style || selected.name || '').trim();
                 if (hook && inputTopic) {
                     const cur = inputTopic.value.trim();
@@ -410,80 +328,87 @@ async function openNicheModal(nicheId) {
     const viralColor = getViralScoreColor(n.viral_score || 75);
     const rpmC = getRpmBadgeColor(n.rpm_tier);
 
-    // Icon wrap
     const iconWrap = document.getElementById('niche-modal-icon-wrap');
-    iconWrap.style.background = `linear-gradient(135deg,${viralColor}44,${viralColor}66)`;
-    iconWrap.innerHTML = `<i class="fa-solid ${n.icon || 'fa-fire'}"></i>`;
+    if (iconWrap) {
+        iconWrap.style.background = `linear-gradient(135deg,${viralColor}44,${viralColor}66)`;
+        iconWrap.innerHTML = `<i class="fa-solid ${n.icon || 'fa-fire'}"></i>`;
+    }
+    const titleEl = document.getElementById('niche-modal-title');
+    if (titleEl) titleEl.textContent = n.name;
 
-    // Title
-    document.getElementById('niche-modal-title').textContent = n.name;
+    const badgesEl = document.getElementById('niche-modal-badges');
+    if (badgesEl) {
+        badgesEl.innerHTML = `
+            <span class="niche-tag">${escapeHtml(n.category)}</span>
+            ${getCompetitionBadge(n.competition_level)}
+            ${n.tier1_compatible ? '<span style="background:rgba(6,182,212,0.12);color:#67e8f9;border:1px solid rgba(6,182,212,0.25);border-radius:6px;padding:2px 8px;font-size:11px;">🌍 Tier-1</span>' : ''}
+        `;
+    }
 
-    // Badges
-    document.getElementById('niche-modal-badges').innerHTML = `
-        <span class="niche-tag">${escapeHtml(n.category)}</span>
-        ${getCompetitionBadge(n.competition_level)}
-        ${n.tier1_compatible ? '<span style="background:rgba(6,182,212,0.12);color:#67e8f9;border:1px solid rgba(6,182,212,0.25);border-radius:6px;padding:2px 8px;font-size:11px;">🌍 Tier-1</span>' : ''}
-    `;
+    const statsEl = document.getElementById('niche-modal-stats');
+    if (statsEl) {
+        statsEl.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                ${[
+                    ['🔥 Viral Skor', `<span style="color:${viralColor};font-weight:800;font-size:20px;">${n.viral_score || 75}</span><span style="color:#64748b;font-size:12px;">/100</span>`],
+                    ['💰 RPM Bandı', `<span style="color:${rpmC.color};font-weight:700;">${escapeHtml(n.rpm_tier || '$2-5')}</span>`],
+                    ['👁 Ort. Retention', `<span style="color:#67e8f9;font-weight:700;">${n.avg_retention_pct || 70}%</span>`],
+                    ['🕐 En İyi Paylaşım', `<span style="color:#94a3b8;font-size:12px;">${escapeHtml(n.best_posting_time || '--')}</span>`],
+                    ['🎯 CTA Türü', `<span style="color:#c4b5fd;">${getCtaBadge(n.cta_type)}</span>`],
+                    ['📺 Seri Formatı', n.episodic_capable ? '<span style="color:#34d399;">✅ Uygun</span>' : '<span style="color:#64748b;">❌ Değil</span>'],
+                ].map(([label, val]) => `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;border:1px solid rgba(148,163,184,0.08);">
+                        <span style="font-size:12px;color:#64748b;">${label}</span>
+                        <span style="font-size:13px;">${val}</span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
 
-    // Stats
-    document.getElementById('niche-modal-stats').innerHTML = `
-        <div style="display:flex;flex-direction:column;gap:10px;">
-            ${[
-                ['🔥 Viral Skor', `<span style="color:${viralColor};font-weight:800;font-size:20px;">${n.viral_score || 75}</span><span style="color:#64748b;font-size:12px;">/100</span>`, viralColor],
-                ['💰 RPM Bandı', `<span style="color:${rpmC.color};font-weight:700;">${escapeHtml(n.rpm_tier || '$2-5')}</span>`, rpmC.color],
-                ['👁 Ort. Retention', `<span style="color:#67e8f9;font-weight:700;">${n.avg_retention_pct || 70}%</span>`, '#67e8f9'],
-                ['🕐 En İyi Paylaşım', `<span style="color:#94a3b8;font-size:12px;">${escapeHtml(n.best_posting_time || '--')}</span>`, '#94a3b8'],
-                ['🎯 CTA Türü', `<span style="color:#c4b5fd;">${getCtaBadge(n.cta_type)}</span>`, '#c4b5fd'],
-                ['📺 Seri Formatı', n.episodic_capable ? '<span style="color:#34d399;">✅ Uygun</span>' : '<span style="color:#64748b;">❌ Değil</span>', '#34d399'],
-            ].map(([label, val]) => `
-                <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;border:1px solid rgba(148,163,184,0.08);">
-                    <span style="font-size:12px;color:#64748b;">${label}</span>
-                    <span style="font-size:13px;">${val}</span>
-                </div>
-            `).join('')}
-        </div>
-    `;
+    const kwEl = document.getElementById('niche-modal-keywords');
+    if (kwEl) {
+        kwEl.innerHTML = (n.trending_keywords || []).map(kw =>
+            `<span style="background:rgba(6,182,212,0.1);color:#67e8f9;border:1px solid rgba(6,182,212,0.2);border-radius:20px;padding:3px 10px;font-size:11px;">${escapeHtml(kw)}</span>`
+        ).join('');
+    }
 
-    // Keywords
-    document.getElementById('niche-modal-keywords').innerHTML = (n.trending_keywords || []).map(kw =>
-        `<span style="background:rgba(6,182,212,0.1);color:#67e8f9;border:1px solid rgba(6,182,212,0.2);border-radius:20px;padding:3px 10px;font-size:11px;">${escapeHtml(kw)}</span>`
-    ).join('');
-
-    // A/B Hooks
     const abColors = ['#10b981', '#f59e0b', '#8b5cf6'];
     const abLabels = ['A — Merak Kancası', 'B — Şok Kancası', 'C — Tartışma Kancası'];
     const hooks = n.ab_test_hook_variants || [n.hook_style || ''];
-    document.getElementById('niche-modal-ab-hooks').innerHTML = hooks.slice(0, 3).map((hook, i) => `
-        <div style="margin-bottom:10px;padding:12px;background:rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.08);border:1px solid rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.2);border-radius:10px;">
-            <div style="font-size:10px;font-weight:700;color:${abColors[i]};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${abLabels[i]}</div>
-            <div style="font-size:12px;color:#cbd5e1;line-height:1.5;">"${escapeHtml(hook)}"</div>
-            <button class="ab-hook-use-btn" data-hook="${escapeHtml(hook)}" style="margin-top:8px;background:rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.15);border:1px solid rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.3);color:${abColors[i]};border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">
-                Bu Kancayı Kullan
-            </button>
-        </div>
-    `).join('');
+    const abEl = document.getElementById('niche-modal-ab-hooks');
+    if (abEl) {
+        abEl.innerHTML = hooks.slice(0, 3).map((hook, i) => `
+            <div style="margin-bottom:10px;padding:12px;background:rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.08);border:1px solid rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.2);border-radius:10px;">
+                <div style="font-size:10px;font-weight:700;color:${abColors[i]};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${abLabels[i]}</div>
+                <div style="font-size:12px;color:#cbd5e1;line-height:1.5;">"${escapeHtml(hook)}"</div>
+                <button class="ab-hook-use-btn" data-hook="${escapeHtml(hook)}" style="margin-top:8px;background:rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.15);border:1px solid rgba(${i===0?'16,185,129':i===1?'245,158,11':'139,92,246'},0.3);color:${abColors[i]};border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">
+                    Bu Kancayı Kullan
+                </button>
+            </div>
+        `).join('');
+    }
 
-    // Trends placeholder
-    document.getElementById('niche-modal-trends').innerHTML = '<div style="color:#64748b;font-size:12px;padding:8px;">Yükleniyor...</div>';
+    const trendsEl = document.getElementById('niche-modal-trends');
+    if (trendsEl) trendsEl.innerHTML = '<div style="color:#64748b;font-size:12px;padding:8px;">Yükleniyor...</div>';
+    if (modal) modal.style.display = 'block';
 
-    // Show modal
-    modal.style.display = 'block';
+    const useBtn = document.getElementById('btn-modal-use-niche');
+    if (useBtn) {
+        useBtn.onclick = () => {
+            if (selectNiche) selectNiche.value = nicheId;
+            applyNicheProfile(nicheId);
+            const hook = (n.hook_style || n.name || '').trim();
+            if (hook && inputTopic && (!inputTopic.value.trim() || inputTopic.value.trim().length < 8)) {
+                inputTopic.value = hook.length > 120 ? hook.slice(0, 117) + '...' : hook;
+            }
+            switchTab('studio');
+            updateFlowRail('topic');
+            closeNicheModal();
+            showToast(`Nis: ${n.name} — konuyu duzenleyip senaryo uretin`);
+        };
+    }
 
-    // Setup use button
-    document.getElementById('btn-modal-use-niche').onclick = () => {
-        selectNiche.value = nicheId;
-        applyNicheProfile(nicheId);
-        const hook = (n.hook_style || n.name || '').trim();
-        if (hook && inputTopic && (!inputTopic.value.trim() || inputTopic.value.trim().length < 8)) {
-            inputTopic.value = hook.length > 120 ? hook.slice(0, 117) + '...' : hook;
-        }
-        switchTab('studio');
-        updateFlowRail('topic');
-        closeNicheModal();
-        showToast(`Nis: ${n.name} — konuyu duzenleyip senaryo uretin`);
-    };
-
-    // AB hook use buttons
     document.querySelectorAll('.ab-hook-use-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const hook = e.currentTarget.getAttribute('data-hook');
@@ -492,11 +417,9 @@ async function openNicheModal(nicheId) {
         });
     });
 
-    // Load trending topics
     loadModalTrends(nicheId);
-
-    // Setup reload trends button
-    document.getElementById('btn-modal-load-trends').onclick = () => loadModalTrends(nicheId);
+    const loadTrendsBtn = document.getElementById('btn-modal-load-trends');
+    if (loadTrendsBtn) loadTrendsBtn.onclick = () => loadModalTrends(nicheId);
 }
 
 async function loadModalTrends(nicheId) {
@@ -519,7 +442,7 @@ async function loadModalTrends(nicheId) {
                 <div style="font-size:10px;color:#64748b;margin-top:2px;">${escapeHtml(t.view_count_text || '')}</div>
             </div>
         `).join('');
-    } catch(e) {
+    } catch (e) {
         trendsEl.innerHTML = '<div style="color:#64748b;font-size:12px;padding:8px;">Trend yüklenemedi.</div>';
     }
 }
@@ -535,7 +458,6 @@ document.getElementById('niche-detail-modal')?.addEventListener('click', (e) => 
     if (e.target === e.currentTarget) closeNicheModal();
 });
 
-// ── Filter Pills (Delegated) ──
 document.addEventListener('click', (e) => {
     const pill = e.target.closest('.filter-pill');
     if (pill) {
@@ -545,13 +467,11 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ── Search / Sort / Filter change handlers ──
 document.getElementById('niche-search-input')?.addEventListener('input', applyNicheFiltersAndRender);
 document.getElementById('niche-sort-select')?.addEventListener('change', applyNicheFiltersAndRender);
 document.getElementById('niche-rpm-filter')?.addEventListener('change', applyNicheFiltersAndRender);
 document.getElementById('niche-viral-filter')?.addEventListener('change', applyNicheFiltersAndRender);
 
-// ── View Mode Toggle ──
 document.getElementById('btn-niche-view-grid')?.addEventListener('click', () => {
     currentNicheViewMode = 'grid';
     applyNicheFiltersAndRender();
@@ -561,7 +481,6 @@ document.getElementById('btn-niche-view-list')?.addEventListener('click', () => 
     applyNicheFiltersAndRender();
 });
 
-// ── Compare Tool ──
 document.getElementById('btn-compare-niches')?.addEventListener('click', async () => {
     const a = document.getElementById('compare-niche-a')?.value;
     const b = document.getElementById('compare-niche-b')?.value;
@@ -595,10 +514,9 @@ document.getElementById('btn-compare-niches')?.addEventListener('click', async (
                 </tbody>
             </table>
         `;
-    } catch(e) { resultEl.innerHTML = '<div style="color:#f87171;font-size:12px;">Bağlantı hatası.</div>'; }
+    } catch (e) { resultEl.innerHTML = '<div style="color:#f87171;font-size:12px;">Bağlantı hatası.</div>'; }
 });
 
-// ── Collision Engine ──
 document.getElementById('btn-collide-niches')?.addEventListener('click', async () => {
     const a = document.getElementById('collision-niche-a')?.value;
     const b = document.getElementById('collision-niche-b')?.value;
@@ -632,10 +550,5 @@ document.getElementById('btn-collide-niches')?.addEventListener('click', async (
                 </button>
             </div>
         `;
-    } catch(e) { resultEl.innerHTML = '<div style="color:#f87171;font-size:12px;">Bağlantı hatası.</div>'; }
+    } catch (e) { resultEl.innerHTML = '<div style="color:#f87171;font-size:12px;">Bağlantı hatası.</div>'; }
 });
-
-
-
-// ══════════════════════════════════════════════════════════════
-

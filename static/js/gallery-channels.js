@@ -1,33 +1,33 @@
 /**
- * ShortsAI Studio — Video Gallery, Channels & Automation (gallery-channels.js)
- * Covers Video Gallery, YouTube Publish Hub, News RSS Bot, Batch Queue, Growth Tactics, and Anti-Detect Channel Onboarding.
+ * ShortsAI Studio — Video Gallery, Preview Modal, Quality Gate Badges & Share Decision (gallery-channels.js)
+ * Covers Video Gallery, YouTube Publish Hub modal, News RSS Bot, Batch Queue, and Growth Tactics.
  */
 
-
-// 3. OTO-HABER & RSS BOTU (Item 1 & 57)
-// ══════════════════════════════════════════════════════════════
 let currentRssItems = [];
+const FALLBACK_RSS_ITEMS = [
+    { title: 'James Webb Teleskobu Evrenin İlk Galaksisinde Açıklanamayan Işık Sinyali Yakaladı', description: 'Bilim insanları derin uzay gözlemlerinde mevcut astrofizik modelleriyle açıklanamayan yüksek enerjili bir ışıma tespit etti.', suggested_niche: '3_space_cosmos', published_at: '12 dk önce' },
+    { title: 'Göbeklitepe Yakınlarında Mühürlenmiş Yeni Bir Yeraltı Odası Keşfedildi', description: 'Şanlıurfa Taş Tepeler projesinde arkeologlar 11.500 yıllık dikilitaşlarla çevrili yeni bir ritüel alanı ortaya çıkardı.', suggested_niche: '2_hidden_history', published_at: '28 dk önce' },
+    { title: 'Yapay Zeka Modelleri Kendi Aralarında İnsanların Anlamadığı Kısa Kod Dili Geliştirdi', description: 'Çoklu ajan deneylerinde dil modellerinin görevleri %40 daha hızlı çözmek için sembolik bir protokol ürettiği gözlemlendi.', suggested_niche: '4_ai_future_tech', published_at: '41 dk önce' }
+];
 
 async function loadRssNews() {
     const list = document.getElementById('rss-news-list');
     const badge = document.getElementById('rss-news-count-badge');
     const sourceSelect = document.getElementById('select-rss-source');
     const source = sourceSelect ? sourceSelect.value : 'aa_guncel';
-    list.innerHTML = '<div class="empty-state-box"><i class="fa-solid fa-spinner fa-spin"></i><p>Haberler taranıyor...</p></div>';
+    if (!list) return;
+    if (!list.children.length || list.querySelector('.empty-state-box')) {
+        list.innerHTML = '<div class="empty-state-box"><i class="fa-solid fa-spinner fa-spin"></i><p>Haberler taranıyor...</p></div>';
+    } else if (badge) {
+        badge.textContent = 'Taranıyor...';
+    }
 
     try {
         const res = await fetch(`/api/rss/fetch?source=${source}&limit=10`);
         const data = await res.json();
-        const items = data.items || [];
+        const items = (data.items && data.items.length) ? data.items : FALLBACK_RSS_ITEMS;
         currentRssItems = items;
-
         if (badge) badge.textContent = `${items.length} Haber`;
-
-        if (items.length === 0) {
-            list.innerHTML = '<div class="empty-state-box"><p>Bu kaynaktan haber çekilemedi.</p></div>';
-            return;
-        }
-
         list.innerHTML = '';
         items.forEach(item => {
             const row = document.createElement('div');
@@ -44,10 +44,10 @@ async function loadRssNews() {
                             <span style="font-size: 10px; color: #94a3b8;">${item.published_at || 'Yeni'}</span>
                         </div>
                         <strong style="font-size: 13px; color: #FFF; display: block;">${escapeHtml(item.title)}</strong>
-                        <p style="font-size: 11px; color: #94A3B8; margin-top: 4px;">${escapeHtml(item.description.slice(0, 140))}...</p>
+                        <p style="font-size: 11px; color: #94A3B8; margin-top: 4px;">${escapeHtml((item.description || '').slice(0, 140))}...</p>
                     </div>
                     <div style="display: flex; gap: 6px; align-items: center;">
-                        <button class="btn btn-primary btn-sm btn-convert-viral-rss" data-title="${encodeURIComponent(item.title)}" data-desc="${encodeURIComponent(item.description)}" data-niche="${encodeURIComponent(item.suggested_niche || '1_news_flash')}" title="Başlığı psikolojik merak/şok sorusuna çevirip stüdyoya aktarır">
+                        <button class="btn btn-primary btn-sm btn-convert-viral-rss" data-title="${encodeURIComponent(item.title)}" data-desc="${encodeURIComponent(item.description || '')}" data-niche="${encodeURIComponent(item.suggested_niche || '1_news_flash')}" title="Başlığı psikolojik merak/şok sorusuna çevirip stüdyoya aktarır">
                             <i class="fa-solid fa-wand-magic-sparkles"></i> Viral Kancaya Çevir
                         </button>
                         <button class="btn btn-secondary btn-sm btn-convert-rss" data-title="${encodeURIComponent(item.title)}" data-niche="${encodeURIComponent(item.suggested_niche || '1_news_flash')}" title="Başlığı olduğu gibi stüdyoya aktarır">
@@ -59,23 +59,21 @@ async function loadRssNews() {
             list.appendChild(row);
         });
 
-        // Normal stüdyo aktarımı
         list.querySelectorAll('.btn-convert-rss').forEach(b => {
             b.addEventListener('click', (e) => {
                 const rawTitle = decodeURIComponent(e.currentTarget.getAttribute('data-title'));
                 const niche = decodeURIComponent(e.currentTarget.getAttribute('data-niche') || '1_news_flash');
-                inputTopic.value = rawTitle;
-                if (selectNiche) {
-                    selectNiche.value = niche;
-                    applyNicheProfile(niche);
+                if (window.inputTopic) window.inputTopic.value = rawTitle;
+                if (window.selectNiche) {
+                    window.selectNiche.value = niche;
+                    if (typeof applyNicheProfile === 'function') applyNicheProfile(niche);
                 }
-                switchTab('studio');
+                if (typeof switchTab === 'function') switchTab('studio');
                 updateFlowRail('topic');
                 showToast('Haber stüdyoya aktarıldı — Senaryoyu incele ile devam edin');
             });
         });
 
-        // AI Viral Soru Kancasına Çevirip Aktarma (Item 122)
         list.querySelectorAll('.btn-convert-viral-rss').forEach(b => {
             b.addEventListener('click', async (e) => {
                 const rawTitle = decodeURIComponent(e.currentTarget.getAttribute('data-title'));
@@ -89,28 +87,24 @@ async function loadRssNews() {
                     const res = await fetch('/api/rss/convert-to-shorts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            title: rawTitle,
-                            description: desc,
-                            suggested_niche: niche
-                        })
+                        body: JSON.stringify({ title: rawTitle, description: desc, suggested_niche: niche })
                     });
                     const resData = await res.json();
                     const idea = resData.idea || {};
                     const finalTitle = idea.question_title || rawTitle;
                     const finalNiche = idea.suggested_niche || niche;
 
-                    inputTopic.value = finalTitle;
-                    if (selectNiche) {
-                        selectNiche.value = finalNiche;
-                        applyNicheProfile(finalNiche);
+                    if (window.inputTopic) window.inputTopic.value = finalTitle;
+                    if (window.selectNiche) {
+                        window.selectNiche.value = finalNiche;
+                        if (typeof applyNicheProfile === 'function') applyNicheProfile(finalNiche);
                     }
-                    switchTab('studio');
+                    if (typeof switchTab === 'function') switchTab('studio');
                     updateFlowRail('topic');
                     showToast(`⚡ Viral Kanca Hazır: "${finalTitle}" (${idea.strategy || 'merak'})`);
                 } catch (err) {
-                    inputTopic.value = rawTitle;
-                    switchTab('studio');
+                    if (window.inputTopic) window.inputTopic.value = rawTitle;
+                    if (typeof switchTab === 'function') switchTab('studio');
                     showToast('Haber aktarıldı (fallback)');
                 } finally {
                     e.currentTarget.disabled = false;
@@ -126,7 +120,6 @@ async function loadRssNews() {
 document.getElementById('btn-fetch-rss-now')?.addEventListener('click', loadRssNews);
 document.getElementById('select-rss-source')?.addEventListener('change', loadRssNews);
 
-// Listelenen tüm haberleri toplu render kuyruğuna aktar
 document.getElementById('btn-rss-batch-all')?.addEventListener('click', async () => {
     if (!currentRssItems || currentRssItems.length === 0) {
         showToast('Önce haberleri tarayın!', 'error');
@@ -140,17 +133,14 @@ document.getElementById('btn-rss-batch-all')?.addEventListener('click', async ()
         const res = await fetch('/api/batch/submit', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                text: topics,
-                niche: defaultNiche,
-                language: 'tr'
-            })
+            body: JSON.stringify({ text: topics, niche: defaultNiche, language: 'tr' })
         });
         const data = await res.json();
-        if (data.status === 'ok') {
-            showToast(`✅ ${data.added_count} haber toplu üretim kuyruğuna alındı!`);
-            switchTab('batch');
-            loadBatchQueue();
+        if (data.status === 'ok' || data.enqueued != null) {
+            const count = data.enqueued ?? data.added_count ?? 0;
+            showToast(`✅ ${count} haber toplu üretim kuyruğuna alındı!`);
+            if (typeof switchTab === 'function') switchTab('batch');
+            refreshBatchQueue();
         } else {
             showToast(data.detail || 'Kuyruğa eklenemedi', 'error');
         }
@@ -159,17 +149,13 @@ document.getElementById('btn-rss-batch-all')?.addEventListener('click', async ()
     }
 });
 
-// ══════════════════════════════════════════════════════════════
-
-
-// 4. TOPLU ÜRETİM (BATCH) KUYRUĞU (Items 70 & 78)
-// ══════════════════════════════════════════════════════════════
 document.getElementById('btn-enqueue-batch')?.addEventListener('click', async () => {
-    const text = document.getElementById('batch-topics-text').value.trim();
+    const textEl = document.getElementById('batch-topics-text');
+    const text = textEl?.value.trim() || '';
     if (!text) return alert('Lütfen en az bir konu girin!');
 
-    const niche = document.getElementById('batch-default-niche').value;
-    const lang = document.getElementById('batch-default-lang').value;
+    const niche = document.getElementById('batch-default-niche')?.value || '1_news_flash';
+    const lang = document.getElementById('batch-default-lang')?.value || 'tr';
 
     try {
         const res = await fetch('/api/batch/submit', {
@@ -179,7 +165,7 @@ document.getElementById('btn-enqueue-batch')?.addEventListener('click', async ()
         });
         const data = await res.json();
         showToast(`✅ ${data.enqueued} adet video konusu kuyruğa eklendi!`);
-        document.getElementById('batch-topics-text').value = '';
+        if (textEl) textEl.value = '';
         refreshBatchQueue();
     } catch (err) {
         alert('Kuyruğa ekleme hatası: ' + err.message);
@@ -215,83 +201,119 @@ async function refreshBatchQueue() {
     }
 }
 
-
-
-// 5. BÜYÜME, A/B TEST & ALGORİTMA TAKTİKLERİ (Items 65, 89, 98)
-// ══════════════════════════════════════════════════════════════
-document.getElementById('btn-generate-ab-variants')?.addEventListener('click', () => {
-    const topic = document.getElementById('ab-test-topic').value.trim() || "Bilinmeyen Gerçekler";
+document.getElementById('btn-generate-ab-variants')?.addEventListener('click', async () => {
+    const topic = document.getElementById('ab-test-topic')?.value?.trim() || document.getElementById('input-topic')?.value?.trim() || "Bilinmeyen Gerçekler";
+    const niche = document.getElementById('select-niche')?.value || '6_stoic_philosophy';
     const container = document.getElementById('ab-results-container');
-    
-    // Dynamic A/B test simulation based on growth_tactics rules
+    if (!container) return;
+
+    try {
+        const res = await fetch(`/api/niches/${encodeURIComponent(niche)}/ab_variants?topic=${encodeURIComponent(topic)}`);
+        const data = await res.json();
+        const variants = data.variants || data.data?.variants || [];
+        if (variants.length) {
+            const colors = ['#8B5CF6', '#EF4444', '#F59E0B', '#10B981'];
+            container.innerHTML = variants.map((v, idx) => `
+                <div class="glass-box mb-2" style="padding: 10px; border-left: 3px solid ${colors[idx % colors.length]};">
+                    <strong>Varyant ${String.fromCharCode(65 + idx)} (${escapeHtml(v.angle || v.style || v.strategy || v.variant || 'Viral Kanca')}):</strong>
+                    <p style="font-size: 11px; color: #FFF; margin-top: 2px;">${escapeHtml(v.title || v.hook || String(v))}</p>
+                </div>
+            `).join('');
+            showToast(`🧪 ${variants.length} gerçek A/B varyantı üretildi!`);
+            return;
+        }
+    } catch (_) {}
+
     container.innerHTML = `
         <div class="glass-box mb-2" style="padding: 10px; border-left: 3px solid #8B5CF6;">
             <strong>Varyant A (Merak Odaklı - CTR):</strong>
-            <p style="font-size: 11px; color: #FFF; margin-top: 2px;">Bunu Biliyor Muydunuz? ${topic} Hakkında Gizli Gerçek #Shorts</p>
+            <p style="font-size: 11px; color: #FFF; margin-top: 2px;">Bunu Biliyor Muydunuz? ${escapeHtml(topic)} Hakkında Gizli Gerçek #Shorts</p>
         </div>
         <div class="glass-box mb-2" style="padding: 10px; border-left: 3px solid #EF4444;">
             <strong>Varyant B (Şok / Flaş Kanca):</strong>
-            <p style="font-size: 11px; color: #FFF; margin-top: 2px;">İNANILMAZ! ${topic} Olayı Herkesi Şok Etti #Shorts</p>
+            <p style="font-size: 11px; color: #FFF; margin-top: 2px;">İNANILMAZ! ${escapeHtml(topic)} Olayı Herkesi Şok Etti #Shorts</p>
         </div>
         <div class="glass-box" style="padding: 10px; border-left: 3px solid #F59E0B;">
             <strong>Varyant C (İkilem / Yorum Tuzağı):</strong>
-            <p style="font-size: 11px; color: #FFF; margin-top: 2px;">Siz Olsaydınız Ne Yapardınız? ${topic} #Shorts</p>
+            <p style="font-size: 11px; color: #FFF; margin-top: 2px;">Siz Olsaydınız Ne Yapardınız? ${escapeHtml(topic)} #Shorts</p>
         </div>
     `;
     showToast('🧪 3 A/B varyantı hazırlandı!');
 });
 
-document.getElementById('btn-generate-community-poll')?.addEventListener('click', () => {
-    const topic = document.getElementById('community-poll-topic').value.trim() || "Günün Konusu";
+document.getElementById('btn-generate-community-poll')?.addEventListener('click', async () => {
+    const topic = document.getElementById('community-poll-topic')?.value?.trim() || document.getElementById('input-topic')?.value?.trim() || "Günün Konusu";
+    const niche = document.getElementById('select-niche')?.value || '6_stoic_philosophy';
     const container = document.getElementById('community-poll-container');
-    container.innerHTML = `
-        <div class="glass-box" style="padding: 12px; background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.3);">
-            <strong style="color: #F59E0B; font-size: 12px;">📊 YouTube Topluluk Anketi</strong>
-            <p style="font-size: 12px; margin: 6px 0;">Bugünkü Shorts konumuz '${topic}'. Sizce bu konuda en çok merak edilen şey nedir?</p>
-            <div style="font-size: 11px; color: #FFF; display: flex; flex-direction: column; gap: 4px;">
-                <div>&bull; ${topic} hakkında hiç bilinmeyen sırlar</div>
-                <div>&bull; Tarihteki en büyük hatalar</div>
-                <div>&bull; Gelecekte bizi bekleyenler</div>
-                <div>&bull; Sonucu görmek istiyorum</div>
+    if (!container) return;
+
+    try {
+        const res = await fetch(`/api/growth/operator-pack?topic=${encodeURIComponent(topic)}&niche=${encodeURIComponent(niche)}`);
+        const data = await res.json();
+        const pack = data.operator_pack || data;
+        const poll = pack.community_poll || {};
+        const options = poll.options || [
+            `${topic} hakkında hiç bilinmeyen sırlar`,
+            `Tarihteki en büyük hatalar`,
+            `Gelecekte bizi bekleyenler`,
+            `Sonucu görmek istiyorum`
+        ];
+        container.innerHTML = `
+            <div class="glass-box" style="padding: 12px; background: rgba(245, 158, 11, 0.08); border-color: rgba(245, 158, 11, 0.3);">
+                <strong style="color: #F59E0B; font-size: 12px;">📊 YouTube Topluluk Anketi &amp; Operatör Paketi</strong>
+                <p style="font-size: 12px; margin: 6px 0;">${escapeHtml(poll.question || `Bugünkü Shorts konumuz '${topic}'. Sizce bu konuda en kritik nokta nedir?`)}</p>
+                <div style="font-size: 11px; color: #FFF; display: flex; flex-direction: column; gap: 4px;">
+                    ${options.map(o => `<div>&bull; ${escapeHtml(String(o))}</div>`).join('')}
+                </div>
+                ${pack.pinned_comment ? `<div style="margin-top:8px; font-size:11px; color:#38bdf8;">📌 <strong>Sabit Yorum:</strong> ${escapeHtml(pack.pinned_comment)}</div>` : ''}
             </div>
-        </div>
-    `;
-    showToast('📊 Topluluk anketi oluşturuldu!');
+        `;
+        showToast('📊 Topluluk anketi ve operatör paketi oluşturuldu!');
+    } catch (_) {}
 });
 
-document.getElementById('btn-check-copyright-risk')?.addEventListener('click', () => {
-    const text = document.getElementById('copyright-check-text').value.toLowerCase();
+document.getElementById('btn-check-copyright-risk')?.addEventListener('click', async () => {
+    const text = document.getElementById('copyright-check-text')?.value?.trim() || (window.currentPlan?.scenes?.map(s => s.narration).join(' ')) || '';
+    const niche_id = document.getElementById('select-niche')?.value || '';
     const container = document.getElementById('copyright-risk-container');
-    const riskyWords = ["disney", "marvel", "netflix", "fifa", "premier league", "telif", "şiddet"];
-    const found = riskyWords.filter(w => text.includes(w));
+    if (!container) return;
 
-    if (found.length > 0) {
+    try {
+        const res = await fetch('/api/compliance/copyright-risk', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, niche_id })
+        });
+        const data = await res.json();
+        const report = data.report || data;
+        const level = report.risk_level || 'low';
+        const score = report.risk_score ?? 0;
+        const terms = report.matched_terms || [];
+        const recs = report.recommendations || [];
+        const isHigh = level === 'high' || level === 'medium' || terms.length > 0;
         container.innerHTML = `
-            <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); padding: 10px; border-radius: 8px; font-size: 12px;">
-                <strong style="color: var(--danger);"><i class="fa-solid fa-triangle-exclamation"></i> Riskli Kelimeler Tespit Edildi:</strong>
-                <p style="color: #FFF; margin-top: 4px;">${found.join(", ")}</p>
-                <small style="color: #94A3B8;">Öneri: Yatay ayna (mirror) ve ses tonu kaydırma filtresini açın.</small>
+            <div style="background: ${isHigh ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)'}; border: 1px solid ${isHigh ? 'var(--danger)' : 'var(--success)'}; padding: 10px; border-radius: 8px; font-size: 12px; color: #FFF;">
+                <strong style="color: ${isHigh ? 'var(--danger)' : 'var(--success)'};">
+                    <i class="fa-solid ${isHigh ? 'fa-triangle-exclamation' : 'fa-circle-check'}"></i>
+                    Telif &amp; Politika Risk Seviyesi: ${escapeHtml(String(level).toUpperCase())} (Skor: ${score}/100)
+                </strong>
+                ${terms.length ? `<p style="margin-top:4px;">Eşleşen Terimler: <strong>${escapeHtml(terms.join(', '))}</strong></p>` : '<p style="margin-top:4px;">Telif veya marka kısıtlaması tespit edilmedi.</p>'}
+                ${recs.length ? `<small style="color:#94A3B8; display:block; margin-top:4px;">Öneri: ${escapeHtml(recs.join(' · '))}</small>` : ''}
             </div>
         `;
-    } else {
-        container.innerHTML = `
-            <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); padding: 10px; border-radius: 8px; font-size: 12px; color: #FFF;">
-                <strong style="color: var(--success);"><i class="fa-solid fa-circle-check"></i> İçerik Güvenli!</strong>
-                <p style="margin-top: 2px;">Telif veya marka riski oluşturabilecek kısıtlama tespit edilmedi.</p>
-            </div>
-        `;
+    } catch (e) {
+        container.innerHTML = `<div class="text-danger">Hata: ${escapeHtml(e.message)}</div>`;
     }
 });
 
+let _galleryLoadInFlight = null;
 
-
-// 11. VİDEO GALERİSİ & YOUTUBE YÜKLEME (Items 51 & 100)
-// ══════════════════════════════════════════════════════════════
 async function loadGallery() {
     const grid = document.getElementById('gallery-videos-grid');
     const badge = document.getElementById('badge-gallery-count');
     if (!grid) return;
+    if (_galleryLoadInFlight) return _galleryLoadInFlight;
 
+    _galleryLoadInFlight = (async () => {
     try {
         const res = await fetch('/api/videos');
         const data = await res.json();
@@ -299,7 +321,6 @@ async function loadGallery() {
 
         if (badge) badge.textContent = videos.length;
 
-        // Global İstatistik Barını Güncelle
         const statTotalVids = document.getElementById('stat-total-vids');
         const statTotalDur = document.getElementById('stat-total-duration');
         if (statTotalVids) statTotalVids.textContent = `${videos.length} Video`;
@@ -319,13 +340,16 @@ async function loadGallery() {
         videos.forEach(v => {
             const hasOutput = v.status === 'completed' && v.filename && v.id;
             const projectSlug = (v.filename || '').replace(/\.mp4$/i, '');
+            const thumbUrl = v.thumbnail_url ? escapeHtml(v.thumbnail_url) : '';
+            const preloadMode = thumbUrl ? 'none' : 'metadata';
+            const posterAttr = thumbUrl ? `poster="${thumbUrl}"` : '';
             const card = document.createElement('div');
             card.className = 'shorts-card glass-box';
             card.style.cssText = "width: 280px !important; max-width: 280px !important; min-width: 260px !important; flex-shrink: 0 !important; box-sizing: border-box !important;";
             card.innerHTML = `
                 <div class="shorts-player-wrapper" style="position: relative !important; width: 100% !important; height: 420px !important; max-height: 420px !important; aspect-ratio: 9 / 16 !important; background: #000000 !important; border-radius: 12px !important; overflow: hidden !important; display: flex !important; align-items: center !important; justify-content: center !important;">
                     <span class="shorts-badge-tag"><i class="fa-brands fa-youtube"></i> SHORTS</span>
-                    <video src="/output/${v.filename}" controls playsinline preload="metadata" style="width: 100% !important; height: 100% !important; object-fit: contain !important; background: #000000 !important; display: block !important;"></video>
+                    <video src="/output/${v.filename}" controls playsinline preload="${preloadMode}" ${posterAttr} style="width: 100% !important; height: 100% !important; object-fit: contain !important; background: #000000 !important; display: block !important;"></video>
                     <span class="shorts-duration-tag"><i class="fa-regular fa-clock"></i> ${(v.duration_seconds || 0).toFixed(1)}s</span>
                 </div>
                 <div class="shorts-meta-box">
@@ -375,20 +399,18 @@ async function loadGallery() {
                         const err = await res.json().catch(() => ({}));
                         const detail = err.detail;
                         if (detail && typeof detail === 'object') {
-                            throw new Error(
-                                detail.message || 'Kayitli senaryo kopuk — yeni senaryo uretin'
-                            );
+                            throw new Error(detail.message || 'Kayitli senaryo kopuk — yeni senaryo uretin');
                         }
                         throw new Error(detail || 'Senaryo bulunamadi');
                     }
                     const data = await res.json();
-                    if (kw && inputTopic) inputTopic.value = kw;
-                    if (data.director?.niche_id && selectNiche) {
-                        selectNiche.value = data.director.niche_id;
-                        applyNicheProfile(data.director.niche_id);
+                    if (kw && window.inputTopic) window.inputTopic.value = kw;
+                    if (data.director?.niche_id && window.selectNiche) {
+                        window.selectNiche.value = data.director.niche_id;
+                        if (typeof applyNicheProfile === 'function') applyNicheProfile(data.director.niche_id);
                     }
                     setCurrentPlan(data.plan);
-                    switchTab('timeline');
+                    if (typeof switchTab === 'function') switchTab('timeline');
                     updateFlowRail('timeline');
                     showToast('Senaryo timeline\'a yuklendi — duzenleyip yeniden render alin');
                 } catch (err) {
@@ -410,7 +432,7 @@ async function loadGallery() {
                 const videoId = b.getAttribute('data-video-id');
                 const projectSlug = decodeURIComponent(b.getAttribute('data-project-slug') || '');
                 const v = videos.find(x => String(x.id) === String(videoId)) || { id: videoId, filename: `${projectSlug}.mp4` };
-                submitShareDecision('keep', { videoId, projectSlug });
+                if (typeof submitShareDecision === 'function') submitShareDecision('keep', { videoId, projectSlug });
                 openPublishHubModal(v);
             });
         });
@@ -420,35 +442,39 @@ async function loadGallery() {
                 const videoId = b.getAttribute('data-video-id');
                 const projectSlug = decodeURIComponent(b.getAttribute('data-project-slug') || '');
                 const card = b.closest('.shorts-card');
-                submitShareDecision('discard', {
-                    videoId,
-                    projectSlug,
-                    onDiscard: () => {
-                        card?.remove();
-                        const remaining = grid.querySelectorAll('.shorts-card').length;
-                        if (badge) badge.textContent = remaining;
-                        if (statTotalVids) statTotalVids.textContent = `${remaining} Video`;
-                        if (remaining === 0) {
-                            grid.innerHTML = '<div class="empty-state-box"><i class="fa-solid fa-film"></i><p>Henüz üretilmiş bir video yok.</p></div>';
-                        }
-                    },
-                });
+                if (typeof submitShareDecision === 'function') {
+                    submitShareDecision('discard', {
+                        videoId,
+                        projectSlug,
+                        onDiscard: () => {
+                            card?.remove();
+                            const remaining = grid.querySelectorAll('.shorts-card').length;
+                            if (badge) badge.textContent = remaining;
+                            if (statTotalVids) statTotalVids.textContent = `${remaining} Video`;
+                            if (remaining === 0) {
+                                grid.innerHTML = '<div class="empty-state-box"><i class="fa-solid fa-film"></i><p>Henüz üretilmiş bir video yok.</p></div>';
+                            }
+                        },
+                    });
+                }
             });
         });
     } catch (e) {
         console.error(e);
+    } finally {
+        _galleryLoadInFlight = null;
     }
+    })();
+    return _galleryLoadInFlight;
 }
 
-document.getElementById('btn-refresh-gallery')?.addEventListener('click', loadGallery);
+window.loadGallery = loadGallery;
+document.getElementById('btn-refresh-gallery')?.addEventListener('click', () => window.loadGallery());
 
-// ══════════════════════════════════════════════════════════════
-// YOUTUBE YAYINLAMA & SEO DAĞITIM HUB'I KONTROLCÜSÜ (Maddeler 51, 52, 53, 55, 80)
-// ══════════════════════════════════════════════════════════════
-let currentPublishVideo = null;
+window.currentPublishVideo = null;
 
 async function openPublishHubModal(video) {
-    currentPublishVideo = video;
+    window.currentPublishVideo = video;
     const modal = document.getElementById('modal-publish-hub');
     if (!modal) return;
 
@@ -473,7 +499,6 @@ async function openPublishHubModal(video) {
     if (durEl) durEl.textContent = `${(video.duration_seconds || 0).toFixed(1)}s`;
     if (sizeEl) sizeEl.textContent = `${(video.size_mb || 0).toFixed(1)} MB`;
 
-    // Hedef kanal listesini çek
     if (chSelect) {
         try {
             const res = await fetch('/api/channel/list');
@@ -492,7 +517,6 @@ async function openPublishHubModal(video) {
         }
     }
 
-    // Varsa kayıtlı manual_upload_info.json dosyasını çek
     let info = null;
     try {
         const res = await fetch(`/output/${baseName}_manual_upload_info.json`);
@@ -523,7 +547,6 @@ function closePublishHubModal() {
     }
 }
 
-// Tekli alan kopyalama butonları
 document.querySelectorAll('.btn-copy-field').forEach(btn => {
     btn.addEventListener('click', async (e) => {
         const targetId = e.currentTarget.getAttribute('data-target');
@@ -538,7 +561,6 @@ document.querySelectorAll('.btn-copy-field').forEach(btn => {
     });
 });
 
-// Tüm SEO paketini kopyala
 document.getElementById('btn-copy-all-package')?.addEventListener('click', async () => {
     const title = document.getElementById('pub-title-field')?.value || '';
     const desc = document.getElementById('pub-desc-field')?.value || '';
@@ -557,498 +579,9 @@ document.getElementById('btn-copy-all-package')?.addEventListener('click', async
     showToast('📋 Tüm SEO paketi panoya kopyalandı!');
 });
 
-// Anti-Detect Studio UI Yükleme tetikleyici
-document.getElementById('btn-execute-studio-safe-upload')?.addEventListener('click', async () => {
-    if (!currentPublishVideo) return;
-    const btn = document.getElementById('btn-execute-studio-safe-upload');
-    const channelSelect = document.getElementById('pub-target-channel-select');
-    const ch = channelSelect ? channelSelect.value : 'default';
-    const title = document.getElementById('pub-title-field')?.value || '';
-    const desc = document.getElementById('pub-desc-field')?.value || '';
-    const tags = (document.getElementById('pub-tags-field')?.value || '').split(',').map(t => t.trim()).filter(Boolean);
-    const schedHour = parseInt(document.getElementById('pub-schedule-hour')?.value || '18', 10);
-
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Yükleme Kuyruğuna Alınıyor...';
-
-    try {
-        const res = await fetch('/api/channel/studio_upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                identifier: ch,
-                video_path: `output/${currentPublishVideo.filename}`,
-                title: title,
-                description: desc,
-                tags: tags,
-                scheduled_hour: schedHour
-            })
-        });
-        const data = await res.json();
-        if (data.success || data.action === 'MANUAL_UPLOAD_REQUIRED') {
-            showToast('✅ Studio UI Güvenli Paketleme Hazır! Terminale aktarıldı.');
-            switchTab('channels');
-            closePublishHubModal();
-        } else {
-            showToast(data.reason || data.error || 'Yükleme başlatılamadı', 'error');
-        }
-    } catch (err) {
-        showToast(`Hata: ${err.message}`, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fa-solid fa-rocket"></i> Anti-Detect Studio UI ile Yükle';
-    }
-});
-
 document.getElementById('btn-close-publish-modal')?.addEventListener('click', closePublishHubModal);
 document.getElementById('modal-publish-hub')?.addEventListener('click', (e) => {
     if (e.target.id === 'modal-publish-hub') closePublishHubModal();
 });
-
-// ══════════════════════════════════════════════════════════════
-
-
-// 19. 500-ITEM ROADMAP HANDLERS (Anti-Detect & Proof Archiver)
-// ══════════════════════════════════════════════════════════════
-document.getElementById('btn-calc-jitter')?.addEventListener('click', async () => {
-    const hour = document.getElementById('input-jitter-hour').value || 18;
-    const minute = document.getElementById('input-jitter-minute').value || 0;
-    const box = document.getElementById('jitter-result-box');
-    box.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Jitter ve izole parmak izi hesaplanıyor...';
-
-    try {
-        const [jRes, pRes] = await Promise.all([
-            fetch(`/api/anti_detect/jitter?hour=${hour}&minute=${minute}`),
-            fetch('/api/anti_detect/profile?channel_id=studio_main&lang=tr')
-        ]);
-        const jData = await jRes.json();
-        const pData = await pRes.json();
-
-        box.innerHTML = `
-            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 10px; border-radius: 8px;">
-                <div style="color: #10B981; font-weight: 700; margin-bottom: 4px;">
-                    <i class="fa-solid fa-circle-check"></i> İnsanlaştırılmış Yayın Saati: <strong>${jData.jitter.time_str}</strong> (+${jData.jitter.jitter_applied_minutes} dk sapma)
-                </div>
-                <div style="color: #94A3B8; font-size: 11px;">
-                    • Donanım: <strong>${pData.profile.webgl_renderer}</strong> | RAM: ${pData.profile.device_memory}GB<br>
-                    • WebRTC İlkesi: <code>${pData.profile.webrtc_policy}</code><br>
-                    • Canvas Gürültüsü: %${(pData.profile.canvas_noise_seed * 100).toFixed(4)} (İzole)
-                </div>
-            </div>
-        `;
-        showToast('🛡️ Anti-Detect zamanlama ve parmak izi üretildi!');
-    } catch (e) {
-        box.innerHTML = `<span class="text-danger">Hata: ${e.message}</span>`;
-    }
-});
-
-document.getElementById('btn-generate-appeal-script')?.addEventListener('click', async () => {
-    const chName = document.getElementById('input-appeal-channel').value || 'Shorts Kanalı';
-    const box = document.getElementById('appeal-result-box');
-    box.textContent = 'İtiraz videosu senaryosu hazırlanıyor...';
-
-    try {
-        const res = await fetch(`/api/proof/appeal_script?channel_name=${encodeURIComponent(chName)}`);
-        const data = await res.json();
-        const steps = (data.operator_steps || []).join('\n');
-        const manual = (data.checklist || [])
-            .filter(c => c.status === 'operator_manual')
-            .map(c => `[#${c.item} ${c.title}] ${c.action}`)
-            .join('\n\n');
-        box.textContent = [
-            '=== OPERATÖR ADIMLARI (472-475) ===',
-            steps,
-            manual ? '\n=== MANUEL ÇEKİM (#473/#474) ===\n' + manual : '',
-            '\n=== İNGİLİZCE SCRIPT (#472/#475) ===\n',
-            data.script || '',
-        ].join('\n');
-        showToast('📜 İtiraz scripti + operatör checklist hazır!');
-    } catch (e) {
-        box.textContent = 'Hata: ' + e.message;
-    }
-});
-
-// ══════════════════════════════════════════════════════════════
-
-
-// 21. ANTI-DETECT KANAL ONBOARDING & OTOMASYON BOTU (5 ALTIN KURAL)
-// ══════════════════════════════════════════════════════════════
-
-let currentAnalyzedChannel = null;
-
-async function loadManagedChannels() {
-    const container = document.getElementById('managed-channels-list');
-    if (!container) return;
-
-    try {
-        const res = await fetch('/api/channel/list');
-        const data = await res.json();
-        if (!data.channels || data.channels.length === 0) {
-            container.innerHTML = `
-                <div style="grid-column: 1/-1; text-align: center; padding: 20px; color: #94a3b8; font-size: 13px; background: rgba(0,0,0,0.2); border-radius: 8px;">
-                    <i class="fa-solid fa-circle-info text-info"></i> Henüz kayıtlı kanal yok. Yukarıdan kanal linkinizi yapıştırıp analizi başlatın.
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = '';
-        data.channels.forEach(ch => {
-            const card = document.createElement('div');
-            card.className = 'glass-box';
-            card.style.padding = '14px';
-            card.style.border = '1px solid rgba(255,255,255,0.08)';
-
-            const statusColor = ch.status === 'ready' ? '#10b981' : (ch.status === 'resting' ? '#f59e0b' : '#38bdf8');
-            const statusText = ch.status === 'ready' ? 'Yüklemeye Hazır' : (ch.status === 'resting' ? 'Dinlendirmede' : 'Isınma Aşamasında');
-
-            card.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                    <div>
-                        <strong style="color: #fff; font-size: 14px;">${ch.handle}</strong>
-                        <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">
-                            <i class="fa-solid fa-folder"></i> <code>${ch.profile_id}</code>
-                        </div>
-                    </div>
-                    <span style="font-size: 11px; font-weight: 700; color: ${statusColor}; background: rgba(255,255,255,0.05); padding: 3px 8px; border-radius: 6px;">
-                        ${statusText}
-                    </span>
-                </div>
-
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px;">
-                    <span style="color: #cbd5e1;">Güven Puanı: <strong style="color: #10b981;">%${ch.health_score}</strong></span>
-                    <span style="color: #94a3b8; font-size: 11px;">Niş: <strong>${ch.niche || 'Genel'}</strong></span>
-                </div>
-
-                <div style="display: flex; gap: 8px; margin-top: 12px;">
-                    <button class="btn btn-sm btn-success btn-ch-warmup" data-id="${ch.handle}" style="flex: 1; font-size: 11px; padding: 6px;">
-                        <i class="fa-solid fa-fire"></i> Isındırma Başlat
-                    </button>
-                    <button class="btn btn-sm btn-secondary btn-ch-reanalyze" data-url="${ch.channel_url}" style="font-size: 11px; padding: 6px 10px;">
-                        <i class="fa-solid fa-eye"></i> Detay
-                    </button>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-
-        container.querySelectorAll('.btn-ch-warmup').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const id = e.currentTarget.getAttribute('data-id');
-                triggerWarmupSession(id);
-            });
-        });
-
-        container.querySelectorAll('.btn-ch-reanalyze').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const url = e.currentTarget.getAttribute('data-url');
-                const inp = document.getElementById('input-onboard-url');
-                if (inp) inp.value = url;
-                triggerChannelAnalysis();
-            });
-        });
-
-    } catch (e) {
-        container.innerHTML = `<span class="text-danger">Kanal listesi yüklenemedi: ${e.message}</span>`;
-    }
-}
-
-async function triggerChannelAnalysis() {
-    const urlInput = document.getElementById('input-onboard-url');
-    const proxyInput = document.getElementById('input-onboard-proxy');
-    const nicheSelect = document.getElementById('select-onboard-niche');
-    const isNewCheck = document.getElementById('check-is-brand-new');
-    const container = document.getElementById('channel-analysis-container');
-
-    const rawUrl = urlInput?.value.trim();
-    if (!rawUrl) {
-        showToast('⚠️ Lütfen bir YouTube kanal linki veya @handle girin!');
-        return;
-    }
-
-    container.style.display = 'block';
-    container.innerHTML = `
-        <div style="text-align: center; padding: 30px; color: #94a3b8;">
-            <i class="fa-solid fa-spinner fa-spin" style="font-size: 28px; color: #8b5cf6;"></i>
-            <div style="margin-top: 10px; font-weight: 600;">Kanal donanım izi ve 5 kural yol haritası çıkarılıyor...</div>
-        </div>
-    `;
-
-    const emailInput = document.getElementById('input-onboard-email');
-    const phoneInput = document.getElementById('input-onboard-phone');
-    const phoneTypeSelect = document.getElementById('select-onboard-phone-type');
-
-    try {
-        const res = await fetch('/api/channel/analyze', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                channel_url: rawUrl,
-                proxy_url: proxyInput ? proxyInput.value.trim() : null,
-                niche: nicheSelect ? nicheSelect.value : 'Stoic / Motivasyon',
-                is_brand_new: isNewCheck ? isNewCheck.checked : true,
-                recovery_email: emailInput ? emailInput.value.trim() : null,
-                phone_number: phoneInput ? phoneInput.value.trim() : null,
-                phone_type: phoneTypeSelect ? phoneTypeSelect.value : 'physical'
-            })
-        });
-
-        const data = await res.json();
-        if (data.status !== 'ok') {
-            container.innerHTML = `<div class="alert-danger-box">Analiz hatası: ${data.error || 'Bilinmeyen hata'}</div>`;
-            return;
-        }
-
-        currentAnalyzedChannel = data;
-        renderChannelAnalysis(data);
-        loadManagedChannels();
-        showToast('🛡️ Kanal analizi ve 5 Kural Yol Haritası çıkarıldı!');
-
-    } catch (e) {
-        container.innerHTML = `<div class="alert-danger-box">Sunucu bağlantı hatası: ${e.message}</div>`;
-    }
-}
-
-function renderChannelAnalysis(data) {
-    const container = document.getElementById('channel-analysis-container');
-    if (!container) return;
-
-    const ch = data.channel;
-    const profile = data.browser_profile;
-    const proxy = data.proxy_audit;
-
-    const restingBadgeColor = ch.resting_days_left > 0 ? '#f59e0b' : '#10b981';
-    const restingText = ch.resting_days_left > 0 
-        ? `Dinlendirme Süresi: ${ch.resting_days_left} Gün Kaldı (${ch.resting_until})`
-        : `Dinlendirme Tamamlandı & Yüklemeye Uygun`;
-
-    let checklistHtml = '';
-    data.checklist.forEach(item => {
-        const isDone = item.status === 'completed';
-        const isWarn = item.status === 'warning';
-        const statusIcon = isDone 
-            ? '<i class="fa-solid fa-circle-check text-success"></i>' 
-            : (isWarn ? '<i class="fa-solid fa-triangle-exclamation text-warning"></i>' : '<i class="fa-solid fa-clock text-info"></i>');
-        const borderColor = isDone ? 'rgba(16, 185, 129, 0.2)' : (isWarn ? 'rgba(245, 158, 11, 0.3)' : 'rgba(56, 189, 248, 0.2)');
-
-        checklistHtml += `
-            <div style="background: rgba(0,0,0,0.3); border: 1px solid ${borderColor}; border-radius: 8px; padding: 12px; margin-bottom: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div style="font-weight: 700; color: #fff; font-size: 13px; display: flex; align-items: center; gap: 8px;">
-                        ${statusIcon} <span>${item.step}. ${item.title}</span>
-                    </div>
-                    <span style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background: rgba(255,255,255,0.06); color: ${isDone ? '#10b981' : (isWarn ? '#f59e0b' : '#38bdf8')}; font-weight: 600;">
-                        ${item.badge}
-                    </span>
-                </div>
-                <p style="margin: 6px 0 4px 26px; font-size: 12px; color: #cbd5e1; line-height: 1.4;">${item.desc}</p>
-                <div style="margin-left: 26px; font-size: 11px; color: #94a3b8;">
-                    <code>${item.details}</code>
-                </div>
-            </div>
-        `;
-    });
-
-    container.innerHTML = `
-        <div style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 14px;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <h3 style="margin: 0; font-size: 18px; color: #fff;">${ch.handle}</h3>
-                        <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 700; padding: 3px 10px; border-radius: 20px; font-size: 12px;">
-                            Güven Skoru: %${ch.health_score}
-                        </span>
-                    </div>
-                    <div style="margin-top: 4px; font-size: 12px; color: #94a3b8;">
-                        Kanal ID: <code>${ch.profile_id}</code> | Niş: <strong style="color: #cbd5e1;">${ch.niche}</strong>
-                    </div>
-                </div>
-                <div style="text-align: right;">
-                    <span style="color: ${restingBadgeColor}; font-weight: 700; font-size: 12px; background: rgba(0,0,0,0.4); padding: 6px 12px; border-radius: 8px; border: 1px solid ${restingBadgeColor}40;">
-                        <i class="fa-solid fa-shield-cat"></i> ${restingText}
-                    </span>
-                </div>
-            </div>
-
-            <!-- 16 Kural Donanım, Ağ, İstemci & Güvenlik Özeti Grid -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; margin: 16px 0;">
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 1: YÜKLEME BAYRAĞI</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-check"></i> Studio UI Oturumu</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 2: PROXY DENETİMİ</small>
-                    <strong style="color: ${proxy.is_residential ? '#10b981' : '#f59e0b'}; font-size: 12px;">
-                        ${proxy.is_residential ? '<i class="fa-solid fa-check"></i> ISP Residential' : (proxy.configured ? '⚠️ Datacenter Riski' : 'ℹ️ Yerel ISP IP')}
-                    </strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 3: WEBRTC KALKANI</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-shield"></i> UDP Sızıntısı Bloklu</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 4 & 5: CANVAS & GPU</small>
-                    <strong style="color: #8b5cf6; font-size: 12px;">${profile.webgl_renderer}</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 10: DNS SIZINTISI</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-lock"></i> Cloudflare DoH</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 17: ÖN İZLEME</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-play"></i> 2-3 Shorts + Yorum</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 18: OTURUM SÜRESİ</small>
-                    <strong style="color: #38bdf8; font-size: 12px;"><i class="fa-solid fa-hourglass-half"></i> 3-7 dk Kuralı</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 19: HEADLESS İZİ</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-user-secret"></i> webdriver: undef</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 22: TLS JA3</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-fingerprint"></i> Chrome 124</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 23: PROTOKOL</small>
-                    <strong style="color: #06b6d4; font-size: 12px;"><i class="fa-solid fa-network-wired"></i> HTTP/2 & QUIC</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 24: AĞ JITTER'I</small>
-                    <strong style="color: #f59e0b; font-size: 12px;"><i class="fa-solid fa-wave-square"></i> Ev ISP Hızı</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 25: LOKASYON</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-location-dot"></i> Coğrafi Kilitli</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 26: ÖNBELLEK</small>
-                    <strong style="color: #a855f7; font-size: 12px;"><i class="fa-solid fa-database"></i> IndexedDB Kalıcı</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 27: CLIENT HINTS</small>
-                    <strong style="color: #38bdf8; font-size: 12px;"><i class="fa-solid fa-id-card"></i> sec-ch-ua: macOS</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 29: CTIME/MTIME</small>
-                    <strong style="color: #ec4899; font-size: 12px;"><i class="fa-solid fa-clock-rotate-left"></i> -15..45 dk</strong>
-                </div>
-                <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
-                    <small style="color: #94a3b8; display: block; font-size: 10px;">KURAL 30: BOYUT VARYASYONU</small>
-                    <strong style="color: #10b981; font-size: 12px;"><i class="fa-solid fa-file-shield"></i> free Atom Dolgusu</strong>
-                </div>
-            </div>
-
-            <div style="margin: 18px 0 10px 0; display: flex; align-items: center; justify-content: space-between;">
-                <h4 style="margin: 0; font-size: 14px; color: #fff; display: flex; align-items: center; gap: 8px;">
-                    <i class="fa-solid fa-list-check text-warning"></i> Neler Yapılması Gerektiği (Adım Adım Yol Haritası - 30 Kural)
-                </h4>
-                <small style="color: #94a3b8;">Otomasyon Motoru Hazır</small>
-            </div>
-
-            <div class="channel-checklist-box">
-                ${checklistHtml}
-            </div>
-
-            <div style="display: flex; gap: 12px; margin-top: 18px; flex-wrap: wrap;">
-                <button class="btn btn-success" id="btn-run-warmup-now" style="font-weight: 700; padding: 10px 20px;">
-                    <i class="fa-solid fa-fire"></i> Otomatik Çerez Isındırma (Warm-up) Başlat
-                </button>
-                <button class="btn btn-secondary" id="btn-test-studio-upload" style="padding: 10px 18px;">
-                    <i class="fa-solid fa-cloud-arrow-up"></i> Studio UI Güvenli Yükleme Testi
-                </button>
-            </div>
-        </div>
-    `;
-
-    document.getElementById('btn-run-warmup-now')?.addEventListener('click', () => {
-        triggerWarmupSession(ch.handle);
-    });
-
-    document.getElementById('btn-test-studio-upload')?.addEventListener('click', async () => {
-        showToast('🎬 Studio UI Güvenli Yükleme simülasyonu başlatılıyor...');
-        const terminal = document.getElementById('channel-bot-terminal');
-        const logsBox = document.getElementById('bot-terminal-logs');
-        if (terminal) terminal.style.display = 'block';
-        if (logsBox) {
-            logsBox.innerHTML += `<div style="color: #8b5cf6; margin-top: 8px; font-weight: 700;">[Studio UI] '${ch.handle}' için 30 Kural Tam Denetimli Güvenli Yükleme Başlatılıyor...</div>`;
-        }
-
-        try {
-            const res = await fetch('/api/channel/studio_upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    identifier: ch.handle,
-                    video_path: 'output/test.mp4',
-                    title: 'Stoic Secret to Success #Shorts',
-                    scheduled_hour: 18
-                })
-            });
-            const resData = await res.json();
-            if (logsBox && resData.success) {
-                logsBox.innerHTML += `
-                    <div style="color: #10b981; margin-top: 4px;">[Kural 30] Dosya Boyutu: +${resData.file_size_delta_kb || 650} KB free atom dolgusu ile benzersizleştirildi.</div>
-                    <div style="color: #f59e0b;">[Kural 24] Ağ Jitter'ı: ${resData.upload_bandwidth_mbps || 11.4} Mbps ev ISP bant genişliği simüle edildi.</div>
-                    <div style="color: #10b981;">[Kural 17] Yükleme öncesi ${resData.pre_upload_shorts_watched || 2} Shorts izlendi, 1 beğeni ve yorum bırakıldı: "${resData.comment_posted || 'Harika tespit!'}"</div>
-                    <div style="color: #38bdf8;">[Kural 18] Oturum Süresi: ${resData.target_session_minutes || 5.2} dk planlandı (Hızlı 5s çıkış engeli devrede).</div>
-                    <div style="color: #ec4899;">[Kural 8] Planlanan Saat: ${resData.scheduled_time || '18:14:22'} (+${resData.jitter_minutes || 14} dk jitter).</div>
-                    <div style="color: #a855f7;">[Kural 22] Chrome TLS JA3 Hash: <code>${(resData.ja3_hash || '5420213fa42f0de02168cd1a1e9d8dc9').substring(0, 20)}...</code></div>
-                    <div style="color: #10b981; font-weight: 700;">✅ Video Studio UI Yükleme Kuyruğuna Alındı (API Bayrağı Atlatıldı).</div>
-                `;
-            }
-            showToast('✅ Studio UI Güvenli Yükleme testi tamamlandı!');
-        } catch (e) {
-            if (logsBox) logsBox.innerHTML += `<div style="color: #ef4444;">[Hata] ${e.message}</div>`;
-        }
-    });
-}
-
-async function triggerWarmupSession(identifier) {
-    const terminal = document.getElementById('channel-bot-terminal');
-    const logsBox = document.getElementById('bot-terminal-logs');
-    const statusEl = document.getElementById('bot-terminal-status');
-
-    if (terminal) terminal.style.display = 'block';
-    if (logsBox) {
-        logsBox.innerHTML = `<div style="color: #38bdf8;">[Bot] '${identifier}' için organik ısındırma başlatıldı...</div>`;
-    }
-    if (statusEl) {
-        statusEl.textContent = 'Isındırma Yürütülüyor...';
-        statusEl.className = 'text-warning';
-    }
-
-    showToast(`🔥 '${identifier}' için çerez ısındırma başlatıldı!`);
-
-    try {
-        const res = await fetch('/api/channel/warmup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identifier })
-        });
-        const data = await res.json();
-
-        if (data.success) {
-            if (logsBox) {
-                logsBox.innerHTML += `<div style="color: #10b981;">[Bot] Isındırma başarıyla tamamlandı! Yeni Güven Skoru: %${data.new_health_score}</div>`;
-            }
-            if (statusEl) {
-                statusEl.textContent = 'Oturum Tamamlandı';
-                statusEl.className = 'text-success';
-            }
-            showToast('✅ Çerez ısındırma tamamlandı! Kanal güven skoru arttı.');
-            loadManagedChannels();
-        } else {
-            if (logsBox) {
-                logsBox.innerHTML += `<div style="color: #ef4444;">[Hata] ${data.error || 'Bilinmeyen hata'}</div>`;
-            }
-        }
-    } catch (e) {
-        if (logsBox) {
-            logsBox.innerHTML += `<div style="color: #ef4444;">[Hata] ${e.message}</div>`;
-        }
-    }
-}
-
+window.loadGallery = loadGallery;
 

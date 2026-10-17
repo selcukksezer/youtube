@@ -165,9 +165,13 @@ def evaluate_script_virality(narration_text: str, topic: str = "") -> Dict[str, 
 
     return {
         "score": final_score,
+        "virality_score": final_score,
         "is_coherent": is_coherent,
+        "slop_risk": "Düşük" if is_coherent else ("Yüksek" if len(slop_issues) >= 2 else "Orta"),
         "signals_detected": detected_signals,
         "issues": slop_issues,
+        "recommendations": list(slop_issues)
+        or (["İlk 3 saniyede merak uyandıran bir soru veya karşıt görüş kancası ekleyin."] if not hook_present_in_opening else []),
         "hook_sentence": first_sentence,
         "virality_reason": " | ".join(reason_parts) if reason_parts else "Standart metin",
         "word_count": word_count,

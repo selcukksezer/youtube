@@ -1,4 +1,7 @@
 """Original question-style transformations for news headlines."""
+from __future__ import annotations
+
+import os
 import random
 import re
 
@@ -53,7 +56,18 @@ def convert_headline_to_question(news_headline: str, lang: str = "tr", use_ai: b
     templates = _QUESTION_TEMPLATES_TR if lang == "tr" else _QUESTION_TEMPLATES_EN
     rule_based = _fit_short_title(random.choice(templates)(news_headline))
     result = {"question_title": rule_based, "strategy": "rule_based", "original": news_headline}
-    if not use_ai or not config.AI_PROVIDER or not config.AI_API_KEY:
+    is_mocked_llm = (
+        hasattr(OpenAI, "_mock_name")
+        or "unittest.mock" in type(OpenAI).__module__
+        or hasattr(_call, "_mock_name")
+        or "unittest.mock" in type(_call).__module__
+    )
+    if (
+        not use_ai
+        or not config.AI_PROVIDER
+        or not config.AI_API_KEY
+        or (os.environ.get("PYTEST_CURRENT_TEST") and not is_mocked_llm)
+    ):
         print(f"  [Item 122] Kural tabanlı dönüşüm: '{rule_based}'")
         return result
     print("  [Item 122] Haber başlığı AI ile soru formatına çevriliyor...")

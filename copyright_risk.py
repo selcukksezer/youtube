@@ -9,7 +9,8 @@ _KNOWN_CONTENTID_PATTERNS = [
     r"bbc[\s_-]?motion", r"nbc[\s_-]?universal", r"fox[\s_-]?news", r"cnn[\s_-]?footage",
     r"movie[\s_-]?clip", r"film[\s_-]?scene", r"trailer[\s_-]?official", r"epic[\s_-]?cinematic",
     r"hans[\s_-]?zimmer", r"disney[\s_-]?soundtrack", r"warner[\s_-]?music", r"sony[\s_-]?music",
-    r"universal[\s_-]?music",
+    r"universal[\s_-]?music", r"\bdisney\b", r"\bmarvel\b", r"\bnetflix\b", r"\bfifa\b",
+    r"premier[\s_-]?league", r"champions[\s_-]?league", r"\bnba\b", r"\buwcl\b",
 ]
 _COMPILED_PATTERNS = [re.compile(pattern, re.IGNORECASE) for pattern in _KNOWN_CONTENTID_PATTERNS]
 _SAFE_SOURCES = {
@@ -28,12 +29,12 @@ def scan_copyright_risk(clip_names: list, source_labels: list = None) -> dict:
         if any(source in item_str for source in _SAFE_SOURCES):
             safe_clips.append(item)
             continue
-        matched_pattern = next((pattern.pattern for pattern in _COMPILED_PATTERNS if pattern.search(item_str)), None)
-        if matched_pattern:
-            flagged.append({"item": item, "matched_pattern": matched_pattern, "risk": "high"})
-            recommendations.append(f"'{item}' → Pexels/Pixabay/AI üretimi ile değiştirin (eşleşen kalıp: {matched_pattern})")
-        elif any(keyword in item_str for keyword in ("official", "hd_download", "full_movie", "episode", "season")):
-            flagged.append({"item": item, "matched_pattern": "suspicious_keyword", "risk": "medium"})
+        matched_patterns = [pattern.pattern.replace(r"\b", "") for pattern in _COMPILED_PATTERNS if pattern.search(item_str)]
+        if matched_patterns:
+            flagged.append({"item": item, "matched_pattern": matched_patterns[0], "matched_keywords": matched_patterns, "risk": "high"})
+            recommendations.append(f"'{item}' → Pexels/Pixabay/AI üretimi veya yatay ayna (mirror) + ses pitch filtresi ile değiştirin ({', '.join(matched_patterns)})")
+        elif any(keyword in item_str for keyword in ("official", "hd_download", "full_movie", "episode", "season", "telif")):
+            flagged.append({"item": item, "matched_pattern": "suspicious_keyword", "matched_keywords": ["suspicious_keyword"], "risk": "medium"})
             recommendations.append(f"'{item}' → Kaynak lisansını doğrulayın veya alternatif kullanın.")
         else:
             safe_clips.append(item)

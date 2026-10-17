@@ -6,7 +6,7 @@ Hallucination Detection, and Cinematic Query Enrichment.
 import re
 import math
 import random
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Set
 
 CLOSING_GAZE_QUERY_HINTS = [
     "direct gaze camera portrait",

@@ -76,6 +76,8 @@ class KineticPage:
             "page_index": self.page_index,
             "start_ms": self.start_ms,
             "end_ms": self.end_ms,
+            "start": round(self.start_ms / 1000.0, 2),
+            "end": round(self.end_ms / 1000.0, 2),
             "text": self.text,
             "words": [
                 {

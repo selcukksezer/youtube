@@ -73,12 +73,19 @@ async def run_channel_warmup_endpoint(req: ChannelWarmupRequest):
 @router.post("/api/channel/studio_upload")
 def run_studio_upload_endpoint(req: ChannelStudioUploadRequest):
     """Executes Studio UI safe upload with jitter, ctime manipulation, and typing delays."""
+    from fastapi import HTTPException
+    from services.path_security import resolve_safe_media_path, UnsafePathError
+    try:
+        safe_video_path = resolve_safe_media_path(req.video_path)
+    except UnsafePathError as exc:
+        raise HTTPException(status_code=400, detail=f"Geçersiz video yolu: {exc}") from exc
+
     def log_handler(msg: str):
         broadcast_event("log", f"[StudioUI] {msg}")
 
     result = channel_bot.execute_studio_upload(
         channel_id_or_url=req.identifier,
-        video_path=req.video_path,
+        video_path=safe_video_path,
         title=req.title,
         description=req.description or "",
         tags=req.tags or [],

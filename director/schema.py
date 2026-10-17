@@ -160,6 +160,8 @@ class ScenePlan:
     source_citation: Optional[str] = None
     visual_mode: Optional[str] = None
     selected_video: Optional[Dict[str, Any]] = None
+    tension_score: float = 0.5
+    beat_category: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -205,6 +207,8 @@ class ScenePlan:
             source_citation=data.get("source_citation"),
             visual_mode=data.get("visual_mode"),
             selected_video=data.get("selected_video"),
+            tension_score=_finite_float_or(data.get("tension_score", 0.5), 0.5),
+            beat_category=str(data.get("beat_category", "")),
         )
 
 
@@ -344,11 +348,13 @@ class DirectorPlan:
             "loop_text": self.loop_text,
             "reddit_post": self.reddit_post,
             "director_plan": True,
+            "procedural_fallback": bool(meta.get("procedural_fallback", False)),
             "story_arc": self.story_arc,
             "hybrid_niche": meta.get("hybrid_niche"),
             "hybrid_split_screen": meta.get("hybrid_split_screen"),
             "hybrid_render_overlay": meta.get("hybrid_render_overlay"),
             "retention_metadata": meta.get("retention_metadata"),
+            **({"fact_snippets": meta["fact_snippets"]} if "fact_snippets" in meta else {}),
             "scenes": [
                 {
                     "index": s.index,
@@ -378,6 +384,8 @@ class DirectorPlan:
                     "source_citation": s.source_citation,
                     "visual_mode": s.visual_mode,
                     "selected_video": s.selected_video,
+                    "tension_score": s.tension_score,
+                    "beat_category": s.beat_category,
                 }
                 for s in self.scenes
             ],

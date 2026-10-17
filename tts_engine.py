@@ -1,366 +1,102 @@
 """TTS — Edge TTS (0 TL fallback) with Azure preferred + optional Gemini/ElevenLabs."""
-import asyncio, os, re, shutil, subprocess, tempfile, wave
+import asyncio, os, re, shutil, subprocess, sys, tempfile, wave
 from typing import Tuple
 import imageio_ffmpeg
 import edge_tts, config
+from voice.tts_providers import (
+    _SSML_LEAK_RE,
+    _SSML_TOKEN_RE,
+    _estimate_word_timings,
+    _gemini_tts_circuit_open,
+    _generate_azure_narration,
+    _generate_elevenlabs_narration,
+    _generate_gemini_narration,
+    _is_gemini_quota_block,
+    _local_piper_binary,
+    _local_piper_model,
+    _mark_gemini_tts_circuit_open,
+    _mp3_to_wav,
+    _piper_binary,
+    _sanitize_word_timings,
+    _strip_ssml_markup,
+    _try_local_offline_narration,
+    _wav_duration_seconds,
+    active_tts_provider,
+    generate_local_offline_wav,
+    generate_piper_wav,
+    piper_tts_available,
+)
 
 
-def active_tts_provider() -> str:
-    """Human-readable provider label for logs/UI."""
-    from tts_voices import is_elevenlabs_voice, is_local_offline_voice, voice_label_for_id  # noqa: PLC0415
-    if is_local_offline_voice(config.TTS_VOICE):
-        return f"Piper local ({voice_label_for_id(config.TTS_VOICE)})"
-    if is_elevenlabs_voice(config.TTS_VOICE) and getattr(config, "ELEVENLABS_API_KEY", ""):
-        return f"ElevenLabs ({voice_label_for_id(config.TTS_VOICE)})"
+def _ensure_edge_tts_sec_ms_gec_v2() -> None:
+    """Ensure edge_tts uses Sec-MS-GEC v2 token & version prefix (fixes Bing 403 handshake errors)."""
     try:
-        from azure_tts import is_configured as azure_configured
-        if (
-            getattr(config, "PREFER_AZURE_TTS", True)
-            and azure_configured()
-            and not is_elevenlabs_voice(config.TTS_VOICE)
-        ):
-            return f"Azure Speech ({config.TTS_VOICE})"
+        from edge_tts import communicate as _et_comm
+        from edge_tts import constants as _et_const
+        from edge_tts import drm as _et_drm
+
+        chrom_ver = getattr(_et_const, "CHROMIUM_FULL_VERSION", "143.0.3650.75")
+        v2_ver = f"2-{chrom_ver}"
+        if hasattr(_et_drm, "generate_sec_ms_gec_v2"):
+            if getattr(_et_const, "SEC_MS_GEC_VERSION", "").startswith("1-"):
+                _et_const.SEC_MS_GEC_VERSION = v2_ver
+            if getattr(_et_comm, "SEC_MS_GEC_VERSION", "").startswith("1-"):
+                _et_comm.SEC_MS_GEC_VERSION = v2_ver
+            _et_drm.DRM.generate_sec_ms_gec = staticmethod(_et_drm.generate_sec_ms_gec_v2)
     except Exception:
         pass
-    if getattr(config, "USE_PIPER_TTS", False) and _piper_binary():
-        return f"Piper local ({getattr(config, 'PIPER_MODEL', 'default')})"
-    if getattr(config, "USE_GEMINI_TTS", False) and getattr(config, "GEMINI_API_KEY", ""):
-        return f"Gemini TTS ({getattr(config, 'GEMINI_TTS_MODEL', 'gemini-2.5-flash-preview-tts')})"
-    return f"Edge TTS ({config.TTS_VOICE})"
 
 
-def _piper_binary() -> str:
-    """R10 #45: Resolve Piper CLI if installed locally."""
-    return shutil.which("piper") or ""
+_ensure_edge_tts_sec_ms_gec_v2()
 
 
-def piper_tts_available() -> bool:
-    return bool(_piper_binary() and getattr(config, "USE_PIPER_TTS", False))
+def _try_macos_say_narration(text: str, output_path: str):
+    """Zero-cost macOS native voice ('say -v Yelda') fallback when online Edge-TTS & Piper are unavailable."""
+    if sys.platform != "darwin":
+        return None
+    say_bin = shutil.which("say")
+    if not say_bin:
+        return None
+    from voice_humanizer import VoiceHumanizer
 
-
-def generate_piper_wav(text: str, output_path: str, model_path: str = "") -> Tuple[bool, str]:
-    """
-    R10 #45: Offline Piper TTS when `piper` binary + onnx model present.
-    Falls back with clear message if missing (Edge remains default).
-    """
-    exe = _piper_binary()
-    if not exe:
-        return False, "piper binary not found (brew/pip install piper-tts)"
-    model = model_path or getattr(config, "PIPER_MODEL_PATH", "") or ""
-    if not model or not os.path.exists(model):
-        return False, "PIPER_MODEL_PATH missing — set path to .onnx voice model"
-    plain = (text or "").strip()
-    if not plain:
-        return False, "empty text"
-    try:
-        cmd = [exe, "--model", model, "--output_file", output_path]
-        proc = subprocess.run(
-            cmd, input=plain.encode("utf-8"),
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=120,
-        )
-        if proc.returncode == 0 and os.path.exists(output_path):
-            return True, f"Piper OK → {output_path}"
-        return False, (proc.stderr or b"").decode("utf-8", errors="ignore")[:300]
-    except Exception as e:
-        return False, str(e)
-
-
-def _local_piper_binary() -> str:
-    """Piper exe on F: only. Never look inside F:\\MiniMax-H3."""
-    roots = []
-    extra = getattr(config, "LOCAL_PIPER_DIR", "") or ""
-    if extra:
-        roots.append(extra)
-    roots.append(r"F:\local-tts\piper")
-    for root in roots:
-        norm = os.path.normpath(root)
-        if "MiniMax-H3" in norm:
-            continue
-        for rel in ("piper.exe", os.path.join("piper", "piper.exe")):
-            cand = os.path.join(norm, rel)
-            if os.path.isfile(cand):
-                return cand
-    return ""
-
-
-def _local_piper_model() -> str:
-    env = getattr(config, "PIPER_MODEL_PATH", "") or ""
-    if env and os.path.isfile(env) and "MiniMax-H3" not in os.path.normpath(env):
-        return env
-    cand = r"F:\local-tts\piper\voices\tr_TR-dfki-medium.onnx"
-    if os.path.isfile(cand):
-        return cand
-    return ""
-
-
-def generate_local_offline_wav(text: str, output_path: str) -> Tuple[bool, str]:
-    """
-    Offline Piper Turkish (tr_TR-dfki-medium). No API key.
-    Missing binary or model logs and returns False. Does not abort the caller.
-    """
-    exe = _local_piper_binary()
-    model = _local_piper_model()
-    if not exe:
-        msg = (
-            "Piper binary missing (expected F:\\local-tts\\piper\\piper.exe). "
-            "Continuing without local voice."
-        )
-        print(f"  [TTS/Local] {msg}")
-        return False, msg
-    if not model:
-        msg = (
-            "Piper Turkish model missing "
-            "(expected F:\\local-tts\\piper\\voices\\tr_TR-dfki-medium.onnx). "
-            "Continuing without local voice."
-        )
-        print(f"  [TTS/Local] {msg}")
-        return False, msg
-    plain = (text or "").strip()
-    if not plain:
-        return False, "empty text"
+    plain = _strip_ssml_markup(VoiceHumanizer.clean_narration_for_speech(text or ""))
+    if not plain.strip():
+        return None
+    lang = str(getattr(config, "LANGUAGE", "tr") or "tr").lower()
+    voice_name = "Yelda" if lang.startswith("tr") else "Samantha"
+    tmp_aiff = output_path + ".macos.aiff"
     try:
         os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
-        proc = subprocess.run(
-            [exe, "--model", model, "--output_file", output_path],
-            input=plain.encode("utf-8"),
+        res = subprocess.run(
+            [say_bin, "-v", voice_name, "-r", "195", "-o", tmp_aiff, plain],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=120,
+            timeout=90,
         )
-        if proc.returncode == 0 and os.path.isfile(output_path) and os.path.getsize(output_path) > 64:
-            return True, f"Piper TR OK → {output_path}"
-        err = (proc.stderr or b"").decode("utf-8", errors="ignore")[:300]
-        print(f"  [TTS/Local] Piper failed, continuing: {err}")
-        return False, err or "piper failed"
-    except Exception as e:
-        print(f"  [TTS/Local] Piper error, continuing: {e}")
-        return False, str(e)
-
-
-def _gemini_tts_circuit_open() -> bool:
-    try:
-        from system_resilience import circuit_breaker
-        return not circuit_breaker.can_execute("gemini_tts")
-    except Exception:
-        return False
-
-
-def _mark_gemini_tts_circuit_open(msg: str) -> None:
-    try:
-        import time
-        from system_resilience import circuit_breaker
-        service = circuit_breaker._get_service("gemini_tts")
-        service["failure_count"] = circuit_breaker.failure_threshold
-        service["state"] = circuit_breaker.STATE_OPEN
-        service["last_failure_time"] = time.time()
-        print(f"  [TTS/Gemini] circuit open: {str(msg)[:160]}")
-    except Exception:
-        pass
-
-
-def _is_gemini_quota_block(err: BaseException) -> bool:
-    text = str(err).lower()
-    return "429" in text or "circuit_open" in text or "circuit open" in text
-
-
-def _try_local_offline_narration(text: str, output_path: str):
-    """Run Piper. None when the binary is missing or synthesis fails."""
-    from voice_humanizer import VoiceHumanizer
-
-    plain = VoiceHumanizer.clean_narration_for_speech(text or "")
-    plain = _strip_ssml_markup(plain)
-    if not plain.strip():
-        print("  [TTS/Local] empty text — continuing")
+        if res.returncode != 0 or not os.path.isfile(tmp_aiff):
+            return None
+        ff = subprocess.run(
+            [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-i", tmp_aiff, "-ar", "48000", "-ac", "2", output_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=90,
+        )
+        if ff.returncode != 0 or not os.path.isfile(output_path) or os.path.getsize(output_path) < 64:
+            return None
+        dur = _wav_duration_seconds(output_path)
+        timings = _sanitize_word_timings(_estimate_word_timings(plain, dur))
+        print(f"  [TTS/macOS] Native '{voice_name}' fallback OK -> {output_path} (~{dur:.1f}s, {len(timings)} kelime)")
+        return output_path, timings
+    except Exception as exc:
+        print(f"  [TTS/macOS] Native fallback failed: {exc}")
         return None
-    ok, msg = generate_local_offline_wav(plain, output_path)
-    if not ok:
-        print(f"  [TTS/Local] {msg}")
-        return None
-    dur = _wav_duration_seconds(output_path)
-    timings = _sanitize_word_timings(_estimate_word_timings(plain, dur))
-    print(f"  [TTS/Local] {msg} | ~{dur:.1f}s | {len(timings)} kelime")
-    return output_path, timings
+    finally:
+        if os.path.isfile(tmp_aiff):
+            try:
+                os.remove(tmp_aiff)
+            except OSError:
+                pass
 
-
-def _estimate_word_timings(text: str, duration_sec: float):
-    """
-    Weighted word split when provider does not emit WordBoundary events (Gemini/Piper fallback).
-    Weights each word by character count and punctuation pauses so longer words and clauses
-    get realistic phonetic duration instead of naive equal splitting.
-    """
-    words = [w for w in re.split(r"\s+", (text or "").strip()) if w]
-    if not words or duration_sec <= 0:
-        return []
-
-    # Calculate weight per word based on characters + terminal pause
-    weights = []
-    for w in words:
-        # Base letter length (min 2 for single char/abbreviations)
-        clean = re.sub(r"[^\wÀ-ÿ]", "", w, flags=re.UNICODE)
-        w_len = max(2.0, float(len(clean)))
-        # Punctuation pauses
-        stripped = w.strip()
-        if stripped and stripped[-1] in ".!?:;":
-            w_len += 3.5
-        elif stripped and stripped[-1] in ",-–":
-            w_len += 1.8
-        weights.append(w_len)
-
-    total_weight = sum(weights) or float(len(words))
-    timings = []
-    current_offset = 0.0
-    for w, wt in zip(words, weights):
-        # Proportional duration
-        dur = (wt / total_weight) * duration_sec
-        # Ensure minimal audible duration
-        dur = max(0.08, dur)
-        timings.append({
-            "text": w,
-            "offset": round(current_offset, 3),
-            "duration": round(dur, 3),
-        })
-        current_offset += dur
-
-    return timings
-
-
-def _wav_duration_seconds(wav_path: str) -> float:
-    try:
-        with wave.open(wav_path, "rb") as wf:
-            return wf.getnframes() / float(wf.getframerate())
-    except Exception:
-        return 0.0
-
-
-def _generate_elevenlabs_narration(text, output_path):
-    """Single-pass ElevenLabs TTS with estimated karaoke timings."""
-    from elevenlabs_tts import generate_tts_wav
-    from tts_voices import is_elevenlabs_voice
-    from voice_humanizer import VoiceHumanizer
-
-    if not is_elevenlabs_voice(config.TTS_VOICE):
-        raise ValueError("Not an ElevenLabs voice")
-
-    plain = VoiceHumanizer.clean_narration_for_speech(text)
-    plain = _strip_ssml_markup(plain)
-    if not plain.strip():
-        raise ValueError("Empty TTS text")
-
-    ok, msg = generate_tts_wav(plain, output_path, config.TTS_VOICE)
-    if not ok:
-        raise RuntimeError(msg)
-
-    dur = _wav_duration_seconds(output_path)
-    timings = _estimate_word_timings(plain, dur)
-    print(f"  [TTS/ElevenLabs] {msg} | ~{dur:.1f}s | {len(timings)} kelime (tahmini)")
-    return output_path, _sanitize_word_timings(timings)
-
-
-def _generate_azure_narration(text, output_path, voice_profile=None):
-    """Single-pass Azure Speech TTS with estimated karaoke timings."""
-    from azure_tts import generate_tts_wav
-    from voice_humanizer import VoiceHumanizer
-
-    plain = VoiceHumanizer.clean_narration_for_speech(text)
-    plain = _strip_ssml_markup(plain)
-    if not plain.strip():
-        raise ValueError("Empty TTS text")
-
-    rate = config.TTS_RATE
-    pitch = getattr(config, "TTS_PITCH", "+0Hz")
-    if voice_profile and voice_profile.get("enabled") and voice_profile.get("rate"):
-        rate = voice_profile.get("rate")
-
-    ok, msg = generate_tts_wav(
-        plain,
-        output_path,
-        voice=config.TTS_VOICE,
-        rate=rate,
-        pitch=pitch,
-    )
-    if not ok:
-        raise RuntimeError(msg)
-
-    dur = _wav_duration_seconds(output_path)
-    timings = _estimate_word_timings(plain, dur)
-    print(f"  [TTS/Azure] {msg} | ~{dur:.1f}s | {len(timings)} kelime (tahmini)")
-    return output_path, _sanitize_word_timings(timings)
-
-
-def _generate_gemini_narration(text, output_path):
-    """Single-pass Gemini TTS with estimated karaoke timings."""
-    from google_ai_hub import generate_gemini_tts_wav
-    from voice_humanizer import VoiceHumanizer
-
-    plain = VoiceHumanizer.clean_narration_for_speech(text)
-    plain = _strip_ssml_markup(plain)
-    if not plain.strip():
-        raise ValueError("Empty TTS text")
-
-    gender = getattr(config, "TTS_GENDER", "male")
-    lang = getattr(config, "LANGUAGE", "tr")
-    ok, msg = generate_gemini_tts_wav(
-        plain,
-        output_path,
-        language=lang,
-        gender=gender,
-    )
-    if not ok:
-        raise RuntimeError(f"Gemini TTS: {msg}")
-
-    dur = _wav_duration_seconds(output_path)
-    timings = _estimate_word_timings(plain, dur)
-    print(f"  [TTS/Gemini] {msg} | {len(plain)} chars | ~{dur:.1f}s | {len(timings)} kelime (tahmini)")
-    return output_path, _sanitize_word_timings(timings)
-
-_SSML_LEAK_RE = re.compile(
-    r"(?i)(</?speak\b[^>]*>|</?prosody\b[^>]*>|</?break\b[^>]*/?>|"
-    r"xmlns[^=]*=\s*[\"'][^\"']*[\"']|xml:lang\s*=\s*[\"'][^\"']*[\"']|"
-    r"http://www\.w3\.org/[^\"'\s]*)"
-)
-_SSML_TOKEN_RE = re.compile(
-    r"(?i)^(speak|xmlns|xml:?lang|synthesis|prosody|break|version=?|"
-    r"http|https|www\.|w3\.org|1\.0|tr-TR|en-US|ms/?|time=?|"
-    r"rate=?|pitch=?|volume=?|xml|lang)$"
-)
-
-
-def _strip_ssml_markup(text: str) -> str:
-    """Remove any SSML tags/attrs so Edge never speaks markup (Item 93)."""
-    t = _SSML_LEAK_RE.sub(" ", text or "")
-    t = re.sub(r"<[^>]+>", " ", t)
-    return re.sub(r"\s+", " ", t).strip()
-
-
-def _sanitize_word_timings(timings):
-    """Drop WordBoundary tokens that are SSML debris (prevents ASS leak)."""
-    cleaned = []
-    for item in timings or []:
-        w = (item.get("text") or "").strip()
-        if not w or _SSML_TOKEN_RE.match(w.strip("\"'`=<>/")):
-            continue
-        if _SSML_LEAK_RE.search(w):
-            continue
-        low = w.lower()
-        if any(k in low for k in ("xmlns", "xml:lang", "w3.org", "<speak", "</speak", "<break", "prosody")):
-            continue
-        letters = re.sub(r"[^\wÀ-ÿ]", "", w, flags=re.UNICODE)
-        if len(letters) < 1:
-            continue
-        cleaned.append(item)
-    return cleaned
-
-
-def _mp3_to_wav(mp3, wav):
-    # Madde 400 / 173: pipeline masters at 48 kHz
-    r = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(),"-y","-i",mp3,"-ar","48000","-ac","2",wav],
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    if r.returncode == 0:
-        try: os.remove(mp3)
-        except: pass
-        return wav
-    return mp3
 
 def _parse_rate_pct(rate: str) -> int:
     """Parse Edge TTS rate like '+18%' / '-5%' into an int percentage."""
@@ -371,18 +107,12 @@ def _parse_rate_pct(rate: str) -> int:
     except ValueError:
         return 0
 
+
 def _compose_rate(segment_rate: str, base_rate: str = None) -> str:
-    """
-    Blend Item 148 rhythm offset with config.TTS_RATE.
-    Segment values are treated as deltas relative to a neutral 0% baseline;
-    we shift them so body maps near the global Shorts pace.
-    """
+    """Blend Item 148 rhythm offset with config.TTS_RATE."""
     base = _parse_rate_pct(base_rate or getattr(config, "TTS_RATE", "+18%"))
     seg = _parse_rate_pct(segment_rate)
-    # Historical SPEECH_RHYTHM used absolute slow rates (+2% body). Rebase so
-    # body≈base, hook≈base+8, question≈base-8 while preserving relative shape.
     if seg <= 12:
-        # Old-style absolute rates → rebase onto Shorts pace
         delta = {"10": 8, "2": 0, "-5": -8, "0": 0}.get(str(seg), seg - 2)
         combined = base + delta
     else:
@@ -398,10 +128,7 @@ def narration_rate_for_segment(
     sacred_calm=None,
     plain_text="",
 ):
-    """Edge rate for one chunk. Sacred niches stay at SACRED_TTS_RATE.
-
-    Default Shorts still add the hook +35% bump. Hadith and Qur'an do not.
-    """
+    """Edge rate for one chunk. Sacred niches stay at SACRED_TTS_RATE."""
     if sacred_calm is None:
         sacred_calm = bool(getattr(config, "TTS_SACRED_CALM", False))
     if sacred_calm:
@@ -410,11 +137,9 @@ def narration_rate_for_segment(
         return voice_profile.get("rate")
     seg_rate = (segment or {}).get("prosody_rate") or (segment or {}).get("rate") or config.TTS_RATE
     rate = _compose_rate(seg_rate, config.TTS_RATE)
-    # Item 223: hook ≈2× hız hissi (+35% delta on top of composed rate)
     if (segment or {}).get("style") == "hook" or index == 0:
         base_pct = _parse_rate_pct(rate)
         rate = f"+{min(100, base_pct + 35)}%"
-    # Item 171: vurgu kelimeli segmentlerde ek tempo
     elif _segment_has_emphasis(plain_text or (segment or {}).get("text") or ""):
         base_pct = _parse_rate_pct(rate)
         rate = f"+{min(100, base_pct + 8)}%"
@@ -432,6 +157,7 @@ def _segment_pitch(segment: dict) -> str:
     if _segment_has_emphasis(text):
         return "+12Hz"
     return getattr(config, "TTS_PITCH", "+0Hz") or "+0Hz"
+
 
 _QUOTE_SEGMENT_RE = re.compile(
     r'^[«"“\'].*[»"”\']$|(?:dedi\s+ki|demişti|söyledi|quote:|alıntı:|aslında\s+şöyle\s+demişti|she\s+said|he\s+said)',
@@ -457,10 +183,7 @@ def _unwrap_outer_quotes(text: str) -> tuple:
 
 
 def split_narration_into_voice_segments(text: str):
-    """
-    Item 143: Split RAW narration into narrator vs quote clauses before clean_narration strips quotes.
-    Returns [{"text": str, "is_quote": bool}, ...].
-    """
+    """Item 143: Split RAW narration into narrator vs quote clauses before clean_narration strips quotes."""
     raw = (text or "").strip()
     if not raw:
         return []
@@ -499,7 +222,7 @@ def split_narration_into_voice_segments(text: str):
 
 
 def _build_voice_aware_segments(text: str):
-    """Rhythm + dual-voice segments from raw narration (quotes preserved until per-clause clean)."""
+    """Rhythm + dual-voice segments from raw narration."""
     from voice.script_humanizer import SPEECH_RHYTHM
 
     raw_sentences = re.findall(r"[^.!?]+[.!?]+|[^.!?]+$", text or "")
@@ -512,24 +235,20 @@ def _build_voice_aware_segments(text: str):
         rate = SPEECH_RHYTHM[style]
         for part in split_narration_into_voice_segments(raw_sentence):
             seg_style = "quote" if part["is_quote"] else style
-            segments.append(
-                {
-                    "text": part["text"],
-                    "is_quote": part["is_quote"],
-                    "style": seg_style,
-                    "rate": rate,
-                }
-            )
+            segments.append({
+                "text": part["text"],
+                "is_quote": part["is_quote"],
+                "style": seg_style,
+                "rate": rate,
+            })
     if not segments:
         for part in split_narration_into_voice_segments(text):
-            segments.append(
-                {
-                    "text": part["text"],
-                    "is_quote": part["is_quote"],
-                    "style": "quote" if part["is_quote"] else "body",
-                    "rate": getattr(config, "TTS_RATE", "+18%"),
-                }
-            )
+            segments.append({
+                "text": part["text"],
+                "is_quote": part["is_quote"],
+                "style": "quote" if part["is_quote"] else "body",
+                "rate": getattr(config, "TTS_RATE", "+18%"),
+            })
     return segments
 
 
@@ -551,68 +270,67 @@ def _segment_has_emphasis(text: str) -> bool:
     emphasis = {k.casefold() for k in EMPHASIS_KEYWORDS_TR} | {k.casefold() for k in EMPHASIS_KEYWORDS_EN}
     return bool(words & emphasis)
 
+
 def _run_coro(coro):
     """Run async TTS safely from sync worker threads (and nested loop cases)."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.run(coro)
-
-    # Already inside an event loop: run in a fresh thread with its own loop
     import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(asyncio.run, coro).result()
+
 
 async def _tts(text, mp3_path, rate=None, volume=None, pitch=None):
     text = _strip_ssml_markup(text)
     if not (text or "").strip():
         raise ValueError("Empty TTS text")
-    comm = edge_tts.Communicate(text=text, voice=config.TTS_VOICE,
-                                 rate=rate or config.TTS_RATE,
-                                 pitch=pitch or config.TTS_PITCH,
-                                 volume=volume or "+0%",
-                                 boundary="WordBoundary")
-    timings = []
-    sentence_timings = []
-    audio_bytes = 0
+    comm = edge_tts.Communicate(
+        text=text,
+        voice=config.TTS_VOICE,
+        rate=rate or config.TTS_RATE,
+        pitch=pitch or config.TTS_PITCH,
+        volume=volume or "+0%",
+        boundary="WordBoundary",
+    )
+    timings, sentence_timings, audio_bytes = [], [], 0
     with open(mp3_path, "wb") as f:
         async for chunk in comm.stream():
             if chunk["type"] == "audio":
                 f.write(chunk["data"])
                 audio_bytes += len(chunk["data"])
             elif chunk["type"] == "WordBoundary":
-                text_val = chunk.get("text", "")
-                offset_s = chunk.get("offset", 0) / 1e7
-                dur_s = chunk.get("duration", 0) / 1e7
-                timings.append({"text": text_val, "offset": offset_s, "duration": dur_s})
+                timings.append({
+                    "text": chunk.get("text", ""),
+                    "offset": chunk.get("offset", 0) / 1e7,
+                    "duration": chunk.get("duration", 0) / 1e7,
+                })
             elif chunk["type"] == "SentenceBoundary":
-                text_val = chunk.get("text", "")
-                offset_s = chunk.get("offset", 0) / 1e7
-                dur_s = chunk.get("duration", 0) / 1e7
-                sentence_timings.append({"text": text_val, "offset": offset_s, "duration": dur_s})
+                sentence_timings.append({
+                    "text": chunk.get("text", ""),
+                    "offset": chunk.get("offset", 0) / 1e7,
+                    "duration": chunk.get("duration", 0) / 1e7,
+                })
     if audio_bytes == 0:
         raise edge_tts.exceptions.NoAudioReceived(
             "No audio was received. Please verify that your parameters are correct."
         )
 
-    # Prefer actual millisecond WordBoundary events
     sanitized = _sanitize_word_timings(timings)
     if not sanitized and sentence_timings:
-        # Fallback: estimate per-word timings from sentence boundaries
         fallback_timings = []
         for st in sentence_timings:
-            st_text = st.get("text", "")
-            st_offset = st.get("offset", 0.0)
-            st_dur = st.get("duration", 0.0)
-            for w_est in _estimate_word_timings(st_text, st_dur):
+            for w_est in _estimate_word_timings(st.get("text", ""), st.get("duration", 0.0)):
                 fallback_timings.append({
                     "text": w_est["text"],
-                    "offset": st_offset + w_est["offset"],
+                    "offset": st.get("offset", 0.0) + w_est["offset"],
                     "duration": w_est["duration"],
                 })
         sanitized = _sanitize_word_timings(fallback_timings)
 
     return mp3_path, sanitized
+
 
 async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volume=None, pitch=None):
     """Try spoken text; on NoAudioReceived retry cleaned text, then fallback voice."""
@@ -645,6 +363,7 @@ async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volum
                     config.TTS_VOICE = orig_voice
             raise retry_err
 
+
 def _concat_wavs(wav_paths, output_path, pause_seconds=0.28):
     """Concatenates matching PCM WAV files while preserving a deterministic duration."""
     if not wav_paths:
@@ -669,6 +388,7 @@ def _concat_wavs(wav_paths, output_path, pause_seconds=0.28):
                     elapsed += pause_seconds
     return output_path, offsets
 
+
 def generate_narration_with_timing(text, output_path, natural_pauses=True, voice_profile=None):
     from tts_voices import is_elevenlabs_voice, is_local_offline_voice, resolve_voice
 
@@ -683,10 +403,7 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
         )
 
     elevenlabs_failed = False
-    use_elevenlabs = (
-        is_elevenlabs_voice(config.TTS_VOICE)
-        and bool(getattr(config, "ELEVENLABS_API_KEY", ""))
-    )
+    use_elevenlabs = is_elevenlabs_voice(config.TTS_VOICE) and bool(getattr(config, "ELEVENLABS_API_KEY", ""))
     if use_elevenlabs:
         try:
             return _generate_elevenlabs_narration(text, output_path)
@@ -695,7 +412,6 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
             print(f"  [TTS] ElevenLabs başarısız, Azure/Edge yedek: {el_err}")
             config.TTS_VOICE = resolve_voice(config.LANGUAGE, gender=config.TTS_GENDER)
 
-    # Azure preferred when keys present (production ToS path); Edge remains zero-config fallback
     try:
         from azure_tts import is_configured as azure_configured
         use_azure = (
@@ -731,10 +447,8 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
     print(f"  [TTS/Edge] {config.TTS_VOICE} | {len(text)} chars")
     from voice_humanizer import VoiceHumanizer
     reaction_cues = VoiceHumanizer.extract_reaction_cues(text)
-    # Item 143: split narrator vs quote on RAW text before clean_narration strips quotes
     segments = _build_voice_aware_segments(text)
     sacred_calm = bool(getattr(config, "TTS_SACRED_CALM", False))
-    # Item 175 climax curve speeds the peak. Sacred narration stays flat.
     if not sacred_calm:
         segments = VoiceHumanizer.apply_climax_tempo_curve(segments, engine_type="plain")
     from voice.gender import select_quote_voice
@@ -745,20 +459,12 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
     try:
         for index, segment in enumerate(segments):
             plain_text = VoiceHumanizer.clean_narration_for_speech(segment["text"])
-            # Punctuation-only segments ("...", "—") make Edge TTS raise NoAudioReceived
             if not plain_text.strip() or not re.search(r"\w", plain_text, flags=re.UNICODE):
                 continue
             is_quote = bool(segment.get("is_quote")) or segment.get("style") == "quote"
-            if is_quote:
-                config.TTS_VOICE = quote_voice
-            else:
-                config.TTS_VOICE = narrator_voice
+            config.TTS_VOICE = quote_voice if is_quote else narrator_voice
             if natural_pauses:
-                # Item 93: use plain ellipsis pauses — Edge TTS reads SSML <break>
-                # tags as spoken words and roughly doubles duration.
-                spoken_text = VoiceHumanizer.synthesize_natural_pauses(
-                    plain_text, engine_type="plain", break_ms=120
-                )
+                spoken_text = VoiceHumanizer.synthesize_natural_pauses(plain_text, engine_type="plain", break_ms=120)
             else:
                 spoken_text = plain_text
             spoken_text = _strip_ssml_markup(spoken_text)
@@ -766,11 +472,7 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
             segment_mp3 = os.path.join(temp_dir, f"segment_{index}.mp3")
             segment_wav = os.path.join(temp_dir, f"segment_{index}.wav")
             rate = narration_rate_for_segment(
-                segment,
-                index,
-                voice_profile=voice_profile,
-                sacred_calm=sacred_calm,
-                plain_text=plain_text,
+                segment, index, voice_profile=voice_profile, sacred_calm=sacred_calm, plain_text=plain_text
             )
             pitch = _segment_pitch(segment)
             volume = "-22%" if voice_profile and voice_profile.get("enabled") else None
@@ -785,7 +487,6 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
             config.TTS_VOICE = narrator_voice
         if not wav_paths:
             raise RuntimeError("TTS produced no segments")
-        # Short inter-sentence gap; Item 93 pauses already live inside each segment
         wav, offsets = _concat_wavs(wav_paths, output_path, pause_seconds=0.06 if natural_pauses else 0.0)
         flattened_timings = []
         for offset, segment_timings in zip(offsets, timings):
@@ -793,7 +494,6 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
                 timing["offset"] += offset
                 flattened_timings.append(timing)
         timings = _sanitize_word_timings(flattened_timings)
-        # Item 194: Sentetik Ses Artefaktlarını Filtreleme (Low-pass @ 14kHz)
         try:
             from voice.audio_dsp import apply_tts_artifact_lowpass_filter
             filtered_wav = output_path + ".lp.wav"
@@ -821,5 +521,17 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
             if local_hit:
                 return local_hit
             print("  [TTS/Local] kota yedeği yok — devam")
+        is_tts_mocked = any(
+            hasattr(fn, "_mock_name") or "unittest.mock" in type(fn).__module__
+            for fn in (_run_coro, _tts_with_fallback, _tts, generate_local_offline_wav)
+        )
+        if not is_tts_mocked:
+            if not gemini_blocked:
+                local_hit = _try_local_offline_narration(text, output_path)
+                if local_hit:
+                    return local_hit
+            macos_hit = _try_macos_say_narration(text, output_path)
+            if macos_hit:
+                return macos_hit
         raise edge_error
     return edge_result

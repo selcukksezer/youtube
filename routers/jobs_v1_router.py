@@ -44,9 +44,17 @@ class JobCreateRequest(BaseModel):
 
 
 def _run_job_worker(job_id: str, req: JobCreateRequest) -> None:
+    from server_core import state
     job = _JOBS.get(job_id)
     if not job:
         return
+    if job.get("cancel_requested"):
+        job["status"] = "CANCELLED"
+        job["current_stage"] = "ABORTED"
+        with state.render_lock:
+            state.is_rendering_active = False
+        return
+
     job["status"] = "RENDERING"
     job["started_at"] = time.time()
     job["current_stage"] = "INITIALIZING"
@@ -60,22 +68,43 @@ def _run_job_worker(job_id: str, req: JobCreateRequest) -> None:
         anti_duplicate=True,
         enable_ken_burns=True,
         auto_publish=req.auto_publish,
+        task_id=job_id,
     )
 
     try:
-        process_video_task(render_req)
-        job["status"] = "COMPLETED"
-        job["progress_pct"] = 100
-        job["current_stage"] = "FINISHED"
+        outcome = process_video_task(render_req, reset_cancel_request=False)
+        if outcome == "cancelled" or job.get("cancel_requested"):
+            job["status"] = "CANCELLED"
+            job["current_stage"] = "ABORTED"
+        elif outcome == "failed" or state.current_render_state.get("error"):
+            job["status"] = "FAILED"
+            job["current_stage"] = "FAILED"
+            job["error"] = state.current_render_state.get("error") or "Render failed"
+        else:
+            job["status"] = "COMPLETED"
+            job["progress_pct"] = 100
+            job["current_stage"] = "FINISHED"
+            job["output_path"] = state.current_render_state.get("video_url")
     except Exception as exc:
         logger.error(f"[JobsV1] Job {job_id} failed: {exc}")
         job["status"] = "FAILED"
+        job["current_stage"] = "FAILED"
         job["error"] = str(exc)
+    finally:
+        with state.render_lock:
+            state.is_rendering_active = False
 
 
 @router.post("/create", status_code=status.HTTP_202_ACCEPTED)
 def create_job(req: JobCreateRequest, background_tasks: BackgroundTasks) -> Dict[str, Any]:
     """POST /api/v1/jobs/create — Starts a new video creation job."""
+    from server_core import state
+    with state.render_lock:
+        if state.is_rendering_active:
+            raise HTTPException(status_code=429, detail="Başka bir render işlemi devam ediyor.")
+        state.current_render_state["cancel_requested"] = False
+        state.is_rendering_active = True
+
     job_id = str(uuid.uuid4())
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -111,6 +140,7 @@ def create_job(req: JobCreateRequest, background_tasks: BackgroundTasks) -> Dict
 @router.get("/{job_id}/status")
 def get_job_status(job_id: str) -> Dict[str, Any]:
     """GET /api/v1/jobs/{job_id}/status — Query real-time status and telemetry."""
+    from server_core import state
     job = _JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Görev bulunamadı (Job not found)")
@@ -118,8 +148,8 @@ def get_job_status(job_id: str) -> Dict[str, Any]:
     # Update elapsed & live render progress if active
     if job["status"] == "RENDERING" and job.get("started_at"):
         job["elapsed_sec"] = round(time.time() - job["started_at"], 1)
-        job["progress_pct"] = current_render_state.get("percent", job["progress_pct"])
-        job["current_stage"] = current_render_state.get("step", job["current_stage"])
+        job["progress_pct"] = state.current_render_state.get("percent", job["progress_pct"])
+        job["current_stage"] = state.current_render_state.get("step", job["current_stage"])
 
     return {
         "job_id": job["job_id"],
@@ -146,6 +176,7 @@ def cancel_job(job_id: str) -> Dict[str, Any]:
 
     # Also signal worker state
     from server_core import state
+    state.current_render_state["cancel_requested"] = True
     state.cancel_requested = True
 
     return {

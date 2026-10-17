@@ -10,8 +10,8 @@
 
 | Durum | Sayı | % |
 |-------|------|---|
-| Implemented | 77 | 77% |
-| Partial | 23 | 23% |
+| Implemented | 79 | 79% |
+| Partial | 21 | 21% |
 | Missing | 0 | 0% |
 | N/A-obsolete | 0 | 0% |
 
@@ -21,8 +21,8 @@
 
 | Bölüm | Aralık | Impl | Part | Miss | N/A |
 |-------|--------|------|------|------|-----|
-| 1 Niş | 1-35 | 34 | 1 | 0 | 0 |
-| 2 Bot | 36-80 | 30 | 15 | 0 | 0 |
+| 1 Niş | 1-35 | 35 | 0 | 0 | 0 |
+| 2 Bot | 36-80 | 31 | 14 | 0 | 0 |
 | 3 Büyüme | 81-100 | 13 | 7 | 0 | 0 |
 
 ## 3. Madde tablosu
@@ -48,7 +48,7 @@
 | 17 | Evrim ve Karşılaştırma (Before vs After) | **Implemented** | `niche_templates.py:NICHES + tests/smoke_test_100_features.py` | — | — |
 | 18 | Astroloji ve Günlük Burç Yorumları | **Implemented** | `niche_templates.py:NICHES + tests/smoke_test_100_features.py` | — | — |
 | 19 | Tarihin En Kanlı / En Büyük Olayları | **Implemented** | `niche_templates.py:NICHES + tests/smoke_test_100_features.py` | — | — |
-| 20 | WhatsApp / Mesajlaşma İtirafları | **Partial** | `niche_templates prompt only; no WhatsApp chat renderer` | P1 | — |
+| 20 | WhatsApp / Mesajlaşma İtirafları | **Implemented** | `whatsapp_chat_renderer.py (RGBA dark-mode chat bubble PNG + FFmpeg pop-in overlay)` | — | — |
 | 21 | Yapay Zeka Araçları & Web Sitesi Tüyoları | **Implemented** | `niche_templates.py:NICHES + tests/smoke_test_100_features.py` | — | — |
 | 22 | Emoji ile Film / Şarkı / Ülke Tahmin | **Implemented** | `niche_templates.py:NICHES + tests/smoke_test_100_features.py` | — | — |
 | 23 | Fitness & Hızlı Beslenme Tavsiyeleri | **Implemented** | `niche_templates.py:NICHES + tests/smoke_test_100_features.py` | — | — |
@@ -95,7 +95,7 @@
 | 64 | Canlı Video Önizleme | **Partial** | `API routes; timeline editor absent` | P2 | — |
 | 65 | Otomatik Telif Kontrolü (Copyright Checker) | **Partial** | `copyright_risk + growth_tactics.check_copyright_risk keyword` | P1 | — |
 | 66 | Görsel AI Entegrasyonu | **Partial** | `google_ai_hub.generate_image_bytes + visuals/ai_video (gated off)` | P1 | bb45e84 |
-| 67 | Konuşan Avatar (Talking Head / HeyGen Stili) | **Partial** | `apply_speaker_avatar_overlay static; lip-sync absent` | P2 | 500:#324 stub |
+| 67 | Konuşan Avatar (Talking Head / HeyGen Stili) | **Implemented** | `services/avatar_pipeline.py + apply_speaker_avatar_overlay(lip_sync=True)` | — | 500:#324 |
 | 68 | Süre ve Hız Optimizasyonu | **Implemented** | `config.TTS_RATE + voice/humanizer.py` | — | — |
 | 69 | API Kota Takipçisi | **Implemented** | `quota_manager.quota_tracker` | — | — |
 | 70 | Toplu Üretim Modu (Batch Generation) | **Implemented** | `batch_processor.batch_manager` | — | — |

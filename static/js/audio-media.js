@@ -1,10 +1,9 @@
 /**
  * ShortsAI Studio — Audio, TTS, SFX & Subtitle Lab (audio-media.js)
- * Covers Subtitle lab presets, SFX synthetic sound effects, BGM library & custom upload, and Edge/ElevenLabs TTS voice catalog.
+ * Covers Subtitle lab presets, SFX synthetic sound effects, and Edge/ElevenLabs TTS voice catalog.
  */
 
 const TTS_VOICE_STORAGE_KEY = 'shortsTtsVoice';
-
 
 const LOCAL_OFFLINE_VOICES = [
     { id: 'local:piper-tr', label: 'Piper Türkçe (çevrimdışı)', gender: 'male', quality: 'Local', native: true },
@@ -51,8 +50,6 @@ let ttsVoiceCatalog = {
 };
 let elevenlabsConfigured = false;
 
-
-// ══════════════════════════════════════════════════════════════
 // 6. ALTYAZI PRESET SEÇİCİ & ANİMASYON TESTİ (Items 42 & 43)
 // ══════════════════════════════════════════════════════════════
 const SUBTITLE_LAB_KEY = 'subtitleLabSettings';
@@ -208,10 +205,10 @@ document.querySelectorAll('.preset-card').forEach(card => {
         document.querySelectorAll('.preset-card').forEach(c => c.classList.remove('active'));
         card.classList.add('active');
         const p = card.getAttribute('data-preset');
-        selectSubPreset.value = p;
+        if (selectSubPreset) selectSubPreset.value = p;
         updateSubtitleSimulator();
         saveSubtitleLabSettings();
-        showToast(`🎨 '${card.querySelector('h4').textContent}' altyazı stili seçildi!`);
+        showToast(`🎨 '${card.querySelector('h4')?.textContent || p}' altyazı stili seçildi!`);
     });
 });
 
@@ -246,9 +243,6 @@ document.getElementById('btn-test-sub-animation')?.addEventListener('click', () 
     subtitleAnimationInterval = setInterval(advance, 400);
 });
 
-
-
-// ══════════════════════════════════════════════════════════════
 // 7. SES EFEKTLERİ (SFX) SENTEZLEYİCİ & DİNLEME (Item 48)
 // ══════════════════════════════════════════════════════════════
 function playSyntheticSound(type) {
@@ -292,107 +286,8 @@ document.getElementById('btn-play-whoosh')?.addEventListener('click', () => play
 document.getElementById('btn-play-pop')?.addEventListener('click', () => playSyntheticSound('pop'));
 document.getElementById('btn-play-ding')?.addEventListener('click', () => playSyntheticSound('ding'));
 
+// TTS SES KATALOĞU VE KONTROLLER
 // ══════════════════════════════════════════════════════════════
-
-
-// 8. BGM MÜZİK LİSTESİ + ÖZEL YÜKLEME (P3-32)
-// ══════════════════════════════════════════════════════════════
-document.getElementById('btn-bgm-upload')?.addEventListener('click', () => {
-    document.getElementById('input-bgm-upload')?.click();
-});
-
-document.getElementById('input-bgm-upload')?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const status = document.getElementById('bgm-upload-status');
-    const form = new FormData();
-    form.append('file', file);
-    try {
-        if (status) status.textContent = 'Yükleniyor...';
-        const res = await fetch('/api/bgm/upload', { method: 'POST', body: form });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.detail || 'Yükleme başarısız');
-        if (status) status.textContent = `✓ ${data.filename}`;
-        showToast(`BGM yüklendi: ${data.filename}`);
-        await loadBgmList();
-        const sel = document.getElementById('select-bgm-track');
-        const studioSel = document.getElementById('studio-bgm-track');
-        if (sel) sel.value = data.filename;
-        if (studioSel) studioSel.value = data.filename;
-    } catch (err) {
-        if (status) status.textContent = `Hata: ${err.message}`;
-        showToast(`BGM yükleme hatası: ${err.message}`, 'error');
-    }
-    e.target.value = '';
-});
-
-async function loadBgmList() {
-    const select = document.getElementById('select-bgm-track');
-    const studioSelect = document.getElementById('studio-bgm-track');
-    const audioStatus = document.getElementById('audio-pipeline-status');
-    const mediaStatus = document.getElementById('media-compliance-status');
-    if (!select && !studioSelect) return;
-    try {
-        const res = await fetch('/api/bgm/list?include_catalog=true');
-        const data = await res.json();
-        const detailed = data.tracks_detailed || (data.tracks || []).map(f => ({ filename: f, display: f }));
-        const fill = (el) => {
-            if (!el) return;
-            const prev = el.value;
-            el.innerHTML = '<option value="">🎵 Otomatik (Akıllı Niş / Telifsiz Seçim)</option><option value="none">🔇 Müziksiz (Sadece Seslendirme &amp; SFX)</option>';
-            detailed.forEach(t => {
-                const fn = t.filename || t;
-                const opt = document.createElement('option');
-                opt.value = fn;
-                const label = t.display || fn;
-                opt.textContent = t.downloaded === false ? `${label} (indirilecek)` : label;
-                el.appendChild(opt);
-            });
-            const savedBgm = restoreStudioSettings()?.bgmTrack;
-            const candidate = prev || savedBgm;
-            if (candidate && [...el.options].some(o => o.value === candidate)) el.value = candidate;
-        };
-        fill(select);
-        fill(studioSelect);
-        if (select && studioSelect && !select._bgmSyncBound) {
-            select._bgmSyncBound = true;
-            select.addEventListener('change', () => { studioSelect.value = select.value; });
-            studioSelect.addEventListener('change', () => { select.value = studioSelect.value; });
-        }
-        const duckAudio = document.getElementById('range-ducking-vol');
-        const duckStudio = document.getElementById('studio-ducking-vol');
-        if (duckAudio && duckStudio && !duckAudio._duckSyncBound) {
-            duckAudio._duckSyncBound = true;
-            duckAudio.addEventListener('input', () => { duckStudio.value = duckAudio.value; });
-            duckStudio.addEventListener('input', () => { duckAudio.value = duckStudio.value; });
-        }
-        if (audioStatus) {
-            const catalogCount = detailed.length || 0;
-            audioStatus.innerHTML = `
-                <div class="stat-pill"><span>135 Telifsiz BGM:</span><strong class="text-success">${catalogCount ? catalogCount + ' parça' : 'Sentezleniyor'}</strong></div>
-                <div class="stat-pill mt-2"><span>141 Nefes Katmanı:</span><strong class="text-success">8 sn aralıklı</strong></div>
-                <div class="stat-pill mt-2"><span>144 Voice Ducking:</span><strong class="text-primary">80 ms iniş / 200 ms dönüş</strong></div>
-                <div class="stat-pill mt-2"><span>145 Oda Ambiyansı:</span><strong class="text-primary">Hafif, -34 dB</strong></div>
-            `;
-        }
-        if (mediaStatus) {
-            mediaStatus.innerHTML = `
-                <div class="stat-pill"><span>136 Matematiksel SFX:</span><strong class="text-success">Sinüs / Kare Dalga</strong></div>
-                <div class="stat-pill mt-2"><span>137 Döngü Bağlaçları:</span><strong class="text-success">12 varyasyon</strong></div>
-                <div class="stat-pill mt-2"><span>138 Neon İlerleme:</span><strong class="text-success">Renderda aktif</strong></div>
-                <div class="stat-pill mt-2"><span>139 Arka Plan Dilimleme:</span><strong class="text-success">Rastgele başlangıç</strong></div>
-                <div class="stat-pill mt-2"><span>140 Yasal Bildirim:</span><strong class="text-success">SEO açıklamasına eklenir</strong></div>
-                <div class="stat-pill mt-2"><span>142 Konuşma Prosodisi:</span><strong class="text-primary">Kanca / soru ritmi</strong></div>
-                <div class="stat-pill mt-2"><span>143 Diyalog Sesleri:</span><strong class="text-primary">Konuşmacı bazlı</strong></div>
-            `;
-        }
-    } catch (e) {
-        console.error(e);
-    }
-}
-
-
-
 function genderLabel(g) {
     return g === 'female' ? 'Kadın' : 'Erkek';
 }
@@ -591,4 +486,3 @@ chkSplitScreen?.addEventListener('change', (ev) => {
         if (span) span.textContent = chkSplitScreen.checked ? 'Split-Screen: AÇIK' : 'Split-Screen Modunu Aç';
     }
 });
-

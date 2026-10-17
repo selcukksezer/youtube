@@ -189,15 +189,86 @@ def generate_stealth_js(profile: BrowserProfile) -> str:
         }};
     }})();
 
-    // ─── [RULE 3] WEBRTC LEAK SHIELD ─────────────────────────────
+    // ─── [RULE 3 & RULE 32] WEBRTC & STUN LOCAL IP LEAK SHIELD ──
     (() => {{
+        const RFC1918_RE = /(?:192\\.168\\.[0-9]{{1,3}}\\.[0-9]{{1,3}}|10\\.[0-9]{{1,3}}\\.[0-9]{{1,3}}\\.[0-9]{{1,3}}|172\\.(?:1[6-9]|2[0-9]|3[0-1])\\.[0-9]{{1,3}}\\.[0-9]{{1,3}}|169\\.254\\.[0-9]{{1,3}}\\.[0-9]{{1,3}}|fe80:[0-9a-fA-F:]+)/g;
+        const MDNS_HOST = '{profile.profile_id[:8] if getattr(profile, "profile_id", "") else "a1b2c3d4"}-mdns.local';
+
+        const scrubSdpOrCandidate = (str) => {{
+            if (!str || typeof str !== 'string') return str;
+            return str.replace(RFC1918_RE, MDNS_HOST);
+        }};
+
+        const wrapCandidateEvent = (listener) => {{
+            if (typeof listener !== 'function') return listener;
+            return function(event) {{
+                if (event && event.candidate && event.candidate.candidate) {{
+                    const raw = String(event.candidate.candidate);
+                    if (raw.includes('typ host') || raw.includes('srflx') || RFC1918_RE.test(raw)) {{
+                        const scrubbed = scrubSdpOrCandidate(raw);
+                        if (raw.includes('typ srflx')) {{
+                            return; // drop direct STUN server-reflexive IP leak
+                        }}
+                        try {{
+                            const maskedCand = new RTCIceCandidate({{
+                                candidate: scrubbed,
+                                sdpMid: event.candidate.sdpMid,
+                                sdpMLineIndex: event.candidate.sdpMLineIndex,
+                                usernameFragment: event.candidate.usernameFragment
+                            }});
+                            return listener.call(this, {{ ...event, candidate: maskedCand }});
+                        }} catch (e) {{
+                            return;
+                        }}
+                    }}
+                }}
+                return listener.call(this, event);
+            }};
+        }};
+
         const OrigRTCPeerConnection = window.RTCPeerConnection || window.webkitRTCPeerConnection;
         if (OrigRTCPeerConnection) {{
-            const webrtcProxy = function(config) {{
-                if (config && config.iceServers) {{
-                    config.iceServers = config.iceServers.filter(s => !s.urls || !String(s.urls).includes('stun.'));
+            const webrtcProxy = function(config, constraints) {{
+                const safeConfig = Object.assign({{}}, config || {{}});
+                if (Array.isArray(safeConfig.iceServers)) {{
+                    safeConfig.iceServers = safeConfig.iceServers.filter(s => {{
+                        const urls = Array.isArray(s.urls) ? s.urls.join(' ') : String(s.urls || s.url || '');
+                        return !urls.includes('stun.') && !urls.includes('stun:') && !urls.includes('turn:');
+                    }});
+                }} else {{
+                    safeConfig.iceServers = [];
                 }}
-                const pc = new OrigRTCPeerConnection(config);
+                safeConfig.iceTransportPolicy = 'relay';
+                const pc = new OrigRTCPeerConnection(safeConfig, constraints);
+
+                const origAddEventListener = pc.addEventListener.bind(pc);
+                pc.addEventListener = function(type, listener, options) {{
+                    if (type === 'icecandidate') {{
+                        return origAddEventListener(type, wrapCandidateEvent(listener), options);
+                    }}
+                    return origAddEventListener(type, listener, options);
+                }};
+
+                Object.defineProperty(pc, 'onicecandidate', {{
+                    get: () => pc._maskedOnIceCandidate || null,
+                    set: (fn) => {{
+                        pc._maskedOnIceCandidate = wrapCandidateEvent(fn);
+                        origAddEventListener('icecandidate', pc._maskedOnIceCandidate);
+                    }},
+                    configurable: true
+                }});
+
+                if (pc.createOffer) {{
+                    const origCreateOffer = pc.createOffer.bind(pc);
+                    pc.createOffer = function(...args) {{
+                        return origCreateOffer(...args).then(offer => {{
+                            if (offer && offer.sdp) {{
+                                offer.sdp = scrubSdpOrCandidate(offer.sdp);
+                            }}
+                            return offer;
+                        }});
+                    }};
+                }}
                 return pc;
             }};
             webrtcProxy.prototype = OrigRTCPeerConnection.prototype;
@@ -310,6 +381,8 @@ def get_chrome_cli_args(profile: BrowserProfile, user_data_dir: Optional[str] = 
         f"--window-size={profile.viewport_width},{profile.viewport_height}",
         f"--lang={profile.accept_language}",
         "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+        "--webrtc-ip-handling-policy=default_public_interface_only",
+        "--enforce-webrtc-ip-permission-check",
         "--disable-blink-features=AutomationControlled",
         "--disable-infobars",
         "--no-first-run",

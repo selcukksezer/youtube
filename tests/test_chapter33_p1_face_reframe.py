@@ -98,13 +98,15 @@ class TestChapter33P1FaceReframe(unittest.TestCase):
 
         mock_popen.side_effect = fake_popen
 
-        render_with_ffmpeg_graph(
-            clips=clips,
-            audio_path="audio.mp3",
-            output_path="out.mp4",
-            enable_face_center=True,
-            progress_callback=lambda p, m: None,
-        )
+        import config
+        with patch.object(config, "RENDER_RESOLUTION_MODE", "1080p"):
+            render_with_ffmpeg_graph(
+                clips=clips,
+                audio_path="audio.mp3",
+                output_path="out.mp4",
+                enable_face_center=True,
+                progress_callback=lambda p, m: None,
+            )
 
         mock_face_crop.assert_called_once()
         self.assertTrue(len(captured_cmds) > 0)

@@ -1,16 +1,18 @@
 """
 FastAPI routers package.
 """
-from .config_router import router as config_router
-from .video_router import router as video_router
-from .media_router import router as media_router
-from .research_router import router as research_router
-from .channel_router import router as channel_router
-from .system_router import router as system_router
-from .google_ai_router import router as google_ai_router
-from .kids_song_router import router as kids_song_router
-from .clipper_router import router as clipper_router
-from .jobs_v1_router import router as jobs_v1_router
+from . import (
+    channel_router,
+    clipper_router,
+    config_router,
+    google_ai_router,
+    jobs_v1_router,
+    kids_song_router,
+    media_router,
+    research_router,
+    system_router,
+    video_router,
+)
 
 __all__ = [
     "config_router",

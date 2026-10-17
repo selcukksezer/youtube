@@ -13,12 +13,18 @@ ENV/
 .env
 .env.local
 .env.*.local
+.env.corrupt.bak
+.env.*.bak
 !.env.example
 !.env.vault
 *.pem
 *.key
 credentials.json
 tokens/
+.serena/
+.gitnexus/
+.claude/
+.agents/
 
 # Test / temp artifacts
 .pytest_cache/

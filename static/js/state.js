@@ -1,12 +1,12 @@
 /**
- * ShortsAI Studio — State & Core Utilities (state.js)
- * Manages reactive application state, local storage persistence, DOM bindings, and quality checks.
+ * ShortsAI Studio — Core State Object & Initialization (state.js)
+ * Manages reactive application state, getters/setters, DOM element cache, and quality panel status.
  */
 
 window.ShortsApp = window.ShortsApp || {};
 
 // Shared State Container
-window.ShortsApp.state = {
+window.ShortsApp.state = window.ShortsApp.state || {
     currentPlan: null,
     timelineReviewed: false,
     qualityPanelGreen: false,
@@ -49,7 +49,8 @@ window.ShortsApp.state = {
 var navButtons, tabPanes, pageTitle, pageDesc,
     inputTopic, selectNiche, selectSubPreset, selectLanguage, selectTtsVoice,
     selectGameplayCategory, gameplayCategoryWrap, chkSplitScreen,
-    chkAntiDuplicate, chkKenBurns, chkZoompan, chkAutoPublish,
+    chkAntiDuplicate, chkKenBurns, chkZoompan, chkBrollInsert, chkCenterFace,
+    chkEmphasisCard, chkEmphasisCardLab, chkAllowSimilarScript, chkAutoPublish,
     btnCreateScript, btnQuickRender, btnRegenerateScriptStudio,
     livePlayer, mockupPlaceholder, mockupStatusText,
     persistentMonitor, dockStepTitle, dockLogSnippet, dockProgressFill, dockProgressPct,
@@ -114,132 +115,25 @@ function initDomElements() {
     terminalBody = document.getElementById('terminal-log-body');
     btnCloseLog = document.getElementById('btn-close-log');
 
-    window.inputTopic = inputTopic;
-    window.selectNiche = selectNiche;
-    window.selectSubPreset = selectSubPreset;
-    window.selectLanguage = selectLanguage;
-    window.selectTtsVoice = selectTtsVoice;
-    window.selectGameplayCategory = selectGameplayCategory;
-    window.gameplayCategoryWrap = gameplayCategoryWrap;
-    window.chkSplitScreen = chkSplitScreen;
-    window.chkAntiDuplicate = chkAntiDuplicate;
-    window.chkKenBurns = chkKenBurns;
-    window.chkZoompan = chkZoompan;
-    window.chkBrollInsert = chkBrollInsert;
-    window.chkCenterFace = chkCenterFace;
-    window.chkEmphasisCard = chkEmphasisCard;
-    window.chkEmphasisCardLab = chkEmphasisCardLab;
-    window.chkAllowSimilarScript = chkAllowSimilarScript;
     if (chkAllowSimilarScript) {
         chkAllowSimilarScript.addEventListener('change', () => {
             const plag = currentPlan?.plagiarism || currentPlan?.meta?.plagiarism;
             if (plag) applyPlagiarismBadge(plag);
         });
     }
-    window.chkAutoPublish = chkAutoPublish;
-    window.btnCreateScript = btnCreateScript;
-    window.btnQuickRender = btnQuickRender;
-    window.btnRegenerateScriptStudio = btnRegenerateScriptStudio;
-    window.navButtons = navButtons;
-    window.tabPanes = tabPanes;
-    window.pageTitle = pageTitle;
-    window.pageDesc = pageDesc;
-    window.persistentMonitor = persistentMonitor;
-    window.dockStepTitle = dockStepTitle;
-    window.dockLogSnippet = dockLogSnippet;
-    window.dockProgressFill = dockProgressFill;
-    window.dockProgressPct = dockProgressPct;
-    window.btnToggleLog = btnToggleLog;
-    window.btnCancelRender = btnCancelRender;
-    window.btnCloseDock = btnCloseDock;
-    window.dockSpinner = dockSpinner;
-    window.terminalPanel = terminalPanel;
-    window.terminalBody = terminalBody;
-    window.btnCloseLog = btnCloseLog;
-}
-
-// Call immediately on script load because script tag is located at bottom of body
-initDomElements();
-
-
-const PLAN_STORAGE_KEY = 'shortsCurrentPlan';
-const PLAN_SCHEMA_VERSION = 2;
-
-function sanitizeTopicTitleForDisplay(title) {
-    let t = (title || '').trim();
-    if (!t) return '';
-    t = t.replace(/[\u{10000}-\u{10FFFF}]/gu, '');
-    t = t.replace(/[\u2600-\u27BF\uFE00-\uFE0F]/g, '');
-    t = t.replace(/#[\p{L}\p{N}_]+/gu, ' ');
-    t = t.replace(/[^\p{L}\p{N}\s\-&]/gu, ' ');
-    t = t.replace(/\s+/g, ' ').trim();
-    return t || (title || '').trim();
-}
-
-function sceneDescriptionUsable(text) {
-    const raw = (text || '').trim();
-    if (!raw || raw.length < 12) return false;
-    if (/^(?:\(?\s*scene[_\s-]?description\s*\)?|\.\.\.|tbd|n\/a|placeholder|desc(?:ription)?)\s*$/i.test(raw)) return false;
-    const lower = raw.toLowerCase();
-    if (lower.includes('scene_description') && raw.length < 40) return false;
-    if (['description', 'visual', 'n/a', 'tbd', '...'].includes(lower)) return false;
-    return true;
-}
-
-function planHasBrokenNarration(plan) {
-    const scenes = plan?.scenes || [];
-    if (!scenes.length) return true;
-    return scenes.some(sc => {
-        const raw = (sc.narration || '').trim();
-        if (!raw || raw === '.' || raw === '-' || raw === '—' || raw === '...') return true;
-        const norm = raw
-            .replace(/\*\*(?:URGENT|DRAMATIC|EPIC|CALM|MYSTERIOUS|ENERGETIC|DARK|BRIGHT|SECRET|WARNING|HOOK|CTA)\*\*\s*/gi, '')
-            .replace(/[\u{10000}-\u{10FFFF}]/gu, '')
-            .replace(/[\u2600-\u27BF\uFE00-\uFE0F]/g, '')
-            .replace(/[#*_~^\\/|<>@=`\[\]{}]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-        const words = norm.split(/\s+/).filter(Boolean);
-        if (words.length < 5) return true;
-        return false;
+    Object.assign(window, {
+        inputTopic, selectNiche, selectSubPreset, selectLanguage, selectTtsVoice,
+        selectGameplayCategory, gameplayCategoryWrap, chkSplitScreen, chkAntiDuplicate,
+        chkKenBurns, chkZoompan, chkBrollInsert, chkCenterFace, chkEmphasisCard,
+        chkEmphasisCardLab, chkAllowSimilarScript, chkAutoPublish, btnCreateScript,
+        btnQuickRender, btnRegenerateScriptStudio, navButtons, tabPanes, pageTitle,
+        pageDesc, persistentMonitor, dockStepTitle, dockLogSnippet, dockProgressFill,
+        dockProgressPct, btnToggleLog, btnCancelRender, btnCloseDock, dockSpinner,
+        terminalPanel, terminalBody, btnCloseLog
     });
 }
 
-const STUDIO_SETTINGS_STORAGE_KEY = 'shortsStudioSettings';
-
-function saveStudioSettings() {
-    try {
-        const settings = {
-            topic: (inputTopic?.value || '').trim(),
-            niche: selectNiche?.value || '',
-            subtitlePreset: selectSubPreset?.value || '',
-            language: selectLanguage?.value || '',
-            ttsVoice: selectTtsVoice?.value || '',
-            bgmTrack: document.getElementById('studio-bgm-track')?.value || '',
-            resolution: document.getElementById('select-render-resolution')?.value || '',
-            safeMode: document.getElementById('select-studio-safe-mode')?.value || '',
-            contentGaps: document.getElementById('content-gap-topics')?.value || '',
-            splitScreen: chkSplitScreen ? !!chkSplitScreen.checked : false,
-            gameplayCategory: selectGameplayCategory?.value || '',
-            antiDuplicate: chkAntiDuplicate ? !!chkAntiDuplicate.checked : true,
-            kenBurns: chkKenBurns ? !!chkKenBurns.checked : true,
-            zoompan: chkZoompan ? !!chkZoompan.checked : false,
-            brollInsert: chkBrollInsert ? !!chkBrollInsert.checked : false,
-            centerFace: chkCenterFace ? !!chkCenterFace.checked : false,
-            emphasisCard: (chkEmphasisCard ? !!chkEmphasisCard.checked : (chkEmphasisCardLab ? !!chkEmphasisCardLab.checked : false)),
-            enableBgm: document.getElementById('chk-enable-bgm')
-                ? !!document.getElementById('chk-enable-bgm').checked
-                : true,
-            enableOutro: document.getElementById('chk-enable-outro')
-                ? !!document.getElementById('chk-enable-outro').checked
-                : true,
-            introWhoosh: !!document.getElementById('chk-intro-whoosh')?.checked,
-            userManuallyPickedNiche: !!userManuallyPickedNiche,
-            savedAt: Date.now()
-        };
-        localStorage.setItem(STUDIO_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-    } catch (e) {}
-}
+initDomElements();
 
 function restoreStudioSettings() {
     try {
@@ -254,10 +148,8 @@ function restoreStudioSettings() {
         if (s.topic && inputTopic && (!inputTopic.value.trim() || inputTopic.value.includes('Marcus Aurelius'))) {
             inputTopic.value = s.topic;
         }
-        if (s.niche && selectNiche) {
-            if ([...selectNiche.options].some(o => o.value === s.niche)) {
-                selectNiche.value = s.niche;
-            }
+        if (s.niche && selectNiche && [...selectNiche.options].some(o => o.value === s.niche)) {
+            selectNiche.value = s.niche;
         }
         if (s.subtitlePreset && selectSubPreset) {
             selectSubPreset.value = s.subtitlePreset;
@@ -285,10 +177,8 @@ function restoreStudioSettings() {
                 }
             }
         }
-        if (s.ttsVoice && selectTtsVoice) {
-            if ([...selectTtsVoice.options].some(o => o.value === s.ttsVoice)) {
-                selectTtsVoice.value = s.ttsVoice;
-            }
+        if (s.ttsVoice && selectTtsVoice && [...selectTtsVoice.options].some(o => o.value === s.ttsVoice)) {
+            selectTtsVoice.value = s.ttsVoice;
         }
         if (s.bgmTrack) {
             const el = document.getElementById('studio-bgm-track');
@@ -316,21 +206,11 @@ function restoreStudioSettings() {
         if (s.gameplayCategory && selectGameplayCategory) {
             selectGameplayCategory.value = s.gameplayCategory;
         }
-        if (s.antiDuplicate !== undefined && chkAntiDuplicate) {
-            chkAntiDuplicate.checked = !!s.antiDuplicate;
-        }
-        if (s.kenBurns !== undefined && chkKenBurns) {
-            chkKenBurns.checked = !!s.kenBurns;
-        }
-        if (s.zoompan !== undefined && chkZoompan) {
-            chkZoompan.checked = !!s.zoompan;
-        }
-        if (s.brollInsert !== undefined && chkBrollInsert) {
-            chkBrollInsert.checked = !!s.brollInsert;
-        }
-        if (s.centerFace !== undefined && chkCenterFace) {
-            chkCenterFace.checked = !!s.centerFace;
-        }
+        if (s.antiDuplicate !== undefined && chkAntiDuplicate) chkAntiDuplicate.checked = !!s.antiDuplicate;
+        if (s.kenBurns !== undefined && chkKenBurns) chkKenBurns.checked = !!s.kenBurns;
+        if (s.zoompan !== undefined && chkZoompan) chkZoompan.checked = !!s.zoompan;
+        if (s.brollInsert !== undefined && chkBrollInsert) chkBrollInsert.checked = !!s.brollInsert;
+        if (s.centerFace !== undefined && chkCenterFace) chkCenterFace.checked = !!s.centerFace;
         if (s.emphasisCard !== undefined) {
             if (chkEmphasisCard) chkEmphasisCard.checked = !!s.emphasisCard;
             if (chkEmphasisCardLab) chkEmphasisCardLab.checked = !!s.emphasisCard;
@@ -359,124 +239,6 @@ function restoreStudioSettings() {
     }
 }
 
-function updateTimelineTopicDesc(plan) {
-    const descEl = document.getElementById('timeline-project-desc');
-    if (!descEl) return;
-    const raw = (inputTopic?.value || plan?.title || '').trim();
-    const clean = sanitizeTopicTitleForDisplay(raw);
-    if (raw && clean && raw !== clean) {
-        descEl.textContent = `Konu: ${clean}`;
-    } else {
-        descEl.textContent = 'Her sahnenin metnini, süresini, arama terimlerini ve mood\'unu özelleştirin.';
-    }
-}
-
-function persistCurrentPlan() {
-    try {
-        if (currentPlan && Array.isArray(currentPlan.scenes) && currentPlan.scenes.length) {
-            localStorage.setItem(PLAN_STORAGE_KEY, JSON.stringify({
-                planVersion: PLAN_SCHEMA_VERSION,
-                plan: currentPlan,
-                topic: inputTopic?.value || '',
-                niche: selectNiche?.value || '',
-                savedAt: Date.now()
-            }));
-        }
-        saveStudioSettings();
-    } catch (e) {}
-}
-
-function restoreCurrentPlan() {
-    try {
-        const raw = localStorage.getItem(PLAN_STORAGE_KEY);
-        if (!raw) return false;
-        const packed = JSON.parse(raw);
-        if (packed?.scenes?.length && !packed?.plan) {
-            try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
-            showToast('Eski senaryo formatı temizlendi — yeniden üretin', 'warn');
-            return false;
-        }
-        if (!packed?.plan?.scenes?.length) return false;
-        // Expire after 7 days
-        if (packed.savedAt && Date.now() - packed.savedAt > 7 * 864e5) {
-            try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
-            return false;
-        }
-        if (packed.planVersion !== PLAN_SCHEMA_VERSION) {
-            try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
-            showToast('Eski senaryo sürümü temizlendi — yeniden üretin', 'warn');
-            return false;
-        }
-        if (planHasBrokenNarration(packed.plan)) {
-            try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
-            showToast('Bozuk senaryo temizlendi — yeniden üretin', 'warn');
-            return false;
-        }
-        currentPlan = packed.plan;
-        if (packed.topic && inputTopic && (!inputTopic.value.trim() || inputTopic.value.includes('Marcus Aurelius'))) {
-            inputTopic.value = packed.topic;
-        }
-        if (packed.niche && selectNiche) selectNiche.value = packed.niche;
-        return true;
-    } catch (e) {
-        return false;
-    }
-}
-
-function setCurrentPlan(plan, opts = {}) {
-    currentPlan = plan;
-    if (plan) {
-        if (opts.renderTimeline !== false && typeof renderTimelineScenes === 'function') {
-            try { renderTimelineScenes(plan); } catch (_) {}
-        }
-        persistCurrentPlan();
-        updateFlowRail('timeline');
-        if (!opts.skipQualityPanel) {
-            updateStudioQualityPanel(plan).catch(() => {});
-        }
-    }
-    updateScriptActionButtons();
-    try {
-        window.dispatchEvent(new CustomEvent('shorts:planChanged', { detail: { plan, opts } }));
-    } catch (_) {}
-}
-
-function hasExistingPlan() {
-    return !!(currentPlan?.scenes?.length);
-}
-
-function navigateToScenario({ silent = false } = {}) {
-    if (!hasExistingPlan()) {
-        showToast('Once senaryo olusturun', 'warn');
-        return false;
-    }
-    renderTimelineScenes(currentPlan);
-    updateFlowRail('timeline');
-    switchTab('timeline');
-    if (!silent) showToast('Senaryo acildi — duzenleyip render alabilirsiniz');
-    return true;
-}
-
-function clearCurrentScenario() {
-    if (!hasExistingPlan()) {
-        inputTopic?.focus();
-        return;
-    }
-    if (!confirm('Mevcut senaryo silinecek. Yeni konu ile devam edilsin mi?')) return;
-
-    currentPlan = null;
-    timelineReviewed = false;
-    qualityPanelGreen = false;
-    try { localStorage.removeItem(PLAN_STORAGE_KEY); } catch (e) {}
-    renderTimelineScenes({ title: '', scenes: [] });
-    updateStudioQualityPanel(null).catch(() => {});
-    updateFlowRail('topic');
-    updateScriptActionButtons();
-    saveStudioSettings();
-    inputTopic?.focus();
-    showToast('Senaryo temizlendi — yeni konu girin');
-}
-
 function updateScriptActionButtons() {
     const btn = document.getElementById('btn-create-script');
     const btnNewTopic = document.getElementById('btn-new-topic');
@@ -486,23 +248,28 @@ function updateScriptActionButtons() {
     const btnCopyStudio = document.getElementById('btn-copy-script-studio');
     if (!btn) return;
 
-    const ready = hasExistingPlan();
-    const sourceLanguage = String(currentPlan?.language || currentPlan?.lang || window.APP_STATE?.language || 'tr').slice(0, 2);
-    const targetLanguage = selectLanguage?.value || window.APP_STATE?.language || 'tr';
     const currentTopic = (inputTopic?.value || '').trim();
     const planTopic = (currentPlan?.title || currentPlan?.topic || currentPlan?.keyword || '').trim();
-    const topicChanged = ready && currentTopic && planTopic && (currentTopic.toLowerCase() !== planTopic.toLowerCase());
+    const ready = hasExistingPlan() && Boolean(currentTopic);
+    const sourceLanguage = String(currentPlan?.language || currentPlan?.lang || window.APP_STATE?.language || 'tr').slice(0, 2);
+    const targetLanguage = selectLanguage?.value || window.APP_STATE?.language || 'tr';
+    const topicChanged = ready && Boolean(planTopic) && (currentTopic.toLowerCase() !== planTopic.toLowerCase());
+    const activePlanReady = ready && !topicChanged;
     const isGenerating = btn.dataset.generating === 'true';
 
-    btnNewTopic?.classList.toggle('hidden', !ready);
-    btnRegenerateStudio?.classList.toggle('hidden', !ready);
-    btnRegenerateTimeline?.classList.toggle('hidden', !ready);
-    btnTranslateScript?.classList.toggle('hidden', !ready || sourceLanguage === targetLanguage);
-    btnCopyStudio?.classList.toggle('hidden', !ready);
+    btnNewTopic?.classList.toggle('hidden', !activePlanReady);
+    btnRegenerateStudio?.classList.toggle('hidden', !activePlanReady);
+    btnRegenerateTimeline?.classList.toggle('hidden', !hasExistingPlan());
+    btnTranslateScript?.classList.toggle('hidden', !activePlanReady || sourceLanguage === targetLanguage);
+    btnCopyStudio?.classList.toggle('hidden', !activePlanReady);
     btn.disabled = isGenerating || (!ready && !currentTopic);
     if (btnTranslateScript && sourceLanguage !== targetLanguage) {
         const targetName = targetLanguage === 'en' ? 'İngilizceye' : 'Türkçeye';
-        btnTranslateScript.querySelector('span').textContent = `Senaryoyu ${targetName} Çevir`;
+        const spanEl = btnTranslateScript.querySelector('span');
+        if (spanEl) spanEl.textContent = `Senaryoyu ${targetName} Çevir`;
+    }
+    if (typeof window.syncWizardStep2Preview === 'function') {
+        window.syncWizardStep2Preview();
     }
 
     if (isGenerating) return;
@@ -535,6 +302,23 @@ function setSqpPill(id, text, state) {
     el.textContent = '';
     if (icon) el.appendChild(icon);
     el.append(document.createTextNode(' ' + text));
+}
+
+function directorCadenceStatus(sceneCount) {
+    if (sceneCount === 6) return 'ok';
+    return sceneCount >= 4 ? 'warn' : 'fail';
+}
+
+function directorWordCountStatus(wordCount) {
+    if (wordCount < 85 || wordCount > 195) return 'fail';
+    if (wordCount > 110) return 'warn';
+    return 'ok';
+}
+
+function directorDurationStatus(duration) {
+    if (duration < 38 || duration > 65) return 'fail';
+    if (duration < 50 || duration > 60.25) return 'warn';
+    return 'ok';
 }
 
 function updateStudioPlanSummary(scenes) {
@@ -657,7 +441,6 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     const narrOk = validation.narration_ok ?? validation.ok;
     setSqpPill('sqp-narration', narrOk ? 'Anlatim: OK' : 'Anlatim: SORUN', narrOk ? 'ok' : 'fail');
 
-    // Human-craft / discovery beast (anti AI-slop)
     const hc = activePlan.human_craft || activePlan.meta?.human_craft || {};
     const disc = hc.discovery_beast || activePlan.meta?.discovery_beast || validation.compliance?.discovery_beast || {};
     const discScore = disc.score;
@@ -713,477 +496,24 @@ async function updateStudioQualityPanel(plan, { silent = false } = {}) {
     return { ...validation, plan: activePlan, script_quality: scriptQuality, hard_fail: scriptHardFail };
 }
 
-function applyPlagiarismBadge(plagiarism) {
-    const btnForce = document.getElementById('btn-force-similar-script');
-    const chkAllow = document.getElementById('chk-allow-similar-script');
-    const isBypass = !!(chkAllow && chkAllow.checked);
-
-    if (!plagiarism) {
-        setSqpPill('sqp-plagiarism', 'Özgünlük: —', 'neutral');
-        if (btnForce) btnForce.classList.add('hidden');
-        return;
+function getComplianceIssues(scenes) {
+    if (!scenes || !scenes.length) return { hard: ['Senaryo yok — once senaryo olusturun'], soft: [] };
+    const soft = [];
+    const timedScenes = scenes.filter(s => sceneDurationSec(s) !== null);
+    if (!timedScenes.length) return { hard: [], soft: [] };
+    const totalSec = timedScenes.reduce((acc, s) => acc + sceneDurationSec(s), 0);
+    if (totalSec < 38 || totalSec > 60) {
+        soft.push(`Sure bandi: ${totalSec.toFixed(1)}sn (izin 38-60, tavan 60)`);
     }
-    const pct = plagiarism.similarity_pct ?? 0;
-    const backendApproved = plagiarism.approved !== false;
-    const ok = backendApproved || isBypass;
-
-    if (btnForce) {
-        if (!backendApproved && !isBypass) {
-            btnForce.classList.remove('hidden');
-            btnForce.onclick = () => {
-                if (chkAllow) chkAllow.checked = true;
-                btnForce.classList.add('hidden');
-                applyPlagiarismBadge(plagiarism);
-                updateRenderButtonsBlocked(false);
-                if (typeof showToast === 'function') {
-                    showToast('Benzerlik eşiği yok sayıldı. Render açıldı.', 'success');
-                }
-            };
-        } else {
-            btnForce.classList.add('hidden');
-        }
+    if (directorCadenceStatus(scenes.length) !== 'ok') {
+        soft.push(`Cadence: ${scenes.length} sahne (Director hedefi 6)`);
     }
-
-    if (isBypass && !backendApproved) {
-        setSqpPill(
-            'sqp-plagiarism',
-            `Benzerlik: %${pct} (Atlandı)`,
-            'warn'
-        );
-    } else {
-        setSqpPill(
-            'sqp-plagiarism',
-            ok ? `Özgünlük: %${pct}` : `İntihal riski: %${pct}`,
-            ok ? (pct <= 25 ? 'ok' : 'warn') : 'fail'
-        );
+    const longCuts = timedScenes.filter(s => sceneDurationSec(s) > 3.2).length;
+    if (longCuts > 3) {
+        soft.push(`${longCuts} sahne 3.2sn ustu`);
     }
-}
-
-const QG_ISSUE_ROADMAP = {
-    post_duration_band: 494,
-    av_delta: 452,
-    duplicate_shots: 247,
-    duplicate_content_hash: 247,
-    duplicate_paths: 247,
-    missing_output: 452,
-    file_too_small: 452,
-    low_resolution_test_mode: 129,
-    fragment: 494,
-    low_words: 494,
-    empty_narration: 494,
-    no_terminal: 494,
-};
-
-function roadmapItemForIssue(issue) {
-    const text = String(issue || '').toLowerCase();
-    const key = String(issue || '').split('_').slice(0, 2).join('_');
-    if (QG_ISSUE_ROADMAP[issue]) return QG_ISSUE_ROADMAP[issue];
-    if (QG_ISSUE_ROADMAP[key]) return QG_ISSUE_ROADMAP[key];
-    if (String(issue).startsWith('av_delta')) return 452;
-    if (String(issue).startsWith('fragment')) return 494;
-    if (String(issue).startsWith('low_words')) return 494;
-    if (/cadence|sahne/.test(text)) return 88;
-    if (/3\.2|3,2/.test(text)) return 76;
-    if (/sure|süre|duration|494|kelime|anlatim|anlatım|fragment/.test(text)) return 494;
-    if (/duplicate|tekrar|klip/.test(text)) return 247;
-    if (/hook|kanca/.test(text)) return 201;
-    return null;
-}
-
-function formatQualityIssueWithRoadmap(issue) {
-    const madde = roadmapItemForIssue(issue);
-    const link = madde
-        ? ` <a href="#" class="qg-roadmap-link" data-roadmap-item="${madde}">Madde #${madde}</a>`
-        : '';
-    return `${escapeHtml(issue)}${link}`;
-}
-
-function openRoadmapDeepLink(itemNum) {
-    switchTab('roadmap500');
-    const searchEl = document.getElementById('input-roadmap-search');
-    if (searchEl) {
-        searchEl.value = String(itemNum);
-        renderFilteredRoadmap();
-    }
-}
-
-function formatQualityGateIssue(issue) {
-    if (!issue) return '';
-    if (issue.startsWith('av_delta_')) {
-        const delta = parseFloat(issue.replace('av_delta_', '')) || 0;
-        return `Ses-Görüntü Senkronizasyonu (Fark: ${delta.toFixed(3)}s)`;
-    }
-    const map = {
-        'low_resolution_test_mode': 'Hızlı Test Çözünürlüğü Modu (540p / 720p)',
-        'post_duration_band': 'Hedef Süre Toleransı',
-        'duplicate_shots': 'Tekrarlayan Görsel Sahne',
-        'duplicate_content_hash': 'İçerik Parmak İzi Çakışması',
-        'missing_output': 'Çıktı Dosyası Eksik',
-        'file_too_small': 'Video Dosya Boyutu Düşük',
-        'fragment_sentence_full': 'Cümle Bitişi Akıcılığı',
-    };
-    return map[issue] || issue.replace(/_/g, ' ');
-}
-
-function formatPipelineAuditWarning(warning) {
-    const text = String(warning || '');
-    const sceneWarnings = [];
-    const addSceneWarning = (sceneNumber, message) => {
-        const scene = Number(sceneNumber);
-        if (Number.isInteger(scene) && scene > 0) {
-            sceneWarnings.push({ scene, message });
-        }
-    };
-
-    const frameWarning = text.match(/^visual_frame_(near_black|unavailable):scene_(\d+)/);
-    if (frameWarning) {
-        addSceneWarning(
-            frameWarning[2],
-            frameWarning[1] === 'near_black' ? 'Örnek kare çok karanlık' : 'Örnek kare alınamadı'
-        );
-    }
-    const stockMatches = text.match(/^stock_match_low_confidence_scenes:(.+)$/);
-    if (stockMatches) {
-        stockMatches[1].split(',').forEach(scene =>
-            addSceneWarning(scene, 'Stok metadata eşleşme puanı düşük')
-        );
-    }
-    const duplicatePairs = text.match(/^visual_frames_near_duplicate:(.+)$/);
-    if (duplicatePairs) {
-        duplicatePairs[1].split(',').forEach(pair => {
-            const [left, right] = pair.split('-');
-            addSceneWarning(left, `Örnek kare Sahne ${right} ile benzer`);
-            addSceneWarning(right, `Örnek kare Sahne ${left} ile benzer`);
-        });
-    }
-    if (text.startsWith('semantic_mismatch:')) {
-        [...text.matchAll(/scene\[(\d+)\]score=([\d.]+)/g)].forEach(match =>
-            addSceneWarning(match[1], `Metin/metadata eşleşmesi düşük (${Math.round(Number(match[2]) * 100)}%)`)
-        );
-    }
-
-    if (!sceneWarnings.length) {
-        return `<li>${escapeHtml(text.replace(/_/g, ' '))}</li>`;
-    }
-    return sceneWarnings.map(({ scene, message }) =>
-        `<li><button type="button" class="qg-scene-jump" data-scene-number="${scene}">Sahne ${scene}</button>: ${escapeHtml(message)}</li>`
-    ).join('');
-}
-
-function renderQualityGateCard(qg, { compact = false } = {}) {
-    if (!qg) return '';
-    const post = qg.post || qg;
-    const pipelineAudit = qg.pipeline_audit || {};
-    const auditReport = pipelineAudit.report || {};
-    const signalReport = auditReport.signal_analysis || {};
-    const preRenderReport = pipelineAudit.pre_render?.report || {};
-    const visualFrameAudit = preRenderReport.visual_frame_audit || {};
-    const renderDiagnostics = qg.render_diagnostics || {};
-    const ok = post.ok !== false;
-    const score = post.score != null ? post.score : (qg.score != null ? qg.score : '—');
-    const dur = post.video_duration != null
-        ? `${Number(post.video_duration).toFixed(1)}sn`
-        : (qg.duration != null ? `${Number(qg.duration).toFixed(1)}sn` : '—');
-    const issues = post.issues || qg.issues || [];
-    const statusClass = ok ? 'qg-ok' : 'qg-fail';
-    const statusText = ok ? 'GEÇTİ' : 'RED';
-    if (compact) {
-        const issueHint = issues.length ? ` · ${escapeHtml(issues.slice(0, 2).map(formatQualityGateIssue).join('; '))}` : '';
-        return `<span class="gallery-qg-badge ${ok ? 'is-ok' : 'is-fail'}">${statusText} · skor ${score}${issueHint}</span>`;
-    }
-    const issueHtml = issues.length
-        ? `<ul class="studio-qg-issues">${issues.map(i => {
-            const madde = roadmapItemForIssue(i);
-            const link = madde
-                ? ` <a href="#" class="qg-roadmap-link" data-roadmap-item="${madde}">Madde #${madde}</a>`
-                : '';
-            return `<li>${escapeHtml(formatQualityGateIssue(i))}${link}</li>`;
-        }).join('')}</ul>`
-        : '<span class="studio-qg-clean">Sorun yok</span>';
-    const metrics = [
-        auditReport.resolution,
-        auditReport.fps != null ? `${Number(auditReport.fps).toFixed(2)} FPS` : '',
-        signalReport.peak_volume_dbfs != null ? `Ses tepesi ${Number(signalReport.peak_volume_dbfs).toFixed(1)} dBFS` : '',
-    ].filter(Boolean);
-    if (preRenderReport.avg_stock_semantic_score != null) {
-        metrics.push(
-            `Stok eşleşme ${Math.round(Number(preRenderReport.avg_stock_semantic_score) * 100)}%` +
-            ` · düşük ${preRenderReport.low_stock_match_count || 0}` +
-            ` · stok sahne ${preRenderReport.stock_scene_count || 0}`
-        );
-    }
-    if (visualFrameAudit.available) {
-        metrics.push(
-            `Örnek kare ${visualFrameAudit.sampled_scene_count || 0}/${visualFrameAudit.scene_count || 0}`
-        );
-    }
-    const telemetry = renderDiagnostics.pipeline || {};
-    if (telemetry.total_duration_sec != null) {
-        metrics.push(`Pipeline ${Number(telemetry.total_duration_sec).toFixed(1)}sn`);
-    }
-    const stageRows = telemetry.stages || [];
-    const slowestStage = stageRows.reduce((slowest, stage) =>
-        !slowest || Number(stage.duration_sec || 0) > Number(slowest.duration_sec || 0)
-            ? stage
-            : slowest
-    , null);
-    if (slowestStage) {
-        metrics.push(
-            `En uzun aşama ${slowestStage.name}: ${Number(slowestStage.duration_sec || 0).toFixed(1)}sn`
-        );
-    }
-    const providerRows = Object.entries(renderDiagnostics.provider_search?.providers || {});
-    const slowestProvider = providerRows.sort(
-        (left, right) => Number(right[1].max_ms || 0) - Number(left[1].max_ms || 0)
-    )[0];
-    if (slowestProvider) {
-        metrics.push(
-            `En yavaş stok arama ${slowestProvider[0]}: ${Number(slowestProvider[1].max_ms || 0).toFixed(0)}ms`
-        );
-    }
-    const metricHtml = metrics.length
-        ? `<span class="studio-qg-meta">Render: ${metrics.map(escapeHtml).join(' · ')}</span>`
-        : '';
-    const auditWarnings = pipelineAudit.warnings || [];
-    const auditWarningHtml = auditWarnings.length
-        ? `<ul class="studio-qg-issues">${auditWarnings.map(warning =>
-            formatPipelineAuditWarning(warning)
-        ).join('')}</ul>`
-        : '';
-    const visualAuditLink = visualFrameAudit.contact_sheet_written && visualFrameAudit.url
-        ? `<a href="${escapeHtml(visualFrameAudit.url)}" target="_blank" rel="noopener noreferrer">Sahne örnek karelerini incele</a>`
-        : '';
-    return `
-        <div class="studio-qg-card ${ok ? '' : 'is-fail'}">
-            <strong class="${statusClass}">Kalite Kapısı: ${statusText}</strong>
-            <span class="studio-qg-meta">skor ${score} · süre ${dur}</span>
-            ${metricHtml}
-            ${visualAuditLink ? `<span class="studio-qg-meta">${visualAuditLink}</span>` : ''}
-            ${issueHtml}
-            ${auditWarningHtml}
-        </div>`;
-}
-
-document.addEventListener('click', (e) => {
-    const sceneButton = e.target.closest('.qg-scene-jump');
-    if (sceneButton) {
-        e.preventDefault();
-        const sceneNumber = Number(sceneButton.getAttribute('data-scene-number'));
-        if (!Number.isInteger(sceneNumber) || sceneNumber < 1) return;
-        switchTab('timeline');
-        window.setTimeout(() => {
-            const sceneCard = document.querySelector(
-                `.scene-item-card[data-scene-idx="${sceneNumber - 1}"]`
-            );
-            if (!sceneCard) {
-                showToast('Bu sahnenin düzenleme planı şu an açık değil.', 'warn');
-                return;
-            }
-            sceneCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            sceneCard.classList.add('qg-scene-highlight');
-            window.setTimeout(() => sceneCard.classList.remove('qg-scene-highlight'), 1800);
-        }, 80);
-        return;
-    }
-    const link = e.target.closest('.qg-roadmap-link');
-    if (!link) return;
-    e.preventDefault();
-    const itemNum = parseInt(link.getAttribute('data-roadmap-item'), 10);
-    if (itemNum) openRoadmapDeepLink(itemNum);
-});
-
-const NARRATION_DANGLING = new Set([
-    've', 'ama', 'cunku', 'çünkü', 'icin', 'için', 'ise', 'senin', 'kendi', 'olan', 'asla',
-    'onlara', 'degil', 'değil', 'kusuru', 'bozan', 'ruhunu', 'imparator', 'kaleni', 'ic', 'iç',
-    'en', 'ust', 'üst', 'kural', 'her', 'sey', 'şey', 'fani', 'marcus'
-]);
-
-function normalizeNarrationForValidation(text) {
-    if (!text) return '';
-    let t = String(text).trim();
-    t = t.replace(/\*\*(?:URGENT|DRAMATIC|EPIC|CALM|MYSTERIOUS|ENERGETIC|DARK|BRIGHT|SECRET|WARNING|HOOK|CTA)\*\*\s*/gi, '');
-    t = t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
-    t = t.replace(/[\u{10000}-\u{10FFFF}]/gu, '');
-    t = t.replace(/[\u2600-\u27BF\uFE00-\uFE0F]/gu, '');
-    t = t.replace(/[#*_~^\\/|<>@=`\[\]{}]/g, ' ');
-    t = t.replace(/([.!?])\s*[^\w\s\u00C0-\u024F\u1E00-\u1EFF]+\s*$/u, '$1');
-    if (t && !/[.!?]$/.test(t) && /[.!?]/.test(t)) {
-        const m = t.match(/^(.*[.!?])/);
-        if (m) t = m[1];
-    }
-    return t.replace(/\s+/g, ' ').trim();
-}
-
-function getNarrationIssues(scenes) {
-    const hard = [];
-    if (!scenes || !scenes.length) return hard;
-    (scenes || []).forEach((sc, i) => {
-        const raw = (sc.narration || '').trim();
-        if (!raw) {
-            hard.push(`Sahne ${i + 1}: bos anlatim`);
-            return;
-        }
-        const narr = normalizeNarrationForValidation(raw);
-        const words = narr.split(/\s+/).filter(Boolean);
-        if (words.length < 10) {
-            hard.push(`Sahne ${i + 1}: cok kisa (${words.length} kelime, min 10)`);
-        }
-        if (!/[.!?]$/.test(narr)) {
-            hard.push(`Sahne ${i + 1}: cumle noktalama ile bitmiyor`);
-        }
-        const tail = (words[words.length - 1] || '').toLowerCase().replace(/[.,!?;:]+$/, '');
-        if (NARRATION_DANGLING.has(tail)) {
-            hard.push(`Sahne ${i + 1}: kopuk cumle ('${tail}' ile bitiyor)`);
-        }
-        const sentences = narr.split(/(?<=[.!?])\s+/).filter(Boolean);
-        if (sentences.length === 1) {
-            const sw = sentences[0].trim().split(/\s+/).filter(Boolean);
-            if (sw.length > 0 && sw.length < 4 && /[.!?]$/.test(sentences[0].trim())) {
-                hard.push(`Sahne ${i + 1}: parca cumle (${sw.length} kelime)`);
-            }
-        } else if (sentences.length > 1) {
-            const last = sentences[sentences.length - 1].trim();
-            const sw = last.split(/\s+/).filter(Boolean);
-            if (sw.length > 0 && sw.length < 4 && /[.!?]$/.test(last)) {
-                hard.push(`Sahne ${i + 1}: parca cumle (${sw.length} kelime)`);
-            }
-        }
-    });
-    return hard;
-}
-
-function parseApiError(res, data, fallback) {
-    if (res.status === 404) {
-        return 'API endpoint eksik — sunucuyu yeniden baslatin';
-    }
-    const detail = data?.detail;
-    if (typeof detail === 'string') {
-        if (detail === 'Not Found') {
-            return 'API endpoint eksik — sunucuyu yeniden baslatin';
-        }
-        return detail;
-    }
-    if (Array.isArray(detail)) {
-        return detail.map(d => d.msg || d).join('; ');
-    }
-    if (detail && typeof detail === 'object' && detail.message) {
-        return String(detail.message);
-    }
-    return fallback || `Sunucu hatasi (${res.status})`;
-}
-
-function collectValidationIssues(data, outPlan, fallbackPlan) {
-    const integrity = data.narration_integrity || [];
-    const preIssues = (data.pre_render_score?.issues || []).filter(i =>
-        i.startsWith('fragment') || i.startsWith('low_words')
-        || i.startsWith('empty_narration') || i.startsWith('no_terminal')
-    );
-    const serverIssues = [
-        ...integrity.map(i => `Sunucu: ${i}`),
-        ...preIssues.map(i => `Sunucu: ${i}`)
-    ];
-    const localIssues = getNarrationIssues((outPlan || fallbackPlan)?.scenes || []);
-    const issues = serverIssues.length ? serverIssues : localIssues;
-    return [...new Set(issues.length ? issues : ['Anlatim kalite kapisi reddetti'])];
-}
-
-async function postPlanGate(path, plan, { autoRepair = true } = {}) {
-    const payload = {
-        plan,
-        title: plan.title || inputTopic?.value?.trim() || '',
-        niche: selectNiche?.value || plan.niche_id || '1_news_flash',
-        language: selectLanguage?.value || 'tr',
-        recompile: true,
-        auto_repair: autoRepair
-    };
-    const res = await fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    let data = {};
-    try {
-        data = await res.json();
-    } catch (_) {
-        data = {};
-    }
-    if (!res.ok) {
-        return {
-            ok: false,
-            issues: [parseApiError(res, data, 'Dogrulama basarisiz')],
-            plan,
-            repaired: false,
-            fixes: [],
-            scene_continuity_advisories: []
-        };
-    }
-    const responsePlan = data.plan || plan;
-    const outPlan = responsePlan === plan
-        ? plan
-        : { ...responsePlan, meta: { ...(plan.meta || {}), ...(responsePlan.meta || {}) } };
-    if (data.ok) {
-        return {
-            ok: true,
-            issues: [],
-            plan: outPlan,
-            repaired: !!data.repaired,
-            fixes: data.fixes || [],
-            pre_render_score: data.pre_render_score,
-            scene_continuity_advisories: data.scene_continuity_advisories || [],
-            script_quality: data.script_quality || {},
-            narration_ok: data.narration_ok ?? data.ok,
-            quality_repair: data.quality_repair
-        };
-    }
-    return {
-        ok: false,
-        issues: collectValidationIssues(data, outPlan, plan),
-        plan: outPlan,
-        repaired: !!data.repaired,
-        fixes: data.fixes || [],
-        pre_render_score: data.pre_render_score,
-        scene_continuity_advisories: data.scene_continuity_advisories || [],
-        script_quality: data.script_quality || {},
-        narration_ok: data.narration_ok ?? data.ok,
-        quality_repair: data.quality_repair
-    };
-}
-
-async function validatePlanViaApi(plan, { autoRepair = true } = {}) {
-    if (!plan?.scenes?.length) return { ok: false, issues: ['Senaryo yok'] };
-    try {
-        let result = await postPlanGate('/api/plan/validate', plan, { autoRepair });
-        if (!result.ok && autoRepair && !result.issues.some(i => i.includes('endpoint eksik'))) {
-            const repairResult = await postPlanGate('/api/plan/repair', result.plan || plan, { autoRepair: false });
-            if (repairResult.ok) {
-                return {
-                    ...repairResult,
-                    quality_repair: result.quality_repair || repairResult.quality_repair,
-                    repaired: true,
-                    fixes: [...(result.fixes || []), ...(repairResult.fixes || [])],
-                    scene_continuity_advisories: repairResult.scene_continuity_advisories || result.scene_continuity_advisories || []
-                };
-            }
-            if (repairResult.repaired || repairResult.fixes?.length) {
-                result = {
-                    ...repairResult,
-                    quality_repair: result.quality_repair || repairResult.quality_repair,
-                    repaired: true,
-                    fixes: [...(result.fixes || []), ...(repairResult.fixes || [])],
-                    scene_continuity_advisories: repairResult.scene_continuity_advisories || result.scene_continuity_advisories || []
-                };
-            } else if (repairResult.issues?.length) {
-                result = {
-                    ...result,
-                    issues: repairResult.issues,
-                    plan: repairResult.plan || result.plan
-                };
-            }
-        }
-        return result;
-    } catch (e) {
-        return { ok: false, issues: getNarrationIssues(plan.scenes) };
-    }
+    const hard = getNarrationIssues(scenes);
+    return { hard, soft };
 }
 
 function updateRenderButtonsBlocked(blocked, reason, allowDirectRender = false) {
@@ -1205,183 +535,6 @@ function updateRenderButtonsBlocked(blocked, reason, allowDirectRender = false) 
     });
 }
 
-function directorCadenceStatus(sceneCount) {
-    if (sceneCount === 6) return 'ok';
-    return sceneCount >= 4 ? 'warn' : 'fail';
-}
-
-function directorWordCountStatus(wordCount) {
-    if (wordCount < 85 || wordCount > 195) return 'fail';
-    if (wordCount > 110) return 'warn';
-    return 'ok';
-}
-
-function directorDurationStatus(duration) {
-    if (duration < 38 || duration > 65) return 'fail';
-    if (duration < 50 || duration > 60.25) return 'warn';
-    return 'ok';
-}
-
-function getComplianceIssues(scenes) {
-    if (!scenes || !scenes.length) return { hard: ['Senaryo yok — once senaryo olusturun'], soft: [] };
-    const soft = [];
-    const timedScenes = scenes.filter(s => sceneDurationSec(s) !== null);
-    if (!timedScenes.length) return { hard: [], soft: [] };
-    const totalSec = timedScenes.reduce((acc, s) => acc + sceneDurationSec(s), 0);
-    if (totalSec < 38 || totalSec > 60) {
-        soft.push(`Sure bandi: ${totalSec.toFixed(1)}sn (izin 38-60, tavan 60)`);
-    }
-    if (directorCadenceStatus(scenes.length) !== 'ok') {
-        soft.push(`Cadence: ${scenes.length} sahne (Director hedefi 6)`);
-    }
-    const longCuts = timedScenes.filter(s => sceneDurationSec(s) > 3.2).length;
-    if (longCuts > 3) {
-        soft.push(`${longCuts} sahne 3.2sn ustu`);
-    }
-    const hard = getNarrationIssues(scenes);
-    return { hard, soft };
-}
-
-function updateFlowRail(activeStep) {
-    const rail = document.getElementById('studio-flow-rail');
-    if (!rail) return;
-    rail.querySelectorAll('[data-flow]').forEach(el => {
-        const step = el.getAttribute('data-flow');
-        el.classList.toggle('is-active', step === activeStep);
-        el.classList.toggle('is-done', (
-            (activeStep === 'timeline' && step === 'topic') ||
-            (activeStep === 'render' && (step === 'topic' || step === 'timeline')) ||
-            (activeStep === 'seo' && step !== 'seo')
-        ));
-    });
-}
-
-function setPendingFormatFingerprint(fp) {
-    pendingFormatFingerprint = fp && typeof fp === 'object' ? fp : null;
-}
-
-function clearPendingFormatFingerprint() {
-    pendingFormatFingerprint = null;
-    trendFormatFingerprintAggregate = null;
-}
-
-function sceneDurationSec(scene) {
-    const d = parseFloat(scene?.duration);
-    return Number.isFinite(d) && d > 0 ? d : null;
-}
-
-function isRedditNiche(nicheId) {
-    return Boolean(nicheId && (nicheId.includes('reddit') || nicheId === '2_reddit_confessions'));
-}
-
-function isNewsNiche(nicheId) {
-    return Boolean(nicheId && (nicheId.includes('news') || nicheId === '1_news_flash'));
-}
-
-function isWhatsappNiche(nicheId) {
-    return Boolean(nicheId && nicheId.includes('whatsapp'));
-}
-
-function getNicheFamily(nicheId) {
-    const hit = allNiches.find(n => n.id === nicheId);
-    if (hit?.niche_family) return hit.niche_family;
-    if (isNewsNiche(nicheId)) return 'news';
-    if (isRedditNiche(nicheId)) return 'reddit';
-    if (isWhatsappNiche(nicheId)) return 'whatsapp';
-    if (nicheId && (nicheId.includes('stoic') || nicheId === '6_stoic_philosophy' || nicheId === '24_sigma_character_study')) return 'stoic';
-    return 'general';
-}
-
-function panelMatchesFamily(widgetFamilies, nicheFamily) {
-    const allowed = (widgetFamilies || '').trim().split(/\s+/).filter(Boolean);
-    if (!allowed.length || allowed.includes('all') || allowed.includes('general')) return true;
-    if (nicheFamily === 'general') return allowed.includes('general');
-    return allowed.includes(nicheFamily);
-}
-
-function applyNichePanelVisibility(nicheId) {
-    const family = getNicheFamily(nicheId);
-    document.querySelectorAll('[data-niche-family]').forEach(el => {
-        const families = el.getAttribute('data-niche-family') || '';
-        const show = panelMatchesFamily(families, family);
-        el.style.display = show ? '' : 'none';
-        if (!show && el.id === 'niche-trends-results') el.style.display = 'none';
-    });
-    if (!isRedditNiche(nicheId)) selectedRedditPost = null;
-}
-
-function showNicheLockBadge(nicheId, nicheName) {
-    const badge = document.getElementById('niche-lock-badge');
-    const label = document.getElementById('niche-lock-label');
-    if (!badge || !label) return;
-    lockedNicheId = nicheId || null;
-    if (!nicheId) {
-        badge.classList.add('hidden');
-        label.textContent = '—';
-        return;
-    }
-    const name = nicheName || allNiches.find(n => n.id === nicheId)?.name || nicheId;
-    label.textContent = name;
-    badge.classList.remove('hidden');
-}
-
-function resetComplianceDashboard() {
-    const chipDur = document.getElementById('chip-duration-band');
-    const chipCad = document.getElementById('chip-cadence');
-    const chip32 = document.getElementById('chip-32s-violations');
-    const chipDup = document.getElementById('chip-duplicates');
-    if (chipDur) {
-        chipDur.className = 'compliance-chip';
-        const t = document.getElementById('chip-duration-text');
-        if (t) t.textContent = 'Süre: —';
-    }
-    if (chipCad) {
-        chipCad.className = 'compliance-chip';
-        const t = document.getElementById('chip-cadence-text');
-        if (t) t.textContent = 'Cadence: —';
-    }
-    if (chip32) {
-        chip32.className = 'compliance-chip status-ok';
-        const t = document.getElementById('chip-32s-text');
-        if (t) t.textContent = '3.2sn Uyarı: 0';
-    }
-    if (chipDup) {
-        chipDup.className = 'compliance-chip status-ok';
-        const t = document.getElementById('chip-duplicates-text');
-        if (t) t.textContent = 'Tekrar: 0';
-    }
-}
-
-
-
-function showToast(msg, type = 'success') {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    const icon = type === 'error'
-        ? 'fa-circle-xmark text-danger'
-        : (type === 'warning' || type === 'warn')
-            ? 'fa-triangle-exclamation text-warning'
-            : 'fa-circle-check text-primary';
-    toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${msg}</span>`;
-    container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        toast.style.transform = 'translateY(-10px)';
-        toast.style.transition = 'all 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, 3500);
-}
-
-
-
-function escapeHtml(value) {
-    const element = document.createElement('div');
-    element.textContent = String(value || '');
-    return element.innerHTML;
-}
-
 const TOPIC_SOURCE_LABELS = {
     youtube: { label: 'YouTube', icon: 'fa-brands fa-youtube', cls: 'youtube' },
     ai: { label: 'AI', icon: 'fa-solid fa-wand-magic-sparkles', cls: 'ai' },
@@ -1391,8 +544,6 @@ const TOPIC_SOURCE_LABELS = {
     rss: { label: 'RSS', icon: 'fa-solid fa-rss', cls: 'trend' },
 };
 
-
-// Initialize DOM bindings on file load
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initDomElements);
 } else {

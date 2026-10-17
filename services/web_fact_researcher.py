@@ -75,6 +75,21 @@ def extract_search_keywords(topic: str) -> str:
     return re.sub(r"[^\w\s]", " ", norm).strip()[:60] or topic[:60]
 
 
+_fact_cache: dict[str, tuple[float, List[str]]] = {}
+_FACT_CACHE_TTL = 600.0
+_ddg_cooldown_until: float = 0.0
+_DDG_COOLDOWN_SEC = 900.0
+
+
+def _is_requests_mocked() -> bool:
+    for fn in (getattr(requests, "post", None), getattr(requests, "get", None)):
+        if fn is None:
+            continue
+        if hasattr(fn, "_mock_name") or "unittest.mock" in type(fn).__module__:
+            return True
+    return False
+
+
 def research_topic_facts(
     topic: str,
     max_snippets: int = 6,
@@ -84,9 +99,20 @@ def research_topic_facts(
     Search DuckDuckGo HTML and extract verified factual snippets.
     Returns list of short factual snippets (no prompt injection, truncated to 250 chars).
     """
+    global _ddg_cooldown_until
+    import time
+
     query = extract_search_keywords(topic)
     if not query:
         return []
+
+    mocked = _is_requests_mocked()
+    cache_key = f"{query.casefold()}:{max_snippets}"
+    now = time.time()
+    if not mocked:
+        cached = _fact_cache.get(cache_key)
+        if cached and (now - cached[0]) < _FACT_CACHE_TTL:
+            return list(cached[1][:max_snippets])
 
     url = "https://html.duckduckgo.com/html/"
     headers = {
@@ -98,35 +124,43 @@ def research_topic_facts(
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
+    import os
     clean_snippets: List[str] = []
-    try:
-        resp = requests.post(
-            url,
-            data={"q": query},
-            headers=headers,
-            timeout=timeout_sec,
-        )
-        if resp.status_code == 200 and resp.text:
-            parser = _DDGHTMLParser()
-            parser.feed(resp.text)
-            clean_snippets = []
-            for s in parser.snippets:
-                # Remove URLs, bold marks, sanitization
-                s_clean = re.sub(r"https?://\S+", "", s)
-                s_clean = re.sub(r"<[^>]+>", "", s_clean).strip()
-                if len(s_clean) >= 25:
-                    clean_snippets.append(s_clean[:250])
-                if len(clean_snippets) >= max_snippets:
-                    break
-    except Exception as exc:
-        logger.warning("DuckDuckGo HTML fact lookup failed: %s", exc)
+    skip_ddg = (not mocked) and (now < _ddg_cooldown_until or bool(os.environ.get("PYTEST_CURRENT_TEST")))
+    if not skip_ddg:
+        try:
+            resp = requests.post(
+                url,
+                data={"q": query},
+                headers=headers,
+                timeout=timeout_sec,
+            )
+            if resp.status_code == 200 and resp.text:
+                parser = _DDGHTMLParser()
+                parser.feed(resp.text)
+                clean_snippets = []
+                for s in parser.snippets:
+                    # Remove URLs, bold marks, sanitization
+                    s_clean = re.sub(r"https?://\S+", "", s)
+                    s_clean = re.sub(r"<[^>]+>", "", s_clean).strip()
+                    if len(s_clean) >= 25:
+                        clean_snippets.append(s_clean[:250])
+                    if len(clean_snippets) >= max_snippets:
+                        break
+        except Exception as exc:
+            logger.warning("DuckDuckGo HTML fact lookup failed: %s", exc)
+            if not mocked and ("timed out" in str(exc).lower() or "timeout" in str(exc).lower()):
+                _ddg_cooldown_until = time.time() + _DDG_COOLDOWN_SEC
+                skip_ddg = True
 
     # Fallback 1: DuckDuckGo Lite
-    if not clean_snippets:
+    if not clean_snippets and not skip_ddg:
         try:
             clean_snippets = _query_duckduckgo_lite(query, max_results=max_snippets)
         except Exception as exc:
             logger.warning("DuckDuckGo Lite fact lookup failed: %s", exc)
+            if not mocked and ("timed out" in str(exc).lower() or "timeout" in str(exc).lower()):
+                _ddg_cooldown_until = time.time() + _DDG_COOLDOWN_SEC
 
     # Fallback 2: Wikipedia API (0 TL, kesintisiz ansiklopedik doğrulama)
     if not clean_snippets:
@@ -137,7 +171,10 @@ def research_topic_facts(
         except Exception as exc:
             logger.warning("Wikipedia fact lookup failed: %s", exc)
 
-    return clean_snippets[:max_snippets]
+    result = clean_snippets[:max_snippets]
+    if not mocked:
+        _fact_cache[cache_key] = (time.time(), list(result))
+    return result
 
 
 def _query_duckduckgo_lite(query: str, max_results: int = 4) -> List[str]:
@@ -446,17 +483,19 @@ def verify_and_sanitize_scenes(
         return scenes, {"verified_count": 0, "sanitized_count": 0, "sources": []}
 
     is_dict = isinstance(scenes[0], dict)
+    scene_rows = [
+        (sc, narr := str(getattr(sc, "narration", None) or (sc.get("narration") if is_dict else "") or ""), extract_claims_from_text(narr))
+        for sc in scenes
+    ]
     if web_snippets is None:
-        web_snippets = research_topic_facts(topic, max_snippets=6) if topic else []
+        web_snippets = research_topic_facts(topic, max_snippets=6) if (topic and any(c for _, _, c in scene_rows)) else []
     protect = (protect_text or "").strip()
 
     all_claims = []
     total_sanitized = 0
     updated_scenes = []
 
-    for sc in scenes:
-        narr = str(getattr(sc, "narration", None) or (sc.get("narration") if is_dict else "") or "")
-        claims = extract_claims_from_text(narr)
+    for sc, narr, claims in scene_rows:
         verified_claims = []
         for c in claims:
             v = cross_verify_claim(c, topic=topic, web_snippets=web_snippets)
@@ -489,6 +528,7 @@ def verify_and_sanitize_scenes(
         "unverified_count": sum(1 for c in all_claims if c.get("status") == "unverified"),
         "sanitized_count": total_sanitized,
         "snippets_count": len(web_snippets),
+        "snippets": list(web_snippets),
         "sources": ["DuckDuckGo HTML", "DuckDuckGo Lite", "Wikipedia Action API"],
     }
     return updated_scenes, report

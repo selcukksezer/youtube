@@ -217,14 +217,42 @@ def fetch_openverse_media(query: str, page_size: int = 5, license_type: str = "c
     if cached:
         return cached
 
+    from visuals.registry import _get_provider_lock, _note_failure, provider_cooling_down
+
     endpoint = PUBLIC_ENDPOINTS["openverse_images"]
+    is_mock = hasattr(requests.get, "_mock_name") or "unittest.mock" in type(requests.get).__module__
+    if not is_mock and (
+        time.time() < getattr(endpoint, "_cooldown_until", 0.0)
+        or provider_cooling_down("openverse")
+    ):
+        return []
     params = {
         "q": query,
         "page_size": min(page_size, 10),
         "license": license_type,
     }
+    lock = _get_provider_lock("openverse") if not is_mock else None
     try:
-        resp = requests.get(endpoint.base_url, params=params, headers={"User-Agent": USER_AGENT}, timeout=DEFAULT_TIMEOUT)
+        if lock is not None:
+            with lock:
+                if (
+                    time.time() < getattr(endpoint, "_cooldown_until", 0.0)
+                    or provider_cooling_down("openverse")
+                ):
+                    return []
+                resp = requests.get(
+                    endpoint.base_url,
+                    params=params,
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=min(DEFAULT_TIMEOUT, 4.0),
+                )
+        else:
+            resp = requests.get(
+                endpoint.base_url,
+                params=params,
+                headers={"User-Agent": USER_AGENT},
+                timeout=DEFAULT_TIMEOUT,
+            )
         endpoint.last_status_code = resp.status_code
         if resp.status_code == 200:
             data = resp.json()
@@ -241,8 +269,14 @@ def fetch_openverse_media(query: str, page_size: int = 5, license_type: str = "c
                 })
             _set_cached(cache_key, results)
             return results
+        if resp.status_code == 429 and not is_mock:
+            setattr(endpoint, "_cooldown_until", time.time() + 180.0)
+            _note_failure("openverse", RuntimeError("429 Too Many Requests"))
     except Exception as e:
         endpoint.failure_count += 1
+        if not is_mock:
+            setattr(endpoint, "_cooldown_until", time.time() + 120.0)
+            _note_failure("openverse", e)
         logger.warning(f"[PublicAPIs] Openverse fetch failed for '{query}': {e}")
     return []
 

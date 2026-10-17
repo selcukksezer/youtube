@@ -30,18 +30,31 @@ def _get_ffmpeg_pids():
             if "ffmpeg" in (p.info["name"] or "").lower()
         }
     except ImportError:
-        out = subprocess.run(
-            ["tasklist", "/FO", "CSV", "/NH"],
-            capture_output=True, text=True,
-        )
         pids = set()
-        for line in out.stdout.splitlines():
-            parts = [p.strip(' "') for p in line.split(",")]
-            if parts and "ffmpeg" in parts[0].lower():
-                try:
-                    pids.add(int(parts[1]))
-                except (ValueError, IndexError):
-                    pass
+        if os.name == "nt":
+            out = subprocess.run(
+                ["tasklist", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True,
+            )
+            for line in out.stdout.splitlines():
+                parts = [p.strip(' "') for p in line.split(",")]
+                if parts and "ffmpeg" in parts[0].lower():
+                    try:
+                        pids.add(int(parts[1]))
+                    except (ValueError, IndexError):
+                        pass
+        else:
+            out = subprocess.run(
+                ["ps", "-axo", "pid=,comm="],
+                capture_output=True, text=True,
+            )
+            for line in out.stdout.splitlines():
+                parts = line.strip().split(None, 1)
+                if len(parts) == 2 and "ffmpeg" in parts[1].lower():
+                    try:
+                        pids.add(int(parts[0]))
+                    except ValueError:
+                        pass
         return pids
 
 
@@ -81,9 +94,14 @@ class TestFFmpegRender(unittest.TestCase):
         shutil.rmtree(cls.tmp_work_dir, ignore_errors=True)
 
     def setUp(self):
+        import config
+        self._prev_res_mode = getattr(config, "RENDER_RESOLUTION_MODE", "1080p")
+        config.RENDER_RESOLUTION_MODE = "1080p"
         self.test_dir = tempfile.mkdtemp(prefix="test_ffrender_case_")
 
     def tearDown(self):
+        import config
+        config.RENDER_RESOLUTION_MODE = self._prev_res_mode
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def _probe_video(self, video_path: str) -> dict:

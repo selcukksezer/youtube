@@ -164,3 +164,36 @@ def sanitize_filename(name: str, max_length: int = 120, fallback: str = "asset")
         safe = root + ext
 
     return safe or fallback
+
+
+def resolve_safe_media_path(raw_path: str) -> str:
+    """
+    Resolves web-style mount paths (/output/..., /assets/..., /bgm_audio/...) or
+    filesystem paths into a verified realpath inside allowed project roots.
+    Raises UnsafePathError on path traversal (..) or outside paths.
+    """
+    if not raw_path or not isinstance(raw_path, str):
+        raise UnsafePathError("Media path must be a non-empty string.")
+    cleaned = raw_path.strip()
+    if "\x00" in cleaned:
+        raise UnsafePathError("Null byte detected in media path.")
+    norm = cleaned.replace("\\", "/")
+    if ".." in norm.split("/"):
+        raise UnsafePathError(f"Path traversal segment '..' rejected: {raw_path!r}")
+
+    if norm.startswith("/output/"):
+        return safe_join(config.OUTPUT_DIR, norm[len("/output/"):])
+    if norm.startswith("/assets/"):
+        return safe_join(config.ASSETS_DIR, norm[len("/assets/"):])
+    if norm.startswith("/bgm_audio/"):
+        return safe_join(config.BGM_DIR, norm[len("/bgm_audio/"):])
+
+    if os.path.isabs(cleaned):
+        return validate_asset_path(cleaned)
+
+    # Relative path: check OUTPUT_DIR first if it exists there, else BASE_DIR
+    cand_out = safe_join(config.OUTPUT_DIR, cleaned)
+    if os.path.exists(cand_out):
+        return cand_out
+    return safe_join(config.BASE_DIR, cleaned)
+

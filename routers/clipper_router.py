@@ -3,6 +3,7 @@ POST /api/clipper. Long-video Shorts cuts. Narration render does not call this.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
@@ -240,6 +241,10 @@ def _speaker_layout(
 @router.post("/api/clipper")
 async def api_clipper(request: Request):
     payload = await _payload(request)
+    return await asyncio.to_thread(_run_clipper_sync, payload)
+
+
+def _run_clipper_sync(payload: Dict[str, Any]) -> Dict[str, Any]:
     num_clips = int(payload.get("num_clips") or 3)
     start_ost = float(payload.get("start_ost") or 0)
     end_ost = float(payload.get("end_ost") or 0)
@@ -526,7 +531,7 @@ async def api_clipper_narration(request: Request):
             detail="Anlatım odağı en fazla 240 karakter olabilir.",
         )
 
-    source = _resolve_source(payload)
+    source = await asyncio.to_thread(_resolve_source, payload)
     from services.documentary_narration import (
         DocumentaryNarrationError,
         DocumentaryNarrationUnavailable,
@@ -534,7 +539,7 @@ async def api_clipper_narration(request: Request):
     )
 
     try:
-        result = generate_documentary_narration(source, theme=theme)
+        result = await asyncio.to_thread(generate_documentary_narration, source, theme=theme)
     except DocumentaryNarrationUnavailable as err:
         raise HTTPException(status_code=503, detail=str(err)) from err
     except DocumentaryNarrationError as err:
@@ -550,7 +555,7 @@ async def api_clipper_teardown(request: Request):
     """Analyze reference edit cadence locally; never sends video to an AI provider."""
     payload = await _payload(request)
     try:
-        source = _resolve_source(payload)
+        source = await asyncio.to_thread(_resolve_source, payload)
     except HTTPException:
         raise
     except Exception as err:
@@ -562,7 +567,7 @@ async def api_clipper_teardown(request: Request):
     from services.video_teardown import VideoTeardownError, analyze_reference_video
 
     try:
-        report = analyze_reference_video(source)
+        report = await asyncio.to_thread(analyze_reference_video, source)
     except VideoTeardownError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
     return {"status": "ok", "analysis": report}

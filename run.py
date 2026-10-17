@@ -8,9 +8,13 @@ import sys
 import os
 import time
 import threading
+import warnings
 import webbrowser
 import platform
 import asyncio
+
+warnings.filterwarnings("ignore", message=".*urllib3 v2 only supports OpenSSL.*")
+os.environ["PYTHONWARNINGS"] = "ignore:urllib3 v2 only supports OpenSSL"
 
 # Ensure UTF-8 console output on Windows and Mac
 if hasattr(sys.stdout, 'reconfigure'):
@@ -23,6 +27,28 @@ if hasattr(sys.stdout, 'reconfigure'):
 # Ensure working directory is the script root
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT_DIR)
+
+
+def _ensure_project_venv() -> None:
+    """Re-exec into ./venv/bin/python if launched via system python3 outside a virtualenv."""
+    if os.environ.get("SHORTS_NO_VENV_REEXEC") == "1":
+        return
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        return
+    candidates = (
+        os.path.join(ROOT_DIR, "venv", "bin", "python"),
+        os.path.join(ROOT_DIR, ".venv", "bin", "python"),
+    )
+    for venv_py in candidates:
+        if os.path.isfile(venv_py) and os.access(venv_py, os.X_OK):
+            try:
+                venv_root = os.path.dirname(os.path.dirname(os.path.abspath(venv_py)))
+                if os.path.abspath(sys.prefix) != venv_root and os.path.abspath(sys.executable) != os.path.abspath(venv_py):
+                    os.environ["SHORTS_NO_VENV_REEXEC"] = "1"
+                    os.execv(venv_py, [venv_py, *sys.argv])
+            except OSError:
+                pass
+            break
 
 
 def open_browser(url: str, delay: float = 1.2):
@@ -95,10 +121,7 @@ def free_port_if_occupied(port: int = 8000):
 
 
 def _configure_windows_asyncio():
-    """Suppress benign ConnectionResetError spam when SSE clients disconnect on Windows."""
-    if platform.system() != "Windows":
-        return
-
+    """Suppress benign ConnectionResetError / BrokenPipeError spam when SSE clients disconnect."""
     def _handler(loop, context):
         exc = context.get("exception")
         if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
@@ -151,7 +174,14 @@ def launch_web():
     threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=port, reload=True)
+    from server_core.render_resilience import get_uvicorn_reload_excludes
+    uvicorn.run(
+        "server:app",
+        host="127.0.0.1",
+        port=port,
+        reload=True,
+        reload_excludes=get_uvicorn_reload_excludes(),
+    )
 
 
 def launch_cli():
@@ -171,6 +201,7 @@ def launch_cli():
 
 
 if __name__ == "__main__":
+    _ensure_project_venv()
     if len(sys.argv) > 1 and sys.argv[1] in ("--cli", "-c", "cli"):
         launch_cli()
     else:

@@ -108,10 +108,52 @@ def build_publishing_package(
         "license_status": str(license_status or "COMMERCIAL_SAFE"),
         "originality_score": round(float(originality_score), 1),
     }
+    try:
+        from compliance.kids_disclosure import is_made_for_kids_niche
+        if is_made_for_kids_niche(niche_id):
+            comp_dict["self_declared_made_for_kids"] = True
+            comp_dict["collect_viewer_data"] = False
+    except Exception:
+        pass
     if extra_compliance and isinstance(extra_compliance, dict):
         for k, v in extra_compliance.items():
             if k not in comp_dict:
                 comp_dict[k] = v
+
+    credits_dict: Dict[str, Any] = {
+        "manifest_count": manifest_count,
+        "unique_uids": unique_uids,
+    }
+    if manifest_list and any(isinstance(it, dict) and it.get("license") for it in manifest_list):
+        try:
+            from compliance.license_governance import AssetLicenseGovernance
+            gov_records = []
+            for item in manifest_list:
+                if not isinstance(item, dict):
+                    continue
+                raw_lic = item.get("license")
+                if isinstance(raw_lic, dict):
+                    lic_name = str(raw_lic.get("license") or raw_lic.get("name") or "Pexels-License")
+                else:
+                    lic_name = str(raw_lic or "Pexels-License")
+                if lic_name.lower() in ("pexels", "pexels license"):
+                    lic_name = "Pexels-License"
+                elif lic_name.lower() in ("pixabay", "pixabay license"):
+                    lic_name = "Pixabay-License"
+                elif lic_name.lower() in ("cc0", "public domain", "public_domain"):
+                    lic_name = "CC0-1.0"
+                gov_records.append({
+                    "asset_id": str(item.get("asset_id") or item.get("id") or item.get("uid") or "clip"),
+                    "filepath": str(item.get("filepath") or item.get("path") or ""),
+                    "license": lic_name,
+                    "provenance": str(item.get("source") or item.get("provider") or item.get("provenance") or "stock"),
+                    "creator_attribution": item.get("author") or item.get("creator"),
+                })
+            if gov_records:
+                gov_audit = AssetLicenseGovernance.audit_all_assets_fail_closed(gov_records)
+                credits_dict["governance_status"] = gov_audit["status"]
+        except Exception:
+            pass
 
     pkg: Dict[str, Any] = {
         "version": 1,
@@ -120,10 +162,7 @@ def build_publishing_package(
         "niche_id": str(niche_id or "general").strip(),
         "viewer_score": _extract_viewer_score(viewer_score),
         "compliance": comp_dict,
-        "credits": {
-            "manifest_count": manifest_count,
-            "unique_uids": unique_uids,
-        },
+        "credits": credits_dict,
     }
 
     if ai_disclosure and isinstance(ai_disclosure, dict):
@@ -141,22 +180,42 @@ def build_seo_meta_package(
     category_id: str = "22",
     privacy_status: str = "unlisted",
     ai_disclosure_text: str = "",
+    niche_id: str = "",
 ) -> Dict[str, Any]:
     """
     Render edilen videonun yanında arşivlenecek seo_meta.json yapısı.
     """
     clean_tags = [str(t).lstrip("#").strip() for t in (tags or []) if str(t).strip()][:30]
-    return {
+    desc = str(description or "").strip()
+    mfk = False
+    try:
+        from compliance.kids_disclosure import is_made_for_kids_niche, apply_kids_upload_fields
+        if is_made_for_kids_niche(niche_id):
+            kids_res = apply_kids_upload_fields(
+                niche_id=niche_id,
+                description=desc,
+                tags=clean_tags,
+                language=language,
+            )
+            mfk = bool(kids_res["selfDeclaredMadeForKids"])
+            desc = kids_res["description"]
+            clean_tags = kids_res["tags"][:30]
+    except Exception:
+        pass
+    out = {
         "version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "title": str(title or "").strip()[:100],
-        "description": str(description or "").strip(),
+        "description": desc,
         "tags": clean_tags,
         "language": str(language or "tr").lower(),
         "category_id": str(category_id or "22"),
         "privacy_status": str(privacy_status or "unlisted"),
         "ai_disclosure_text": str(ai_disclosure_text or "").strip(),
     }
+    if mfk:
+        out["selfDeclaredMadeForKids"] = True
+    return out
 
 
 def validate_publishing_package_schema(payload: Dict[str, Any]) -> Tuple[bool, List[str]]:

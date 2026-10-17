@@ -32,8 +32,8 @@ const NAV_COLLAPSIBLE_TABS = {
 };
 
 function syncNavCollapsibles(tabId) {
-    document.querySelectorAll('.nav-collapsible').forEach((details, idx) => {
-        details.open = NAV_COLLAPSIBLE_TABS[tabId] === idx;
+    document.querySelectorAll('.nav-collapsible').forEach((details) => {
+        details.open = true;
     });
 }
 
@@ -56,6 +56,12 @@ function switchTab(tabId, updateHistory = true) {
     panes.forEach(pane => {
         pane.classList.toggle('active', pane.id === `pane-${tabId}`);
     });
+    document.querySelectorAll('.top-module-tab[data-tab]').forEach(tabBtn => {
+        tabBtn.classList.toggle('active', tabBtn.getAttribute('data-tab') === tabId);
+    });
+    if (typeof window.onShortsTabSwitched === 'function') {
+        try { window.onShortsTabSwitched(tabId); } catch (e) {}
+    }
 
     const pageTitle = document.getElementById('current-page-title');
     const pageDesc = document.getElementById('current-page-desc');

@@ -34,10 +34,25 @@ def process(keyword, index):
     os.makedirs(proj, exist_ok=True)
     reset_used_videos()
 
-    # 1) Scene plan
+    # 1) Scene plan + DirectorPlan compilation (KN-7 unification)
     print(f"\n[1/4] Scene plan ({config.AI_PROVIDER})...")
     try:
         plan = generate_scenes(keyword)
+        if isinstance(plan, dict):
+            try:
+                from scenes.narration_validate import sanitize_plan_scene_descriptions
+                plan = sanitize_plan_scene_descriptions(plan)
+            except Exception:
+                pass
+            try:
+                from director import compile_director_plan, resolve_niche_from_topic
+                niche_id = plan.get("niche_id") or resolve_niche_from_topic(keyword, "1_news_flash")
+                director = compile_director_plan(plan, title=keyword, niche_id=niche_id, language=config.LANGUAGE)
+                plan = director.to_legacy_plan()
+                with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as df:
+                    json.dump(director.to_dict(), df, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
     except Exception as e:
         print(f"  ERROR: {e}"); return None
 

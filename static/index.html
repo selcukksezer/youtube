@@ -3,32 +3,26 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>ShortsAI Studio — YouTube Shorts Üretim</title>
     <meta name="description" content="Konu gir, senaryo üret, kalite kontrolünden geçir ve Shorts render al.">
+    <meta name="theme-color" content="#080d0f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Shorts Studio">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;600&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="/static/style.css?v=7.0">
-    <link rel="stylesheet" href="/static/settings-quota.css?v=1.1">
-    <script>
-        // F5 ve Sekme Kalıcılık Koruyucusu (Flicker & Reset Önleyici)
-        (function () {
-            try {
-                var hash = (window.location.hash || '').replace('#', '').trim();
-                var saved = hash || localStorage.getItem('activeShortsTab') || 'studio';
-                if (saved && saved !== 'studio') {
-                    var style = document.createElement('style');
-                    style.id = 'early-tab-style';
-                    style.innerHTML = '.tab-pane { display: none !important; } #pane-' + saved + ' { display: block !important; }';
-                    document.head.appendChild(style);
-                }
-            } catch (e) { }
-        })();
-    </script>
+    <link rel="stylesheet" href="/static/style.css?v=12.0">
+    <link rel="stylesheet" href="/static/studio.css?v=12.0">
+    <link rel="stylesheet" href="/static/settings-quota.css?v=12.0">
 </head>
 
 <body data-theme="violet" class="produce-neutral">
@@ -37,101 +31,101 @@
         <aside class="sidebar" id="app-sidebar">
             <div class="brand">
                 <div class="brand-logo">
-                    <i class="fa-solid fa-bolt-lightning"></i>
+                    <img src="/static/assets/studio/asset_02.webp" alt="">
                 </div>
                 <div class="brand-info">
-                    <h1>ShortsAI Studio</h1>
-                    <p class="brand-sub">Shorts üretim iş istasyonu</p>
+                    <h1>Shorts Studio</h1>
+                    <p class="brand-sub">LOCAL PRODUCTION OS</p>
                 </div>
             </div>
 
             <!-- Hızlı İstatistik ve Durum Kartı -->
             <div class="system-status-pill">
                 <span class="status-indicator live"></span>
-                <span class="status-text" id="sidebar-status-text">Sistem Aktif &middot; 0 TL Modu</span>
-                <span class="pill-savings" title="Piyasa yazılımlarına kıyasla aylık tasarruf">Tasarruf: %100</span>
+                <span class="status-text" id="sidebar-status-text">Yerel motorlar çevrimiçi</span>
+                <span class="pill-savings" title="Piyasa yazılımlarına kıyasla aylık tasarruf">0 TL</span>
             </div>
 
             <nav class="nav-links" aria-label="Ana menü">
-                <div class="nav-section-title nav-section-primary">ÜRET</div>
-                <button class="nav-btn active" data-tab="studio" id="nav-btn-studio">
+                <div class="nav-section-title nav-section-primary">ÇALIŞMA ALANI</div>
+                <button class="nav-btn active" data-tab="studio" data-code="ÜR" id="nav-btn-studio">
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
-                    <span>Stüdyo</span>
+                    <span>Üretim Merkezi</span>
                     <span class="nav-hotkey">⌘1</span>
                 </button>
-                <button class="nav-btn" data-tab="clipper" id="nav-btn-clipper">
+                <button class="nav-btn" data-tab="clipper" data-code="CL" id="nav-btn-clipper">
                     <i class="fa-solid fa-scissors"></i>
-                    <span>Kesici</span>
+                    <span>Clipper (Kesici)</span>
                 </button>
-                <button class="nav-btn" data-tab="timeline" id="nav-btn-timeline">
+                <button class="nav-btn" data-tab="timeline" data-code="PJ" id="nav-btn-timeline">
                     <i class="fa-solid fa-sliders"></i>
-                    <span>Sahne Editörü</span>
+                    <span>Sahne & Plan</span>
                     <span class="nav-badge" id="badge-scene-count">0</span>
                 </button>
-                <button class="nav-btn" data-tab="niches" id="nav-btn-niches">
+                <button class="nav-btn" data-tab="niches" data-code="AR" id="nav-btn-niches">
                     <i class="fa-solid fa-shapes"></i>
-                    <span>Niş Kütüphanesi</span>
+                    <span>Araştırma & Niş</span>
                 </button>
-                <button class="nav-btn" data-tab="kids-song" id="nav-btn-kids-song">
+                <button class="nav-btn" data-tab="kids-song" data-code="ÇŞ" id="nav-btn-kids-song">
                     <i class="fa-solid fa-music"></i>
-                    <span>Çocuk Şarkı</span>
+                    <span>Çocuk Şarkıları</span>
                     <span class="nav-badge" id="badge-kids-song-count" style="display:none;">0</span>
                 </button>
 
                 <details class="nav-collapsible">
-                    <summary class="nav-section-title nav-collapsible-summary">Otomasyon <i
+                    <summary class="nav-section-title nav-collapsible-summary">Otomasyon & Analitik <i
                             class="fa-solid fa-chevron-down nav-collapse-icon"></i></summary>
-                    <button class="nav-btn" data-tab="rss-bot" id="nav-btn-rss">
+                    <button class="nav-btn" data-tab="rss-bot" data-code="RR" id="nav-btn-rss">
                         <i class="fa-solid fa-rss"></i>
-                        <span>RSS & Haber Botu</span>
+                        <span>Reddit & RSS</span>
                     </button>
-                    <button class="nav-btn" data-tab="batch" id="nav-btn-batch">
+                    <button class="nav-btn" data-tab="batch" data-code="BT" id="nav-btn-batch">
                         <i class="fa-solid fa-layer-group"></i>
-                        <span>Toplu Üretim</span>
+                        <span>Toplu İş</span>
                         <span class="nav-badge" id="badge-batch-count">0</span>
                     </button>
-                    <button class="nav-btn" data-tab="growth" id="nav-btn-growth">
+                    <button class="nav-btn" data-tab="growth" data-code="AN" id="nav-btn-growth">
                         <i class="fa-solid fa-chart-line"></i>
-                        <span>Büyüme Lab</span>
+                        <span>Analitik & Büyüme</span>
                     </button>
                 </details>
 
                 <details class="nav-collapsible">
-                    <summary class="nav-section-title nav-collapsible-summary">Stil & Araçlar <i
+                    <summary class="nav-section-title nav-collapsible-summary">Medya & Stil <i
                             class="fa-solid fa-chevron-down nav-collapse-icon"></i></summary>
-                    <button class="nav-btn" data-tab="effects" id="nav-btn-effects">
-                        <i class="fa-solid fa-gamepad"></i>
-                        <span>Split-Screen & FX</span>
+                    <button class="nav-btn" data-tab="audio" data-code="MD" id="nav-btn-audio">
+                        <i class="fa-solid fa-headphones"></i>
+                        <span>Medya & Ses</span>
                     </button>
-                    <button class="nav-btn" data-tab="subtitles" id="nav-btn-subtitles">
+                    <button class="nav-btn" data-tab="subtitles" data-code="AL" id="nav-btn-subtitles">
                         <i class="fa-solid fa-closed-captioning"></i>
                         <span>Altyazı Stilleri</span>
                     </button>
-                    <button class="nav-btn" data-tab="audio" id="nav-btn-audio">
-                        <i class="fa-solid fa-headphones"></i>
-                        <span>Ses & Müzik</span>
+                    <button class="nav-btn" data-tab="effects" data-code="FX" id="nav-btn-effects">
+                        <i class="fa-solid fa-gamepad"></i>
+                        <span>Split-Screen & FX</span>
                     </button>
-                    <button class="nav-btn" data-tab="roadmap500" id="nav-btn-roadmap500">
+                    <button class="nav-btn" data-tab="roadmap500" data-code="RM" id="nav-btn-roadmap500">
                         <i class="fa-solid fa-list-check"></i>
                         <span>Yol Haritası</span>
                     </button>
                 </details>
 
                 <details class="nav-collapsible">
-                    <summary class="nav-section-title nav-collapsible-summary">Yönetim <i
+                    <summary class="nav-section-title nav-collapsible-summary">Kanal & Sistem <i
                             class="fa-solid fa-chevron-down nav-collapse-icon"></i></summary>
-                    <button class="nav-btn" data-tab="channels" id="nav-btn-channels">
+                    <button class="nav-btn" data-tab="channels" data-code="KY" id="nav-btn-channels">
                         <i class="fa-brands fa-youtube"></i>
-                        <span>Kanal & Yayın</span>
+                        <span>Kanal & Yayınlama</span>
                     </button>
-                    <button class="nav-btn" data-tab="gallery" id="nav-btn-gallery">
+                    <button class="nav-btn" data-tab="gallery" data-code="GL" id="nav-btn-gallery">
                         <i class="fa-solid fa-photo-film"></i>
-                        <span>Galeri</span>
+                        <span>Video Galerisi</span>
                         <span class="nav-badge" id="badge-gallery-count">0</span>
                     </button>
-                    <button class="nav-btn" data-tab="settings" id="nav-btn-settings">
+                    <button class="nav-btn" data-tab="settings" data-code="SA" id="nav-btn-settings">
                         <i class="fa-solid fa-gear"></i>
-                        <span>Ayarlar</span>
+                        <span>Sistem & Ayarlar</span>
                     </button>
                 </details>
             </nav>
@@ -327,24 +321,30 @@
                         </div>
                         <!-- Canlı Yapay Zeka Kota ve Hız Limiti Butonu -->
                         <div class="stat-bubble ai-quota-bubble" id="header-ai-quota-btn"
-                            title="Yapay Zeka Kotaları & Hız Limitleri (Detaylar İçin Tıklayın)"
-                            style="cursor: pointer; border: 1px solid rgba(168, 85, 247, 0.4); background: rgba(168, 85, 247, 0.12); display: flex; align-items: center; gap: 6px;">
+                            title="Yapay Zeka Kotaları & Hız Limitleri (Detaylar İçin Tıklayın)">
                             <i class="fa-solid fa-bolt-lightning text-warning"></i>
-                            <span id="header-quota-summary" style="font-weight: 600; color: #f8fafc;">AI: Gemini
-                                (%100)</span>
-                            <span class="quota-rpm-tag" id="header-quota-tag"
-                                style="background: rgba(168, 85, 247, 0.25); color: #c084fc; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700;">0/15
-                                RPM</span>
+                            <span id="header-quota-summary">AI: Gemini (%100)</span>
+                            <span class="quota-rpm-tag" id="header-quota-tag">0/15 RPM</span>
                         </div>
                         <!-- Canlı Terminal / Render Durumu Butonu -->
-                        <button type="button" class="btn btn-sm btn-outline" id="header-btn-open-terminal"
-                            style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; background: rgba(56, 189, 248, 0.08); cursor: pointer;"
+                        <button type="button" class="btn btn-sm btn-outline-info" id="header-btn-open-terminal"
                             title="Canlı Render Konsolu & Terminal Loglarını Aç"
                             aria-label="Canlı render konsolunu ve terminal kayıtlarını aç">
                             <i class="fa-solid fa-terminal"></i>
                             <span id="header-terminal-text">Terminal</span>
-                            <span id="header-render-badge"
-                                style="display: none; background: #10b981; color: #fff; font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 700;">%0</span>
+                            <span id="header-render-badge" class="badge pill-ok" style="display: none;">%0</span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info" id="header-btn-git-update"
+                            title="Git'ten En Güncel Dosyaları Çek ve Güncelle (Otomatik Senkron Aktif)"
+                            aria-label="Git deposundan en güncel dosyaları çek ve güncelle">
+                            <i class="fa-solid fa-arrows-rotate" id="git-update-icon"></i>
+                            <span id="header-git-text">Güncelle</span>
+                            <span id="header-git-badge" class="badge pill-ok" style="display: none;">Yeni</span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info" id="header-btn-logout"
+                            title="Oturumu Kapat (Güvenli Çıkış)"
+                            aria-label="Oturumu kapat">
+                            <i class="fa-solid fa-right-from-bracket"></i>
                         </button>
 
                     <div class="header-chip highlight" id="chip-server-health">
@@ -380,8 +380,7 @@
                         <i class="fa-solid fa-earth-americas text-primary"></i>
                         <span>Tier-1 (ABD/İngilizce) Modu</span>
                     </button>
-                    <button class="quick-action-btn" id="btn-open-afm-modal"
-                        style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4);">
+                    <button class="quick-action-btn" id="btn-open-afm-modal">
                         <i class="fa-solid fa-cart-shopping text-success"></i>
                         <span>🛒 AFM E-Ticaret Ürününden Video</span>
                     </button>
@@ -409,45 +408,36 @@
                         </div>
 
                         <!-- CANLI YAPAY ZEKA KOTA & SAĞLIK BARI -->
-                        <div class="ai-quota-strip mt-2 mb-3" id="studio-ai-quota-strip"
-                            style="display: flex; align-items: center; justify-content: space-between; background: rgba(30, 41, 59, 0.5); border: 1px solid rgba(148, 163, 184, 0.18); padding: 8px 12px; border-radius: 8px; font-size: 12px;">
-
-                            <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="ai-quota-strip mt-2 mb-3" id="studio-ai-quota-strip">
+                            <div class="d-flex align-items-center gap-2">
                                 <span class="pulse-dot green" id="studio-ai-pulse"></span>
-                                <span style="color: #94a3b8;">Yapay Zeka:</span>
-                                <strong id="studio-ai-name" style="color: #f8fafc;">Kontrol Ediliyor...</strong>
-                                <span class="badge" id="studio-ai-mode-badge"
-                                    style="background: rgba(16, 185, 129, 0.2); color: #34d399; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600;">0
-                                    TL Modu</span>
+                                <span class="text-muted">Yapay Zeka:</span>
+                                <strong id="studio-ai-name" class="text-light">Kontrol Ediliyor...</strong>
+                                <span class="badge pill-ok" id="studio-ai-mode-badge">0 TL Modu</span>
                             </div>
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span id="studio-ai-rpm" style="color: #38bdf8; font-weight: 600;"
+                            <div class="d-flex align-items-center gap-2">
+                                <span id="studio-ai-rpm" class="text-info font-weight-bold"
                                     title="Dakikalık Hız Limiti"><i class="fa-solid fa-gauge-high"></i> -</span>
-                                <span id="studio-ai-rpd" style="color: #c084fc; font-weight: 600;"
+                                <span id="studio-ai-rpd" class="text-purple font-weight-bold"
                                     title="Günlük İstek Kotası"><i class="fa-solid fa-calendar-day"></i> -</span>
-                                <button type="button" class="btn btn-sm btn-outline" id="btn-open-quota-modal"
-                                    style="padding: 2px 8px; font-size: 11px;"><i class="fa-solid fa-chart-pie"></i>
+                                <button type="button" class="btn btn-xs btn-outline" id="btn-open-quota-modal"><i class="fa-solid fa-chart-pie"></i>
                                     Kotalar</button>
                             </div>
                         </div>
 
                         <!-- Tek üretim dili tercihi; select değeri mevcut üretim akışlarıyla uyumludur. -->
-                        <div class="lang-selector-strip mt-2 mb-2" id="studio-lang-selector-strip"
-                            style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(148, 163, 184, 0.22); padding: 7px 12px; border-radius: 8px;">
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <i class="fa-solid fa-earth-americas text-primary" style="font-size: 14px;"></i>
-                                <span style="font-size: 12px; font-weight: 600; color: #e2e8f0;">Üretim Dili (Hedef Kitle):</span>
+                        <div class="lang-selector-strip mt-2 mb-2" id="studio-lang-selector-strip">
+                            <div class="d-flex align-items-center gap-2">
+                                <i class="fa-solid fa-earth-americas text-primary"></i>
+                                <span class="font-weight-bold text-light">Üretim Dili (Hedef Kitle):</span>
                             </div>
-                            <div class="lang-pill-group" role="group" aria-label="Üretim dili"
-                                style="display: flex; gap: 6px;">
+                            <div class="lang-pill-group" role="group" aria-label="Üretim dili">
                                 <button type="button" class="btn btn-sm lang-pill-btn active" id="btn-quick-lang-tr"
-                                    data-lang="tr" aria-pressed="true"
-                                    style="padding: 4px 12px; font-size: 11px; border-radius: 6px; font-weight: 700; cursor: pointer; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #ffffff; border: 1px solid #60a5fa;">
+                                    data-lang="tr" aria-pressed="true">
                                     🇹🇷 Türkçe (TR)
                                 </button>
                                 <button type="button" class="btn btn-sm btn-outline lang-pill-btn" id="btn-quick-lang-en"
-                                    data-lang="en" aria-pressed="false"
-                                    style="padding: 4px 12px; font-size: 11px; border-radius: 6px; font-weight: 700; cursor: pointer; background: transparent; color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.25);">
+                                    data-lang="en" aria-pressed="false">
                                     🇺🇸 English · Tier-1
                                 </button>
                             </div>
@@ -527,6 +517,80 @@
                             </div>
                         </details>
 
+                        <details class="series-planner series-tools-disclosure mt-2" id="manuscript-import">
+                            <summary class="series-tools-summary">
+                                <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+                                <span>Hazır metni sahnelere aktar</span>
+                                <span class="series-tools-optional">İsteğe bağlı</span>
+                                <i class="fa-solid fa-chevron-down series-tools-chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="series-planner__body">
+                                <textarea id="input-manuscript" class="textarea-styled" rows="5" maxlength="12000"
+                                    placeholder="Seslendirilecek hazır metni buraya yapıştırın. Metin cümle sınırlarından yaklaşık 4–8 saniyelik sahnelere ayrılır; anlatım yeniden yazılmaz."></textarea>
+                                <small class="series-planner__note">En fazla 12.000 karakter ve 24 sahne. Görsel arama sorguları metinden yerel olarak çıkarılır; sonra mevcut timeline'da sahneleri inceleyip düzenleyin.</small>
+                                <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" id="btn-import-manuscript">
+                                        <i class="fa-solid fa-arrow-right-to-bracket"></i> Metni sahnelere aktar
+                                    </button>
+                                    <span id="manuscript-import-status" aria-live="polite" style="color:#94a3b8;font-size:12px;"></span>
+                                </div>
+                            </div>
+                        </details>
+
+                        <details class="series-planner series-tools-disclosure mt-2" id="advanced-ai-engines-disclosure">
+                            <summary class="series-tools-summary">
+                                <i class="fa-solid fa-microchip" aria-hidden="true"></i>
+                                <span>Gelişmiş AI Senaryo, Podcast &amp; Proje Motorları</span>
+                                <span class="series-tools-optional">Pro Modüller</span>
+                                <i class="fa-solid fa-chevron-down series-tools-chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="series-planner__body" style="display:flex;flex-direction:column;gap:12px;">
+                                <!-- 1. Google Flow / 4-Act Facts / Podcast Engines -->
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-flow-viral-transform" title="Konuyu Google Flow Viral Shorts formatına dönüştürür">
+                                        <i class="fa-solid fa-fire text-warning"></i> Viral Flow Dönüştür
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-facts-4act-gen" title="4 Perdeli Psikolojik / Facts Hikaye Motoru (Hook -> Tension -> Twist -> Loop)">
+                                        <i class="fa-solid fa-masks-theater text-info"></i> 4-Perde Facts Motoru
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-podcast-debate-gen" title="2 Sunuculu (Host A / Host B) Podcast & Tartışma Senaryosu Üret">
+                                        <i class="fa-solid fa-microphone-lines text-primary"></i> 2-Sunucu Podcast Üret
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btn-virality-slop-audit" title="Mevcut senaryoyu AI Slop ve Virallik açısından denetler">
+                                        <i class="fa-solid fa-magnifying-glass-chart text-success"></i> Virallik &amp; Slop Denetimi
+                                    </button>
+                                </div>
+
+                                <!-- Podcast Host Options -->
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:11px;color:#94a3b8;">
+                                    <span>Podcast Sunucuları:</span>
+                                    <input type="text" id="input-podcast-host-a" class="input-styled" value="Alex" placeholder="Sunucu A" style="width:90px;padding:4px 8px;font-size:11px;">
+                                    <input type="text" id="input-podcast-host-b" class="input-styled" value="Maya" placeholder="Sunucu B" style="width:90px;padding:4px 8px;font-size:11px;">
+                                    <button type="button" class="btn btn-outline btn-xs" id="btn-scan-youtube-trending" style="margin-left:auto;font-size:11px;padding:4px 10px;">
+                                        <i class="fa-brands fa-youtube text-danger"></i> Canlı YouTube Trend Tara
+                                    </button>
+                                </div>
+
+                                <!-- V2 Project & Plagiarism Manager -->
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid rgba(148,163,184,0.15);padding-top:10px;">
+                                    <button type="button" class="btn btn-outline btn-xs" id="btn-v2-save-project" style="font-size:11px;padding:4px 10px;">
+                                        <i class="fa-solid fa-floppy-disk text-info"></i> V2 Proje Kaydet
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-xs" id="btn-v2-list-projects" style="font-size:11px;padding:4px 10px;">
+                                        <i class="fa-solid fa-folder-open text-warning"></i> V2 Projeleri Listele
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-xs" id="btn-plagiarism-stats" style="font-size:11px;padding:4px 10px;">
+                                        <i class="fa-solid fa-fingerprint text-success"></i> İntihal DB Durumu
+                                    </button>
+                                    <button type="button" class="btn btn-outline btn-xs" id="btn-plagiarism-clear" style="font-size:11px;padding:4px 10px;color:#f87171;">
+                                        <i class="fa-solid fa-broom"></i> İntihal DB Temizle
+                                    </button>
+                                </div>
+
+                                <div id="studio-advanced-engine-output" class="hidden" style="background:rgba(15,23,42,0.75);border:1px solid rgba(56,189,248,0.25);border-radius:8px;padding:10px;font-size:11.5px;color:#e2e8f0;max-height:240px;overflow-y:auto;"></div>
+                            </div>
+                        </details>
+
                         <div class="form-row-2">
                             <div class="form-field">
                                 <label for="select-niche"
@@ -589,9 +653,9 @@
                         </div>
                         <div class="form-actions mt-3" id="studio-script-actions"
                             style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button class="btn btn-secondary btn-lg" id="btn-create-script" style="flex: 1 1 200px;">
-                                <i class="fa-solid fa-code-branch"></i>
-                                <span id="btn-create-script-label">1. Senaryoyu İncele & Düzenle</span>
+                            <button class="btn btn-primary btn-lg" id="btn-create-script" style="flex: 1 1 200px;">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                <span id="btn-create-script-label">Senaryo Yaz</span>
                             </button>
                             <button type="button" class="btn btn-outline btn-lg hidden"
                                 id="btn-regenerate-script-studio" style="flex: 1 1 180px;"
@@ -1263,10 +1327,10 @@
                         <div class="tl-arc-seg tl-arc-loop" id="tl-arc-loop" style="width: 24%"></div>
                     </div>
                     <div class="tl-arc-labels">
-                        <span id="tl-arc-lbl-intro">🎬 Kanca</span>
-                        <span id="tl-arc-lbl-conflict">⚔️ Çatışma</span>
-                        <span id="tl-arc-lbl-climax">🔥 Doruk</span>
-                        <span id="tl-arc-lbl-loop">🔄 Kapanış</span>
+                        <span id="tl-arc-lbl-intro" class="arc-label-intro">🎬 Kanca</span>
+                        <span id="tl-arc-lbl-conflict" class="arc-label-conflict">⚔️ Çatışma</span>
+                        <span id="tl-arc-lbl-climax" class="arc-label-climax">🔥 Doruk</span>
+                        <span id="tl-arc-lbl-loop" class="arc-label-loop">🔄 Kapanış</span>
                     </div>
                 </div>
 
@@ -1281,18 +1345,72 @@
                     <button class="tl-smart-btn blue" id="btn-fetch-stock-clips" title="Stok videoları otomatik indir">
                         <i class="fa-solid fa-cloud-arrow-down"></i> Stok Çek
                     </button>
-                    <button class="tl-smart-btn cyan" id="btn-fix-cadence" title="Cadence düzelt">
+                    <button class="tl-smart-btn cyan" id="btn-fix-cadence" title="Cadence düzelt & uzun sahneleri böl">
                         <i class="fa-solid fa-scissors"></i> Cadence
                     </button>
                     <button class="tl-smart-btn green" id="btn-enrich-queries" title="Arama terimlerini zenginleştir">
                         <i class="fa-solid fa-wand-sparkles"></i> Zenginleştir
                     </button>
-                    <button class="tl-smart-btn amber" id="btn-balance-durations" title="Süreleri dengele">
+                    <button class="tl-smart-btn amber" id="btn-balance-durations" title="Süreleri dengele & Pacing Guard denetle">
                         <i class="fa-solid fa-scale-balanced"></i> Dengele
                     </button>
-                    <button class="tl-smart-btn" id="btn-hallucination-check" title="Halüsinasyon kontrolü">
-                        <i class="fa-solid fa-magnifying-glass-chart"></i> Kontrol
+                    <button class="tl-smart-btn" id="btn-hallucination-check" title="Halüsinasyon ve Grounding kontrolü (/api/grounding/audit)">
+                        <i class="fa-solid fa-magnifying-glass-chart"></i> Grounding Denetle
                     </button>
+                    <button class="tl-smart-btn purple" id="btn-helios-enhance" title="Helios Sinematik 4K Kamera & Işık Prompt Güçlendirici (/api/helios/enhance_scenes)">
+                        <i class="fa-solid fa-sun"></i> Helios 4K
+                    </button>
+                    <button class="tl-smart-btn cyan" id="btn-toggle-director-pro-bar" title="Stil Profili, Karakter Kilidi, Çok Dilli Dublaj ve Punch-In Zoom Araçları">
+                        <i class="fa-solid fa-sliders"></i> Yönetmen Lab
+                    </button>
+                </div>
+
+                <!-- ═══ DIRECTOR PRO LAB DRAWER (Style Profile / Character Lock / Dubbing / Punch-In) ═══ -->
+                <div id="tl-director-pro-drawer" class="glass-box hidden" style="margin-bottom:14px;padding:12px 14px;border:1px solid rgba(56,189,248,0.3);background:rgba(15,23,42,0.85);">
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end;">
+                        <div>
+                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;">Sinematik Stil Profili</label>
+                            <select id="tl-select-style-profile" class="select-styled" style="font-size:12px;padding:6px 8px;">
+                                <option value="clean_commercial">Clean Commercial (Net Reklam)</option>
+                                <option value="cinematic_dark">Cinematic Dark (Karanlık Sinematik)</option>
+                                <option value="editorial_warm">Editorial Warm (Sıcak Belgesel)</option>
+                                <option value="neon_kinetic">Neon Kinetic (Siber / Kripto)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;">Karakter Kimlik Kilidi (Opsiyonel)</label>
+                            <input type="text" id="tl-input-char-desc" class="input-styled" placeholder="Örn: weathered stoic philosopher in dark cloak" style="font-size:12px;padding:6px 8px;">
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-secondary btn-sm w-100" id="btn-apply-style-profile">
+                                <i class="fa-solid fa-palette text-info"></i> Stil &amp; Karakter Kilidi Uygula
+                            </button>
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:#94a3b8;display:block;margin-bottom:4px;">Çok Dilli Dublaj Dili</label>
+                            <div style="display:flex;gap:6px;">
+                                <select id="tl-select-dub-lang" class="select-styled" style="font-size:12px;padding:6px 8px;flex:1;">
+                                    <option value="en">🇺🇸 English (EN)</option>
+                                    <option value="de">🇩🇪 Deutsch (DE)</option>
+                                    <option value="es">🇪🇸 Español (ES)</option>
+                                    <option value="fr">🇫🇷 Français (FR)</option>
+                                    <option value="ar">🇸🇦 العربية (AR)</option>
+                                    <option value="ru">🇷🇺 Русский (RU)</option>
+                                    <option value="pt">🇧🇷 Português (PT)</option>
+                                    <option value="tr">🇹🇷 Türkçe (TR)</option>
+                                </select>
+                                <button type="button" class="btn btn-primary btn-sm" id="btn-dubbing-pack" title="Senaryoyu seçili dile dublajla ve zamanlamayı koru">
+                                    <i class="fa-solid fa-language"></i> Dublajla
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-outline btn-sm w-100" id="btn-punch-in-curve" title="Vurgu kelimelerine göre Beat Punch-In Zoom eğrisi üret (/api/punch_in/curve)">
+                                <i class="fa-solid fa-magnifying-glass-plus text-warning"></i> Beat Punch-In Zoom Hesapla
+                            </button>
+                        </div>
+                    </div>
+                    <div id="tl-director-pro-status" class="hidden" style="margin-top:10px;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,0.35);font-size:11.5px;color:#cbd5e1;"></div>
                 </div>
 
                 <!-- ═══ SCENES CONTAINER ═══ -->
@@ -1564,20 +1682,6 @@
                                     </button>
                                 </div>
                             </div>
-                            <details class="series-planner mt-2" id="manuscript-import">
-                                <summary><i class="fa-solid fa-file-lines"></i> Hazır metni sahnelere aktar</summary>
-                                <div class="series-planner__body">
-                                    <textarea id="input-manuscript" class="textarea-styled" rows="6" maxlength="12000"
-                                        placeholder="Seslendirilecek hazır metni buraya yapıştırın. Metin cümle sınırlarından yaklaşık 4–8 saniyelik sahnelere ayrılır; anlatım yeniden yazılmaz."></textarea>
-                                    <small class="series-planner__note">En fazla 12.000 karakter ve 24 sahne. Görsel arama sorguları metinden yerel olarak çıkarılır; sonra mevcut timeline'da sahneleri inceleyip düzenleyin.</small>
-                                    <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;">
-                                        <button type="button" class="btn btn-outline btn-sm" id="btn-import-manuscript">
-                                            <i class="fa-solid fa-arrow-right-to-bracket"></i> Metni sahnelere aktar
-                                        </button>
-                                        <span id="manuscript-import-status" aria-live="polite" style="color:#94a3b8;font-size:12px;"></span>
-                                    </div>
-                                </div>
-                            </details>
                         </div>
                     </div>
                 </div>
@@ -2113,6 +2217,39 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Algoritma, Kanal Sağlığı, SEO Operatör Paketi ve Gelir (Monetization) Tanı Merkezi -->
+                <div class="glass-box mt-4" style="border: 1px solid rgba(56, 189, 248, 0.35);">
+                    <div class="box-header">
+                        <i class="fa-solid fa-satellite-dish text-info"></i>
+                        <div>
+                            <h3>Algoritma, Kanal Sağlığı, SEO &amp; Monetization Tanı Merkezi (Items 360-500)</h3>
+                            <p>Retention ivmesi, shadowban teşhisi, YPP gelir hazırlığı, niş liderlik tablosu ve viral formüller.</p>
+                        </div>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-top:14px;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-growth-retention-diag">
+                            <i class="fa-solid fa-gauge-high text-info"></i> Retention &amp; Algoritma Teşhisi
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-growth-shadowban-diag">
+                            <i class="fa-solid fa-shield-halved text-warning"></i> Shadowban &amp; Warm-up Analizi
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-growth-seo-operator">
+                            <i class="fa-solid fa-magnifying-glass-dollar text-success"></i> SEO &amp; Growth Operatör Paketi
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-growth-monetization">
+                            <i class="fa-solid fa-sack-dollar text-warning"></i> YPP Gelir &amp; Müzik/Affiliate Analizi
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" id="btn-growth-niche-leaderboard">
+                            <i class="fa-solid fa-trophy text-primary"></i> Niş Liderlik &amp; Retention Formülleri
+                        </button>
+                    </div>
+
+                    <div id="growth-diagnostic-output" class="mt-3" style="background:rgba(15,23,42,0.8);border:1px solid rgba(148,163,184,0.2);border-radius:10px;padding:14px;font-size:12px;color:#e2e8f0;max-height:320px;overflow-y:auto;">
+                        Yukarıdaki tanı araçlarından birine tıklayarak canlı algoritma, kanal sağlığı veya gelir raporunu görüntüleyin.
+                    </div>
+                </div>
             </section>
 
             <!-- SEKME: 500 MADDE YOL HARİTASI GEZGİNİ -->
@@ -2370,6 +2507,32 @@
                         <button class="btn btn-secondary w-100 mt-3" id="btn-test-sub-animation">
                             <i class="fa-solid fa-play"></i> Karaoke Animasyonunu Canlı Test Et
                         </button>
+
+                        <!-- Kinetik Altyazı Sayfalayıcı & Çok Dilli SRT Çevirici -->
+                        <div style="margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.08);">
+                            <h4 style="font-size:13px;color:#38bdf8;margin:0 0 8px;">
+                                <i class="fa-solid fa-language"></i> Çok Dilli SRT Altyazı Çevirici &amp; Kinetik Sayfa Önizleyici
+                            </h4>
+                            <textarea id="sub-input-srt" class="textarea-styled" rows="4" style="font-size:11px;font-family:var(--font-mono);" placeholder="1&#10;00:00:00,000 --> 00:00:02,500&#10;Dünyanın en büyük gizemi burada başlıyor."></textarea>
+                            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                                <select id="sub-select-target-lang" class="select-styled" style="font-size:12px;padding:6px 8px;flex:1;">
+                                    <option value="en">🇺🇸 İngilizce (EN)</option>
+                                    <option value="de">🇩🇪 Almanca (DE)</option>
+                                    <option value="es">🇪🇸 İspanyolca (ES)</option>
+                                    <option value="fr">🇫🇷 Fransızca (FR)</option>
+                                    <option value="ar">🇸🇦 Arapça (AR)</option>
+                                    <option value="ru">🇷🇺 Rusça (RU)</option>
+                                    <option value="tr">🇹🇷 Türkçe (TR)</option>
+                                </select>
+                                <button type="button" class="btn btn-primary btn-sm" id="btn-translate-srt">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> SRT Çevir
+                                </button>
+                                <button type="button" class="btn btn-outline btn-sm" id="btn-preview-kinetic-pages">
+                                    <i class="fa-solid fa-layer-group"></i> 4-Kelime Sayfa Hesapla
+                                </button>
+                            </div>
+                            <div id="sub-tools-output" class="hidden" style="margin-top:8px;padding:8px;border-radius:6px;background:rgba(0,0,0,0.4);font-size:11px;color:#cbd5e1;max-height:140px;overflow-y:auto;white-space:pre-wrap;"></div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -2463,7 +2626,7 @@
                         <div id="audio-pipeline-status" class="mt-3" style="font-size: 12px; color: #cbd5e1;"></div>
                     </div>
 
-                    <!-- SAĞ: Outro + SFX -->
+                    <!-- SAĞ: Outro + SFX + AI Mood Director -->
                     <div style="display:flex;flex-direction:column;gap:16px;">
                         <!-- OUTRO KARTI -->
                         <div class="glass-box">
@@ -2548,10 +2711,29 @@
                             <div id="media-compliance-status" class="mt-3" style="font-size: 12px; color: #cbd5e1;">
                             </div>
                         </div>
+
+                        <!-- AI MÜZİK RUH HALİ EŞLEŞTİRİCİ & TELİFSİZ BGM ARAMA -->
+                        <div class="glass-box" style="border:1px solid rgba(168,85,247,0.3);">
+                            <div class="box-header">
+                                <i class="fa-solid fa-sliders text-info"></i>
+                                <div>
+                                    <h3>AI Müzik Ruh Hali Eşleştirici &amp; Telifsiz BGM Arama</h3>
+                                    <p>Senaryo duygusuna göre BPM/EQ profili çıkarır ve Pixabay/Mixkit/VoiceLab üzerinden telifsiz parça indirir.</p>
+                                </div>
+                            </div>
+                            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+                                <input type="text" id="audio-rf-search-query" class="input-styled" placeholder="Telifsiz müzik ara (örn: dark stoic ambient, mystery)..." style="flex:1;font-size:12px;">
+                                <button type="button" class="btn btn-secondary btn-sm" id="btn-audio-mood-match" title="Mevcut senaryo veya konuya göre AI BGM & EQ profili öner">
+                                    <i class="fa-solid fa-wand-magic-sparkles text-warning"></i> AI Mood Eşleştir
+                                </button>
+                                <button type="button" class="btn btn-primary btn-sm" id="btn-audio-rf-search">
+                                    <i class="fa-solid fa-magnifying-glass"></i> Ara &amp; İndir
+                                </button>
+                            </div>
+                            <div id="audio-mood-search-results" class="hidden" style="margin-top:10px;padding:10px;border-radius:8px;background:rgba(15,23,42,0.75);font-size:11.5px;color:#e2e8f0;max-height:180px;overflow-y:auto;"></div>
+                        </div>
                     </div>
                 </div>
-            </section>
-
             </section>
 
             <!-- SEKME 10: KANAL & OTOMATİK YAYIN -->
@@ -2766,16 +2948,15 @@
                         <div class="box-header">
                             <i class="fa-solid fa-share-nodes text-primary"></i>
                             <div>
-                                <h3>Çapraz Platform Dışa Aktarma (Item 99)</h3>
-                                <p>Aynı videoyu TikTok ve Instagram Reels için optimize edilmiş başlık ve etiketlerle
-                                    kopyalayın.</p>
+                                <h3>Çapraz Platform Dışa Aktarma &amp; PostBridge Syndication (Item 99)</h3>
+                                <p>Aynı videoyu TikTok, Instagram Reels ve YouTube Shorts için otomatik veya Webhook ile dağıtın.</p>
                             </div>
                         </div>
                         <div class="cross-platform-box mt-3">
                             <div class="platform-row">
                                 <i class="fa-brands fa-tiktok text-light"></i>
                                 <div>
-                                    <strong>TikTok Başlık & Etiket</strong>
+                                    <strong>TikTok Başlık &amp; Etiket</strong>
                                     <p class="text-muted">#Shorts tagleri temizlenip #fyp #viral etiketleri eklenir.</p>
                                 </div>
                             </div>
@@ -2785,6 +2966,17 @@
                                     <strong>Instagram Reels Açıklaması</strong>
                                     <p class="text-muted">Akışta paylaşım ve etkileşim odaklı kurgu.</p>
                                 </div>
+                            </div>
+                            <div style="margin-top:12px; padding-top:10px; border-top:1px solid rgba(255,255,255,0.08);">
+                                <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px; font-size:12px; color:#cbd5e1;">
+                                    <label><input type="checkbox" class="chk-crosspost-platform" value="tiktok" checked> TikTok</label>
+                                    <label><input type="checkbox" class="chk-crosspost-platform" value="instagram_reels" checked> Instagram Reels</label>
+                                    <label><input type="checkbox" class="chk-crosspost-platform" value="youtube_shorts" checked> YouTube Shorts</label>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-primary w-100" id="btn-crosspost-syndicate">
+                                    <i class="fa-solid fa-paper-plane"></i> Son Videoyu Çoklu Platforma Gönder (PostBridge / Webhook)
+                                </button>
+                                <div id="crosspost-syndicate-output" style="display:none; margin-top:8px; font-size:11px; color:#cbd5e1; background:rgba(2,6,23,0.65); padding:8px; border-radius:6px;"></div>
                             </div>
                         </div>
                     </div>
@@ -2986,7 +3178,10 @@
                         </div>
 
                         <div class="form-field mt-2">
-                            <label>Google Gemini API Key</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>Google Gemini API Key</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="gemini" data-input="input-key-gemini" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-gemini" class="input-styled"
                                 placeholder="AIza... veya AQ.Ab8...">
                             <small style="color:#94a3b8;font-size:11px;line-height:1.4;display:block;margin-top:4px;">
@@ -3066,7 +3261,10 @@
                             <div id="gai-status" style="font-size:11px;margin-top:8px;display:none;"></div>
                         </div>
                         <div class="form-field mt-2">
-                            <label>ElevenLabs API Key (Free Tier TTS)</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>ElevenLabs API Key (Free Tier TTS)</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="elevenlabs" data-input="input-key-elevenlabs" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-elevenlabs" class="input-styled" placeholder="sk_...">
                             <small style="color:#94a3b8;font-size:11px;">elevenlabs.io — ~10k karakter/ay ücretsiz. Ses
                                 listesini açar.</small>
@@ -3074,28 +3272,46 @@
                                 style="display:none;margin-top:8px;font-size:11px;color:#cbd5e1;"></div>
                         </div>
                         <div class="form-field mt-2">
-                            <label>DeepSeek API Key (Opsiyonel)</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>DeepSeek API Key (Opsiyonel)</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="deepseek" data-input="input-key-deepseek" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-deepseek" class="input-styled" placeholder="sk-...">
                         </div>
                         <div class="form-field mt-2">
-                            <label>OpenAI API Key (Opsiyonel)</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>OpenAI API Key (Opsiyonel)</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="openai" data-input="input-key-openai" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-openai" class="input-styled" placeholder="sk-proj-...">
                         </div>
                         <div class="form-field mt-2">
-                            <label>Pexels Video API Key</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>Pexels Video API Key</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="pexels" data-input="input-key-pexels" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-pexels" class="input-styled" placeholder="rtGk7Pf...">
                         </div>
                         <div class="form-field mt-2">
-                            <label>Pixabay Video API Key</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>Pixabay Video API Key</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="pixabay" data-input="input-key-pixabay" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-pixabay" class="input-styled" placeholder="427805...">
                         </div>
                         <div class="form-field mt-2">
-                            <label>YouTube Data API v3 Key (Trend Araştırması)</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>YouTube Data API v3 Key (Trend Araştırması)</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="youtube_data" data-input="input-key-youtube-data" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-youtube-data" class="input-styled"
                                 placeholder="AIza...">
                         </div>
                         <div class="form-field mt-2">
-                            <label>Grok API Key (Opsiyonel)</label>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <label>Grok API Key (Opsiyonel)</label>
+                                <button type="button" class="btn btn-xs btn-outline btn-test-api-key" data-provider="grok" data-input="input-key-grok" style="font-size:10px; padding:2px 8px;">Test Et</button>
+                            </div>
                             <input type="password" id="input-key-grok" class="input-styled" placeholder="xai-...">
                         </div>
                         <div class="form-field mt-2">
@@ -3119,6 +3335,37 @@
                             </div>
                             <input type="password" id="input-key-reddit-secret" class="input-styled"
                                 placeholder="Boş bırakılabilir (Sistem Otomatik Bulur)">
+                        </div>
+
+                        <!-- Bildirim, Syndication & Bulut TTS Anahtarları -->
+                        <div style="margin-top:14px; padding-top:12px; border-top:1px dashed rgba(255,255,255,0.12);">
+                            <h4 style="margin:0 0 8px; font-size:12px; color:#38bdf8;"><i class="fa-solid fa-bell"></i> Bildirim (Telegram / Discord), PostBridge &amp; Azure TTS</h4>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                                <div class="form-field">
+                                    <label style="font-size:11px;">Telegram Bot Token</label>
+                                    <input type="password" id="input-key-telegram-token" class="input-styled" placeholder="123456:ABC-DEF...">
+                                </div>
+                                <div class="form-field">
+                                    <label style="font-size:11px;">Telegram Chat ID</label>
+                                    <input type="text" id="input-key-telegram-chat" class="input-styled" placeholder="-100123456789">
+                                </div>
+                                <div class="form-field">
+                                    <label style="font-size:11px;">Discord Webhook URL</label>
+                                    <input type="password" id="input-key-discord-webhook" class="input-styled" placeholder="https://discord.com/api/webhooks/...">
+                                </div>
+                                <div class="form-field">
+                                    <label style="font-size:11px;">PostBridge API Key (Syndication)</label>
+                                    <input type="password" id="input-key-postbridge" class="input-styled" placeholder="pb_live_...">
+                                </div>
+                                <div class="form-field">
+                                    <label style="font-size:11px;">Azure Speech Key (Opsiyonel)</label>
+                                    <input type="password" id="input-key-azure-speech" class="input-styled" placeholder="Azure TTS Key">
+                                </div>
+                                <div class="form-field">
+                                    <label style="font-size:11px;">Azure Speech Region</label>
+                                    <input type="text" id="input-key-azure-region" class="input-styled" placeholder="eastus">
+                                </div>
+                            </div>
                         </div>
 
                         <button class="btn btn-primary w-100 mt-3" id="btn-save-settings">
@@ -3147,6 +3394,20 @@
                         </div>
                         <!-- Detaylı Kota Uyarı ve Yenilenme Alanı -->
                         <div id="quota-exhaustion-details" class="mt-3" style="display: none;"></div>
+
+                        <!-- Yerel Ollama LLM & Public APIs Canlı Sağlık Kontrolü -->
+                        <div style="margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <h4 style="margin:0 0 8px; font-size:13px; color:#f8fafc;"><i class="fa-solid fa-heart-pulse text-success"></i> Yerel Ollama LLM &amp; Public APIs Canlı Durum</h4>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                                <button type="button" class="btn btn-sm btn-outline" id="btn-check-ollama-status">
+                                    <i class="fa-solid fa-server"></i> Yerel Ollama Kontrol Et
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline" id="btn-check-public-apis-live">
+                                    <i class="fa-solid fa-globe"></i> Public APIs Canlı Ping
+                                </button>
+                            </div>
+                            <div id="settings-health-probe-output" style="display:none; margin-top:10px; padding:10px; border-radius:8px; background:rgba(2,6,23,0.65); border:1px solid rgba(148,163,184,0.2); font-size:11px; color:#cbd5e1; max-height:220px; overflow:auto;"></div>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -3513,6 +3774,11 @@
                         title="Kapak görseli üret">
                         <i class="fa-solid fa-image"></i> Kapak Üret
                     </button>
+                    <button type="button" class="btn btn-sm btn-outline" id="btn-pub-crosspost"
+                        title="TikTok, Instagram Reels ve YouTube Shorts çapraz dağıtım"
+                        style="color:#a78bfa; border-color:rgba(167,139,250,0.4);">
+                        <i class="fa-solid fa-share-nodes"></i> Çoklu Platforma Gönder
+                    </button>
                     <a href="https://studio.youtube.com" target="_blank" rel="noopener" class="btn btn-sm btn-secondary"
                         style="display: inline-flex; align-items: center; gap: 6px; text-decoration: none;">
                         <i class="fa-brands fa-youtube"></i> Studio'yu Aç
@@ -3842,21 +4108,49 @@
     <!-- BİLDİRİM TOAST ALANI -->
     <div class="toast-container" id="toast-container"></div>
 
-    <script src="/static/hardware_panel.js?v=5.2"></script>
+    <script src="/static/hardware_panel.js?v=12.0"></script>
     <!-- Modular Application Engines -->
-    <script src="/static/js/state.js?v=7.1"></script>
-    <script src="/static/js/navigation.js?v=6.5"></script>
-    <script src="/static/js/clipper.js?v=1.1"></script>
-    <script src="/static/js/niches.js?v=6.1"></script>
-    <script src="/static/js/studio.js?v=7.1"></script>
-    <script src="/static/js/timeline.js?v=6.0"></script>
-    <script src="/static/js/audio-media.js?v=6.6"></script>
-    <script src="/static/js/public-apis.js?v=1.0"></script>
-    <script src="/static/js/render-monitor.js?v=6.9"></script>
-    <script src="/static/js/gallery-channels.js?v=6.0"></script>
-    <script src="/static/js/settings-quota.js?v=6.0"></script>
-    <script src="/static/js/viral_features.js?v=1.0"></script>
-    <script src="/static/app.js?v=5.7"></script>
+    <script src="/static/js/state-defaults.js?v=12.0"></script>
+    <script src="/static/js/state-sync.js?v=12.0"></script>
+    <script src="/static/js/state.js?v=12.0"></script>
+    <script src="/static/js/navigation.js?v=12.0"></script>
+    <script src="/static/js/clipper.js?v=12.0"></script>
+    <script src="/static/js/niches.js?v=12.0"></script>
+    <script src="/static/js/studio-plan-editor.js?v=12.0"></script>
+    <script src="/static/js/studio-ai-tools.js?v=12.0"></script>
+    <script src="/static/js/studio.js?v=12.0"></script>
+    <script src="/static/js/timeline-preview.js?v=12.0"></script>
+    <script src="/static/js/timeline.js?v=12.0"></script>
+    <script src="/static/js/bgm-library.js?v=12.0"></script>
+    <script src="/static/js/audio-media.js?v=12.0"></script>
+    <script src="/static/js/public-apis.js?v=12.0"></script>
+    <script src="/static/js/render-sse-handler.js?v=12.0"></script>
+    <script src="/static/js/render-monitor.js?v=12.0"></script>
+    <script src="/static/js/channels-manager.js?v=12.0"></script>
+    <script src="/static/js/gallery-channels.js?v=12.0"></script>
+    <script src="/static/js/quota-analytics.js?v=12.0"></script>
+    <script src="/static/js/settings-quota.js?v=12.0"></script>
+    <script src="/static/js/viral_features.js?v=12.0"></script>
+    <script src="/static/js/studio-wizard.js?v=12.0"></script>
+    <script src="/static/js/studio-wizard-step1.js?v=12.0"></script>
+    <script src="/static/js/studio-wizard-step2.js?v=12.0"></script>
+    <script src="/static/js/studio-wizard-step3.js?v=12.0"></script>
+    <script src="/static/js/studio-wizard-step4.js?v=12.0"></script>
+    <script src="/static/js/studio-phone-preview.js?v=12.0"></script>
+    <script src="/static/js/timeline-ux-enhancements.js?v=12.0"></script>
+    <script src="/static/js/tools-ux-enhancements.js?v=12.0"></script>
+    <script src="/static/js/gallery-channels-ux.js?v=12.0"></script>
+    <script src="/static/js/visual-hierarchy-ux.js?v=12.0"></script>
+    <script src="/static/js/secondary-tabs-ux.js?v=12.0"></script>
+    <script src="/static/js/git-auth-ui.js?v=12.0"></script>
+    <script src="/static/app.js?v=12.0"></script>
+    <script>
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", function () {
+                navigator.serviceWorker.register("/sw.js").catch(function () {});
+            });
+        }
+    </script>
 </body>
 
 </html>

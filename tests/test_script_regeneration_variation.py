@@ -4,7 +4,8 @@ from server import app
 from scenes.generator import generate_scenes
 
 
-def test_generate_scenes_returns_different_narrations_on_regeneration():
+def test_generate_scenes_returns_different_narrations_on_regeneration(monkeypatch):
+    monkeypatch.setenv("SHORTS_FORCE_PROCEDURAL_FALLBACK", "1")
     topic = "Hz. Peygamber'in en çok tekrar ettiği o dua bugün hayatınızı değiştirebilir."
     
     plan1 = generate_scenes(
@@ -42,7 +43,11 @@ def test_generate_scenes_returns_different_narrations_on_regeneration():
     assert narr1 != narr3, "Third generation must differ from first"
 
 
-def test_api_script_generate_with_force_regenerate():
+def test_api_script_generate_with_force_regenerate(monkeypatch):
+    import routers.media_router as media_router
+
+    monkeypatch.setenv("SHORTS_FORCE_PROCEDURAL_FALLBACK", "1")
+    monkeypatch.setattr(media_router, "auto_fetch_videos_for_scenes", lambda scenes, **kw: scenes)
     client = TestClient(app)
     topic = "Karanlık Psikoloji Beden Dili İpuçları"
 

@@ -75,11 +75,11 @@ class SubprocessRollbackManager:
         self._active_processes: Set[subprocess.Popen] = set()
         self._temp_files: Set[str] = set()
 
-    def register_process(self, proc: subprocess.Popen) -> None:
-        if proc and isinstance(proc, subprocess.Popen):
+    def register_process(self, proc: Any) -> None:
+        if proc is not None and callable(getattr(proc, "poll", None)):
             self._active_processes.add(proc)
 
-    def unregister_process(self, proc: subprocess.Popen) -> None:
+    def unregister_process(self, proc: Any) -> None:
         self._active_processes.discard(proc)
 
     def register_temp_file(self, file_path: str) -> None:

@@ -1,3 +1,4 @@
+/* === LEGACY SETTINGS QUOTA BASE === */
 /* Sidebar settings / quota panel — scoped to .sidebar-status-panel */
 
 .sidebar-status-panel {
@@ -106,7 +107,7 @@
 .ssp-tabs-nav {
     display: flex;
     gap: 2px;
-    background: rgba(15, 23, 42, 0.65);
+    background: rgba(17, 23, 25, 0.65);
     padding: 3px;
     border-radius: 6px;
     margin-bottom: 8px;
@@ -481,4 +482,261 @@
     font-size: 10px;
     color: var(--text-muted);
     margin-top: 4px;
+}
+
+/* === SHORTS STUDIO QUOTA OVERRIDES === */
+/* ============================================================================
+   SHORTS STUDIO — SIDEBAR FOOTER, THEME PICKER & QUOTA METERS (settings-quota.css)
+   Matches Shorts Studio.html .side-foot, .quota, .quota-line, .progress, .bar
+   ============================================================================ */
+
+.sidebar-status-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.ssp-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.ssp-head-title {
+    font: 600 9px var(--font-mono);
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* Accessible 44x44px Theme Picker Buttons (required by theme_selector_accessibility.test.cjs) */
+.theme-dots,
+.theme-dots-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.theme-dot,
+.theme-dots-sm .theme-dot {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.theme-dot::after,
+.theme-dots-sm .theme-dot::after {
+    content: "";
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: block;
+    transition: transform 0.2s ease;
+}
+
+.theme-dot.violet::after { background: #c8ff3d; }
+.theme-dot.cyan::after { background: #58d9e8; }
+.theme-dot.emerald::after { background: #4bd482; }
+.theme-dot.amber::after { background: #ffb84d; }
+
+.theme-dot.active,
+.theme-dot[aria-pressed="true"] {
+    border-color: var(--lime);
+    background: var(--panel2);
+}
+
+.theme-dot.active::after,
+.theme-dot[aria-pressed="true"]::after {
+    transform: scale(1.25);
+    box-shadow: 0 0 0 3px rgba(200, 255, 61, 0.22);
+}
+
+.theme-dot:focus-visible,
+.theme-dots-sm .theme-dot:focus-visible {
+    outline: 2px solid var(--lime);
+    outline-offset: 2px;
+}
+
+/* Sidebar Quota Summary Card */
+.ssp-quota-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ssp-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.ssp-render-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: 500 10px var(--font-mono);
+    color: var(--muted);
+}
+
+.ssp-render-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4bd482;
+    box-shadow: 0 0 0 3px rgba(75, 212, 130, 0.14);
+}
+
+.ssp-details-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    color: var(--lime);
+    display: grid;
+    place-items: center;
+}
+
+.ssp-cat-tabs {
+    display: flex;
+    gap: 3px;
+}
+
+.ssp-cat-tab {
+    flex: 1;
+    padding: 4px 5px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--panel2);
+    color: var(--muted);
+    font: 600 8px var(--font-mono);
+}
+
+.ssp-cat-tab.active {
+    background: var(--lime);
+    border-color: var(--lime);
+    color: #172000;
+}
+
+.ssp-all-quotas-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ssp-quota-row-item {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 8px;
+    cursor: pointer;
+}
+
+.ssp-qri-top,
+.ssp-qri-sub,
+.quota-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+    margin-bottom: 4px;
+}
+
+.ssp-qri-sub,
+.quota-line span:last-child {
+    font-family: var(--font-mono);
+    color: var(--muted);
+    font-size: 9px;
+}
+
+.ssp-qri-track,
+.ssp-meter-track,
+.quota-bar-wrapper {
+    height: 6px;
+    background: #263237;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+.ssp-qri-fill,
+.ssp-meter-fill,
+.quota-bar-fill {
+    height: 100%;
+    background: var(--lime);
+    border-radius: 20px;
+    transition: width 0.4s ease;
+}
+
+.ssp-footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font: 500 9px var(--font-mono);
+    color: var(--muted);
+}
+
+.ssp-cost-chip {
+    color: var(--lime);
+}
+
+/* Settings Pane Grid */
+.settings-grid,
+.quota-dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 16px;
+}
+
+.api-key-row,
+.provider-card {
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Final Shorts Studio Overrides in settings-quota.css */
+.theme-dots-sm {
+    gap: 0 !important;
+}
+.theme-dots-sm .theme-dot,
+.theme-dots-sm .theme-dot.active {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    flex: 0 0 32px !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+    background: transparent !important;
+    border-color: transparent !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+.theme-dots-sm .theme-dot::before {
+    display: none !important;
 }
