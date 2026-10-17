@@ -161,7 +161,7 @@ class TestChapter33P2TimedBroll(unittest.TestCase):
             {"path": "clip2.mp4", "duration": 4.0},
             {"path": "clip3.mp4", "duration": 4.0},
         ]
-        with patch("render.ffmpeg_graph._plan_cutaways") as mock_plan:
+        with patch("render.ffmpeg_graph.config.RENDER_SAFE_MODE", False), patch("render.ffmpeg_graph._plan_cutaways") as mock_plan:
             mock_plan.return_value = [("donor.mp4", 1.0, 3.5), ("donor2.mp4", 5.0, 7.5)]
             captured_cmds = []
 
