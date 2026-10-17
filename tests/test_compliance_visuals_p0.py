@@ -152,7 +152,7 @@ class TestKineticProcedural(unittest.TestCase):
 
     def test_turkish_drawtext_filtergraph_parses(self):
         import subprocess
-        import imageio_ffmpeg
+        from visuals.motion_graphics import _resolve_ffmpeg_exe
 
         with tempfile.TemporaryDirectory() as td:
             textfile = os.path.join(td, "cap.txt")
@@ -172,7 +172,7 @@ class TestKineticProcedural(unittest.TestCase):
             )
             graph = f"{dt},format=yuv420p"
             self.assertNotIn("\n", graph)
-            ff = imageio_ffmpeg.get_ffmpeg_exe()
+            ff = _resolve_ffmpeg_exe()
             cmd = [
                 ff, "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", "color=c=0x111111:s=320x180:d=1:r=24",

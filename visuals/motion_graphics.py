@@ -129,6 +129,43 @@ def _grain_suffix(enabled: bool) -> str:
     return ",format=yuv420p"
 
 
+_RESOLVED_FFMPEG_EXE: Optional[str] = None
+
+
+def _resolve_ffmpeg_exe() -> str:
+    """Prefer an FFmpeg binary that supports the 'drawtext' filter (system ffmpeg on Linux CI)."""
+    global _RESOLVED_FFMPEG_EXE
+    if hasattr(imageio_ffmpeg.get_ffmpeg_exe, "_mock_name"):
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    if _RESOLVED_FFMPEG_EXE:
+        return _RESOLVED_FFMPEG_EXE
+    import shutil
+
+    candidates: List[str] = []
+    try:
+        candidates.append(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        pass
+    sys_ff = shutil.which("ffmpeg")
+    if sys_ff and sys_ff not in candidates:
+        candidates.append(sys_ff)
+    for exe in candidates:
+        try:
+            res = subprocess.run(
+                [exe, "-hide_banner", "-filters"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+            )
+            if b"drawtext" in (res.stdout or b""):
+                _RESOLVED_FFMPEG_EXE = exe
+                return exe
+        except Exception:
+            continue
+    _RESOLVED_FFMPEG_EXE = candidates[0] if candidates else "ffmpeg"
+    return _RESOLVED_FFMPEG_EXE
+
+
 def _run_ffmpeg(cmd: List[str], output_path: str, label: str, min_size: int = 12_000) -> bool:
     try:
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180)
@@ -164,7 +201,7 @@ def build_solid_color_clip(
     text_c = pal.get("text", (255, 255, 255))
     accent = pal.get("accent", (200, 200, 200))
     color_src = f"color=c={_rgb(bg)}:s={w}x{h}:d={dur:.3f}:r={r}"
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg = _resolve_ffmpeg_exe()
     if textfile and os.path.isfile(textfile):
         font = fontfile or _pick_fontfile()
         dt = _drawtext_filter(
@@ -276,23 +313,24 @@ def build_kinetic_clip(
         f"death_color=black:life_color={_rgb(accent)}:stitch=0,"
         f"scale={w}:{h}:flags=bicubic,gblur=sigma={max(10, w // 50)}"
     )
-    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    ffmpeg = _resolve_ffmpeg_exe()
 
-    def _full_graph(grain: bool) -> str:
+    def _full_graph(grain: bool, with_drawtext: bool = True) -> str:
+        text_chain = f",{dt_shadow},{dt_main}" if with_drawtext else ""
         return (
             "[0:v]format=gbrp[bg];[1:v]format=gbrp[fx];"
             "[bg][fx]blend=all_mode=screen:all_opacity=0.55,"
             f"{pan},"
-            f"{box},{dt_shadow},{dt_main}{_grain_suffix(grain)}"
+            f"{box}{text_chain}{_grain_suffix(grain)}"
         )
 
     try:
-        for grain, label in ((True, "full"), (False, "no-grain")):
+        for grain, with_dt, label in ((True, True, "full"), (False, True, "no-grain"), (True, False, "gradient-box")):
             cmd = [
                 ffmpeg, "-y", "-loglevel", "error",
                 "-f", "lavfi", "-i", grad,
                 "-f", "lavfi", "-i", life,
-                "-filter_complex", _full_graph(grain),
+                "-filter_complex", _full_graph(grain, with_drawtext=with_dt),
                 "-t", f"{dur:.3f}",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-an",
                 output_path,

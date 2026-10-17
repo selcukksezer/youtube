@@ -246,7 +246,9 @@ function setStudioWizardStep(stepNum, options = {}) {
     currentWizardStep = targetStep;
     visitedWizardSteps.add(targetStep);
 
-    try { localStorage.setItem(WIZARD_STORAGE_STEP_KEY, String(targetStep)); } catch (e) {}
+    if (!options.init) {
+        try { localStorage.setItem(WIZARD_STORAGE_STEP_KEY, String(targetStep)); } catch (e) {}
+    }
 
     const formCard = document.querySelector('#pane-studio .studio-form-card');
     if (formCard) {
@@ -259,6 +261,9 @@ function setStudioWizardStep(stepNum, options = {}) {
         }
     }
 
+    if (targetStep === 1 && typeof window.refreshWizardStep1UI === 'function') {
+        window.refreshWizardStep1UI();
+    }
     if (targetStep === 2) {
         if (typeof updateScriptActionButtons === 'function') updateScriptActionButtons();
         syncWizardStep2Preview();
@@ -347,6 +352,7 @@ function resetCurrentWizardStep() {
     }
     if (typeof updateScriptActionButtons === 'function') updateScriptActionButtons();
     if (typeof saveStudioSettings === 'function') saveStudioSettings();
+    if (typeof window.refreshWizardStep1UI === 'function') window.refreshWizardStep1UI();
     syncWizardStep2Preview();
     if (typeof showToast === 'function') {
         showToast(`Adım 0${currentWizardStep} varsayılan ayarlara sıfırlandı.`);
@@ -384,7 +390,8 @@ function syncGlobalWizardBar() {
     const activePane = document.querySelector('.tab-pane.active');
     const activeTab = activePane ? activePane.id.replace(/^pane-/, '') : 'studio';
     document.querySelectorAll('.top-module-tab[data-tab]').forEach((b) => {
-        b.classList.toggle('active', b.getAttribute('data-tab') === activeTab);
+        const isCurrent = b.getAttribute('data-tab') === activeTab;
+        b.classList.toggle('active', isCurrent);
     });
     document.querySelectorAll('.wizard-step-pill').forEach((pill) => {
         const pTab = pill.getAttribute('data-wtab');

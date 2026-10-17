@@ -236,7 +236,7 @@ def get_encoder_fallback_chain(
     )
     passed = [codec for codec in candidate_order if report.get(codec)]
     compiled = [codec for codec in candidate_order if not avail or codec in avail]
-    pool = passed if report else (passed or compiled)
+    pool = passed if passed else (compiled or list(candidates)[:1])
     if preferred and report.get(preferred) is False:
         preferred = ""
 

@@ -18,3 +18,6 @@ google-auth-oauthlib>=1.0.0
 google-auth-httplib2>=0.1.0
 yt-dlp>=2024.0.0
 twelvelabs>=1.2.8
+pytest>=8.0.0
+httpx>=0.24.0
+

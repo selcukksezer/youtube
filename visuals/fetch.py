@@ -399,7 +399,7 @@ def fetch_open_visual(
         out = os.path.join(project_dir, f"s{scene_index:03d}_{cand.source}_{cand.id.split('_')[-1]}.mp4")
         if not _download(cand.url, raw):
             continue
-        if cand.kind == "video":
+        if cand.kind == "video" and os.path.isfile(raw):
             from system_resilience import verify_stock_video_integrity
             integrity = verify_stock_video_integrity(raw, min_duration=0.5)
             if not integrity.get("valid", False):
@@ -446,7 +446,7 @@ def fetch_open_visual(
                             n_raw = os.path.join(project_dir, f"s{scene_index:03d}_{nc.source}_raw{raw_ext}")
                             n_out = os.path.join(project_dir, f"s{scene_index:03d}_{nc.source}_{nc.id.split('_')[-1]}.mp4")
                             if _download(nc.url, n_raw):
-                                if nc.kind == "video":
+                                if nc.kind == "video" and os.path.isfile(n_raw):
                                     from system_resilience import verify_stock_video_integrity
                                     n_integrity = verify_stock_video_integrity(n_raw, min_duration=0.5)
                                     if not n_integrity.get("valid", False):
