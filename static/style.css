@@ -8036,6 +8036,10 @@ textarea {
 }
 
 /* iOS Standalone PWA Safe Area Support (Dynamic Island / Home Indicator) */
+.ios-bottom-nav {
+    display: none;
+}
+
 @supports (padding-top: env(safe-area-inset-top)) {
     body {
         padding-top: env(safe-area-inset-top);
@@ -8051,4 +8055,227 @@ textarea {
         padding-bottom: calc(8px + env(safe-area-inset-bottom));
     }
 }
+
+/* ============================================================================
+   9. FULL iOS / IPHONE MOBILE ERGONOMICS & NATIVE BOTTOM TAB BAR (<= 768px)
+   ============================================================================ */
+@media (max-width: 768px) {
+    html, body {
+        overflow-x: hidden;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Prevent iOS Safari auto-zoom when focusing inputs */
+    input[type="text"],
+    input[type="number"],
+    input[type="url"],
+    input[type="search"],
+    input[type="password"],
+    select,
+    textarea,
+    .input-styled,
+    .select-styled,
+    .textarea-styled {
+        font-size: 16px !important;
+    }
+
+    .main-content,
+    main {
+        padding: 10px 12px calc(132px + env(safe-area-inset-bottom)) !important;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+
+    /* Compact Sticky Mobile Top Header */
+    .top-header {
+        position: sticky;
+        top: 0;
+        z-index: 950;
+        background: rgba(8, 13, 15, 0.92);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        padding: 8px 10px !important;
+        margin: -10px -12px 10px -12px !important;
+        border-bottom: 1px solid var(--line);
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        gap: 8px !important;
+    }
+
+    .header-heading {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .header-left {
+        min-width: 0;
+    }
+
+    .header-left h2 {
+        font-size: 15px !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        margin: 0 !important;
+    }
+
+    #current-page-desc,
+    .top-header .stat-bubble:not(.ai-quota-bubble),
+    #chip-server-health,
+    #header-git-text {
+        display: none !important;
+    }
+
+    .header-right,
+    .stat-pill-group {
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 5px !important;
+        flex-shrink: 0;
+    }
+
+    #header-ai-quota-btn {
+        padding: 5px 7px !important;
+        font-size: 10px !important;
+    }
+
+    #header-quota-tag {
+        display: none !important;
+    }
+
+    #header-btn-open-terminal,
+    #header-btn-git-update,
+    #header-btn-logout {
+        min-width: 36px;
+        height: 36px;
+        padding: 0 8px !important;
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* Collapse all multi-column studio & inline grids for iPhone width */
+    .studio-grid,
+    .content-grid,
+    .tl-scene-card,
+    .wiz-voice-speed-tone-bar,
+    .wiz-s3-row-triple,
+    .pub-confirm-controls,
+    .studio-bridge,
+    #niche-modal-body,
+    [style*="grid-template-columns: 320px"],
+    [style*="grid-template-columns: 280px"],
+    [style*="grid-template-columns: 1fr 1fr"],
+    [style*="grid-template-columns:1fr 1fr"],
+    [style*="minmax(360px"],
+    [style*="minmax(320px"] {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .studio-flow-rail,
+    .wizard,
+    #studio-flow-rail,
+    .wizard-breadcrumb-chips,
+    .wiz-voice-quick-cards,
+    .wiz-visual-engine-cards,
+    .wiz-step3-subtitle-cards,
+    .wiz-step4-plain-metrics,
+    .wiz-stage-rail {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    .tl-ivd-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+
+    /* Responsive Phone Preview on iPhone */
+    .studio-preview-shell {
+        position: static !important;
+        margin-top: 12px;
+    }
+
+    #pane-studio .studio-phone {
+        max-width: min(100%, 300px) !important;
+        width: 100% !important;
+    }
+
+    /* Modals fit cleanly on iPhone screen */
+    .modal-card,
+    .modal-content {
+        width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 20px) !important;
+        max-height: 86vh !important;
+        overflow-y: auto !important;
+    }
+
+    /* Lift wizard bottom bar above iOS bottom tab bar */
+    .wizard-bottom-bar {
+        left: 0 !important;
+        right: 0 !important;
+        bottom: calc(58px + env(safe-area-inset-bottom)) !important;
+        padding: 8px 12px !important;
+        z-index: 990 !important;
+    }
+
+    /* iOS Native Bottom Navigation Bar */
+    .ios-bottom-nav {
+        display: grid !important;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: calc(58px + env(safe-area-inset-bottom));
+        padding-bottom: env(safe-area-inset-bottom);
+        background: rgba(8, 13, 15, 0.94);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border-top: 1px solid var(--line);
+        z-index: 1050;
+    }
+
+    .ios-bottom-nav__btn {
+        appearance: none;
+        background: transparent;
+        border: none;
+        color: var(--muted);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        padding: 6px 2px;
+        transition: color 0.16s ease;
+    }
+
+    .ios-bottom-nav__btn i {
+        font-size: 16px;
+    }
+
+    .ios-bottom-nav__btn.active {
+        color: var(--lime);
+    }
+}
+
+@media (max-width: 480px) {
+    .wiz-niche-quick-cards,
+    .wiz-split-screen-cards,
+    .wiz-post-render-action-bar {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #pane-studio .studio-form-card,
+    .card {
+        padding: 12px !important;
+    }
+}
+
 

@@ -1,5 +1,5 @@
 /**
- * Git Auto/Manual Updater & Session Auth Controls for Shorts Studio UI
+ * Git Auto/Manual Updater, Session Auth Controls & iOS Bottom Tab Bar for Shorts Studio UI
  */
 (function () {
     "use strict";
@@ -116,6 +116,51 @@
         }
     }
 
+    function initIosBottomNav() {
+        const bottomNav = document.getElementById("ios-bottom-nav");
+        if (!bottomNav) return;
+
+        const iosButtons = Array.from(bottomNav.querySelectorAll(".ios-bottom-nav__btn"));
+
+        function syncActiveIosTab(tabId) {
+            iosButtons.forEach(function (btn) {
+                const t = btn.getAttribute("data-ios-tab");
+                if (t) {
+                    btn.classList.toggle("active", t === tabId);
+                }
+            });
+        }
+
+        iosButtons.forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                const action = btn.getAttribute("data-ios-action");
+                if (action === "drawer") {
+                    document.body.classList.toggle("mobile-nav-open");
+                    return;
+                }
+                const tabId = btn.getAttribute("data-ios-tab");
+                if (!tabId) return;
+                document.body.classList.remove("mobile-nav-open");
+                const sideBtn = document.querySelector('.nav-btn[data-tab="' + tabId + '"]');
+                if (sideBtn) {
+                    sideBtn.click();
+                } else if (typeof window.switchTab === "function") {
+                    window.switchTab(tabId);
+                }
+                syncActiveIosTab(tabId);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            });
+        });
+
+        document.querySelectorAll(".sidebar .nav-btn[data-tab]").forEach(function (sideBtn) {
+            sideBtn.addEventListener("click", function () {
+                const tabId = sideBtn.getAttribute("data-tab");
+                if (tabId) syncActiveIosTab(tabId);
+                document.body.classList.remove("mobile-nav-open");
+            });
+        });
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         const gitBtn = document.getElementById("header-btn-git-update");
         if (gitBtn) {
@@ -125,6 +170,7 @@
         if (logoutBtn) {
             logoutBtn.addEventListener("click", handleLogout);
         }
+        initIosBottomNav();
         refreshGitStatus(false);
         setInterval(function () {
             refreshGitStatus(true);

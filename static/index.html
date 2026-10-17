@@ -3168,7 +3168,7 @@
                 </div>
 
                 <div class="grid-2-col">
-                    <div class="glass-box">
+                    <form class="glass-box" onsubmit="return false;" autocomplete="off">
                         <div class="box-header">
                             <i class="fa-solid fa-key text-warning"></i>
                             <div>
@@ -3368,11 +3368,11 @@
                             </div>
                         </div>
 
-                        <button class="btn btn-primary w-100 mt-3" id="btn-save-settings">
+                        <button type="button" class="btn btn-primary w-100 mt-3" id="btn-save-settings">
 
                             <i class="fa-solid fa-floppy-disk"></i> Ayarları Kaydet
                         </button>
-                    </div>
+                    </form>
 
                     <div class="glass-box">
                         <div class="box-header">
@@ -3500,15 +3500,15 @@
                     Yapay zekanın girdiğiniz her konuya özel <strong>%100 dinamik, benzersiz ve yaratıcı
                         senaryolar</strong> üretebilmesi için Google Gemini anahtarınızı bağlayın:
                 </p>
-                <div style="display: flex; gap: 8px;">
-                    <input type="password" id="modal-quick-gemini-key" class="input-styled"
+                <form onsubmit="return false;" autocomplete="off" style="display: flex; gap: 8px;">
+                    <input type="password" id="modal-quick-gemini-key" class="input-styled" autocomplete="new-password"
                         placeholder="AIzaSy... ile başlayan anahtarınızı yapıştırın"
                         style="flex: 1; font-size: 12px; font-family: monospace;">
                     <button type="button" class="btn btn-primary btn-sm" id="btn-modal-save-gemini-key"
                         style="white-space: nowrap;">
                         <i class="fa-solid fa-check"></i> Kaydet & Bağla
                     </button>
-                </div>
+                </form>
                 <div id="modal-gemini-key-status" style="font-size: 11px; margin-top: 6px; display: none;"></div>
             </div>
 
@@ -4104,6 +4104,30 @@
             </div>
         </div>
     </div>
+
+    <!-- iOS / MOBİL ALT NAVİGASYON BARI -->
+    <nav class="ios-bottom-nav" id="ios-bottom-nav" aria-label="Mobil alt menü">
+        <button type="button" class="ios-bottom-nav__btn active" data-ios-tab="studio">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>Üretim</span>
+        </button>
+        <button type="button" class="ios-bottom-nav__btn" data-ios-tab="clipper">
+            <i class="fa-solid fa-scissors"></i>
+            <span>Clipper</span>
+        </button>
+        <button type="button" class="ios-bottom-nav__btn" data-ios-tab="timeline">
+            <i class="fa-solid fa-sliders"></i>
+            <span>Sahne</span>
+        </button>
+        <button type="button" class="ios-bottom-nav__btn" data-ios-tab="gallery">
+            <i class="fa-solid fa-photo-film"></i>
+            <span>Galeri</span>
+        </button>
+        <button type="button" class="ios-bottom-nav__btn" data-ios-action="drawer" id="ios-bottom-btn-menu">
+            <i class="fa-solid fa-bars"></i>
+            <span>Menü</span>
+        </button>
+    </nav>
 
     <!-- BİLDİRİM TOAST ALANI -->
     <div class="toast-container" id="toast-container"></div>
