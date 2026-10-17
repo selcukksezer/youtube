@@ -118,6 +118,12 @@ def get_appeal_video_operator_status(channel_id: str) -> dict[str, Any]:
 def get_notification_channels_health(env: dict[str, str] | None = None) -> dict[str, Any]:
     """Checks which webhook/bot notification channels are configured and ready."""
     import os
+    if env is None:
+        try:
+            import importlib, config as _cfg
+            importlib.reload(_cfg)
+        except Exception:
+            pass
 
     src = env if env is not None else os.environ
     channels = {

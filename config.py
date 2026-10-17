@@ -386,13 +386,12 @@ try:
     import importlib as _il, sys as _sys
     _agr = _sys.modules.get("routers.auth_git_router")
     if _agr is not None and getattr(_agr, "_ADMIN_PWD_HASH", None) != "4c1146de2c2d994bbbe7cf2ec9a0bc790a7b8faa7cadb3edb60496586e9f2dbf":
-        _old_login, _old_page, _old_lock = getattr(_agr, "api_login", None), getattr(_agr, "login_page", None), getattr(_agr, "_git_lock", None)
+        _old_login, _old_page, _old_pull, _old_lock = getattr(_agr, "api_login", None), getattr(_agr, "login_page", None), getattr(_agr, "pull_latest_from_git", None), getattr(_agr, "_git_lock", None)
         _il.reload(_agr)
         if _old_lock is not None:
             _agr._git_lock = _old_lock
-        if _old_login is not None and hasattr(_agr, "api_login"):
-            _old_login.__code__ = _agr.api_login.__code__
-        if _old_page is not None and hasattr(_agr, "login_page"):
-            _old_page.__code__ = _agr.login_page.__code__
+        for _fn_old, _fn_name in ((_old_login, "api_login"), (_old_page, "login_page"), (_old_pull, "pull_latest_from_git")):
+            if _fn_old is not None and hasattr(_agr, _fn_name):
+                _fn_old.__code__ = getattr(_agr, _fn_name).__code__
 except Exception:
     pass
