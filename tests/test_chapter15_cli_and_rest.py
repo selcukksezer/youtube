@@ -16,6 +16,11 @@ class TestChapter15CliAndRest(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
+    def tearDown(self):
+        from server_core import state
+        state.current_render_state["cancel_requested"] = False
+        state.cancel_requested = False
+
     # ─── 15.1 CLI Referansı Testleri ───
     def test_cli_parser_defaults(self):
         parser = build_parser()

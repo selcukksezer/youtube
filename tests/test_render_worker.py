@@ -232,6 +232,11 @@ class TestClipContract(unittest.TestCase):
 
 
 class TestParallelStockFetch(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        from server_core import state
+        state.current_render_state["cancel_requested"] = False
+        state.cancel_requested = False
+
     @patch("server_core.render_worker._gemini_image_circuit_open", return_value=True)
     @patch("server_core.render_worker.fetch_scene_clip")
     async def test_parallel_scene_fetch_uses_gather_p1_13(self, mock_fetch, _circuit):
@@ -281,6 +286,11 @@ class TestVeoSparsePolicy(unittest.TestCase):
 
 
 class TestGeminiCircuitStockOnly(unittest.TestCase):
+    def setUp(self):
+        from server_core import state
+        state.current_render_state["cancel_requested"] = False
+        state.cancel_requested = False
+
     @patch("server_core.render_worker._gemini_image_circuit_open", return_value=True)
     @patch("server_core.render_worker.generate_ai_image_clip")
     @patch("server_core.render_worker.fetch_scene_clip", return_value="/tmp/stock.mp4")
@@ -304,6 +314,11 @@ class TestGeminiCircuitStockOnly(unittest.TestCase):
 
 
 class TestSelectedSceneStockVideo(unittest.TestCase):
+    def setUp(self):
+        from server_core import state
+        state.current_render_state["cancel_requested"] = False
+        state.cancel_requested = False
+
     @patch("server_core.render_worker.fetch_scene_clip")
     @patch("server_core.render_worker.fetch_selected_stock_video")
     def test_existing_local_selected_video_keeps_priority(self, mock_selected, mock_search):
