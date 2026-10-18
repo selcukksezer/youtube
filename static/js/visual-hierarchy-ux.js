@@ -292,6 +292,15 @@
                 fab.querySelector('span').textContent = open ? 'Önizlemeyi Kapat' : '9:16 Önizlemeyi Gör';
             });
             document.body.appendChild(fab);
+            // 1080px üstü geniş ekranda FAB'ı CSS cascade'den bağımsız gizle
+            // (bazı masaüstü görünümlerde display:none kuralı ezilebiliyordu)
+            const fabMq = window.matchMedia('(max-width: 1080px)');
+            const syncFabVisibility = () => {
+                fab.style.setProperty('display', fabMq.matches ? 'inline-flex' : 'none', 'important');
+            };
+            if (fabMq.addEventListener) fabMq.addEventListener('change', syncFabVisibility);
+            else if (fabMq.addListener) fabMq.addListener(syncFabVisibility);
+            syncFabVisibility();
         }
     }
 
