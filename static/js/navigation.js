@@ -110,6 +110,28 @@ window.addEventListener('hashchange', () => {
     }
 });
 
+// ══════════════════════════════════════════════════════════════
+// MOBİL ÇEKMECE MENÜ (900px altı: hamburger + overlay)
+// ══════════════════════════════════════════════════════════════
+(function initMobileDrawer() {
+    const btn = document.getElementById('mobile-menu-btn');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (!btn) return;
+    const close = () => document.body.classList.remove('sidebar-open');
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.body.classList.toggle('sidebar-open');
+    });
+    if (overlay) overlay.addEventListener('click', close);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') close();
+    });
+    // Mobilde sekmeye geçince çekmeceyi kapat
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.nav-btn') && window.innerWidth <= 900) close();
+    });
+})();
+
 // Sayfa açıldığında veya yenilendiğinde (F5) kalınan sekmeyi EN BAŞTA geri yükle
 try {
     const hashTab = (window.location.hash || '').replace('#', '').trim();
