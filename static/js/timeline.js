@@ -183,27 +183,39 @@ function renderTimelineScenes(plan) {
             lastSc.duration = Math.max(4.5, Math.min(7.0, +(wcLast * 0.36 || 6.5).toFixed(1)));
             planMutated = true;
         }
-        const BANNED_CLIP_RE = /Contrabassoon|s005_Openverse_5\.mp4|Folsom_Street|Naked_Bike|\/47994\/|\/47995\/|\/47996\/|\/48000\/|\/44562\//i;
-        scenes.forEach((s, sIdx) => {
+        const BANNED_CLIP_RE = /Contrabassoon|s005_Openverse_5\.mp4|Folsom_Street|Naked_Bike|looking-at-camera|\/47994\/|\/47995\/|\/47996\/|\/48000\/|\/44562\//i;
+        const seenClipUrls = new Set();
+        let needsBatchUpgrade = false;
+        scenes.forEach((s) => {
             const svUrl = String(s.selected_video?.url || s.video_url || '');
-            if (BANNED_CLIP_RE.test(svUrl)) {
+            const svSrc = String(s.selected_video?.source || '').toLowerCase();
+            if (BANNED_CLIP_RE.test(svUrl) || BANNED_CLIP_RE.test(String(s.selected_video?.id || ''))) {
                 delete s.selected_video;
                 delete s.video_url;
                 planMutated = true;
-                const healQ = (s.search_queries && s.search_queries[0]) || s.scene_description || 'cinematic nature';
-                fetch(`/api/stock/search?query=${encodeURIComponent(healQ)}&limit=4&source=pexels_pixabay`)
-                    .then(r => r.json())
-                    .then(d => {
-                        const hit = (d.results || [])[sIdx % Math.max(1, (d.results || []).length)];
-                        if (hit && currentPlan?.scenes?.[sIdx]) {
-                            currentPlan.scenes[sIdx].selected_video = hit;
-                            currentPlan.scenes[sIdx].video_url = hit.url;
-                            if (typeof persistCurrentPlan === 'function') persistCurrentPlan();
-                            renderTimelineScenes(currentPlan);
-                        }
-                    }).catch(() => {});
+                needsBatchUpgrade = true;
+            } else if (svSrc === 'mixkit' || (svUrl && seenClipUrls.has(svUrl)) || !Array.isArray(s.stock_candidates)) {
+                needsBatchUpgrade = true;
             }
+            if (svUrl) seenClipUrls.add(svUrl);
         });
+        if (needsBatchUpgrade && !plan._stockDedupUpgraded) {
+            plan._stockDedupUpgraded = true;
+            const prefSrc = window._preferredStockSource || document.getElementById('stock-provider-select')?.value || 'pexels_pixabay';
+            fetch('/api/stock/fetch_for_scenes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scenes, niche_id: plan.niche_id || '', preferred_source: prefSrc })
+            }).then(r => r.json()).then(d => {
+                if (Array.isArray(d.scenes) && d.scenes.length && currentPlan) {
+                    currentPlan.scenes = d.scenes;
+                    currentPlan._stockDedupUpgraded = true;
+                    if (typeof persistCurrentPlan === 'function') persistCurrentPlan();
+                    renderTimelineScenes(currentPlan);
+                    if (typeof window.syncWizardStep2Preview === 'function') window.syncWizardStep2Preview();
+                }
+            }).catch(() => {});
+        }
         if (planMutated && typeof persistCurrentPlan === 'function') persistCurrentPlan();
     }
 

@@ -250,7 +250,12 @@ def _fetch_single_scene_video(args):
 
     raw_candidates: List[tuple] = []
     seen_keys: set = set()
-    for q in queries[:4]:
+    non_gaze_queries = [
+        q for q in queries[:4]
+        if not any(g in q.lower() for g in ("looking at camera", "direct gaze", "eye contact", "stoic direct gaze"))
+    ]
+    search_pool = non_gaze_queries if non_gaze_queries else queries[:4]
+    for q in search_pool:
         try:
             candidates = _search_legacy_stock(q, preferred_source=preferred_source)
             for cand in candidates:

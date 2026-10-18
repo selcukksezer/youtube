@@ -178,13 +178,28 @@ def strong_tokens(query: str) -> List[str]:
     return [t for t in tokens if t not in WEAK_TOKENS]
 
 
+_SYNONYM_GROUPS = (
+    {"kaaba", "mecca", "makkah", "mosque", "masjid", "islam", "islamic", "muslim", "quran", "koran", "hadith", "prayer", "praying", "worship", "minaret", "sanctuary", "ramadan", "dome"},
+    {"dawn", "sunrise", "morning", "twilight", "sunset", "dusk", "golden"},
+    {"brain", "mind", "psychology", "thinking", "neural", "neuron", "thought", "memory"},
+    {"money", "finance", "wealth", "crypto", "bitcoin", "trading", "chart", "market", "stock", "currency", "gold"},
+    {"ancient", "history", "historical", "ruins", "temple", "statue", "roman", "ottoman", "empire", "palace", "marble"},
+    {"space", "galaxy", "universe", "stars", "cosmos", "nebula", "planet", "astronomy", "earth"},
+)
+
+
 def query_matches_clip(query: str, clip_text: str) -> bool:
-    """True when the clip text actually names the shot, not a weak neighbor word."""
+    """True when the clip text actually names the shot or a close domain synonym, not a weak neighbor word."""
     strong = strong_tokens(query)
     if not strong:
         return True
     blob = fold(clip_text)
-    return any(token in blob for token in strong)
+    if any(token in blob for token in strong):
+        return True
+    for grp in _SYNONYM_GROUPS:
+        if any(t in grp for t in strong) and any(g in blob for g in grp):
+            return True
+    return False
 
 
 __all__ = [

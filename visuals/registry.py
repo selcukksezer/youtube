@@ -19,7 +19,7 @@ _used_uids: Set[str] = set()
 _RECENT_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "recent_visual_uids.json")
 _RECENT_MAX = 400
 _recent_uids: Optional[List[str]] = None
-_RECENT_PENALTY = 0.35
+_RECENT_PENALTY = 0.78
 
 import threading
 
@@ -342,10 +342,12 @@ def score_candidate(
     }
     q_ratio = len(matched_query_tokens) / max(1, len(query_tokens))
     c.topic_match_score = round(
-        max(hits / max(1, len(query_tokens | narration_tokens)), q_ratio * 0.5), 4
+        max(hits / max(1, len(query_tokens | narration_tokens)), q_ratio, 0.14 if subject_match else 0.0), 4
     )
-    c.visual_verification_score = round(q_ratio, 4)
+    c.visual_verification_score = round(max(q_ratio, 0.5 if subject_match else 0.0), 4)
     c.matched_terms = matched_tokens
+    if c.source in ("pexels", "pixabay", "coverr") and c.kind == "video":
+        score += 20.0
     # provider prior
     spec = PROVIDERS.get(c.source) or PROVIDERS.get(c.source.replace("_img", "")) or PROVIDERS.get(f"{c.source}_img")
     if spec:
