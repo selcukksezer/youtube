@@ -3,6 +3,9 @@
  * Manages video rendering initiation, state restoration, persistent dock monitor, cancel render and terminal log drawer.
  */
 
+// Kullanıcı terminali elle kapattıysa otomatik yeniden açılmasın
+let terminalUserClosed = false;
+
 
 async function restoreRenderState() {
     try {
@@ -89,7 +92,7 @@ function updateTerminalTriggers(active, pct = 0) {
 
 function showTerminalAndDock() {
     if (persistentMonitor) persistentMonitor.classList.remove('hidden');
-    if (terminalPanel) terminalPanel.classList.remove('hidden');
+    if (terminalPanel && !terminalUserClosed) terminalPanel.classList.remove('hidden');
     const floatingTrigger = document.getElementById('floating-terminal-trigger');
     if (floatingTrigger) floatingTrigger.style.display = 'none';
     if (terminalBody) terminalBody.scrollTop = terminalBody.scrollHeight;
@@ -271,6 +274,7 @@ async function startRenderProcess(planToUse) {
     updateFlowRail('render');
 
     persistentMonitor.classList.remove('hidden');
+    terminalUserClosed = false;
     dockStepTitle.textContent = "Islem Baslatiliyor...";
     dockLogSnippet.textContent = topic;
     dockProgressFill.style.width = "5%";
@@ -407,27 +411,34 @@ async function startRenderProcess(planToUse) {
 
 function setCancelButtonState(mode) {
     if (!btnCancelRender) return;
+    const closeDockBtn = document.getElementById('btn-close-dock');
     if (mode === 'cancelling') {
         btnCancelRender.disabled = true;
         btnCancelRender.className = 'btn btn-sm btn-danger';
         btnCancelRender.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> İptal Ediliyor...';
+        if (closeDockBtn) closeDockBtn.style.display = '';
     } else if (mode === 'close') {
         btnCancelRender.disabled = false;
         btnCancelRender.className = 'btn btn-sm btn-secondary';
         btnCancelRender.innerHTML = '<i class="fa-solid fa-xmark"></i> Kapat';
+        // İptal butonu zaten "Kapat" oldu — ikinci Kapat butonunu gizle
+        if (closeDockBtn) closeDockBtn.style.display = 'none';
     } else {
         btnCancelRender.disabled = false;
         btnCancelRender.className = 'btn btn-sm btn-danger';
         btnCancelRender.innerHTML = '<i class="fa-solid fa-circle-xmark"></i> İptal Et';
+        if (closeDockBtn) closeDockBtn.style.display = '';
     }
 }
 
 btnToggleLog?.addEventListener('click', () => {
     terminalPanel?.classList.toggle('hidden');
+    if (terminalPanel && !terminalPanel.classList.contains('hidden')) terminalUserClosed = false;
 });
 
 btnCloseLog?.addEventListener('click', () => {
     terminalPanel?.classList.add('hidden');
+    terminalUserClosed = true;
 });
 
 function dismissMonitorDock() {
