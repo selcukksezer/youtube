@@ -371,10 +371,17 @@ async function startRenderProcess(planToUse) {
         enable_face_center: !!(document.getElementById('chk-center-face')?.checked),
         enable_emphasis_card: !!(document.getElementById('chk-emphasis-card')?.checked || document.getElementById('chk-emphasis-card-lab')?.checked),
         enable_audio_visualizer: !!(document.getElementById('chk-audio-visualizer')?.checked),
-        enable_news_ticker: !!(document.getElementById('chk-news-ticker')?.checked)
+        enable_news_ticker: !!(document.getElementById('chk-news-ticker')?.checked),
+        transition_style: document.querySelector('#wiz-transition-preview-strip .wiz-trans-chip.active')?.getAttribute('data-trans-id')
+            || plan?.transition_style
+            || currentPlan?.transition_style
+            || 'whip_pan'
     };
     if (plan && !plan.visual_mode) {
         plan.visual_mode = payload.visual_mode;
+    }
+    if (plan && typeof plan === 'object') {
+        plan.transition_style = payload.transition_style;
     }
 
     fetch('/api/video/render', {

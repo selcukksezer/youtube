@@ -455,15 +455,32 @@ function bindStep3HubEvents(hub) {
     });
 
     // 38. Transition Style Strip
+    const triggerPhoneTransDemo = (tid) => {
+        const area = document.getElementById('phone-video-area');
+        if (!area) return;
+        area.classList.remove('trans-anim-whip_pan', 'trans-anim-glitch', 'trans-anim-zoom_punch', 'trans-anim-flash_cut');
+        void area.offsetWidth;
+        area.classList.add(`trans-anim-${tid}`);
+    };
     hub.querySelectorAll('.wiz-trans-chip').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
+        btn.addEventListener('mouseenter', () => triggerPhoneTransDemo(btn.getAttribute('data-trans-id') || 'whip_pan'));
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
             const tid = btn.getAttribute('data-trans-id') || 'whip_pan';
-            hub.querySelectorAll('.wiz-trans-chip').forEach((b) => b.classList.toggle('active', b === btn));
+            hub.querySelectorAll('.wiz-trans-chip').forEach((b) => {
+                const isAct = b === btn;
+                b.classList.toggle('active', isAct);
+                b.setAttribute('aria-pressed', isAct ? 'true' : 'false');
+            });
+            const chkZoom = document.getElementById('chk-zoompan');
+            if (chkZoom && tid === 'zoom_punch') chkZoom.checked = true;
             if (window.currentPlan && typeof window.currentPlan === 'object') {
                 window.currentPlan.transition_style = tid;
             }
             saveStep3Prefs({ transitionStyle: tid });
-            if (typeof showToast === 'function') showToast(`Geçiş efekti: ${btn.textContent.trim()}`);
+            triggerPhoneTransDemo(tid);
+            if (typeof showToast === 'function') showToast(`✨ Sahne geçiş efekti seçildi: ${btn.textContent.trim()}`);
         });
     });
 
