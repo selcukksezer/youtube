@@ -268,9 +268,10 @@ class ContentGapResearchRequest(BaseModel):
 class TopicSuggestRequest(BaseModel):
     niche_id: Optional[str] = "1_news_flash"
     language: Optional[str] = "tr"
-    count: Optional[int] = Field(default=5, ge=1, le=10)
+    count: Optional[int] = Field(default=5, ge=1, le=30)
     topic_hint: Optional[str] = None
     refresh: Optional[bool] = False
+    exclude_titles: Optional[List[str]] = None
 
     @field_validator("niche_id")
     @classmethod

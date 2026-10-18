@@ -467,14 +467,23 @@
                             <div id="topic-suggest-panel" class="topic-suggest-panel hidden" aria-live="polite">
                                 <div class="topic-suggest-header">
                                     <span id="topic-suggest-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Nişe
-                                        Uygun Konu Önerileri</span>
-                                    <button type="button" class="topic-suggest-close" id="btn-close-topic-suggest"
-                                        title="Kapat">&times;</button>
+                                        Uygun Ultra Detaylı Konu Önerileri</span>
+                                    <div class="topic-suggest-header-actions">
+                                        <select id="select-topic-suggest-count" class="topic-suggest-count-select" title="Öneri sayısı">
+                                            <option value="8">8 Konu</option>
+                                            <option value="10" selected>10 Konu</option>
+                                            <option value="15">15 Konu</option>
+                                        </select>
+                                        <button type="button" class="topic-suggest-close" id="btn-close-topic-suggest"
+                                            title="Kapat">&times;</button>
+                                    </div>
                                 </div>
+                                <div id="topic-suggest-toolbar" class="topic-suggest-toolbar hidden"></div>
                                 <div id="topic-suggest-body" class="topic-suggest-body"></div>
                                 <div class="topic-suggest-footer">
+                                    <span class="topic-suggest-footer-hint" id="topic-suggest-footer-hint">Karta tıklayarak başlığı seçebilir veya doğrudan senaryo üretebilirsiniz.</span>
                                     <button type="button" class="btn btn-sm btn-outline" id="btn-retry-topic-suggest"><i
-                                            class="fa-solid fa-rotate-right"></i> Yeniden Öner</button>
+                                            class="fa-solid fa-rotate-right"></i> Farklı Konular Öner</button>
                                 </div>
                             </div>
                         </div>

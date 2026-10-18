@@ -93,12 +93,15 @@ def _is_nsfw_reddit_post(post: Optional[Dict[str, Any]]) -> bool:
 def api_suggest_topics(req: TopicSuggestRequest):
     """Advanced niche-aware topic suggestions (YouTube + AI + trend + Reddit signals)."""
     try:
-        result = suggest_topics(
-            niche_id=req.niche_id or "1_news_flash",
-            language=req.language or config.LANGUAGE,
-            count=req.count or 5,
-            topic_hint=req.topic_hint or "",
-        )
+        kwargs: Dict[str, Any] = {
+            "niche_id": req.niche_id or "1_news_flash",
+            "language": req.language or config.LANGUAGE,
+            "count": req.count or 5,
+            "topic_hint": req.topic_hint or "",
+        }
+        if req.exclude_titles:
+            kwargs["exclude_titles"] = req.exclude_titles
+        result = suggest_topics(**kwargs)
         if result.get("status") == "error":
             raise HTTPException(
                 status_code=400, detail=result.get("message", "Niş bulunamadı.")

@@ -10,7 +10,10 @@ from typing import Any, Dict, List
 
 from niche_templates import NICHES, get_niche_production_profile
 from research_service import fetch_youtube_autocomplete_suggestions
-from services.niche_topic_vault import resolve_canonical_niche
+from services.niche_topic_vault import (
+    get_curated_topics_for_niche,
+    resolve_canonical_niche,
+)
 from trending_scanner import scan_youtube_shorts_trends
 
 logger = logging.getLogger(__name__)
@@ -31,6 +34,28 @@ _GENERIC_PATTERNS = (
     r"^niche\[.+\]",
     r"okullarda anlatılmayan en büyük 5 yalan",
     r"içinde gizlenen şok edici şeyi buldu",
+    r"\bne demektir\b",
+    r"\bne demek\b",
+    r"\banlamı nedir\b",
+    r"\bnasıl yazılır\b",
+    r"\bnasıl okunur\b",
+    r"\b(?:pdf|mp3|indir|full izle|türkçe dublaj|fragman)\b",
+    r"^5 bilgi,\s*5 saniye\b",
+    r"^bu vücut hareketini yapan birine hiç güvenme",
+    r"^marcus aurelius bugün yaşasaydı sana tam olarak",
+    r"^2000 yıllık bu felsefe bugün hayatını kurtarabilir",
+    r"^stoacıların en büyük sırrı\s*[—-]\s*milyonlarca insan",
+    r"^hz\.\s*peygamber'in en çok tekrar ettiği o dua bugün",
+    r"^resulullah'ın kalplere şifa olan bu hadis-i şerifini biliyor muydunuz",
+    r"^gününüzü aydınlatacak ve içinizi ferahlatacak bu duaya amin deyin",
+)
+
+_NOISY_AUTOCOMPLETE_RE = re.compile(
+    r"\b(?:ne demektir|ne demek|nedir|anlamı nedir|nasıl yazılır|nasıl okunur|"
+    r"diyanet|vikipedi|pdf|mp3|indir|dinle|izle|full|fragman|1\.\s*bölüm|"
+    r"şarkısı|zil sesi|duvar kağıdı|sözleri kısa|kısa sözler|"
+    r"what does .* mean|meaning of|pdf download|watch online|lyrics)\b",
+    re.IGNORECASE,
 )
 
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
@@ -53,6 +78,26 @@ def _clean_llm_text(text: str) -> str:
     return text.strip()
 
 
+def _normalize_hook_cmp(text: str) -> str:
+    cleaned = re.sub(r"[^\w\sçğıöşüÇĞİÖŞÜ]", "", (text or "").casefold())
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _is_hook_boilerplate(title: str, niche: Dict[str, Any] | None = None) -> bool:
+    """Return True if title is a raw hook template rather than a concrete topic."""
+    norm = _normalize_hook_cmp(title)
+    if not norm:
+        return True
+    if niche:
+        hook_style = _normalize_hook_cmp(str(niche.get("hook_style") or ""))
+        if hook_style and norm == hook_style:
+            return True
+        for variant in niche.get("ab_test_hook_variants") or []:
+            if norm == _normalize_hook_cmp(str(variant or "")):
+                return True
+    return False
+
+
 def _is_generic(title: str) -> bool:
     low = title.casefold()
     return any(re.search(pat, low, re.I) for pat in _GENERIC_PATTERNS)
@@ -68,6 +113,7 @@ def _fetch_youtube_candidates(
         HYBRID_NICHES = {}
     niches_map = _ts_attr("NICHES", NICHES)
     niche = HYBRID_NICHES.get(niche_id) or niches_map.get(niche_id, niches_map["1_news_flash"])
+    canonical_niche = resolve_canonical_niche(niche_id) or niche_id
     is_en = (language or "tr").lower().startswith("en")
 
     if is_en:
@@ -83,17 +129,25 @@ def _fetch_youtube_candidates(
 
     out: List[Dict[str, Any]] = []
 
-    def _is_valid_candidate(t: str) -> bool:
-        if not t or _is_generic(t):
+    def _is_valid_candidate(t: str, *, from_autocomplete: bool = False) -> bool:
+        if not t or _is_generic(t) or _is_hook_boilerplate(t, niche):
             return False
-        if len(t.strip().split()) < 3 or len(t.strip()) < 15:
+        stripped = t.strip()
+        if len(stripped.split()) < 3 or len(stripped) < 15:
             return False
+        if _NOISY_AUTOCOMPLETE_RE.search(stripped):
+            return False
+        if from_autocomplete and canonical_niche == "10_religious_quotes":
+            # Raw search-bar fragments without citation or structured colon/lesson look low-quality
+            has_structure = bool(re.search(r"[:()\"'“”]|buhari|müslim|tirmizi|suresi|ayeti|hadisi", stripped, re.I))
+            if not has_structure:
+                return False
         if is_en:
-            if re.search(r"[çğıöşüÇĞİÖŞÜ]", t):
+            if re.search(r"[çğıöşüÇĞİÖŞÜ]", stripped):
                 return False
             if re.search(
                 r"\b(ve|ile|bir|için|nasıl|neden|kural|sır|hakkında|tarihi|dünyanın)\b",
-                t,
+                stripped,
                 re.IGNORECASE,
             ):
                 return False
@@ -111,7 +165,7 @@ def _fetch_youtube_candidates(
             raw_suggs = autocomplete_fn(q, lang="en" if is_en else "tr")
             for s in raw_suggs:
                 clean_s = s.strip()
-                if clean_s.lower() not in seen_ac and _is_valid_candidate(clean_s):
+                if clean_s.lower() not in seen_ac and _is_valid_candidate(clean_s, from_autocomplete=True):
                     seen_ac.add(clean_s.lower())
                     title_formatted = clean_s[0].upper() + clean_s[1:]
                     out.append({
@@ -137,7 +191,7 @@ def _fetch_youtube_candidates(
             channel = str(t.get("channel") or "")
             # The scanner's fallback cards are synthetic, not live YouTube evidence.
             if (
-                _is_valid_candidate(t_title)
+                _is_valid_candidate(t_title, from_autocomplete=False)
                 and video_id
                 and not video_id.startswith("trend_")
                 and channel != "Viral Studio"
@@ -215,34 +269,38 @@ def _fetch_rss_candidates(niche_id: str, language: str = "tr", limit: int = 5) -
 
 
 def _fetch_trend_candidates(niche_id: str, language: str = "tr") -> List[Dict[str, Any]]:
+    """Fetch concrete niche-specific trend topics without ever injecting raw hook templates."""
     is_tr = (language or "tr").lower()[:2] != "en"
-    if not is_tr:
-        # Never inject Turkish RSS news or Turkish A/B hook variants in English mode
-        return []
-    if niche_id == "1_news_flash":
+    out: List[Dict[str, Any]] = []
+    if is_tr and niche_id == "1_news_flash":
         try:
             from rss_scanner import get_breaking_news_topics
 
             items = get_breaking_news_topics("aa_guncel", max_items=8)
-            return [
-                {"title": it["title"], "source": SOURCE_TREND, "viral_score": 95}
-                for it in items
-                if it.get("title")
-            ]
+            for it in items:
+                if it.get("title") and not _is_generic(it["title"]):
+                    out.append({
+                        "title": it["title"],
+                        "source": SOURCE_TREND,
+                        "source_detail": "Anadolu Ajansı Son Dakika",
+                        "viral_score": 95,
+                    })
         except Exception as exc:
             logger.warning("News RSS topic signals unavailable: %s", exc)
-    try:
-        from hybrid_niches import HYBRID_NICHES
-    except ImportError:
-        HYBRID_NICHES = {}
-    niches_map = _ts_attr("NICHES", NICHES)
-    niche = HYBRID_NICHES.get(niche_id) or niches_map.get(niche_id, niches_map["1_news_flash"])
-    variants = niche.get("ab_test_hook_variants") or []
-    return [
-        {"title": v, "source": SOURCE_TREND, "viral_score": 88}
-        for v in variants
-        if v and not _is_generic(v)
-    ]
+
+    curated_pool = list(get_curated_topics_for_niche(niche_id, lang=language))
+    random.shuffle(curated_pool)
+    detail_label = "Küratörlü Niş Trendi" if is_tr else "Curated Niche Trend"
+    for title in curated_pool[:8]:
+        if title and not _is_generic(title):
+            out.append({
+                "title": title,
+                "source": SOURCE_TREND,
+                "source_detail": detail_label,
+                "viral_score": 93,
+                "is_curated": True,
+            })
+    return out
 
 
 def _fetch_reddit_candidates(language: str, limit: int) -> List[Dict[str, Any]]:
@@ -281,7 +339,7 @@ def _generate_ai_candidates(
         is_tr = (language or "tr").lower()[:2] != "en"
         lang_label = "Turkish" if is_tr else "English"
         niche_display_name = profile["name"] if is_tr else (niche.get("name_en") or profile["name"])
-        keywords = ", ".join((niche.get("trending_keywords") or [])[:6])
+        keywords = ", ".join((niche.get("trending_keywords") or [])[:8])
         angles = [
             "paradoxical psychological secrets or counter-intuitive realities",
             "actionable rules, practical habits or tactical daily applications",
@@ -297,24 +355,25 @@ def _generate_ai_candidates(
             if topic_hint and topic_hint.strip()
             else ""
         )
+        target_count = max(count + 4, 8)
         if niche_id == "10_religious_quotes":
             prompt = (
-                f"Generate exactly {count + 4} unique, authentic, highly engaging YouTube Shorts video titles about Hadith (Hadis-i Şerif) and Quranic Ayah topics for niche \"{niche_display_name}\".\n"
-                f"Perspective: Sahih Hadiths (Buhari, Müslim, Tirmizi, Ebu Davud) and heart-touching Quranic Ayahs with authentic moral lessons (Seed: {seed}).\n"
+                f"Generate exactly {target_count} unique, authentic, highly engaging YouTube Shorts video titles about Hadith (Hadis-i Şerif) and Quranic Ayah topics for niche \"{niche_display_name}\".\n"
+                f"Perspective: Sahih Hadiths (Buhari, Müslim, Tirmizi, Ebu Davud, İbn Mace, Nesai) and heart-touching Quranic Ayahs with authentic moral lessons (Seed: {seed}).\n"
                 f"Language: {lang_label}\nTone: {profile['tone']}\nKeywords: {keywords}\n"
-                f"Format requirement: Titles must cite the source book or surah in parentheses, e.g. 'Peygamber Efendimiz\\'in Ameller Niyetlere Göredir Hadisi (Buhari)'.{hint}\n\n"
+                f"Format requirement: Every title MUST name the specific Hadith lesson or Quranic Ayah message and cite the authentic source book or surah in parentheses, e.g. 'Hz. Peygamber\\'in Ameller Niyetlere Göredir Hadisi (Buhari)' or 'Kalpler Ancak Allah\\'ı Anmakla Huzur Bulur Ayeti (Rad 28)'.{hint}\n\n"
                 "Rules:\n"
-                "- Never invent a Hadith, verse, surah, or source citation; omit references unless certain they are authentic\n"
-                "- Make each title about a distinct religious lesson; do not repeat one seed with different religious prefixes\n"
-                "- High CTR, emotionally peaceful, inspiring curiosity and spiritual reflection\n"
+                "- Never invent a Hadith, verse, surah, or source citation; use only well-known authentic references\n"
+                "- NEVER write vague clickbait without naming the specific topic (forbidden: 'bu duaya amin deyin', 'bu hadisi biliyor muydunuz')\n"
+                "- Make each title about a distinct religious lesson (mercy, patience, gratitude, honesty, charity, prayer, family, humility)\n"
                 "- Under 75 characters per title, punchy and clear\n"
                 "- Return ONLY a JSON array of title strings, no markdown\n"
             )
         else:
             if is_tr:
                 hook_ref = niche.get("hook_style", "")
-                lang_rule = "- Sadece Türkçe dilinde başlık üret"
-                anti_cliche = "- Do NOT use robotic cliches like 'Bu bilgiyi öğrenmeden önce'"
+                lang_rule = "- Sadece Türkçe dilinde, somut konusu belli başlıklar üret"
+                anti_cliche = "- Do NOT use robotic cliches like 'Bu bilgiyi öğrenmeden önce' or vague hooks without a concrete topic"
             else:
                 from niche_templates import NICHE_HOOKS_EN
 
@@ -325,14 +384,14 @@ def _generate_ai_candidates(
                     or "High-CTR viral curiosity hook"
                 )
                 lang_rule = "- Generate ALL titles strictly in natural fluent English. Absolutely NO Turkish words. (Note: Niche name or keywords might be in Turkish, but you must translate the concept and output ONLY English titles)"
-                anti_cliche = "- Do NOT use robotic cliches like 'Before you learn this fact'"
+                anti_cliche = "- Do NOT use robotic cliches like 'Before you learn this fact' or vague hooks without a concrete subject"
             prompt = (
-                f"Generate exactly {count + 4} unique, highly engaging YouTube Shorts video titles for niche \"{niche_display_name}\".\n"
+                f"Generate exactly {target_count} unique, concrete, highly engaging YouTube Shorts video titles for niche \"{niche_display_name}\".\n"
                 f"Perspective / Angle: {chosen_angle} (Seed: {seed})\n"
                 f"Language: {lang_label}\nTone: {profile['tone']}\nKeywords: {keywords}\n"
-                f"Hook reference: {hook_ref}{hint}\n\n"
+                f"Rhythm reference (DO NOT copy verbatim): {hook_ref}{hint}\n\n"
                 "Rules:\n"
-                "- Specific, high CTR, emotional hook or curiosity gap\n"
+                "- Every title must name a specific, concrete subject, person, event, study, rule, or case\n"
                 "- Cover distinct subtopics; do not rephrase the same seed topic across the list\n"
                 "- Under 75 characters per title, punchy and clear\n"
                 f"{anti_cliche}\n"
@@ -345,17 +404,35 @@ def _generate_ai_candidates(
         )
         if ok and text:
             cleaned = _clean_llm_text(text)
-            match = re.search(r"\[[\s\S]*?\]", cleaned)
+            match = re.search(r"\[[\s\S]*\]", cleaned)
             if match:
                 try:
-                    titles = json.loads(match.group())
+                    parsed = json.loads(match.group())
                 except Exception:
-                    titles = re.findall(r'["\']([^"\']{8,75})["\']', match.group())
-                return [
-                    {"title": t.strip(), "source": SOURCE_AI, "viral_score": 96}
-                    for t in titles
-                    if isinstance(t, str) and 8 <= len(t.strip()) <= 75 and not _is_generic(t)
-                ]
+                    parsed = re.findall(r'["\']([^"\']{8,75})["\']', match.group())
+                results: List[Dict[str, Any]] = []
+                for entry in parsed:
+                    if isinstance(entry, dict):
+                        t = str(entry.get("title") or "").strip()
+                        if 8 <= len(t) <= 75 and not _is_generic(t) and not _is_hook_boilerplate(t, niche):
+                            cand: Dict[str, Any] = {
+                                "title": t,
+                                "source": SOURCE_AI,
+                                "viral_score": 96,
+                            }
+                            for k in ("hook", "angle", "summary", "keywords"):
+                                if entry.get(k):
+                                    cand[k] = entry[k]
+                            results.append(cand)
+                    elif isinstance(entry, str):
+                        t = entry.strip()
+                        if 8 <= len(t) <= 75 and not _is_generic(t) and not _is_hook_boilerplate(t, niche):
+                            results.append({
+                                "title": t,
+                                "source": SOURCE_AI,
+                                "viral_score": 96,
+                            })
+                return results
     except Exception as exc:
         logger.debug("AI topic generation notice: %s", exc)
         return []

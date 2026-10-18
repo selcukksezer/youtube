@@ -192,72 +192,190 @@ inputTopic?.addEventListener('blur', () => {
 });
 
 let lastTopicSuggestions = [];
+let lastTopicNicheName = '';
+let activeTopicFilter = 'all';
+const seenSuggestedTopicsByNiche = {};
+
+function applyPickedTopicSuggestion(picked, { autoGenerateScript = false } = {}) {
+    if (!picked) return;
+    const panel = document.getElementById('topic-suggest-panel');
+    if (inputTopic) inputTopic.value = picked.title;
+    setPendingFormatFingerprint(picked.format_fingerprint || null);
+    updateLoopBridge(selectNiche?.value || '1_news_flash', picked.title);
+    updateScriptActionButtons();
+    saveStudioSettings();
+    resolveAndApplyNicheFromTopic({ toast: false }).catch(() => {});
+    if (panel) panel.classList.add('hidden');
+    showToast(`Konu seçildi: ${picked.title.slice(0, 65)}${picked.title.length > 65 ? '…' : ''}`);
+    if (autoGenerateScript) {
+        generateScriptFromTopic({ forceRegenerate: true });
+    }
+}
 
 function renderTopicSuggestCards(suggestions, nicheName) {
     const panel = document.getElementById('topic-suggest-panel');
     const body = document.getElementById('topic-suggest-body');
     const titleEl = document.getElementById('topic-suggest-title');
+    const toolbarEl = document.getElementById('topic-suggest-toolbar');
+    const footerHintEl = document.getElementById('topic-suggest-footer-hint');
     if (!panel || !body) return;
     lastTopicSuggestions = suggestions || [];
+    if (nicheName) lastTopicNicheName = nicheName;
     panel.classList.remove('hidden');
     const isEn = (selectLanguage?.value || 'tr') === 'en';
-    if (titleEl && nicheName) {
-        titleEl.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> ${escapeHtml(nicheName)} — ${isEn ? '5 Topic Suggestions' : '5 Konu Önerisi'}`;
+    const totalCount = lastTopicSuggestions.length;
+    if (titleEl && (nicheName || lastTopicNicheName)) {
+        const displayNiche = nicheName || lastTopicNicheName;
+        titleEl.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> ${escapeHtml(displayNiche)} — ${totalCount} ${isEn ? 'Detailed Topic Suggestions' : 'Detaylı Konu Önerisi'}`;
     }
-    if (!suggestions || !suggestions.length) {
+    if (!lastTopicSuggestions.length) {
+        if (toolbarEl) toolbarEl.classList.add('hidden');
         body.innerHTML = `<div class="topic-suggest-empty">${isEn ? 'No topics found for this niche. Try again.' : 'Bu niş için uygun konu bulunamadı. Yeniden deneyin.'}</div>`;
         return;
     }
-    body.innerHTML = suggestions.map((s, idx) => {
+
+    const uniqueAngles = [...new Set(lastTopicSuggestions.map(s => s.angle).filter(Boolean))];
+    if (toolbarEl && uniqueAngles.length > 1) {
+        toolbarEl.classList.remove('hidden');
+        const allLabel = isEn ? `All (${totalCount})` : `Tümü (${totalCount})`;
+        const pillsHtml = [
+            `<button type="button" class="topic-suggest-filter-pill ${activeTopicFilter === 'all' ? 'active' : ''}" data-filter="all">${escapeHtml(allLabel)}</button>`,
+            ...uniqueAngles.map(angle => {
+                const countForAngle = lastTopicSuggestions.filter(s => s.angle === angle).length;
+                const isActive = activeTopicFilter === angle;
+                return `<button type="button" class="topic-suggest-filter-pill ${isActive ? 'active' : ''}" data-filter="${escapeHtml(angle)}">${escapeHtml(angle)} (${countForAngle})</button>`;
+            }),
+        ].join('');
+        toolbarEl.innerHTML = pillsHtml;
+        toolbarEl.querySelectorAll('.topic-suggest-filter-pill').forEach(btn => {
+            btn.addEventListener('click', () => {
+                activeTopicFilter = btn.dataset.filter || 'all';
+                renderTopicSuggestCards(lastTopicSuggestions, lastTopicNicheName);
+            });
+        });
+    } else if (toolbarEl) {
+        toolbarEl.classList.add('hidden');
+    }
+
+    const filtered = activeTopicFilter === 'all'
+        ? lastTopicSuggestions.map((item, idx) => ({ item, idx }))
+        : lastTopicSuggestions
+            .map((item, idx) => ({ item, idx }))
+            .filter(entry => entry.item.angle === activeTopicFilter);
+
+    const visibleList = filtered.length ? filtered : lastTopicSuggestions.map((item, idx) => ({ item, idx }));
+
+    body.innerHTML = visibleList.map(({ item: s, idx }, displayOrder) => {
         const src = TOPIC_SOURCE_LABELS[s.source] || TOPIC_SOURCE_LABELS.ai;
-        const hook = s.hook ? `<div class="topic-suggest-card-hook">${escapeHtml(s.hook)}</div>` : '';
+        const hookLabel = isEn ? '3s Hook:' : 'İlk 3 Sn Kanca:';
+        const summaryLabel = isEn ? 'Scene Plan:' : 'İçerik Akışı:';
+        const hook = s.hook
+            ? `<div class="topic-suggest-card-hook"><span class="ts-inline-label"><i class="fa-solid fa-bolt"></i> ${hookLabel}</span> ${escapeHtml(s.hook)}</div>`
+            : '';
+        const summary = s.summary
+            ? `<div class="topic-suggest-card-summary"><span class="ts-inline-label"><i class="fa-solid fa-clapperboard"></i> ${summaryLabel}</span> ${escapeHtml(s.summary)}</div>`
+            : '';
+        const angleBadge = s.angle
+            ? `<span class="topic-suggest-angle-badge">${escapeHtml(s.angle)}</span>`
+            : '';
+        const scopeBadge = s.scope
+            ? `<span class="topic-suggest-scope-badge"><i class="fa-regular fa-clock"></i> ${escapeHtml(s.scope)}</span>`
+            : '';
+        const whyViralBadge = s.why_viral
+            ? `<span class="topic-suggest-viral-badge"><i class="fa-solid fa-fire"></i> ${escapeHtml(s.why_viral)}</span>`
+            : '';
         const sourceDetail = s.source_detail
             ? `<span class="topic-suggest-source-detail">${escapeHtml(s.source_detail)}</span>`
             : '';
+        const keywordsHtml = Array.isArray(s.keywords) && s.keywords.length
+            ? `<div class="topic-suggest-tags">${s.keywords.slice(0, 4).map(k => `<span class="topic-suggest-tag">${escapeHtml(k)}</span>`).join('')}</div>`
+            : '';
         const scoreLabel = isEn ? `Relevance ${s.confidence || s.relevance || 0}/100` : `Uygunluk ${s.confidence || s.relevance || 0}/100`;
+        const quickBtnLabel = isEn ? 'Select & Write Script' : 'Seç & Senaryo Yaz';
         return `
-            <button type="button" class="topic-suggest-card" data-suggest-idx="${idx}">
-                <div class="topic-suggest-card-title">${idx + 1}. ${escapeHtml(s.title)}</div>
-                ${hook}
-                <div class="topic-suggest-card-meta">
-                    <span class="topic-suggest-badge ${src.cls}"><i class="${src.icon}"></i> ${src.label}</span>
-                    ${sourceDetail}
-                    <span class="topic-suggest-score">${scoreLabel}</span>
+            <div class="topic-suggest-card" role="button" tabindex="0" data-suggest-idx="${idx}">
+                <div class="topic-suggest-card-top">
+                    <div class="topic-suggest-card-title">${displayOrder + 1}. ${escapeHtml(s.title)}</div>
+                    <div class="topic-suggest-card-top-right">
+                        ${angleBadge}
+                        <span class="topic-suggest-score">${scoreLabel}</span>
+                    </div>
                 </div>
-            </button>`;
+                ${hook}
+                ${summary}
+                <div class="topic-suggest-card-meta">
+                    <div class="topic-suggest-card-meta-left">
+                        <span class="topic-suggest-badge ${src.cls}"><i class="${src.icon}"></i> ${src.label}</span>
+                        ${sourceDetail}
+                        ${scopeBadge}
+                        ${whyViralBadge}
+                        ${keywordsHtml}
+                    </div>
+                    <div class="topic-suggest-card-actions">
+                        <button type="button" class="topic-suggest-quick-btn" data-quick-script-idx="${idx}" title="${quickBtnLabel}">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> ${quickBtnLabel}
+                        </button>
+                    </div>
+                </div>
+            </div>`;
     }).join('');
+
+    if (footerHintEl) {
+        const nicheKey = selectNiche?.value || 'default';
+        const seenCount = (seenSuggestedTopicsByNiche[nicheKey] || []).length;
+        footerHintEl.textContent = isEn
+            ? `Click any card to select the title, or click "Select & Write Script" (${seenCount} unique topics explored).`
+            : `Başlığı seçmek için karta tıklayın veya doğrudan "Seç & Senaryo Yaz" ile üretimi başlatın (${seenCount} benzersiz konu tarandı).`;
+    }
+
+    body.querySelectorAll('.topic-suggest-quick-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = Number(btn.dataset.quickScriptIdx);
+            applyPickedTopicSuggestion(lastTopicSuggestions[idx], { autoGenerateScript: true });
+        });
+    });
+
     body.querySelectorAll('.topic-suggest-card').forEach(card => {
         card.addEventListener('click', () => {
             const idx = Number(card.dataset.suggestIdx);
-            const picked = lastTopicSuggestions[idx];
-            if (!picked) return;
-            if (inputTopic) inputTopic.value = picked.title;
-            setPendingFormatFingerprint(picked.format_fingerprint || null);
-            updateLoopBridge(selectNiche?.value || '1_news_flash', picked.title);
-            resolveAndApplyNicheFromTopic({ toast: false }).catch(() => {});
-            panel.classList.add('hidden');
-            showToast(`Konu seçildi: ${picked.title.slice(0, 60)}${picked.title.length > 60 ? '…' : ''}`);
+            applyPickedTopicSuggestion(lastTopicSuggestions[idx], { autoGenerateScript: false });
+        });
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const idx = Number(card.dataset.suggestIdx);
+                applyPickedTopicSuggestion(lastTopicSuggestions[idx], { autoGenerateScript: false });
+            }
         });
     });
 }
 
 async function suggestTopic(ev) {
-    const isRetry = ev && (ev.target?.id === 'btn-retry-topic-suggest' || ev.currentTarget?.id === 'btn-retry-topic-suggest');
+    const isRetry = ev && (ev.target?.id === 'btn-retry-topic-suggest' || ev.currentTarget?.id === 'btn-retry-topic-suggest' || ev.target?.id === 'select-topic-suggest-count');
     const nicheId = selectNiche?.value;
     const panel = document.getElementById('topic-suggest-panel');
     const body = document.getElementById('topic-suggest-body');
     const btn = document.getElementById('btn-suggest-topic');
+    const countSelect = document.getElementById('select-topic-suggest-count');
     if (!nicheId) {
         showToast('Önce bir niş şablonu seçin.', 'warn');
         return;
     }
+    const requestedCount = Math.max(5, Math.min(20, Number(countSelect?.value || 10) || 10));
     const isEn = (window.APP_STATE && window.APP_STATE.language === 'en') || document.getElementById('select-language')?.value === 'en';
     const language = isEn ? 'en' : 'tr';
     const rawHint = (inputTopic?.value || '').trim();
     const isSample = typeof isTopicSampleOrEmpty === 'function' ? isTopicSampleOrEmpty(rawHint) : false;
     const topicHint = (!isRetry && rawHint && !isSample && !rawHint.includes('#')) ? rawHint : undefined;
+    if (!seenSuggestedTopicsByNiche[nicheId]) {
+        seenSuggestedTopicsByNiche[nicheId] = [];
+    }
+    const excludeTitles = isRetry ? seenSuggestedTopicsByNiche[nicheId].slice(-30) : [];
+    activeTopicFilter = 'all';
+
     if (panel) panel.classList.remove('hidden');
-    if (body) body.innerHTML = `<div class="topic-suggest-loading"><i class="fa-solid fa-spinner fa-spin"></i> ${isEn ? 'Searching for fresh and unique topics…' : 'Yeni ve benzersiz konular araştırılıyor…'}</div>`;
+    if (body) body.innerHTML = `<div class="topic-suggest-loading"><i class="fa-solid fa-spinner fa-spin"></i> ${isEn ? 'Synthesizing high-retention topics, hooks, and scene plans…' : 'Nişe özel yüksek etkileşimli konular, kancalar ve sahne planları hazırlanıyor…'}</div>`;
     if (btn) {
         btn.classList.add('is-loading');
         btn.disabled = true;
@@ -269,9 +387,10 @@ async function suggestTopic(ev) {
             body: JSON.stringify({
                 niche_id: nicheId,
                 language,
-                count: 5,
+                count: requestedCount,
                 topic_hint: topicHint,
                 refresh: true,
+                exclude_titles: excludeTitles.length ? excludeTitles : undefined,
             }),
         });
         const data = await res.json();
@@ -284,7 +403,13 @@ async function suggestTopic(ev) {
                 'warn',
             );
         }
-        renderTopicSuggestCards(data.suggestions, data.niche_name);
+        const incoming = data.suggestions || [];
+        incoming.forEach(item => {
+            if (item?.title && !seenSuggestedTopicsByNiche[nicheId].includes(item.title)) {
+                seenSuggestedTopicsByNiche[nicheId].push(item.title);
+            }
+        });
+        renderTopicSuggestCards(incoming, data.niche_name);
     } catch (err) {
         if (body) body.innerHTML = `<div class="topic-suggest-error">${escapeHtml(err.message || (isEn ? 'Connection error' : 'Bağlantı hatası'))}</div>`;
         console.error('Konu öner hatası:', err);
@@ -298,6 +423,7 @@ async function suggestTopic(ev) {
 
 document.getElementById('btn-suggest-topic')?.addEventListener('click', suggestTopic);
 document.getElementById('btn-retry-topic-suggest')?.addEventListener('click', suggestTopic);
+document.getElementById('select-topic-suggest-count')?.addEventListener('change', suggestTopic);
 document.getElementById('btn-close-topic-suggest')?.addEventListener('click', () => {
     document.getElementById('topic-suggest-panel')?.classList.add('hidden');
 });

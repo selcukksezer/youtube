@@ -243,6 +243,69 @@ class TestTopicSuggester(unittest.TestCase):
         self.assertEqual(candidates[0]["source"], SOURCE_GOOGLE_TRENDS)
         self.assertIn("20K+", candidates[0]["source_detail"])
 
+    def test_never_returns_generic_hook_variants_or_duplicate_hooks(self):
+        with patch("services.topic_suggester._collect_used_topics", return_value=set()):
+            result = suggest_topics("10_religious_quotes", language="tr", count=10)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(result["suggestions"]), 10)
+        hooks = [item["hook"] for item in result["suggestions"]]
+        self.assertEqual(len(set(hooks)), 10, "Every topic card must have a unique hook")
+        for item in result["suggestions"]:
+            self.assertNotIn("bu duaya amin deyin", item["title"].casefold())
+            self.assertNotIn("bu hadis-i şerifini biliyor muydunuz", item["title"].casefold())
+            self.assertTrue(item.get("summary"))
+            self.assertTrue(item.get("angle"))
+            self.assertTrue(item.get("keywords"))
+            self.assertTrue(item.get("scope"))
+            self.assertTrue(item.get("why_viral"))
+
+    def test_exclude_titles_returns_fresh_non_overlapping_batch(self):
+        with patch("services.topic_suggester._collect_used_topics", wraps=lambda exclude_titles=None: {t.casefold() for t in (exclude_titles or [])}):
+            first = suggest_topics("10_religious_quotes", language="tr", count=8)
+            first_titles = [item["title"] for item in first["suggestions"]]
+            second = suggest_topics(
+                "10_religious_quotes",
+                language="tr",
+                count=8,
+                exclude_titles=first_titles,
+            )
+            second_titles = [item["title"] for item in second["suggestions"]]
+        self.assertEqual(len(first_titles), 8)
+        self.assertEqual(len(second_titles), 8)
+        self.assertTrue(set(first_titles).isdisjoint(set(second_titles)))
+
+    def test_rejects_noisy_youtube_autocomplete_fragments(self):
+        with patch(
+            "services.topic_suggester.fetch_youtube_autocomplete_suggestions",
+            return_value=[
+                "hadis-i şerif işin bereketsiz olması ne demektir",
+                "hadis nedir kısaca diyanet",
+                "Hz. Peygamber'in 'Ameller Niyetlere Göredir' Hadisi (Buhari)",
+            ],
+        ), patch("services.topic_suggester.scan_youtube_shorts_trends", return_value=[]):
+            cands = _fetch_youtube_candidates("10_religious_quotes", "tr", 5)
+        titles = [c["title"] for c in cands]
+        self.assertEqual(len(titles), 1)
+        self.assertIn("Ameller Niyetlere Göredir", titles[0])
+
+    def test_all_curated_vault_titles_respect_length_limit(self):
+        from services.niche_topic_vault import CURATED_NICHE_TOPICS, CURATED_NICHE_TOPICS_EN
+
+        for niche_id, titles in CURATED_NICHE_TOPICS.items():
+            for title in titles:
+                self.assertLessEqual(
+                    len(title),
+                    75,
+                    f"TR vault title too long ({len(title)} chars) in {niche_id}: {title}",
+                )
+        for niche_id, titles in CURATED_NICHE_TOPICS_EN.items():
+            for title in titles:
+                self.assertLessEqual(
+                    len(title),
+                    75,
+                    f"EN vault title too long ({len(title)} chars) in {niche_id}: {title}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
