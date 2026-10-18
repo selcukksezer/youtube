@@ -8134,25 +8134,10 @@ textarea {
     .header-right,
     .stat-pill-group {
         display: flex !important;
-        flex-wrap: nowrap !important;
+        flex-wrap: wrap !important;
         align-items: center !important;
         gap: 5px !important;
-        flex-shrink: 1 !important;
-        min-width: 0 !important;
         max-width: 100% !important;
-        overflow-x: auto !important;
-        scrollbar-width: none !important;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    .header-right::-webkit-scrollbar,
-    .stat-pill-group::-webkit-scrollbar {
-        display: none !important;
-    }
-
-    .header-right > *,
-    .stat-pill-group > * {
-        flex-shrink: 0 !important;
     }
 
     #header-ai-quota-btn {
