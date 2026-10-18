@@ -274,8 +274,11 @@ function renderTimelineScenes(plan) {
                     ` : ''}
                 </div>
                 <div class="tl-media-actions">
-                    <button type="button" class="tl-btn tl-btn-swap" data-idx="${i}" title="Stok / AI Görseli Değiştir">
-                        <i class="fa-solid fa-arrows-rotate"></i> Değiştir
+                    <button type="button" class="tl-btn tl-btn-swap" data-idx="${i}" title="Stok / AI Görsel Arama Penceresini Aç">
+                        <i class="fa-solid fa-film"></i> Seç
+                    </button>
+                    <button type="button" class="tl-btn-icon tl-btn-cycle-clip" data-idx="${i}" title="Tek tıkla sonraki Pexels / Pixabay alternatif klibine geç">
+                        <i class="fa-solid fa-dice"></i>
                     </button>
                     <button type="button" class="tl-btn-icon tl-btn-quick-ai" data-idx="${i}" title="AI Görsel (Flux) ile Yenile">
                         <i class="fa-solid fa-wand-magic-sparkles"></i>
@@ -284,6 +287,15 @@ function renderTimelineScenes(plan) {
                         <i class="fa-solid fa-volume-high"></i>
                     </button>
                 </div>
+                ${(sc.stock_candidates && sc.stock_candidates.length > 1) ? `
+                <div class="tl-alt-clips-bar">
+                    ${sc.stock_candidates.slice(0, 4).map((cand, cIdx) => {
+                        const isAct = Boolean(cand.url && cand.url === rawVideoUrl);
+                        const sLow = String(cand.source || 'stok').toLowerCase();
+                        const srcTag = sLow.includes('pexels') ? 'Pexels' : sLow.includes('pixabay') ? 'Pixabay' : sLow.includes('coverr') ? 'Coverr' : 'Stok';
+                        return `<button type="button" class="tl-alt-clip-pill ${isAct ? 'active' : ''}" data-idx="${i}" data-alt="${cIdx}" title="Alternatif #${cIdx + 1}: ${escapeHtml(srcTag)}">#${cIdx + 1} ${srcTag}</button>`;
+                    }).join('')}
+                </div>` : ''}
             </div>
 
             <div class="tl-card-content">
@@ -294,8 +306,8 @@ function renderTimelineScenes(plan) {
                             ${moodCfg.icon} ${moodCfg.label}
                         </span>
                         <span class="tl-wc-chip ${wcClass}" id="tl-wc-${i}">${wc} kelime</span>
-                        <span class="tl-emoji-chip ${hasEmoji(narr) ? 'has' : 'none'}" id="tl-emoji-${i}">
-                            ${hasEmoji(narr) ? '✅ Emoji' : '⚠️ No Emoji'}
+                        <span class="tl-emoji-chip ${hasEmoji(narr) ? 'has' : 'none'}" id="tl-emoji-${i}" data-idx="${i}" style="cursor:pointer;" title="${hasEmoji(narr) ? 'Emoji mevcut' : 'Tıkla: Sahneye uygun emoji ekle'}">
+                            ${hasEmoji(narr) ? '✅ Emoji' : '➕ Emoji Ekle'}
                         </span>
                         ${dur > 8.5 ? `<button type="button" class="tl-dur-fix-chip" data-idx="${i}" title="Süreyi konuşma hızına göre dengele">⚖️ ${dur.toFixed(1)}s → Dengele</button>` : ''}
                     </div>
@@ -365,6 +377,19 @@ function renderTimelineScenes(plan) {
             e.stopPropagation();
             openReplaceVisualModal(parseInt(e.currentTarget.getAttribute('data-idx'), 10));
         });
+        card.querySelector('.tl-btn-cycle-clip')?.addEventListener('click', e => {
+            e.stopPropagation();
+            const idx = parseInt(e.currentTarget.getAttribute('data-idx'), 10);
+            if (typeof window.cycleSceneStockClip === 'function') window.cycleSceneStockClip(idx);
+        });
+        card.querySelectorAll('.tl-alt-clip-pill').forEach(pill => {
+            pill.addEventListener('click', e => {
+                e.stopPropagation();
+                const idx = parseInt(e.currentTarget.getAttribute('data-idx'), 10);
+                const altIdx = parseInt(e.currentTarget.getAttribute('data-alt'), 10);
+                if (typeof window.cycleSceneStockClip === 'function') window.cycleSceneStockClip(idx, altIdx);
+            });
+        });
 
         card.querySelector('.tl-btn-quick-ai')?.addEventListener('click', e => {
             const idx = parseInt(e.currentTarget.getAttribute('data-idx'), 10);
@@ -420,6 +445,15 @@ function renderTimelineScenes(plan) {
         });
 
         const narrInput = card.querySelector('.scene-narr-input');
+        card.querySelector(`#tl-emoji-${i}`)?.addEventListener('click', () => {
+            if (!narrInput || hasEmoji(narrInput.value)) return;
+            const emojis = ['✨', '🕌', '🔥', '⚡', '🌙', '💡'];
+            const pick = emojis[i % emojis.length];
+            narrInput.value = `${narrInput.value.trim()} ${pick}`.trim();
+            narrInput.dispatchEvent(new Event('input'));
+            if (typeof persistCurrentPlan === 'function') persistCurrentPlan();
+            showToast(`${pick} Sahne #${i + 1} metnine emoji eklendi`);
+        });
         narrInput?.addEventListener('input', () => {
             const text = narrInput.value;
             sc.narration = text;
@@ -427,7 +461,7 @@ function renderTimelineScenes(plan) {
             const chip = document.getElementById(`tl-wc-${i}`);
             if (chip) { chip.textContent = `${liveWc} kelime`; chip.className = `tl-wc-chip ${sceneWordCountClass(liveWc)}`; }
             const emBadge = document.getElementById(`tl-emoji-${i}`);
-            if (emBadge) { const em = hasEmoji(text); emBadge.textContent = em ? '✅ Emoji' : '⚠️ No Emoji'; emBadge.className = `tl-emoji-chip ${em ? 'has' : 'none'}`; }
+            if (emBadge) { const em = hasEmoji(text); emBadge.textContent = em ? '✅ Emoji' : '➕ Emoji Ekle'; emBadge.className = `tl-emoji-chip ${em ? 'has' : 'none'}`; }
             const wordEl = document.getElementById('tl-word-value');
             if (wordEl && currentPlan?.scenes) wordEl.textContent = `${currentPlan.scenes.reduce((a, s) => a + wordCount(s.narration), 0)}`;
         });
@@ -492,3 +526,51 @@ function collectTimelineEdits() {
         }
     }
 }
+
+window.cycleSceneStockClip = async function(sceneIdx, targetAltIdx = null) {
+    if (!currentPlan || !Array.isArray(currentPlan.scenes) || !currentPlan.scenes[sceneIdx]) return;
+    if (typeof collectTimelineEdits === 'function') collectTimelineEdits();
+    const sc = currentPlan.scenes[sceneIdx];
+    const currentUrl = sc.selected_video?.url || sc.video_url || '';
+    const prefSrc = window._preferredStockSource || document.getElementById('stock-provider-select')?.value || 'pexels_pixabay';
+    let cands = Array.isArray(sc.stock_candidates) ? sc.stock_candidates.filter(c => c && c.url) : [];
+
+    if (cands.length < 2) {
+        const q = (sc.search_queries && sc.search_queries[0]) || sc.scene_description || 'cinematic nature';
+        try {
+            const r = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=6&source=${encodeURIComponent(prefSrc)}`);
+            const d = await r.json();
+            if (Array.isArray(d.results) && d.results.length) {
+                cands = d.results.filter(c => c && c.url);
+                sc.stock_candidates = cands.slice(0, 5);
+            }
+        } catch (_) {}
+    }
+
+    if (!cands.length) {
+        if (typeof openReplaceVisualModal === 'function') openReplaceVisualModal(sceneIdx);
+        return;
+    }
+
+    let chosen = null;
+    if (targetAltIdx !== null && cands[targetAltIdx]) {
+        chosen = cands[targetAltIdx];
+    } else {
+        const curIdx = cands.findIndex(c => c.url === currentUrl);
+        chosen = cands[(curIdx + 1) % cands.length];
+    }
+    if (!chosen) return;
+
+    sc.selected_video = chosen;
+    sc.video_url = chosen.url;
+    delete sc.path;
+    delete sc.video_path;
+    if (typeof setCurrentPlan === 'function') setCurrentPlan(currentPlan);
+    else if (typeof persistCurrentPlan === 'function') persistCurrentPlan();
+    if (typeof window.syncWizardStep2Preview === 'function') window.syncWizardStep2Preview();
+    if (typeof showToast === 'function') {
+        const srcName = String(chosen.source || 'Stok').toUpperCase();
+        showToast(`🎬 Sahne #${sceneIdx + 1}: ${srcName} klibine geçildi`);
+    }
+};
+

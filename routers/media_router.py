@@ -36,7 +36,13 @@ from routers.media_voice_bgm_routes import (
     tts_preview,
     upload_bgm,
 )
-from stock_providers import search_coverr, search_mixkit, search_pexels, search_pixabay
+from stock_providers import (
+    search_coverr,
+    search_mixkit,
+    search_pexels,
+    search_pixabay,
+    simplify_stock_queries,
+)
 from subtitle_generator import SUBTITLE_PRESETS
 
 router = APIRouter(tags=["Media"])
@@ -234,40 +240,56 @@ def _fetch_single_scene_video(args):
         queries.append(str(sc["scene_description"]).strip())
     if not queries:
         queries = ["architectural detail soft light", "nature aerial calm"]
+    if len(queries) < 2:
+        for alt_q in simplify_stock_queries(queries[0]) + ["cinematic atmospheric light", "nature aerial calm"]:
+            if alt_q and alt_q not in queries:
+                queries.append(alt_q)
+            if len(queries) >= 2:
+                break
+    sc_copy["search_queries"] = queries[:4]
 
-    best_video = None
-    matched_query = queries[0]
+    raw_candidates: List[tuple] = []
+    seen_keys: set = set()
     for q in queries[:4]:
         try:
             candidates = _search_legacy_stock(q, preferred_source=preferred_source)
-            if candidates:
-                best_video = candidates[i % len(candidates)]
-                matched_query = q
+            for cand in candidates:
+                key = (str(cand.get("id") or ""), str(cand.get("url") or ""))
+                if key not in seen_keys and cand.get("url"):
+                    seen_keys.add(key)
+                    raw_candidates.append((cand, q))
+            if len(raw_candidates) >= 6:
                 break
         except Exception:
             continue
 
-    if not best_video and _paid_stock_keys_present():
+    if not raw_candidates and _paid_stock_keys_present():
         try:
             fallbacks = _interleave_lists(
                 search_pexels("cinematic nature") or [],
                 search_pixabay("nature clouds") or [],
             )
-            if fallbacks:
-                best_video = fallbacks[i % len(fallbacks)]
-                matched_query = "cinematic nature"
+            for cand in fallbacks:
+                key = (str(cand.get("id") or ""), str(cand.get("url") or ""))
+                if key not in seen_keys and cand.get("url"):
+                    seen_keys.add(key)
+                    raw_candidates.append((cand, "cinematic nature"))
         except Exception:
             pass
 
-    if not best_video:
+    if not raw_candidates:
         keyless = _search_keyless_visuals(queries, niche_id=niche)
-        if keyless:
-            best_video = keyless
-            matched_query = keyless.get("query") or matched_query
+        if keyless and keyless.get("url"):
+            raw_candidates.append((keyless, keyless.get("query") or queries[0]))
 
-    if best_video:
+    sc_copy["_raw_candidates"] = raw_candidates
+    if raw_candidates:
+        best_video, matched_query = raw_candidates[i % len(raw_candidates)]
         sc_copy["selected_video"] = _candidate_to_selected(best_video, matched_query)
         sc_copy["video_url"] = best_video.get("url") or ""
+        sc_copy["stock_candidates"] = [
+            _candidate_to_selected(c, mq) for c, mq in raw_candidates[:4]
+        ]
         sc_copy.pop("path", None)
         sc_copy.pop("video_path", None)
     return sc_copy
@@ -278,14 +300,46 @@ def auto_fetch_videos_for_scenes(
     niche_id: str = "",
     preferred_source: str = "pexels_pixabay",
 ) -> List[Dict[str, Any]]:
-    """Associate top Pexels / Pixabay / stock visual candidates with scenes."""
+    """Associate top Pexels / Pixabay / stock visual candidates with scenes with cross-scene deduplication."""
     if not scenes:
         return []
     try:
         workers = min(3 if not _paid_stock_keys_present() else 8, max(1, len(scenes)))
         payload = [(i, sc, niche_id, preferred_source) for i, sc in enumerate(scenes)]
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            return list(executor.map(_fetch_single_scene_video, payload))
+            fetched = list(executor.map(_fetch_single_scene_video, payload))
+        used_ids: set = set()
+        used_urls: set = set()
+        for idx, sc in enumerate(fetched):
+            raw_cands = sc.pop("_raw_candidates", None) or []
+            if not raw_cands:
+                continue
+            chosen_pair = None
+            for cand, mq in raw_cands:
+                cid = str(cand.get("id") or "")
+                curl = str(cand.get("url") or "")
+                if (not cid or cid not in used_ids) and (not curl or curl not in used_urls):
+                    chosen_pair = (cand, mq)
+                    break
+            if not chosen_pair:
+                chosen_pair = raw_cands[idx % len(raw_cands)]
+            best_cand, best_q = chosen_pair
+            if best_cand.get("id"):
+                used_ids.add(str(best_cand["id"]))
+            if best_cand.get("url"):
+                used_urls.add(str(best_cand["url"]))
+            selected_obj = _candidate_to_selected(best_cand, best_q)
+            sc["selected_video"] = selected_obj
+            sc["video_url"] = best_cand.get("url") or ""
+            alt_list = [selected_obj]
+            for cand, mq in raw_cands:
+                if len(alt_list) >= 4:
+                    break
+                alt_obj = _candidate_to_selected(cand, mq)
+                if alt_obj.get("url") and alt_obj.get("url") != selected_obj.get("url"):
+                    alt_list.append(alt_obj)
+            sc["stock_candidates"] = alt_list
+        return fetched
     except Exception as e:
         print(f"  [AutoStockParallel] {e}")
         return scenes

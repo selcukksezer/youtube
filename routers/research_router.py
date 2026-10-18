@@ -291,6 +291,8 @@ def api_generate_script(req: ScriptGenerateRequest):
         hook_variants = get_niche_ab_variants(locked_niche)
         plan["hook_variants"] = hook_variants.get("variants", [])
 
+        initial_fetched_scenes: list = []
+        skip_live_stock = True
         try:
             from routers.media_router import auto_fetch_videos_for_scenes
 
@@ -308,6 +310,7 @@ def api_generate_script(req: ScriptGenerateRequest):
                     plan["scenes"],
                     niche_id=locked_niche,
                 )
+                initial_fetched_scenes = list(plan.get("scenes") or [])
         except Exception as err:
             logger.warning("Automatic stock-video search failed: %s", err)
 
@@ -452,6 +455,33 @@ def api_generate_script(req: ScriptGenerateRequest):
         plan["research_brief"] = research_brief
         if series_continuity:
             plan["series_continuity"] = series_continuity
+
+        final_scenes = plan.get("scenes") or []
+        for idx, sc in enumerate(final_scenes):
+            sq = [str(q).strip() for q in (sc.get("search_queries") or []) if str(q).strip()]
+            desc = str(sc.get("scene_description") or "").strip()
+            if desc and desc not in sq:
+                sq.append(desc)
+            for fb_q in ("cinematic atmospheric light", "nature aerial calm"):
+                if len(sq) >= 2:
+                    break
+                if fb_q not in sq:
+                    sq.append(fb_q)
+            sc["search_queries"] = sq
+            if idx < len(initial_fetched_scenes):
+                prev_sc = initial_fetched_scenes[idx] or {}
+                if not sc.get("selected_video") and prev_sc.get("selected_video"):
+                    sc["selected_video"] = prev_sc["selected_video"]
+                    sc["video_url"] = prev_sc.get("video_url") or prev_sc["selected_video"].get("url", "")
+                if not sc.get("stock_candidates") and prev_sc.get("stock_candidates"):
+                    sc["stock_candidates"] = prev_sc["stock_candidates"]
+        if not skip_live_stock and final_scenes and any(not s.get("selected_video") for s in final_scenes):
+            try:
+                from routers.media_router import auto_fetch_videos_for_scenes
+
+                plan["scenes"] = auto_fetch_videos_for_scenes(final_scenes, niche_id=locked_niche)
+            except Exception:
+                pass
 
         plan.setdefault("meta", {})
         plan["meta"]["script_quality"] = script_quality

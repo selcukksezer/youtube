@@ -182,12 +182,6 @@ def apply_global_overlays_to_graph(
         next_input += 1
 
     should_visualize = bool(enable_audio_visualizer)
-    if not should_visualize and niche_id:
-        try:
-            from effects.audio_visualizer import is_visualizer_recommended_for_niche
-            should_visualize = is_visualizer_recommended_for_niche(niche_id)
-        except Exception:
-            should_visualize = False
 
     audio_idx: Optional[int] = None
     if should_visualize and os_mod.path.exists(audio_path):
@@ -201,11 +195,11 @@ def apply_global_overlays_to_graph(
                 video_tag=picture,
                 out_tag="vwave",
                 width=W,
-                height=140,
-                y_pos=int(H * 0.72),
+                height=96,
+                y_pos=int(H * 0.85),
                 mode=audio_visualizer_mode or "line",
                 color=audio_visualizer_color or "0x00D7FF",
-                opacity=0.80,
+                opacity=0.55,
             )
             filter_parts.append(wave_flt)
             picture = wave_tag

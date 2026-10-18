@@ -297,6 +297,10 @@
                 const isHook = i === 0;
                 const isClose = i === scenes.length - 1;
                 const sceneRisks = risks.filter((r) => r.sceneIdx === i);
+                const sv = sc.selected_video || {};
+                const srcRaw = String(sv.source || '').toLowerCase();
+                const srcLabel = srcRaw.includes('pexels') ? 'Pexels' : srcRaw.includes('pixabay') ? 'Pixabay' : srcRaw.includes('coverr') ? 'Coverr' : (sv.url || sc.video_url) ? 'Stok Klip' : 'Klip Yok';
+                const candCount = Array.isArray(sc.stock_candidates) ? sc.stock_candidates.length : 0;
                 return `
                     <div class="wiz-inline-scene-row${isHook ? ' wiz-s1-hook-card' : ''}" data-scene-idx="${i}">
                         <div class="wiz-inline-scene-head">
@@ -304,10 +308,13 @@
                                 <span class="wiz-scene-num">S${i + 1}</span>
                                 <span class="wiz-scene-role">${isHook ? '🎯 İLK 3 SANİYE — VİRAL KANCA' : isClose ? '🔄 Döngüsel Kapanış' : `⚔️ Sahne ${i + 1}`}</span>
                                 <span class="wiz-scene-meta-badge" data-meta-idx="${i}">S${i + 1} · ${dur} sn · ${wc} kelime</span>
+                                <span class="wiz-scene-meta-badge" style="color:#38bdf8;border-color:rgba(56,189,248,0.3);">🎬 ${srcLabel}${candCount > 1 ? ` (${candCount} aday)` : ''}</span>
                                 ${sceneRisks.length ? `<span class="wiz-scene-risk-pill">⚠️ Riskli: ${sceneRisks.map((r) => r.term).join(', ')}</span>` : ''}
                             </div>
                             <div class="wiz-inline-scene-actions">
                                 ${isHook ? `<button type="button" class="btn-wiz-alt-hook" id="btn-wiz-alt-hook">✨ Alternatif Kanca</button>` : ''}
+                                <button type="button" class="btn-wiz-rewrite-scene btn-wiz-cycle-clip" data-cycle-idx="${i}" title="Tek tıkla sonraki Pexels/Pixabay klibine geç">🎲 Başka Klip</button>
+                                <button type="button" class="btn-wiz-rewrite-scene btn-wiz-pick-clip" data-pick-idx="${i}" title="Pexels / Pixabay stok video galerisinden seç">🎬 Video Seç</button>
                                 <button type="button" class="btn-wiz-rewrite-scene" data-rewrite-idx="${i}">↻ Yeniden Yaz</button>
                             </div>
                         </div>
@@ -374,7 +381,21 @@
             });
         });
 
-        previewBox.querySelectorAll('.btn-wiz-rewrite-scene').forEach((btn) => {
+        previewBox.querySelectorAll('.btn-wiz-cycle-clip[data-cycle-idx]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const idx = Number(btn.getAttribute('data-cycle-idx'));
+                if (typeof window.cycleSceneStockClip === 'function') window.cycleSceneStockClip(idx);
+            });
+        });
+
+        previewBox.querySelectorAll('.btn-wiz-pick-clip[data-pick-idx]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const idx = Number(btn.getAttribute('data-pick-idx'));
+                if (typeof openReplaceVisualModal === 'function') openReplaceVisualModal(idx);
+            });
+        });
+
+        previewBox.querySelectorAll('.btn-wiz-rewrite-scene[data-rewrite-idx]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const idx = Number(btn.getAttribute('data-rewrite-idx'));
                 const sc = window.currentPlan?.scenes?.[idx];
