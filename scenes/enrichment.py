@@ -444,21 +444,24 @@ def enrich_plan_scenes(plan: Dict[str, Any], lang: str = "tr", niche_id: str = "
 
 
 def ensure_unique_scene_visual_fingerprints(scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Ensure no two scenes have identical scene_description and search queries."""
+    """Ensure no two scenes have identical scene_description, visual fingerprint, or primary search query."""
     seen_fps: Set[str] = set()
+    seen_primary: Set[str] = set()
     for idx, sc in enumerate(scenes):
         desc = str(sc.get("scene_description") or "").strip()
         qs = [str(q).strip() for q in (sc.get("search_queries") or []) if str(q).strip()]
+        primary_q = qs[0].casefold() if qs else ""
         fp = " ".join([desc.casefold(), " ".join(q.casefold() for q in qs[:2])])
-        if fp in seen_fps or not fp:
+        if fp in seen_fps or not fp or not primary_q or primary_q in seen_primary:
             sc["scene_description"] = f"{desc} angle {idx+1}" if desc else f"cinematic visual angle {idx+1}"
-            if qs:
-                qs = [f"{q} cut {idx+1}" if i == 0 else q for i, q in enumerate(qs)]
-            else:
-                qs = [f"cinematic scene cut {idx+1}", "b-roll dramatic motion", "atmospheric lighting"]
-            sc["search_queries"] = qs
+            qs = [f"{q} cut {idx+1}" if i == 0 else q for i, q in enumerate(qs)] if qs else [f"cinematic scene cut {idx+1}", "b-roll dramatic motion", "atmospheric lighting"]
+            primary_q = qs[0].casefold()
             fp = " ".join([sc["scene_description"].casefold(), " ".join(q.casefold() for q in qs[:2])])
+        if len(qs) < 2:
+            qs.append(f"dramatic visual detail {idx+1}")
+        sc["search_queries"] = qs
         seen_fps.add(fp)
+        seen_primary.add(primary_q)
     return scenes
 
 

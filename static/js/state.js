@@ -305,19 +305,19 @@ function setSqpPill(id, text, state) {
 }
 
 function directorCadenceStatus(sceneCount) {
-    if (sceneCount === 6) return 'ok';
+    if (sceneCount >= 5 && sceneCount <= 8) return 'ok';
     return sceneCount >= 4 ? 'warn' : 'fail';
 }
 
 function directorWordCountStatus(wordCount) {
-    if (wordCount < 85 || wordCount > 195) return 'fail';
-    if (wordCount > 110) return 'warn';
+    if (wordCount < 75 || wordCount > 210) return 'fail';
+    if (wordCount < 85 || wordCount > 185) return 'warn';
     return 'ok';
 }
 
 function directorDurationStatus(duration) {
-    if (duration < 38 || duration > 65) return 'fail';
-    if (duration < 50 || duration > 60.25) return 'warn';
+    if (duration < 24 || duration > 65) return 'fail';
+    if (duration < 28 || duration > 60.25) return 'warn';
     return 'ok';
 }
 
@@ -326,12 +326,13 @@ function updateStudioPlanSummary(scenes) {
     const totalWords = scenes.reduce((acc, scene) => acc + wordCount(cleanNarration(scene.narration)), 0);
     const queries = scenes.map(scene => ((scene.search_queries || [])[0] || '').toLowerCase().trim()).filter(Boolean);
     const uniqueClips = new Set(queries).size;
-    const dupes = queries.length - uniqueClips;
+    const allHaveTwo = scenes.every(scene => Array.isArray(scene.search_queries) && scene.search_queries.filter(q => String(q || '').trim()).length >= 2);
+    const clipsOk = scenes.length > 0 && uniqueClips === scenes.length && allHaveTwo;
 
     setSqpPill('sqp-cadence', `Cadence: ${scenes.length} sahne`, directorCadenceStatus(scenes.length));
     setSqpPill('sqp-words', `Kelime: ${totalWords}`, directorWordCountStatus(totalWords));
     setSqpPill('sqp-duration', `Sure: ${totalSec.toFixed(1)}sn`, directorDurationStatus(totalSec));
-    setSqpPill('sqp-clips', `Klip: ${uniqueClips}/${scenes.length}`, dupes === 0 ? 'ok' : 'warn');
+    setSqpPill('sqp-clips', `Klip: ${uniqueClips}/${scenes.length}`, clipsOk ? 'ok' : 'warn');
 }
 
 async function updateStudioQualityPanel(plan, { silent = false } = {}) {
