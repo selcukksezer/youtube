@@ -173,27 +173,37 @@ function renderTimelineScenes(plan) {
     if (nicheEl) nicheEl.textContent = plan.niche_id || plan.meta?.locked_niche || '';
     if (badgeCount) badgeCount.textContent = String(scenes.length);
 
-    if (scenes.length >= 4) {
+    if (scenes.length >= 1) {
         const lastSc = scenes[scenes.length - 1];
         const lastDur = parseFloat(lastSc.duration) || 0;
         const headClamped = scenes.slice(0, -1).every(s => (parseFloat(s.duration) || 0) <= 8.5);
         let planMutated = false;
-        if (lastDur > 9.5 && headClamped) {
+        if (scenes.length >= 4 && lastDur > 9.5 && headClamped) {
             const wcLast = wordCount(lastSc.narration || '');
             lastSc.duration = Math.max(4.5, Math.min(7.0, +(wcLast * 0.36 || 6.5).toFixed(1)));
             planMutated = true;
         }
-        const svUrl = String(lastSc.selected_video?.url || '');
-        if (/Contrabassoon|s005_Openverse_5\.mp4|Folsom_Street|Naked_Bike/i.test(svUrl)) {
-            lastSc.selected_video = {
-                id: 'mx_futuristic_space_closing',
-                source: 'mixkit',
-                url: 'https://assets.mixkit.co/videos/47994/47994-360.mp4',
-                thumbnail: 'https://assets.mixkit.co/videos/47994/47994-360.mp4',
-                query: (lastSc.search_queries && lastSc.search_queries[0]) || 'futuristic science animation'
-            };
-            planMutated = true;
-        }
+        const BANNED_CLIP_RE = /Contrabassoon|s005_Openverse_5\.mp4|Folsom_Street|Naked_Bike|\/47994\/|\/47995\/|\/47996\/|\/48000\/|\/44562\//i;
+        scenes.forEach((s, sIdx) => {
+            const svUrl = String(s.selected_video?.url || s.video_url || '');
+            if (BANNED_CLIP_RE.test(svUrl)) {
+                delete s.selected_video;
+                delete s.video_url;
+                planMutated = true;
+                const healQ = (s.search_queries && s.search_queries[0]) || s.scene_description || 'cinematic nature';
+                fetch(`/api/stock/search?query=${encodeURIComponent(healQ)}&limit=4&source=pexels_pixabay`)
+                    .then(r => r.json())
+                    .then(d => {
+                        const hit = (d.results || [])[sIdx % Math.max(1, (d.results || []).length)];
+                        if (hit && currentPlan?.scenes?.[sIdx]) {
+                            currentPlan.scenes[sIdx].selected_video = hit;
+                            currentPlan.scenes[sIdx].video_url = hit.url;
+                            if (typeof persistCurrentPlan === 'function') persistCurrentPlan();
+                            renderTimelineScenes(currentPlan);
+                        }
+                    }).catch(() => {});
+            }
+        });
         if (planMutated && typeof persistCurrentPlan === 'function') persistCurrentPlan();
     }
 
@@ -222,11 +232,14 @@ function renderTimelineScenes(plan) {
 
         let provName = 'Stok Video', provIcon = 'fa-film', provColor = '#38bdf8';
         if (sc.selected_video?.source) {
-            provName = sc.selected_video.source;
+            provName = String(sc.selected_video.source);
+            const pLow = provName.toLowerCase();
             if (provName.includes('Flux')) { provIcon = 'fa-wand-magic-sparkles'; provColor = '#c084fc'; }
             else if (provName.includes('Whiteboard')) { provIcon = 'fa-pen-nib'; provColor = '#fb923c'; }
-            else if (provName.toLowerCase().includes('pixabay')) provName = 'Pixabay';
-            else if (provName.toLowerCase().includes('pexels')) provName = 'Pexels';
+            else if (pLow.includes('pexels')) { provName = 'Pexels'; provColor = '#10b981'; }
+            else if (pLow.includes('pixabay')) { provName = 'Pixabay'; provColor = '#0ea5e9'; }
+            else if (pLow.includes('coverr')) { provName = 'Coverr'; provColor = '#a855f7'; }
+            else if (pLow.includes('mixkit')) { provName = 'Mixkit'; provColor = '#f59e0b'; }
         } else if (sc.visual_mode === 'whiteboard') {
             provName = 'Whiteboard'; provIcon = 'fa-pen-nib'; provColor = '#fb923c';
         }
@@ -255,8 +268,8 @@ function renderTimelineScenes(plan) {
                         <span class="tl-badge-dur ${dur > 8.5 ? 'is-overlong' : ''}">${dur.toFixed(1)}s</span>
                     </div>
                     ${(isVideo || isImage) ? `
-                        <span class="tl-badge-provider" style="--prov-color: ${provColor}">
-                            <i class="fa-solid ${provIcon}"></i> ${escapeHtml(provName)}
+                        <span class="tl-badge-provider" data-idx="${i}" title="Kaynağı / Videoyu Değiştir (${escapeHtml(provName)})" style="--prov-color: ${provColor}; cursor: pointer;">
+                            <i class="fa-solid ${provIcon}"></i> ${escapeHtml(provName)} <i class="fa-solid fa-chevron-down" style="font-size:0.6rem;opacity:0.8"></i>
                         </span>
                     ` : ''}
                 </div>
@@ -346,6 +359,10 @@ function renderTimelineScenes(plan) {
         });
 
         card.querySelector('.tl-btn-swap')?.addEventListener('click', e => {
+            openReplaceVisualModal(parseInt(e.currentTarget.getAttribute('data-idx'), 10));
+        });
+        card.querySelector('.tl-badge-provider')?.addEventListener('click', e => {
+            e.stopPropagation();
             openReplaceVisualModal(parseInt(e.currentTarget.getAttribute('data-idx'), 10));
         });
 

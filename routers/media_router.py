@@ -46,6 +46,7 @@ router.include_router(_voice_bgm_router)
 class FetchStockScenesRequest(BaseModel):
     scenes: List[Dict[str, Any]]
     niche_id: Optional[str] = None
+    preferred_source: Optional[str] = None
 
 
 def _paid_stock_keys_present() -> bool:
@@ -84,8 +85,47 @@ def _candidate_to_selected(best: Dict[str, Any], query: str) -> Dict[str, Any]:
     }
 
 
-def _search_legacy_stock(query: str) -> List[Dict[str, Any]]:
-    for fn in (search_pexels, search_pixabay, search_coverr, search_mixkit):
+def _interleave_lists(list_a: List[Dict[str, Any]], list_b: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged: List[Dict[str, Any]] = []
+    max_len = max(len(list_a), len(list_b))
+    for idx in range(max_len):
+        if idx < len(list_a):
+            merged.append(list_a[idx])
+        if idx < len(list_b):
+            merged.append(list_b[idx])
+    return merged
+
+
+def _search_legacy_stock(query: str, preferred_source: str = "pexels_pixabay") -> List[Dict[str, Any]]:
+    pref = (preferred_source or "pexels_pixabay").strip().lower()
+    if pref == "pexels":
+        order = (search_pexels, search_pixabay)
+    elif pref == "pixabay":
+        order = (search_pixabay, search_pexels)
+    elif pref == "coverr":
+        order = (search_coverr, search_pexels, search_pixabay)
+    elif pref == "mixkit":
+        order = (search_mixkit, search_pexels, search_pixabay)
+    elif pref == "all":
+        order = (search_pexels, search_pixabay, search_coverr, search_mixkit)
+    else:
+        # Default: Pexels + Pixabay interleaved first
+        px = []
+        pb = []
+        try:
+            px = search_pexels(query) or []
+        except Exception:
+            px = []
+        try:
+            pb = search_pixabay(query) or []
+        except Exception:
+            pb = []
+        combined = _interleave_lists(px, pb)
+        if combined:
+            return combined
+        order = (search_coverr,)
+
+    for fn in order:
         try:
             hits = fn(query) or []
         except Exception:
@@ -148,24 +188,28 @@ def _search_keyless_visuals(
 
 
 @router.get("/api/stock/search")
-def api_stock_search(query: str, limit: int = 6, niche_id: str = ""):
-    """Searches stock video providers and returns candidate video clips."""
-    results = []
+def api_stock_search(query: str, limit: int = 12, niche_id: str = "", source: str = "pexels_pixabay"):
+    """Searches stock video providers with user-selectable source filter (pexels_pixabay, pexels, pixabay, coverr, mixkit, all)."""
+    results: List[Dict[str, Any]] = []
+    src = (source or "pexels_pixabay").strip().lower()
     try:
-        px = search_pexels(query)
-        if px:
-            results.extend(px[:limit])
-        if len(results) < limit:
-            pb = search_pixabay(query)
-            if pb:
-                results.extend(pb[: limit - len(results)])
-        if len(results) < limit:
-            cv = search_coverr(query)
-            if cv:
+        if src == "pexels":
+            results.extend((search_pexels(query) or [])[:limit])
+        elif src == "pixabay":
+            results.extend((search_pixabay(query) or [])[:limit])
+        elif src == "coverr":
+            results.extend((search_coverr(query) or [])[:limit])
+        elif src == "mixkit":
+            results.extend((search_mixkit(query) or [])[:limit])
+        else:
+            px = search_pexels(query) or []
+            pb = search_pixabay(query) or []
+            results.extend(_interleave_lists(px, pb)[:limit])
+            if len(results) < limit and src in ("all", "pexels_pixabay", "auto", ""):
+                cv = search_coverr(query) or []
                 results.extend(cv[: limit - len(results)])
-        if len(results) < limit:
-            mx = search_mixkit(query)
-            if mx:
+            if len(results) < limit and src == "all":
+                mx = search_mixkit(query) or []
                 results.extend(mx[: limit - len(results)])
         if len(results) < limit:
             keyless = _search_keyless_visuals([query], niche_id=niche_id)
@@ -173,11 +217,11 @@ def api_stock_search(query: str, limit: int = 6, niche_id: str = ""):
                 results.append(keyless)
     except Exception as e:
         print(f"  [StockSearch] Error: {e}")
-    return {"status": "ok", "query": query, "results": results[:limit]}
+    return {"status": "ok", "query": query, "source": src, "results": results[:limit]}
 
 
 def _fetch_single_scene_video(args):
-    i, sc, niche_id = args
+    i, sc, niche_id, preferred_source = args if len(args) == 4 else (*args, "pexels_pixabay")
     sc_copy = dict(sc)
     niche = (
         niche_id
@@ -185,19 +229,19 @@ def _fetch_single_scene_video(args):
         or (sc.get("visual_intent") or {}).get("niche_id")
         or ""
     )
-    queries = list(sc.get("search_queries") or [])
-    if not queries and sc.get("scene_description"):
-        queries = [sc["scene_description"]]
+    queries = [str(q).strip() for q in (sc.get("search_queries") or []) if str(q).strip()]
+    if sc.get("scene_description") and sc["scene_description"] not in queries:
+        queries.append(str(sc["scene_description"]).strip())
     if not queries:
         queries = ["architectural detail soft light", "nature aerial calm"]
 
     best_video = None
     matched_query = queries[0]
-    for q in queries[:3]:
+    for q in queries[:4]:
         try:
-            candidates = _search_legacy_stock(q)
+            candidates = _search_legacy_stock(q, preferred_source=preferred_source)
             if candidates:
-                best_video = candidates[0]
+                best_video = candidates[i % len(candidates)]
                 matched_query = q
                 break
         except Exception:
@@ -205,10 +249,13 @@ def _fetch_single_scene_video(args):
 
     if not best_video and _paid_stock_keys_present():
         try:
-            fallbacks = search_pexels("nature sunrise soft light") or []
+            fallbacks = _interleave_lists(
+                search_pexels("cinematic nature") or [],
+                search_pixabay("nature clouds") or [],
+            )
             if fallbacks:
                 best_video = fallbacks[i % len(fallbacks)]
-                matched_query = "nature sunrise soft light"
+                matched_query = "cinematic nature"
         except Exception:
             pass
 
@@ -229,13 +276,14 @@ def _fetch_single_scene_video(args):
 def auto_fetch_videos_for_scenes(
     scenes: List[Dict[str, Any]],
     niche_id: str = "",
+    preferred_source: str = "pexels_pixabay",
 ) -> List[Dict[str, Any]]:
-    """Associate top stock / keyless visual candidates with scenes."""
+    """Associate top Pexels / Pixabay / stock visual candidates with scenes."""
     if not scenes:
         return []
     try:
         workers = min(3 if not _paid_stock_keys_present() else 8, max(1, len(scenes)))
-        payload = [(i, sc, niche_id) for i, sc in enumerate(scenes)]
+        payload = [(i, sc, niche_id, preferred_source) for i, sc in enumerate(scenes)]
         with ThreadPoolExecutor(max_workers=workers) as executor:
             return list(executor.map(_fetch_single_scene_video, payload))
     except Exception as e:
@@ -245,11 +293,12 @@ def auto_fetch_videos_for_scenes(
 
 @router.post("/api/stock/fetch_for_scenes")
 def api_fetch_stock_for_scenes(req: FetchStockScenesRequest):
-    """Fetches matched stock videos for all scenes in a plan."""
+    """Fetches matched stock videos for all scenes in a plan using the selected provider."""
     niche = req.niche_id or ""
     if not niche and req.scenes:
         niche = str(req.scenes[0].get("niche_id") or "")
-    updated = auto_fetch_videos_for_scenes(req.scenes, niche_id=niche)
+    pref_src = (req.preferred_source or "pexels_pixabay").strip().lower()
+    updated = auto_fetch_videos_for_scenes(req.scenes, niche_id=niche, preferred_source=pref_src)
     assigned = sum(
         1 for s in updated if s.get("selected_video") and s["selected_video"].get("url")
     )
@@ -258,6 +307,7 @@ def api_fetch_stock_for_scenes(req: FetchStockScenesRequest):
         "scenes": updated,
         "assigned": assigned,
         "total": len(updated),
+        "preferred_source": pref_src,
         "paid_keys": _paid_stock_keys_present(),
     }
 

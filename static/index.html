@@ -745,13 +745,12 @@
                                 <div style="display:flex; gap:8px; align-items:center;">
                                     <select id="select-visual-engine" class="select-styled"
                                         style="border-color: rgba(168, 85, 247, 0.4); flex:1;">
-                                        <option value="auto">🎬 Akıllı Hibrit Stok Video (Pexels / Pixabay - 0 TL)
-                                        </option>
-                                        <option value="flux">🤖 0 TL Flux SDXL AI Görsel (Pollinations 9:16 Ken Burns)
-                                        </option>
-                                        <option value="whiteboard">✏️ Whiteboard Çizim Modu (El Çizim Line-Art
-                                            Animasyonu)</option>
-                                        <option value="mixed">🔀 Karışık (stok + Flux)</option>
+                                        <option value="auto">🎬 Pexels + Pixabay Akıllı Stok Video (Önerilen - 0 TL)</option>
+                                        <option value="pexels">🟢 Sadece Pexels HD Dikey Stok Video (0 TL)</option>
+                                        <option value="pixabay">🔵 Sadece Pixabay 4K/HD Stok Video (0 TL)</option>
+                                        <option value="flux">🤖 0 TL Flux SDXL AI Görsel (Pollinations 9:16 Ken Burns)</option>
+                                        <option value="whiteboard">✏️ Whiteboard Çizim Modu (El Çizim Line-Art Animasyonu)</option>
+                                        <option value="mixed">🔀 Karışık (Pexels/Pixabay Stok + Flux AI)</option>
                                     </select>
                                 </div>
                             </div>
@@ -1351,9 +1350,18 @@
                     <button class="tl-smart-btn orange" id="btn-batch-whiteboard" title="Whiteboard moduna çevir">
                         <i class="fa-solid fa-pen-nib"></i> Whiteboard
                     </button>
-                    <button class="tl-smart-btn blue" id="btn-fetch-stock-clips" title="Stok videoları otomatik indir">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> Stok Çek
-                    </button>
+                    <div class="tl-stock-provider-group" style="display:inline-flex;align-items:center;gap:6px;background:rgba(15,23,42,0.75);border:1px solid rgba(56,189,248,0.3);border-radius:10px;padding:3px 6px;">
+                        <select id="tl-stock-provider-select" class="tl-select" style="font-size:11.5px;padding:4px 8px;height:28px;border:none;background:transparent;color:#e2e8f0;font-weight:600;cursor:pointer;" title="Stok video çekilecek kaynağı seçin">
+                            <option value="pexels_pixabay">🌟 Pexels + Pixabay (Önerilen)</option>
+                            <option value="pexels">🟢 Sadece Pexels</option>
+                            <option value="pixabay">🔵 Sadece Pixabay</option>
+                            <option value="coverr">🟣 Coverr</option>
+                            <option value="all">🌐 Tüm Kaynaklar</option>
+                        </select>
+                        <button class="tl-smart-btn blue" id="btn-fetch-stock-clips" title="Seçili stok kaynağından (Pexels / Pixabay) tüm sahnelerin videolarını çek">
+                            <i class="fa-solid fa-cloud-arrow-down"></i> Stok Çek
+                        </button>
+                    </div>
                     <button class="tl-smart-btn cyan" id="btn-fix-cadence" title="Cadence düzelt & uzun sahneleri böl">
                         <i class="fa-solid fa-scissors"></i> Cadence
                     </button>
@@ -1445,16 +1453,24 @@
                         </div>
                         <div class="modal-body-v2">
                             <div class="modal-tabs-strip">
-                                <button type="button" class="modal-tab-btn active" data-tab="stock"><i class="fa-solid fa-magnifying-glass"></i> Stok Video</button>
+                                <button type="button" class="modal-tab-btn active" data-tab="stock"><i class="fa-solid fa-magnifying-glass"></i> Stok Video (Pexels / Pixabay)</button>
                                 <button type="button" class="modal-tab-btn" data-tab="flux"><i class="fa-solid fa-wand-magic-sparkles"></i> Flux AI</button>
                                 <button type="button" class="modal-tab-btn" data-tab="whiteboard"><i class="fa-solid fa-pen-nib"></i> Whiteboard</button>
                             </div>
 
                             <div class="modal-tab-content" id="tab-content-stock">
+                                <div id="modal-stock-provider-pills" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+                                    <button type="button" class="tl-btn tl-btn-sm modal-prov-pill active" data-src="pexels_pixabay" style="border:1px solid rgba(16,185,129,0.5);background:rgba(16,185,129,0.18);color:#d1fae5;">🌟 Pexels + Pixabay</button>
+                                    <button type="button" class="tl-btn tl-btn-sm modal-prov-pill" data-src="pexels">🟢 Sadece Pexels</button>
+                                    <button type="button" class="tl-btn tl-btn-sm modal-prov-pill" data-src="pixabay">🔵 Sadece Pixabay</button>
+                                    <button type="button" class="tl-btn tl-btn-sm modal-prov-pill" data-src="coverr">🟣 Coverr</button>
+                                    <button type="button" class="tl-btn tl-btn-sm modal-prov-pill" data-src="all">🌐 Tüm Kaynaklar</button>
+                                </div>
                                 <div style="display: flex; gap: 8px;">
-                                    <input type="text" class="tl-input" id="modal-stock-search-input" placeholder="Arama terimi (örn: supercar speed)..." style="flex:1;">
+                                    <input type="text" class="tl-input" id="modal-stock-search-input" placeholder="İngilizce arama terimi (örn: kaaba mecca, mosque prayer, storm ocean)..." style="flex:1;">
                                     <button type="button" class="tl-btn tl-btn-primary" id="btn-modal-do-stock-search"><i class="fa-solid fa-magnifying-glass"></i> Ara</button>
                                 </div>
+                                <div id="modal-stock-query-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>
                                 <div class="tl-stock-grid" id="modal-stock-results-grid">
                                     <div class="tl-stock-loading"><i class="fa-solid fa-search"></i><span>Arama yapın</span></div>
                                 </div>

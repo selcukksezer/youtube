@@ -16,9 +16,11 @@
 const WIZ_STEP3_PREFS_KEY = 'shorts_step3_visual_fx_v1';
 
 const VISUAL_ENGINE_CARDS = [
-    { val: 'auto', icon: '🎬', title: 'Akıllı Hibrit Stok', sub: 'Pexels / Pixabay 9:16', badge: 'Önerilen · 0 TL' },
+    { val: 'auto', icon: '🎬', title: 'Pexels + Pixabay', sub: 'İki kaynaktan en iyi 9:16 klip', badge: 'Önerilen · 0 TL' },
+    { val: 'pexels', icon: '🟢', title: 'Sadece Pexels', sub: 'Sinematik dikey HD stok', badge: 'Pexels · 0 TL' },
+    { val: 'pixabay', icon: '🔵', title: 'Sadece Pixabay', sub: 'Geniş 4K/HD stok arşivi', badge: 'Pixabay · 0 TL' },
     { val: 'flux', icon: '🤖', title: 'AI Görsel (Flux)', sub: 'Pollinations SDXL + Ken Burns', badge: 'AI Sanatı · 0 TL' },
-    { val: 'mixed', icon: '🎥', title: 'AI Video + Hibrit', sub: 'Kanca AI (Veo/Helios) + Stok', badge: 'Sinematik' },
+    { val: 'mixed', icon: '🎥', title: 'AI Video + Hibrit', sub: 'Kanca AI + Pexels/Pixabay', badge: 'Sinematik' },
     { val: 'whiteboard', icon: '✏️', title: 'Whiteboard Çizim', sub: 'El Çizimi Line-Art Animasyon', badge: 'Eğitici · 0 TL' }
 ];
 

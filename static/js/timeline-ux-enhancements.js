@@ -420,42 +420,68 @@
         drawer = document.createElement('div');
         drawer.className = 'tl-inline-visual-drawer';
         const q = (sc.search_queries && sc.search_queries[0]) || sc.scene_description || 'cinematic vertical';
-        drawer.innerHTML = `<div class="tl-ivd-head"><span>🖼️ "${escapeHtmlSafe(q)}" için 6 Hızlı Alternatif</span><button type="button" class="tl-ivd-close">✕</button></div><div class="tl-ivd-grid">Yükleniyor...</div>`;
+        let activeSrc = document.getElementById('tl-stock-provider-select')?.value || 'pexels_pixabay';
+        drawer.innerHTML = `
+            <div class="tl-ivd-head" style="flex-wrap:wrap;gap:6px;">
+                <span>🖼️ "${escapeHtmlSafe(q.slice(0, 32))}" için Hızlı Seçim</span>
+                <div class="tl-ivd-sources" style="display:inline-flex;gap:4px;margin-left:auto;">
+                    <button type="button" class="tl-chip-btn ivd-src-btn active" data-src="pexels_pixabay" style="font-size:0.68rem;padding:2px 7px;">🌟 Pexels+Pixabay</button>
+                    <button type="button" class="tl-chip-btn ivd-src-btn" data-src="pexels" style="font-size:0.68rem;padding:2px 7px;">🟢 Pexels</button>
+                    <button type="button" class="tl-chip-btn ivd-src-btn" data-src="pixabay" style="font-size:0.68rem;padding:2px 7px;">🔵 Pixabay</button>
+                    <button type="button" class="tl-chip-btn ivd-src-btn" data-src="coverr" style="font-size:0.68rem;padding:2px 7px;">🟣 Coverr</button>
+                </div>
+                <button type="button" class="tl-ivd-close">✕</button>
+            </div>
+            <div class="tl-ivd-grid">Yükleniyor...</div>
+        `;
         card.querySelector('.tl-card-content')?.prepend(drawer);
         drawer.querySelector('.tl-ivd-close')?.addEventListener('click', () => drawer.remove());
 
-        try {
-            const niche = window.currentPlan?.niche_id || '';
-            const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=6&niche_id=${encodeURIComponent(niche)}`);
-            const data = await res.json();
-            const items = (data.results || []).slice(0, 6);
+        const loadDrawerClips = async (srcMode) => {
             const grid = drawer.querySelector('.tl-ivd-grid');
             if (!grid) return;
-            if (!items.length) {
-                grid.innerHTML = `<span class="tl-ivd-empty">Stok sonuç bulunamadı — Değiştir modalından Flux AI deneyin.</span>`;
-                return;
-            }
-            grid.innerHTML = items.map((it, rIdx) => `
-                <button type="button" class="tl-ivd-item" data-ridx="${rIdx}">
-                    ${it.thumbnail ? `<img src="${escapeHtmlSafe(it.thumbnail)}" alt="Klip ${rIdx + 1}">` : `<span class="tl-ivd-fallback"><i class="fa-solid fa-film"></i></span>`}
-                    <small>${escapeHtmlSafe(it.source || 'Stok')} · ${it.duration || 5}s</small>
-                </button>
-            `).join('');
-            grid.querySelectorAll('.tl-ivd-item').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const chosen = items[parseInt(btn.getAttribute('data-ridx') || '0', 10)];
-                    if (!chosen) return;
-                    pushTimelineHistorySnapshot(true);
-                    sc.selected_video = chosen;
-                    sc.video_url = chosen.url || chosen.preview_url || '';
-                    if (typeof setCurrentPlan === 'function') setCurrentPlan(window.currentPlan);
-                    if (typeof showToast === 'function') showToast(`🎬 Sahne #${idx + 1} görseli değiştirildi`);
+            grid.innerHTML = `<span><i class="fa-solid fa-spinner fa-spin"></i> ${escapeHtmlSafe(srcMode.toUpperCase())} aranıyor...</span>`;
+            try {
+                const niche = window.currentPlan?.niche_id || '';
+                const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=6&niche_id=${encodeURIComponent(niche)}&source=${encodeURIComponent(srcMode)}`);
+                const data = await res.json();
+                const items = (data.results || []).slice(0, 6);
+                if (!items.length) {
+                    grid.innerHTML = `<span class="tl-ivd-empty">Bu kaynakta sonuç yok — üstten diğer kaynağı seçin veya Değiştir modalını açın.</span>`;
+                    return;
+                }
+                grid.innerHTML = items.map((it, rIdx) => `
+                    <button type="button" class="tl-ivd-item" data-ridx="${rIdx}">
+                        ${it.thumbnail ? `<img src="${escapeHtmlSafe(it.thumbnail)}" alt="Klip ${rIdx + 1}">` : `<span class="tl-ivd-fallback"><i class="fa-solid fa-film"></i></span>`}
+                        <small>${escapeHtmlSafe((it.source || 'Stok').toUpperCase())} · ${it.duration || 5}s</small>
+                    </button>
+                `).join('');
+                grid.querySelectorAll('.tl-ivd-item').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const chosen = items[parseInt(btn.getAttribute('data-ridx') || '0', 10)];
+                        if (!chosen) return;
+                        pushTimelineHistorySnapshot(true);
+                        sc.selected_video = chosen;
+                        sc.video_url = chosen.url || chosen.preview_url || '';
+                        if (typeof setCurrentPlan === 'function') setCurrentPlan(window.currentPlan);
+                        if (typeof showToast === 'function') showToast(`🎬 Sahne #${idx + 1} (${(chosen.source || 'Stok').toUpperCase()}) seçildi`);
+                    });
                 });
+            } catch (err) {
+                grid.innerHTML = `<span class="tl-ivd-empty">Arama hatası: ${escapeHtmlSafe(err.message)}</span>`;
+            }
+        };
+
+        drawer.querySelectorAll('.ivd-src-btn').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-src') === activeSrc);
+            b.addEventListener('click', () => {
+                activeSrc = b.getAttribute('data-src') || 'pexels_pixabay';
+                drawer.querySelectorAll('.ivd-src-btn').forEach(x => x.classList.toggle('active', x === b));
+                loadDrawerClips(activeSrc);
             });
-        } catch (err) {
-            const grid = drawer.querySelector('.tl-ivd-grid');
-            if (grid) grid.innerHTML = `<span class="tl-ivd-empty">Arama hatası: ${escapeHtmlSafe(err.message)}</span>`;
-        }
+        });
+
+        await loadDrawerClips(activeSrc);
     }
 
     // ── 63. Split & Merge Helpers ────────────────────────────────────────────

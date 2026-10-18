@@ -272,15 +272,19 @@ def _fetch_stock_clip(
     except Exception:
         pass
 
-    if preferred_source:
+    pref_l = (preferred_source or "").strip().lower()
+    if pref_l and pref_l not in ("pexels_pixabay", "stock", "auto"):
         source_order = [
-            source for source in ALL_SOURCES if source[0].lower() == preferred_source.lower()
+            source for source in ALL_SOURCES if source[0].lower() == pref_l
         ] + [
-            source for source in ALL_SOURCES if source[0].lower() != preferred_source.lower()
+            source for source in ALL_SOURCES if source[0].lower() != pref_l
         ]
     else:
-        n = len(ALL_SOURCES)
-        source_order = [ALL_SOURCES[(scene_index + i) % n] for i in range(n)]
+        paid_top = [s for s in ALL_SOURCES if s[0].lower() in ("pexels", "pixabay")]
+        if len(paid_top) == 2 and scene_index % 2 == 1:
+            paid_top = [paid_top[1], paid_top[0]]
+        others = [s for s in ALL_SOURCES if s[0].lower() not in ("pexels", "pixabay")]
+        source_order = paid_top + others
 
     for qi, query in enumerate(extended_queries):
         if cancel_check and cancel_check():

@@ -129,10 +129,20 @@ async function prepareTimelineAssetsAndScript() {
 }
 
 let activeModalSceneIdx = null;
+let activeModalStockSource = 'pexels_pixabay';
+
+function getPreferredStockSource() {
+    const tlSel = document.getElementById('tl-stock-provider-select')?.value;
+    if (tlSel) return tlSel;
+    const eng = document.getElementById('select-visual-engine')?.value;
+    if (eng === 'pexels' || eng === 'pixabay') return eng;
+    return 'pexels_pixabay';
+}
 
 function openReplaceVisualModal(idx) {
     if (!currentPlan?.scenes?.[idx]) return;
     activeModalSceneIdx = idx;
+    activeModalStockSource = getPreferredStockSource();
     const sc = currentPlan.scenes[idx];
     const modal = document.getElementById('modal-change-scene-visual');
     const modalTitle = document.getElementById('modal-change-visual-title');
@@ -140,11 +150,31 @@ function openReplaceVisualModal(idx) {
     const fluxInput = document.getElementById('modal-flux-prompt-input');
     const wbInput = document.getElementById('modal-whiteboard-prompt-input');
 
-    if (modalTitle) modalTitle.innerHTML = `<i class="fa-solid fa-film text-primary"></i> Sahne #${idx + 1} — Görsel Değiştir`;
-    const defQ = (sc.search_queries?.[0]) || sc.scene_description || 'cinematic motion';
+    if (modalTitle) modalTitle.innerHTML = `<i class="fa-solid fa-film text-primary"></i> Sahne #${idx + 1} — Görsel & Kaynak Seç`;
+    const queries = Array.isArray(sc.search_queries) ? sc.search_queries.filter(Boolean) : [];
+    const defQ = queries[0] || sc.scene_description || 'cinematic motion';
     if (searchInput) searchInput.value = defQ;
     if (fluxInput) fluxInput.value = sc.scene_description || sc.narration || '';
     if (wbInput) wbInput.value = sc.scene_description || sc.narration || '';
+
+    document.querySelectorAll('#modal-stock-provider-pills .modal-stock-src-pill').forEach(btn => {
+        const isAct = btn.getAttribute('data-source') === activeModalStockSource;
+        btn.classList.toggle('active', isAct);
+        btn.style.background = isAct ? 'rgba(16,185,129,0.18)' : 'rgba(255,255,255,0.04)';
+        btn.style.borderColor = isAct ? '#10b981' : 'rgba(255,255,255,0.14)';
+        btn.style.color = isAct ? '#a7f3d0' : '#cbd5e1';
+    });
+
+    const chipsBox = document.getElementById('modal-stock-query-chips');
+    if (chipsBox) {
+        const chipSet = [...new Set([...queries, sc.scene_description || ''].map(s => String(s || '').trim()).filter(Boolean))].slice(0, 5);
+        chipsBox.innerHTML = chipSet.map(qStr => `<button type="button" class="tl-chip-btn modal-q-chip" data-q="${escapeHtml(qStr)}" style="padding:3px 9px;border-radius:999px;font-size:0.72rem;border:1px solid rgba(56,189,248,0.3);background:rgba(56,189,248,0.08);color:#bae6fd;cursor:pointer;">🔍 ${escapeHtml(qStr.slice(0, 38))}</button>`).join('');
+        chipsBox.querySelectorAll('.modal-q-chip').forEach(b => b.addEventListener('click', () => {
+            const qVal = b.getAttribute('data-q') || '';
+            if (searchInput) searchInput.value = qVal;
+            executeModalStockSearch(qVal);
+        }));
+    }
 
     switchModalTab('stock');
     modal?.classList.remove('hidden');
@@ -161,23 +191,24 @@ function switchModalTab(tabName) {
     document.querySelectorAll('.modal-tab-content').forEach(c => c.classList.toggle('hidden', c.id !== `tab-content-${tabName}`));
 }
 
-async function executeModalStockSearch(query) {
+async function executeModalStockSearch(query, sourceOverride) {
     const q = (query || document.getElementById('modal-stock-search-input')?.value || '').trim();
+    const src = sourceOverride || activeModalStockSource || 'pexels_pixabay';
     const grid = document.getElementById('modal-stock-results-grid');
     const btn = document.getElementById('btn-modal-do-stock-search');
     if (!q || !grid) return;
 
-    grid.innerHTML = `<div class="tl-stock-loading"><i class="fa-solid fa-spinner fa-spin"></i><span>"${escapeHtml(q)}" aranıyor...</span></div>`;
+    grid.innerHTML = `<div class="tl-stock-loading"><i class="fa-solid fa-spinner fa-spin"></i><span>"${escapeHtml(q)}" (${escapeHtml(src.toUpperCase())}) aranıyor...</span></div>`;
     if (btn) btn.disabled = true;
 
     try {
         const niche = currentPlan?.niche_id || '';
-        const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=12&niche_id=${encodeURIComponent(niche)}`);
+        const res = await fetch(`/api/stock/search?query=${encodeURIComponent(q)}&limit=12&niche_id=${encodeURIComponent(niche)}&source=${encodeURIComponent(src)}`);
         const data = await res.json();
         const results = data.results || [];
 
         if (!results.length) {
-            grid.innerHTML = `<div class="tl-stock-loading"><i class="fa-solid fa-circle-exclamation" style="color:#f59e0b"></i><span>Sonuç bulunamadı. Farklı İngilizce terimler deneyin.</span></div>`;
+            grid.innerHTML = `<div class="tl-stock-loading"><i class="fa-solid fa-circle-exclamation" style="color:#f59e0b"></i><span>Sonuç bulunamadı. Üstteki diğer kaynak butonlarını (Pexels / Pixabay / Tüm Kaynaklar) veya kısa İngilizce kelimeleri deneyin.</span></div>`;
             return;
         }
 
@@ -186,17 +217,26 @@ async function executeModalStockSearch(query) {
             const card = document.createElement('div');
             card.className = 'tl-stock-card';
             const thumbUrl = item.thumbnail || item.preview_url || '';
+            const vidUrl = item.url || item.preview_url || '';
+            const srcLow = String(item.source || 'Stok').toLowerCase();
+            const srcBadgeColor = srcLow.includes('pexels') ? '#10b981' : srcLow.includes('pixabay') ? '#0ea5e9' : srcLow.includes('coverr') ? '#a855f7' : '#f59e0b';
             card.innerHTML = `
-                ${thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" class="tl-stock-thumb" alt="Klip">` :
-                    `<div class="tl-stock-thumb-empty"><i class="fa-solid fa-film"></i></div>`}
+                <div class="tl-stock-PreviewWrap" style="position:relative;overflow:hidden;border-radius:8px;">
+                    ${vidUrl.endsWith('.mp4') || vidUrl.includes('pexels') || vidUrl.includes('pixabay') ? `<video src="${escapeHtml(vidUrl)}" poster="${escapeHtml(thumbUrl)}" class="tl-stock-thumb" muted loop playsinline preload="metadata" style="width:100%;height:140px;object-fit:cover;display:block;"></video>` : thumbUrl ? `<img src="${escapeHtml(thumbUrl)}" class="tl-stock-thumb" alt="Klip">` : `<div class="tl-stock-thumb-empty"><i class="fa-solid fa-film"></i></div>`}
+                </div>
                 <div class="tl-stock-meta">
-                    <span class="tl-stock-source">${escapeHtml(item.source || 'Stok')}</span>
-                    <span>${item.duration ? item.duration + 's' : '—'}</span>
+                    <span class="tl-stock-source" style="color:${srcBadgeColor};font-weight:700;">● ${escapeHtml((item.source || 'Stok').toUpperCase())}</span>
+                    <span>${item.duration ? item.duration + 's' : 'HD'}</span>
                 </div>
                 <button type="button" class="tl-btn tl-btn-primary tl-btn-sm btn-select-stock" data-ridx="${rIdx}">
-                    <i class="fa-solid fa-check"></i> Seç
+                    <i class="fa-solid fa-check"></i> Bu Videoyu Seç
                 </button>
             `;
+            const vEl = card.querySelector('video');
+            if (vEl) {
+                card.addEventListener('mouseenter', () => vEl.play().catch(() => {}));
+                card.addEventListener('mouseleave', () => { vEl.pause(); vEl.currentTime = 0; });
+            }
             card.querySelector('.btn-select-stock')?.addEventListener('click', async () => {
                 await applyClipReplacement({ replace_mode: 'stock', stock_video_data: item });
             });
@@ -272,6 +312,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('modal-change-scene-visual')?.addEventListener('click', e => { if (e.target.id === 'modal-change-scene-visual') closeReplaceVisualModal(); });
     document.querySelectorAll('.modal-tab-btn').forEach(btn => btn.addEventListener('click', () => switchModalTab(btn.getAttribute('data-tab'))));
 
+    document.querySelectorAll('#modal-stock-provider-pills .modal-stock-src-pill').forEach(btn => {
+        btn.addEventListener('click', () => {
+            activeModalStockSource = btn.getAttribute('data-source') || 'pexels_pixabay';
+            document.querySelectorAll('#modal-stock-provider-pills .modal-stock-src-pill').forEach(b => {
+                const isAct = b === btn;
+                b.classList.toggle('active', isAct);
+                b.style.background = isAct ? 'rgba(16,185,129,0.18)' : 'rgba(255,255,255,0.04)';
+                b.style.borderColor = isAct ? '#10b981' : 'rgba(255,255,255,0.14)';
+                b.style.color = isAct ? '#a7f3d0' : '#cbd5e1';
+            });
+            executeModalStockSearch(undefined, activeModalStockSource);
+        });
+    });
+
     document.getElementById('btn-modal-do-stock-search')?.addEventListener('click', () => executeModalStockSearch());
     document.getElementById('modal-stock-search-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); executeModalStockSearch(e.target.value); } });
 
@@ -297,16 +351,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!window.currentPlan?.scenes?.length) return showToast('Önce senaryo oluşturun', 'warn');
         const btn = document.getElementById('btn-fetch-stock-clips');
         const old = btn.innerHTML; btn.disabled = true;
+        const prefSrc = getPreferredStockSource();
         btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Çekiliyor...';
-        showToast('📡 Stok videolar taranıyor...');
+        showToast(`📡 Stok videolar taranıyor (${prefSrc.toUpperCase()})...`);
         try {
             if (typeof collectTimelineEdits === 'function') collectTimelineEdits();
             const res = await fetch('/api/stock/fetch_for_scenes', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scenes: window.currentPlan.scenes, niche_id: window.currentPlan.niche_id || window.currentPlan.meta?.locked_niche || '' })
+                body: JSON.stringify({
+                    scenes: window.currentPlan.scenes,
+                    niche_id: window.currentPlan.niche_id || window.currentPlan.meta?.locked_niche || '',
+                    preferred_source: prefSrc
+                })
             });
             const data = await res.json();
-            if (data.status === 'ok' && data.scenes) { window.currentPlan.scenes = data.scenes; setCurrentPlan(window.currentPlan); showToast(`🎬 ${data.assigned || data.scenes.length} sahne kliplendi`); }
+            if (data.status === 'ok' && data.scenes) { window.currentPlan.scenes = data.scenes; setCurrentPlan(window.currentPlan); showToast(`🎬 ${data.assigned || data.scenes.length} sahne (${prefSrc.toUpperCase()}) ile kliplendi`); }
         } catch (err) { showToast('Stok video hatası: ' + err.message, 'error'); }
         finally { btn.disabled = false; btn.innerHTML = old; }
     });

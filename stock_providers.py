@@ -6,13 +6,49 @@ import requests
 import config
 
 
+_QUERY_NOISE_WORDS = {
+    "cinematic", "aerial", "view", "of", "the", "a", "an", "in", "on", "at", "by", "with", "from",
+    "rotating", "smoothly", "dawn", "closeup", "close", "up", "detail", "perspective", "slow",
+    "motion", "moody", "angle", "macro", "texture", "focus", "dynamic", "tracking", "shot",
+    "direct", "gaze", "camera", "portrait", "looking", "eye", "contact", "stoic", "subscribe",
+    "cut", "vertical", "scene", "wide", "dramatic", "atmospheric", "silhouette", "contrast",
+    "light", "lighting", "deep", "shadow", "4k", "8k", "hd", "b-roll", "broll", "footage",
+}
+
+_MIXKIT_BANNED_BANNER_IDS = ("/47994/", "/47995/", "/47996/", "/48000/", "/44562/")
+
+
+def simplify_stock_queries(query: str):
+    """Build concise 1-3 word subject queries when a verbose prompt misses on Pexels/Pixabay."""
+    raw = (query or "").strip()
+    if not raw:
+        return []
+    out = [raw]
+    words = [
+        w for w in re.findall(r"[a-zA-Z0-9\u00c0-\u017f]+", raw.lower())
+        if w not in _QUERY_NOISE_WORDS and not w.isdigit() and len(w) >= 3
+    ]
+    if words:
+        short3 = " ".join(words[:3])
+        short2 = " ".join(words[:2])
+        short1 = words[0]
+        for cand in (short3, short2, short1):
+            if cand and cand.lower() != raw.lower() and cand not in out:
+                out.append(cand)
+        joined = " ".join(words)
+        if "kaaba" in joined or "kabe" in joined or "mecca" in joined:
+            for extra in ("kaaba mecca", "islamic mosque", "mosque prayer"):
+                if extra not in out:
+                    out.append(extra)
+    return out
+
+
 def _pick_pexels_file(files):
     candidates = []
     for item in files:
         w, h = item.get("width", 0), item.get("height", 0)
         if max(w, h) >= config.MIN_RESOLUTION:
             is_portrait = (h > w)
-            # Optimal resolution for Shorts is 1080x1920. Penalize 4K/huge files that cause RAM & decode bottlenecks.
             dist = abs(w - 1080) + abs(h - 1920)
             score = (100000 if is_portrait else 0) - dist
             candidates.append((score, item))
@@ -22,11 +58,14 @@ def _pick_pexels_file(files):
     return min(files, key=lambda item: abs(item.get("width", 0) - 1080), default=None)
 
 
-def search_pexels(query):
-    if not config.PEXELS_API_KEY:
-        return []
+def _pexels_request(q: str):
     try:
-        response = requests.get("https://api.pexels.com/videos/search", headers={"Authorization": config.PEXELS_API_KEY}, params={"query": query, "per_page": config.RESULTS_PER_PAGE, "orientation": "portrait", "size": "large"}, timeout=5)
+        response = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": config.PEXELS_API_KEY},
+            params={"query": q, "per_page": config.RESULTS_PER_PAGE, "orientation": "portrait", "size": "large"},
+            timeout=5,
+        )
         response.raise_for_status()
     except Exception as error:
         print(f"        [Pexels] {error}")
@@ -36,11 +75,7 @@ def search_pexels(query):
         file = _pick_pexels_file(video.get("video_files", []))
         if file:
             user = video.get("user") or {}
-            contributor = ""
-            if user.get("id"):
-                contributor = f"pexels:{user['id']}"
-            elif user.get("name"):
-                contributor = f"contributor:{str(user['name']).lower()}"
+            contributor = f"pexels:{user['id']}" if user.get("id") else (f"contributor:{str(user['name']).lower()}" if user.get("name") else "")
             results.append({
                 "source": "pexels",
                 "id": f"px_{video['id']}",
@@ -56,11 +91,23 @@ def search_pexels(query):
     return results
 
 
-def search_pixabay(query):
-    if not config.PIXABAY_API_KEY:
+def search_pexels(query):
+    if not config.PEXELS_API_KEY:
         return []
+    for cand_q in simplify_stock_queries(query):
+        hits = _pexels_request(cand_q)
+        if hits:
+            return hits
+    return []
+
+
+def _pixabay_request(q: str):
     try:
-        response = requests.get("https://pixabay.com/api/videos/", params={"key": config.PIXABAY_API_KEY, "q": query, "video_type": "film", "per_page": config.RESULTS_PER_PAGE, "min_width": 1080, "safesearch": "true"}, timeout=5)
+        response = requests.get(
+            "https://pixabay.com/api/videos/",
+            params={"key": config.PIXABAY_API_KEY, "q": q[:95], "video_type": "film", "per_page": config.RESULTS_PER_PAGE, "safesearch": "true"},
+            timeout=5,
+        )
         response.raise_for_status()
     except Exception as error:
         print(f"        [Pixabay] {error}")
@@ -89,12 +136,39 @@ def search_pixabay(query):
     return results
 
 
+def search_pixabay(query):
+    if not config.PIXABAY_API_KEY:
+        return []
+    for cand_q in simplify_stock_queries(query):
+        hits = _pixabay_request(cand_q)
+        if hits:
+            return hits
+    return []
+
+
 def _search_public_page(url, source, url_pattern, id_prefix=None):
     try:
         response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
         if response.status_code != 200:
             return []
-        return [{"source": source, "id": f"{id_prefix}_{index}" if id_prefix else f"vd_{index}_{hash(video_url) % 99999}", "width": 1920, "height": 1080, "duration": 15, "url": video_url, "fw": 1920, "fh": 1080, "thumbnail": ""} for index, video_url in enumerate(re.findall(url_pattern, response.text)[:5])]
+        raw_urls = [
+            u for u in re.findall(url_pattern, response.text)
+            if not any(b in u for b in _MIXKIT_BANNED_BANNER_IDS)
+        ]
+        return [
+            {
+                "source": source,
+                "id": f"{id_prefix}_{index}" if id_prefix else f"vd_{index}_{hash(video_url) % 99999}",
+                "width": 1920,
+                "height": 1080,
+                "duration": 15,
+                "url": video_url,
+                "fw": 1920,
+                "fh": 1080,
+                "thumbnail": "",
+            }
+            for index, video_url in enumerate(raw_urls[:5])
+        ]
     except Exception:
         return []
 
@@ -128,12 +202,12 @@ def search_coverr(query):
 
 def search_mixkit(query):
     slug = query.lower().replace(" ", "-")
-    return _search_public_page(f"https://mixkit.co/free-stock-video/{slug}/", "mixkit", r'https://assets\.mixkit\.co/videos/[^"\']+\.mp4', id_prefix=f"mx_{slug}")
+    return _search_public_page(f"https://mixkit.co/free-stock-video/{slug}/", "mixkit", r'https://assets\.mixkit\.co/videos/[^"\'\s<>]+\.mp4', id_prefix=f"mx_{slug}")
 
 
 def search_videvo(query):
     slug = query.replace(" ", "-")
-    return _search_public_page(f"https://www.videvo.net/search/{slug}/", "videvo", r'https://[^"\']*videvo[^"\']*\.mp4')
+    return _search_public_page(f"https://www.videvo.net/search/{slug}/", "videvo", r'https://[^"\'\s<>]*videvo[^"\'\s<>]*\.mp4')
 
 
 ALL_SOURCES = [("Pexels", search_pexels), ("Pixabay", search_pixabay), ("Coverr", search_coverr), ("Mixkit", search_mixkit), ("Videvo", search_videvo)]
