@@ -8263,6 +8263,50 @@ textarea {
     .ios-bottom-nav__btn.active {
         color: var(--lime);
     }
+
+    /* Mobil: render izleme dock'u düzgün bir alt sayfa (bottom sheet) olsun.
+       Masaüstü konumu (left: 290px) mobilde içeriğin üstüne taşıyordu. */
+    .persistent-monitor-dock {
+        left: 0 !important;
+        right: 0 !important;
+        bottom: calc(58px + env(safe-area-inset-bottom)) !important;
+        padding: 10px 12px !important;
+        z-index: 1040 !important;
+        max-height: 52vh !important;
+        overflow-y: auto !important;
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
+    }
+
+    .persistent-monitor-dock .dock-content {
+        flex-wrap: wrap !important;
+        gap: 10px !important;
+    }
+
+    .persistent-monitor-dock .dock-info {
+        min-width: 0 !important;
+    }
+
+    .persistent-monitor-dock .dock-progress-box {
+        flex: 1 1 100% !important;
+    }
+
+    .persistent-monitor-dock .dock-actions {
+        flex-wrap: wrap !important;
+    }
+
+    /* Yüzen terminal tetikleyici ve bildirimler alt barın üstünde kalsın */
+    #floating-terminal-trigger {
+        bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+        right: 12px !important;
+    }
+
+    .toast-container,
+    #toast-container {
+        left: 12px !important;
+        right: 12px !important;
+        bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+    }
 }
 
 @media (max-width: 480px) {
