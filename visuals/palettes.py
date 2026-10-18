@@ -38,7 +38,7 @@ PALETTES: Dict[str, Dict] = {
         "text": (226, 220, 240),
         "motion": "reveal",
         "particles": "fog",
-        "sources": ["nasa", "pexels", "wikimedia", "pixabay", "openverse"],
+        "sources": ["pexels", "pixabay", "nasa", "wikimedia", "openverse"],
     },
     "dark": {
         "colors": [(6, 6, 8), (22, 14, 20), (48, 20, 28)],
@@ -62,7 +62,7 @@ PALETTES: Dict[str, Dict] = {
         "text": (246, 240, 255),
         "motion": "drift",
         "particles": "stars",
-        "sources": ["nasa", "pexels", "pixabay", "openverse"],
+        "sources": ["pexels", "pixabay", "nasa", "openverse"],
     },
     "history": {
         "colors": [(20, 16, 12), (60, 44, 28), (110, 80, 44)],
@@ -70,7 +70,7 @@ PALETTES: Dict[str, Dict] = {
         "text": (244, 238, 226),
         "motion": "slow_zoom",
         "particles": "dust",
-        "sources": ["wikimedia", "archive_org", "pexels", "openverse"],
+        "sources": ["pexels", "pixabay", "wikimedia", "archive_org", "openverse"],
     },
     "science": {
         "colors": [(4, 10, 24), (8, 40, 70), (10, 90, 120)],
@@ -78,7 +78,7 @@ PALETTES: Dict[str, Dict] = {
         "text": (240, 250, 255),
         "motion": "drift",
         "particles": "stars",
-        "sources": ["nasa", "pexels", "wikimedia", "pixabay"],
+        "sources": ["pexels", "pixabay", "nasa", "wikimedia"],
     },
     "quiz": {
         "colors": [(20, 10, 50), (60, 20, 110), (240, 80, 40)],

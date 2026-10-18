@@ -389,19 +389,25 @@ def fetch_open_visual(
     scored: List[tuple] = []
     active_queries = qlist[:5]
     if providers and active_queries:
-        with ThreadPoolExecutor(max_workers=min(8, max(1, len(providers) * len(active_queries)))) as executor:
-            futures = [
-                executor.submit(_search_spec, spec, query, qi)
-                for qi, query in enumerate(active_queries)
-                for spec in providers
-            ]
-            for f in as_completed(futures):
-                cands, query, qi = f.result()
-                for c in cands:
-                    sc = score_candidate(c, query, narration=narration, target_duration=target_duration)
-                    sc += max(0, 8 - qi * 2)
-                    if sc > 0:
-                        scored.append((sc, c, query))
+        primary_specs = [s for s in providers if getattr(s, "key", "") in ("pexels", "pixabay", "coverr", "pexels_img", "pixabay_img")]
+        secondary_specs = [s for s in providers if s not in primary_specs]
+        tiers = [t for t in (primary_specs, secondary_specs) if t]
+        for tier_specs in tiers:
+            with ThreadPoolExecutor(max_workers=min(8, max(1, len(tier_specs) * len(active_queries)))) as executor:
+                futures = [
+                    executor.submit(_search_spec, spec, query, qi)
+                    for qi, query in enumerate(active_queries)
+                    for spec in tier_specs
+                ]
+                for f in as_completed(futures):
+                    cands, query, qi = f.result()
+                    for c in cands:
+                        sc = score_candidate(c, query, narration=narration, target_duration=target_duration)
+                        sc += max(0, 8 - qi * 2)
+                        if sc > 0:
+                            scored.append((sc, c, query))
+            if scored:
+                break
 
     scored = _rank_scored_candidates(scored)
     hook_window_attempted = False
