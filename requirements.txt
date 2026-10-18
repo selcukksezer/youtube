@@ -1,6 +1,6 @@
 # YouTube Shorts Ultimate - Python dependencies
 openai>=1.30.0
-edge-tts>=6.1.10
+edge-tts>=7.3.1
 requests>=2.31.0
 moviepy==1.0.3
 imageio>=2.34.0

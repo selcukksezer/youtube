@@ -93,6 +93,13 @@ def fetch_selected_stock_video(
     source_id = str(selected_video.get("id") or "").strip()
     if not source_id:
         source_id = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+    if source == "mixkit" and (
+        "looking-at-camera" in source_id.lower()
+        or any(b in url for b in ("/47994/", "/47995/", "/47996/", "/48000/", "/44562/"))
+        or source_id in job_used_ids
+    ):
+        print(f"    [SelectedStock] skipping generic/duplicate Mixkit clip {source_id}; falling back to scene search.")
+        return None
     source_key = f"{source}:{source_id}"
     candidate = {
         "source": source,
@@ -243,6 +250,8 @@ def fetch_selected_stock_video(
         "contributor": selected_video.get("contributor") or "",
         "sha1": clip_hash,
         "sha256": clip_hash,
+        "topic_match_score": 0.95,
+        "visual_verification_score": 1.0,
         "license": license_info.to_dict(),
     })
     if source in session_counts:

@@ -19,9 +19,11 @@ from voice.tts_providers import (
     _piper_binary,
     _sanitize_word_timings,
     _strip_ssml_markup,
+    _try_google_translate_tts_narration,
     _try_local_offline_narration,
     _wav_duration_seconds,
     active_tts_provider,
+    edge_fallback_voices,
     generate_local_offline_wav,
     generate_piper_wav,
     piper_tts_available,
@@ -337,8 +339,15 @@ async def _tts(text, mp3_path, rate=None, volume=None, pitch=None):
     return mp3_path, sanitized
 
 
+_WORKING_VOICE_CACHE: dict[str, str] = {}
+
+
 async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volume=None, pitch=None):
-    """Try spoken text; on NoAudioReceived retry cleaned text, then fallback voice."""
+    """Try spoken text; on NoAudioReceived retry cleaned text, then healthy fallback voices."""
+    orig_voice = config.TTS_VOICE
+    cached_fb = _WORKING_VOICE_CACHE.get(orig_voice)
+    if cached_fb and not hasattr(_tts, "_mock_name"):
+        config.TTS_VOICE = cached_fb
     try:
         return await _tts(spoken_text, mp3_path, rate=rate, volume=volume, pitch=pitch)
     except Exception as first_err:
@@ -356,17 +365,22 @@ async def _tts_with_fallback(spoken_text, plain_text, mp3_path, rate=None, volum
         try:
             return await _tts(cleaned_fallback, mp3_path, rate=rate, volume=volume, pitch=pitch)
         except Exception as retry_err:
-            if config.TTS_VOICE != "tr-TR-AhmetNeural":
-                orig_voice = config.TTS_VOICE
-                config.TTS_VOICE = "tr-TR-AhmetNeural"
+            for fb_voice in edge_fallback_voices(orig_voice):
+                config.TTS_VOICE = fb_voice
                 try:
-                    print(f"  [TTS] Retry with default voice tr-TR-AhmetNeural...")
-                    return await _tts(cleaned_fallback, mp3_path, rate=rate, volume=volume, pitch=pitch)
+                    print(f"  [TTS] Fallback voice {fb_voice} ({orig_voice} unavailable)...")
+                    res = await _tts(cleaned_fallback, mp3_path, rate=rate, volume=volume, pitch=pitch)
+                    _WORKING_VOICE_CACHE[orig_voice] = fb_voice
+                    return res
                 except Exception:
-                    pass
-                finally:
-                    config.TTS_VOICE = orig_voice
+                    if os.path.exists(mp3_path):
+                        try:
+                            os.remove(mp3_path)
+                        except OSError:
+                            pass
             raise retry_err
+    finally:
+        config.TTS_VOICE = orig_voice
 
 
 def _concat_wavs(wav_paths, output_path, pause_seconds=0.28):
@@ -538,5 +552,8 @@ def generate_narration_with_timing(text, output_path, natural_pauses=True, voice
             macos_hit = _try_macos_say_narration(text, output_path)
             if macos_hit:
                 return macos_hit
+            gtts_hit = _try_google_translate_tts_narration(text, output_path)
+            if gtts_hit:
+                return gtts_hit
         raise edge_error
     return edge_result

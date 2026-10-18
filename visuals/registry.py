@@ -340,12 +340,11 @@ def score_candidate(
         "title_tags": c.text,
         "verification": "metadata_token_match",
     }
+    q_ratio = len(matched_query_tokens) / max(1, len(query_tokens))
     c.topic_match_score = round(
-        hits / max(1, len(query_tokens | narration_tokens)), 4
+        max(hits / max(1, len(query_tokens | narration_tokens)), q_ratio * 0.5), 4
     )
-    c.visual_verification_score = round(
-        len(matched_query_tokens) / max(1, len(query_tokens)), 4
-    )
+    c.visual_verification_score = round(q_ratio, 4)
     c.matched_terms = matched_tokens
     # provider prior
     spec = PROVIDERS.get(c.source) or PROVIDERS.get(c.source.replace("_img", "")) or PROVIDERS.get(f"{c.source}_img")

@@ -37,8 +37,7 @@ _session.headers.update({"User-Agent": USER_AGENT})
 
 
 def _rand_page() -> int:
-    # Page 1 stays dominant for relevance; pages 2-3 break the "same top hits" loop.
-    return random.choices([1, 2, 3], weights=[3, 2, 1])[0]
+    return 1
 
 
 def _env(name: str) -> str:
@@ -66,17 +65,10 @@ class Candidate:
     thumbnail: str = ""
     contributor: str = ""
     license: LicenseInfo = None     # type: ignore
-    # Kept directly after `license` for positional compatibility with the
-    # original Candidate(source, id, ..., license, extra) constructor.
     extra: Dict = field(default_factory=dict)
-    # `url` is the downloadable media URL.  `source_url` is the human-facing
-    # landing page used for license verification and credits.  Keeping both
-    # prevents a CDN URL from being mistaken for provenance.
     source_url: str = ""
     license_url: str = ""
     attribution: str = ""
-    # Filled by the registry scorer.  This is deliberately structured data so
-    # the production manifest can explain why a clip matched a shot.
     semantic_evidence: Dict[str, object] = field(default_factory=dict)
     topic_match_score: float = 0.0
     visual_verification_score: float = 0.0
@@ -167,21 +159,26 @@ def search_pexels(query: str, per_page: int = 12) -> List[Candidate]:
     key = _env("PEXELS_API_KEY")
     if not key:
         return []
-    r = _get_pexels_response(query, per_page, key)
+    from stock_providers import simplify_stock_queries
+    queries = [query] + (simplify_stock_queries(query)[1:3] if " " in (query or "").strip() else [])
     out: List[Candidate] = []
-    for v in r.json().get("videos", []):
-        f = _pick_pexels_file(v.get("video_files", []))
-        if not f:
-            continue
-        user = v.get("user") or {}
-        out.append(Candidate(
-            source="pexels", id=f"px_{v['id']}", url=f["link"], kind="video",
-            width=int(f.get("width") or v.get("width") or 0), height=int(f.get("height") or v.get("height") or 0),
-            duration=float(v.get("duration") or 0), title=str(v.get("url", "")).rstrip("/").split("/")[-1].replace("-", " "),
-            thumbnail=v.get("image", ""), contributor=f"pexels:{user.get('id','')}",
-            license=LicenseInfo(License.PEXELS, "pexels", author=str(user.get("name", "")), source_url=v.get("url", ""),
-                                license_url="https://www.pexels.com/license/", raw="Pexels License"),
-        ))
+    for q in queries:
+        r = _get_pexels_response(q, per_page, key)
+        for v in r.json().get("videos", []):
+            f = _pick_pexels_file(v.get("video_files", []))
+            if not f:
+                continue
+            user = v.get("user") or {}
+            out.append(Candidate(
+                source="pexels", id=f"px_{v['id']}", url=f["link"], kind="video",
+                width=int(f.get("width") or v.get("width") or 0), height=int(f.get("height") or v.get("height") or 0),
+                duration=float(v.get("duration") or 0), title=str(v.get("url", "")).rstrip("/").split("/")[-1].replace("-", " "),
+                thumbnail=v.get("image", ""), contributor=f"pexels:{user.get('id','')}",
+                license=LicenseInfo(License.PEXELS, "pexels", author=str(user.get("name", "")), source_url=v.get("url", ""),
+                                    license_url="https://www.pexels.com/license/", raw="Pexels License"),
+            ))
+        if out:
+            break
     return out
 
 
@@ -191,27 +188,32 @@ def search_pixabay(query: str, per_page: int = 12) -> List[Candidate]:
     key = _env("PIXABAY_API_KEY")
     if not key:
         return []
-    r = _session.get(
-        "https://pixabay.com/api/videos/",
-        params={"key": key, "q": query, "video_type": "film", "per_page": max(3, per_page), "safesearch": "true",
-                "page": _rand_page()},
-        timeout=TIMEOUT,
-    )
-    r.raise_for_status()
+    from stock_providers import simplify_stock_queries
+    queries = [query] + (simplify_stock_queries(query)[1:3] if " " in (query or "").strip() else [])
     out: List[Candidate] = []
-    for v in r.json().get("hits", []):
-        vids = v.get("videos") or {}
-        f = vids.get("large") or vids.get("medium") or vids.get("small") or {}
-        if not f.get("url"):
-            continue
-        out.append(Candidate(
-            source="pixabay", id=f"pb_{v['id']}", url=f["url"], kind="video",
-            width=int(f.get("width") or 0), height=int(f.get("height") or 0),
-            duration=float(v.get("duration") or 0), title="", tags=[t.strip() for t in str(v.get("tags", "")).split(",") if t.strip()],
-            thumbnail=f.get("thumbnail", ""), contributor=f"contributor:{str(v.get('user','')).lower()}",
-            license=LicenseInfo(License.PIXABAY, "pixabay", author=str(v.get("user", "")), source_url=v.get("pageURL", ""),
-                                license_url="https://pixabay.com/service/license-summary/", raw="Pixabay Content License"),
-        ))
+    for q in queries:
+        r = _session.get(
+            "https://pixabay.com/api/videos/",
+            params={"key": key, "q": q, "video_type": "film", "per_page": max(3, per_page), "safesearch": "true",
+                    "page": _rand_page()},
+            timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        for v in r.json().get("hits", []):
+            vids = v.get("videos") or {}
+            f = vids.get("large") or vids.get("medium") or vids.get("small") or {}
+            if not f.get("url"):
+                continue
+            out.append(Candidate(
+                source="pixabay", id=f"pb_{v['id']}", url=f["url"], kind="video",
+                width=int(f.get("width") or 0), height=int(f.get("height") or 0),
+                duration=float(v.get("duration") or 0), title="", tags=[t.strip() for t in str(v.get("tags", "")).split(",") if t.strip()],
+                thumbnail=f.get("thumbnail", ""), contributor=f"contributor:{str(v.get('user','')).lower()}",
+                license=LicenseInfo(License.PIXABAY, "pixabay", author=str(v.get("user", "")), source_url=v.get("pageURL", ""),
+                                    license_url="https://pixabay.com/service/license-summary/", raw="Pixabay Content License"),
+            ))
+        if out:
+            break
     return out
 
 

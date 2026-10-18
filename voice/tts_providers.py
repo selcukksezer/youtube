@@ -362,3 +362,90 @@ def _mp3_to_wav(mp3, wav):
             pass
         return wav
     return mp3
+
+
+def edge_fallback_voices(voice_id: str) -> list[str]:
+    """Return ordered healthy Edge Neural fallback voices when primary voice returns NoAudioReceived."""
+    cfg = _cfg()
+    v = str(voice_id or "").strip()
+    lang = str(getattr(cfg, "LANGUAGE", "tr") or "tr").lower()
+    gender = str(getattr(cfg, "TTS_GENDER", "male") or "male").lower()
+    is_female = gender == "female" or any(k in v.lower() for k in ("emel", "jenny", "aria", "ava", "emma", "sonia"))
+    if v.lower().startswith("tr-") or lang.startswith("tr"):
+        if is_female:
+            cands = ["tr-TR-EmelNeural", "en-US-AvaMultilingualNeural", "en-US-EmmaMultilingualNeural", "en-US-AndrewMultilingualNeural"]
+        else:
+            cands = ["en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "de-DE-FlorianMultilingualNeural", "tr-TR-EmelNeural"]
+    else:
+        if is_female:
+            cands = ["en-US-AvaMultilingualNeural", "en-US-AriaNeural", "en-US-AndrewMultilingualNeural"]
+        else:
+            cands = ["en-US-AndrewMultilingualNeural", "en-US-BrianMultilingualNeural", "en-US-AriaNeural"]
+    return [c for c in cands if c != v]
+
+
+def _split_tts_chunks(text: str, max_chars: int = 180) -> list[str]:
+    words = (text or "").split()
+    chunks, cur = [], ""
+    for w in words:
+        cand = f"{cur} {w}".strip() if cur else w
+        if len(cand) <= max_chars:
+            cur = cand
+        else:
+            if cur:
+                chunks.append(cur)
+            cur = w[:max_chars]
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _try_google_translate_tts_narration(text: str, output_path: str):
+    """Zero-key HTTP TTS fallback (Google Translate TTS) when Edge-TTS and local Piper fail."""
+    import requests
+    from voice_humanizer import VoiceHumanizer
+
+    cfg = _cfg()
+    plain = _strip_ssml_markup(VoiceHumanizer.clean_narration_for_speech(text or ""))
+    if not plain.strip():
+        return None
+    lang = str(getattr(cfg, "LANGUAGE", "tr") or "tr").lower()
+    tl = "tr" if lang.startswith("tr") else "en"
+    chunks = _split_tts_chunks(plain, max_chars=180)
+    if not chunks:
+        return None
+    tmp_mp3 = output_path + ".gtts.mp3"
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".", exist_ok=True)
+        mp3_bytes = bytearray()
+        for chunk in chunks:
+            resp = requests.get(
+                "https://translate.google.com/translate_tts",
+                params={"ie": "UTF-8", "client": "tw-ob", "tl": tl, "q": chunk},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=15,
+            )
+            if resp.status_code != 200 or not resp.content:
+                return None
+            mp3_bytes.extend(resp.content)
+        if len(mp3_bytes) < 128:
+            return None
+        with open(tmp_mp3, "wb") as fh:
+            fh.write(mp3_bytes)
+        _mp3_to_wav(tmp_mp3, output_path)
+        if not os.path.isfile(output_path) or os.path.getsize(output_path) < 64:
+            return None
+        dur = _wav_duration_seconds(output_path)
+        timings = _sanitize_word_timings(_estimate_word_timings(plain, dur))
+        print(f"  [TTS/HTTPFallback] Google TTS ({tl}) OK -> {output_path} (~{dur:.1f}s, {len(timings)} kelime)")
+        return output_path, timings
+    except Exception as exc:
+        print(f"  [TTS/HTTPFallback] Google TTS failed: {exc}")
+        return None
+    finally:
+        if os.path.isfile(tmp_mp3):
+            try:
+                os.remove(tmp_mp3)
+            except OSError:
+                pass
+
