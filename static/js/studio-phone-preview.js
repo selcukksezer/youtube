@@ -18,6 +18,8 @@
     let activePreviewSceneIdx = 0;
     let animaticTimer = null;
     let animaticPlaying = false;
+    let previewViewMode = 'auto'; // 'auto' | 'video' | 'draft'
+    let lastKnownVideoSrc = '';
     let watermarkCornerIdx = 0; // 0: Sağ Üst, 1: Sol Üst, 2: Sağ Alt, 3: Gizli
     const WATERMARK_CORNERS = [
         { cls: 'wm-top-right', label: 'Sağ Üst' },
@@ -35,23 +37,91 @@
     };
 
     function escapeHtmlSafe(str) {
-        return String(str || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
+        return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function normalizeTrSlug(str) {
+        const map = { 'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'I': 'i', 'İ': 'i', 'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u' };
+        return String(str || '').replace(/[çÇğĞıIİöÖşŞüÜ]/g, ch => map[ch] || ch).toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
     }
 
     function getScenesList() {
-        if (Array.isArray(window.currentPlan?.scenes) && window.currentPlan.scenes.length) {
-            return window.currentPlan.scenes;
-        }
+        if (Array.isArray(window.currentPlan?.scenes) && window.currentPlan.scenes.length) return window.currentPlan.scenes;
         return [
             { narration: 'Bu kuralı öğrenene kadar hayatınız kontrolünüzde değildi...', duration: 4.0, mood: 'epic', highlight_word: 'KURALI' },
             { narration: 'Beynimiz belirsizlik anında en tanıdık tuzağa düşer.', duration: 4.5, mood: 'mysterious', highlight_word: 'BELİRSİZLİK' },
             { narration: 'İlk üç saniyede dikkati kilitleyen gizli mekanizma budur.', duration: 4.5, mood: 'dramatic', highlight_word: 'DİKKATİ' },
             { narration: 'Ve tam da bu yüzden asla unutmayın çünkü döngü burada başlar.', duration: 4.0, mood: 'epic', highlight_word: 'UNUTMAYIN' }
         ];
+    }
+
+    function hasLoadedActualVideo() {
+        const src = (document.getElementById('live-preview-player')?.getAttribute('src') || '').trim();
+        return Boolean(src && src !== '#' && !src.endsWith('/#'));
+    }
+
+    function syncSpinningDiscState() {
+        const screen = document.getElementById('live-phone-screen');
+        const player = document.getElementById('live-preview-player');
+        const active = Boolean(player && !player.paused && !player.ended && !player.classList.contains('hidden')) || animaticPlaying;
+        screen?.classList.toggle('is-playing', active);
+        screen?.querySelector('.sound-disc i')?.classList.toggle('fa-spin', active);
+    }
+
+    function setPhonePreviewMode(mode) {
+        const hasVideo = hasLoadedActualVideo();
+        const player = document.getElementById('live-preview-player');
+        const placeholder = document.getElementById('mockup-placeholder');
+        const screen = document.getElementById('live-phone-screen');
+        if (!screen) return;
+        const effectiveMode = (mode === 'video' && hasVideo) ? 'video' : (mode === 'draft' ? 'draft' : (hasVideo ? 'video' : 'draft'));
+        previewViewMode = effectiveMode;
+        screen.classList.toggle('has-actual-video', hasVideo);
+        screen.classList.toggle('is-video-mode', effectiveMode === 'video');
+        screen.classList.toggle('is-draft-mode', effectiveMode === 'draft');
+
+        if (player && placeholder) {
+            if (effectiveMode === 'video' && hasVideo) {
+                player.classList.remove('hidden');
+                placeholder.classList.add('hidden');
+                // Render edilmiş MP4 zaten gömülü altyazı/başlık içerdiği için sahte katmanları varsayılan olarak kapat
+                if (!screen.dataset.userToggledClean) {
+                    screen.classList.add('is-clean-preview');
+                    const toggleBtn = document.getElementById('btn-toggle-shorts-ui-overlay');
+                    if (toggleBtn) {
+                        toggleBtn.classList.add('is-clean');
+                        toggleBtn.innerHTML = '<i class="fa-solid fa-eye-slash"></i> <span>Shorts UI: Kapalı</span>';
+                    }
+                }
+            } else {
+                if (player && !player.paused) player.pause();
+                player.classList.add('hidden');
+                placeholder.classList.remove('hidden');
+                if (!screen.dataset.userToggledClean) {
+                    screen.classList.remove('is-clean-preview');
+                    const toggleBtn = document.getElementById('btn-toggle-shorts-ui-overlay');
+                    if (toggleBtn) {
+                        toggleBtn.classList.remove('is-clean');
+                        toggleBtn.innerHTML = '<i class="fa-brands fa-youtube"></i> <span>Shorts UI: Açık</span>';
+                    }
+                }
+            }
+        }
+
+        const modeSwitch = document.getElementById('wiz-phone-mode-switch');
+        if (modeSwitch) {
+            modeSwitch.classList.toggle('has-video', hasVideo);
+            modeSwitch.querySelectorAll('.wiz-pms-btn').forEach(btn => {
+                const m = btn.getAttribute('data-pmode');
+                btn.classList.toggle('active', m === effectiveMode);
+                if (m === 'video') {
+                    btn.disabled = !hasVideo;
+                    btn.title = hasVideo ? 'Üretilen MP4 videoyu göster' : 'Henüz üretilmiş MP4 video yok';
+                }
+            });
+        }
+
+        syncSpinningDiscState();
     }
 
     // ── 55, 59, 52: Header Toolbar inside .preview-mockup-card ───────────────
@@ -64,22 +134,38 @@
         bar.id = 'wiz-phone-top-controls';
         bar.className = 'wiz-phone-top-controls';
         bar.innerHTML = `
+            <div class="wiz-phone-mode-switch" id="wiz-phone-mode-switch" role="group" aria-label="Önizleme Modu">
+                <button type="button" class="wiz-pms-btn" data-pmode="video" title="Üretilen MP4 Videoyu Göster">
+                    <i class="fa-solid fa-film"></i> Video
+                </button>
+                <button type="button" class="wiz-pms-btn active" data-pmode="draft" title="Sahne & Altyazı Taslağını Göster">
+                    <i class="fa-solid fa-sliders"></i> Taslak
+                </button>
+            </div>
             <select id="select-phone-device-frame" class="wiz-phone-device-select" title="Cihaz Çerçevesi Değiştir (Madde 55)">
                 <option value="device-iphone">📱 iPhone 16 Pro</option>
                 <option value="device-android">📲 Android Dar</option>
                 <option value="device-frameless">🖼️ Çerçevesiz 9:16</option>
             </select>
             <button type="button" class="wiz-phone-ctrl-btn" id="btn-phone-safe-zone" title="YouTube Shorts Güvenli Alan Izgarasını Aç/Kapat (Madde 52)">
-                <i class="fa-solid fa-border-all"></i> Güvenli Alan
+                <i class="fa-solid fa-border-all"></i> <span>Güvenli Alan</span>
             </button>
             <button type="button" class="wiz-phone-ctrl-btn" id="btn-phone-watermark-cycle" title="Filigran / Logo Konumu Değiştir (Madde 60)">
                 <i class="fa-solid fa-stamp"></i> <span id="lbl-phone-wm-pos">Logo: Sağ Üst</span>
             </button>
-            <button type="button" class="wiz-phone-ctrl-btn" id="btn-phone-fullscreen" title="Tam Ekran / Büyük Önizleme (Madde 59)">
+            <button type="button" class="wiz-phone-ctrl-btn is-icon-only" id="btn-phone-fullscreen" title="Büyük Önizleme Modu (Madde 59)">
                 <i class="fa-solid fa-expand"></i>
             </button>
         `;
         header.after(bar);
+
+        bar.querySelectorAll('.wiz-pms-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetMode = btn.getAttribute('data-pmode') || 'draft';
+                if (targetMode === 'video' && !hasLoadedActualVideo()) return;
+                setPhonePreviewMode(targetMode);
+            });
+        });
 
         const phoneFrame = card.querySelector('.phone-frame');
         document.getElementById('select-phone-device-frame')?.addEventListener('change', (e) => {
@@ -113,6 +199,30 @@
     function ensurePhoneScreenOverlays() {
         const screen = document.getElementById('live-phone-screen');
         if (!screen) return;
+
+        // Bind video play/pause listeners once & enforce no-autoplay
+        const player = document.getElementById('live-preview-player');
+        if (player && !player.dataset.previewBound) {
+            player.dataset.previewBound = '1';
+            player.autoplay = false;
+            player.removeAttribute('autoplay');
+            player.addEventListener('play', syncSpinningDiscState);
+            player.addEventListener('pause', syncSpinningDiscState);
+            player.addEventListener('ended', syncSpinningDiscState);
+
+            const attrObs = new MutationObserver(() => {
+                const currentSrc = (player.getAttribute('src') || '').trim();
+                if (currentSrc && currentSrc !== lastKnownVideoSrc) {
+                    lastKnownVideoSrc = currentSrc;
+                    setPhonePreviewMode('video');
+                    syncPhoneLiveMetaAndLut();
+                } else if (!currentSrc && lastKnownVideoSrc) {
+                    lastKnownVideoSrc = '';
+                    setPhonePreviewMode('draft');
+                }
+            });
+            attrObs.observe(player, { attributes: true, attributeFilter: ['src', 'class'] });
+        }
 
         // 52. Safe Zone Grid Overlay
         if (!document.getElementById('phone-safe-zone-overlay')) {
@@ -149,12 +259,12 @@
             meta.className = 'phone-yt-meta-sim';
             meta.innerHTML = `
                 <div class="phone-yt-channel-row">
-                    <span class="phone-yt-avatar">S</span>
+                    <span class="phone-yt-avatar" id="phone-yt-avatar">S</span>
                     <strong id="phone-yt-handle">@shorts_studio</strong>
                     <span class="phone-yt-sub-pill">Abone Ol</span>
                 </div>
                 <div class="phone-yt-title-line" id="phone-yt-title-line">
-                    Beyninizin sizden sakladığı 3 saniyelik karar kuralı #shorts #viral
+                    9:16 Dikey Shorts Kurgu Önizlemesi #shorts #viral
                 </div>
             `;
             screen.appendChild(meta);
@@ -164,6 +274,7 @@
         const subOverlay = document.getElementById('mockup-sub-overlay');
         if (subOverlay && !subOverlay.dataset.dragBound) {
             subOverlay.dataset.dragBound = '1';
+            subOverlay.classList.add('sub-pos-middle');
             subOverlay.title = 'Altyazı konumunu değiştirmek için yukarı/aşağı sürükleyin';
             let dragging = false;
             subOverlay.addEventListener('mousedown', (e) => {
@@ -235,9 +346,11 @@
             </div>
             <div class="wiz-pss-subpos-row" id="phone-sub-pos-strip">
                 <span class="wiz-pss-subpos-lbl"><i class="fa-solid fa-arrows-up-down"></i> Altyazı Konumu:</span>
-                <button type="button" class="wiz-sub-pos-btn" data-pos="top">Üst</button>
-                <button type="button" class="wiz-sub-pos-btn active" data-pos="middle">Orta</button>
-                <button type="button" class="wiz-sub-pos-btn" data-pos="bottom">Alt</button>
+                <div class="wiz-sub-pos-group">
+                    <button type="button" class="wiz-sub-pos-btn" data-pos="top">Üst</button>
+                    <button type="button" class="wiz-sub-pos-btn active" data-pos="middle">Orta</button>
+                    <button type="button" class="wiz-sub-pos-btn" data-pos="bottom">Alt</button>
+                </div>
             </div>
         `;
         phoneFrame.after(panel);
@@ -245,17 +358,22 @@
         document.getElementById('btn-pss-prev')?.addEventListener('click', () => {
             const scenes = getScenesList();
             activePreviewSceneIdx = (activePreviewSceneIdx - 1 + scenes.length) % scenes.length;
+            setPhonePreviewMode('draft');
             renderPhoneSceneAt(activePreviewSceneIdx);
         });
         document.getElementById('btn-pss-next')?.addEventListener('click', () => {
             const scenes = getScenesList();
             activePreviewSceneIdx = (activePreviewSceneIdx + 1) % scenes.length;
+            setPhonePreviewMode('draft');
             renderPhoneSceneAt(activePreviewSceneIdx);
         });
         document.getElementById('btn-phone-animatic-play')?.addEventListener('click', toggleAnimaticPreview);
 
         panel.querySelectorAll('.wiz-sub-pos-btn').forEach(btn => {
-            btn.addEventListener('click', () => setSubtitleYPosition(btn.getAttribute('data-pos') || 'middle'));
+            btn.addEventListener('click', () => {
+                setPhonePreviewMode('draft');
+                setSubtitleYPosition(btn.getAttribute('data-pos') || 'middle');
+            });
         });
     }
 
@@ -295,8 +413,21 @@
         }
 
         const statusText = document.getElementById('mockup-status-text');
-        if (statusText && sc.scene_description) {
-            statusText.textContent = `Sahne ${safeIdx + 1}: ${sc.scene_description.slice(0, 68)}`;
+        if (statusText) {
+            const desc = sc.scene_description || sc.narration || '';
+            statusText.textContent = desc
+                ? `Sahne ${safeIdx + 1}: ${String(desc).slice(0, 72)}`
+                : 'Render tamamlandığında videonuz burada hazır bekler.';
+        }
+
+        // Sync Hook & Loop Bridge Card with real scene narrations when available
+        const hookSpan = document.getElementById('preview-hook-text');
+        const loopSpan = document.getElementById('preview-loop-text');
+        if (hookSpan && scenes[0]?.narration) {
+            hookSpan.textContent = `"${String(scenes[0].narration).replace(/\*\*[A-Z]+\*\*/g, '').trim().slice(0, 95)}"`;
+        }
+        if (loopSpan && scenes[scenes.length - 1]?.narration) {
+            loopSpan.textContent = `"${String(scenes[scenes.length - 1].narration).replace(/\*\*[A-Z]+\*\*/g, '').trim().slice(0, 95)}"`;
         }
     }
 
@@ -309,7 +440,9 @@
         }
         const scenes = getScenesList();
         if (!scenes.length) return;
+        setPhonePreviewMode('draft');
         animaticPlaying = true;
+        syncSpinningDiscState();
         if (btn) {
             btn.classList.add('is-playing');
             btn.innerHTML = '<i class="fa-solid fa-stop"></i> Provayı Durdur';
@@ -344,23 +477,34 @@
             btn.classList.remove('is-playing');
             btn.innerHTML = '<i class="fa-solid fa-play"></i> 3 Sn Prova Oynat';
         }
+        syncSpinningDiscState();
     }
 
     // ── 56 & 58: Sync YouTube Metadata & LUT CSS Filter ──────────────────────
     function syncPhoneLiveMetaAndLut() {
-        const topic = document.getElementById('input-topic')?.value?.trim()
-            || window.currentPlan?.title
-            || 'Beyninizin sizden sakladığı 3 saniyelik karar kuralı';
+        const seoTitle = document.getElementById('seo-title-val')?.value?.trim();
+        const inputTopic = document.getElementById('input-topic')?.value?.trim();
+        const planTitle = window.currentPlan?.title || window.currentPlan?.topic;
+        const latestVideoTitle = window.__latestRenderedVideo?.title || window.__latestRenderedVideo?.topic;
+        const topic = seoTitle || inputTopic || planTitle || latestVideoTitle || '9:16 Dikey Shorts Stüdyo Önizlemesi';
+
         const chSelect = document.getElementById('select-upload-channel') || document.getElementById('pub-target-channel-select');
-        const chName = chSelect?.selectedOptions?.[0]?.textContent?.trim() || 'shorts_studio';
-        const cleanHandle = '@' + chName.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase().slice(0, 18);
+        const rawChName = (chSelect?.selectedOptions?.[0]?.textContent || '').trim();
+        const isDefaultChannel = !rawChName || /varsay[ıi]lan|kanal se[çc]/i.test(rawChName);
+        const slug = isDefaultChannel ? 'shorts_studio' : (normalizeTrSlug(rawChName).slice(0, 18) || 'shorts_studio');
+        const cleanHandle = '@' + slug;
 
         const handleEl = document.getElementById('phone-yt-handle');
+        const avatarEl = document.getElementById('phone-yt-avatar');
         const wmText = document.getElementById('phone-wm-text');
         const titleEl = document.getElementById('phone-yt-title-line');
-        if (handleEl) handleEl.textContent = cleanHandle === '@_' ? '@shorts_studio' : cleanHandle;
-        if (wmText) wmText.textContent = handleEl?.textContent || '@shorts_studio';
-        if (titleEl) titleEl.textContent = `${topic.slice(0, 62)} #shorts #viral`;
+        if (handleEl) handleEl.textContent = cleanHandle;
+        if (avatarEl) avatarEl.textContent = (slug[0] || 'S').toUpperCase();
+        if (wmText) wmText.textContent = cleanHandle;
+        if (titleEl) {
+            const cleanTopic = topic.replace(/#shorts/gi, '').replace(/#viral/gi, '').trim();
+            titleEl.textContent = `${cleanTopic.slice(0, 62)} #shorts #viral`;
+        }
 
         const lutVal = (document.getElementById('select-color-lut') || document.getElementById('tl-select-style-profile') || document.getElementById('tl-select-helios-style'))?.value || 'cinematic_contrast';
         const videoArea = document.getElementById('phone-video-area');
@@ -417,6 +561,7 @@
         enhanceLoopBridgeCard();
         renderPhoneSceneAt(activePreviewSceneIdx);
         syncPhoneLiveMetaAndLut();
+        setPhonePreviewMode(previewViewMode === 'auto' ? (hasLoadedActualVideo() ? 'video' : 'draft') : previewViewMode);
     }
 
     function initStudioPhonePreviewUX() {
@@ -428,6 +573,7 @@
 
     window.syncPhonePreviewAll = syncPhonePreviewAll;
     window.renderPhoneSceneAt = renderPhoneSceneAt;
+    window.setPhonePreviewMode = setPhonePreviewMode;
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initStudioPhonePreviewUX);

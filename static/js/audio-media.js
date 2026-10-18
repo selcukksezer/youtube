@@ -175,7 +175,8 @@ function updateSubtitleSimulator() {
 
     const subOverlay = document.getElementById('mockup-sub-overlay');
     if (subOverlay) {
-        subOverlay.className = `mockup-subtitle-overlay preset-${preset}`;
+        const posClass = Array.from(subOverlay.classList).find(c => c.startsWith('sub-pos-')) || 'sub-pos-middle';
+        subOverlay.className = `mockup-subtitle-overlay preset-${preset} ${posClass}`;
         subOverlay.style.color = baseColor;
         const hi = subOverlay.querySelector('.sub-word-highlight');
         if (hi) {

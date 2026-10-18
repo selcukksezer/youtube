@@ -76,3 +76,20 @@ def test_studio_css_defines_styles_for_all_10_ux_categories() -> None:
     ]
     for sel in required_selectors:
         assert sel in css, f"Missing CSS selector '{sel}' in static/studio.css"
+
+
+def test_phone_preview_disables_autoplay_and_prevents_overlay_collision() -> None:
+    """9:16 phone preview player must not autoplay and must hide draft overlays in video mode."""
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    assert 'id="live-preview-player"' in html
+    player_tag = html.split('id="live-preview-player"', 1)[1].split(">", 1)[0]
+    assert "autoplay" not in player_tag.lower(), "#live-preview-player must not have autoplay attribute"
+
+    phone_js = (JS_DIR / "studio-phone-preview.js").read_text(encoding="utf-8")
+    assert "setPhonePreviewMode" in phone_js
+    assert "wiz-phone-mode-switch" in phone_js
+
+    css = STUDIO_CSS.read_text(encoding="utf-8")
+    assert "#live-phone-screen.is-video-mode #mockup-sub-overlay" in css
+    assert "#live-phone-screen.is-clean-preview .phone-yt-meta-sim" in css
+

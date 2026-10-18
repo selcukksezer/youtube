@@ -44,9 +44,18 @@ async function restoreRenderState() {
                 dockProgressPct.textContent = '%100';
                 dockStepTitle.textContent = 'Video hazır';
                 dockLogSnippet.textContent = state.video_url;
+                livePlayer.autoplay = false;
                 livePlayer.src = state.video_url + (state.video_url.includes('?') ? '&' : '?') + 't=' + Date.now();
                 livePlayer.classList.remove('hidden');
+                livePlayer.pause();
+                livePlayer.addEventListener('loadedmetadata', function onMeta() {
+                    livePlayer.removeEventListener('loadedmetadata', onMeta);
+                    if (livePlayer.paused && livePlayer.currentTime === 0) {
+                        try { livePlayer.currentTime = 0.15; } catch (e) {}
+                    }
+                });
                 mockupPlaceholder.classList.add('hidden');
+                if (typeof window.syncPhonePreviewAll === 'function') window.syncPhonePreviewAll();
             } else {
                 dockStepTitle.textContent = 'Hata Oluştu';
                 dockLogSnippet.textContent = state.error;

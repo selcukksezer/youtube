@@ -120,7 +120,7 @@ function syncPhoneMockupStep3Overlays() {
     const videoArea = document.getElementById('phone-video-area');
     if (!videoArea) return;
 
-    // Item 40: Watermark badge on 9:16 Phone Preview
+    // Item 40: Watermark badge on 9:16 Phone Preview (unified with #phone-watermark-badge)
     let wmBadge = document.getElementById('mockup-watermark-badge');
     if (!wmBadge) {
         wmBadge = document.createElement('div');
@@ -129,14 +129,22 @@ function syncPhoneMockupStep3Overlays() {
         videoArea.appendChild(wmBadge);
     }
     const wmEnabled = prefs.watermarkEnabled !== false && Boolean((prefs.watermarkText || '@shortsstudio').trim());
-    wmBadge.classList.toggle('hidden', !wmEnabled);
+    wmBadge.classList.add('hidden');
     wmBadge.setAttribute('data-pos', prefs.watermarkPos || 'top-right');
     wmBadge.textContent = (prefs.watermarkText || '@shortsstudio').trim();
+    const unifiedWm = document.getElementById('phone-watermark-badge');
+    const unifiedWmText = document.getElementById('phone-wm-text');
+    if (unifiedWmText && prefs.watermarkText) {
+        unifiedWmText.textContent = prefs.watermarkText.trim();
+    }
+    if (unifiedWm && !wmEnabled) {
+        unifiedWm.classList.add('wm-hidden');
+    }
 
     // Item 35: Safe-Zone vertical alignment on 9:16 Phone Preview
     const subOverlay = document.getElementById('mockup-sub-overlay');
     const yVal = parseFloat(document.getElementById('sub-range-y')?.value || prefs.safeZoneY || '0.76');
-    if (subOverlay) {
+    if (subOverlay && !subOverlay.classList.contains('sub-pos-top') && !subOverlay.classList.contains('sub-pos-middle') && !subOverlay.classList.contains('sub-pos-bottom')) {
         const bottomPx = yVal <= 0.65 ? 118 : (yVal >= 0.82 ? 52 : 82);
         subOverlay.style.bottom = `${bottomPx}px`;
     }

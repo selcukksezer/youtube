@@ -271,19 +271,21 @@ function injectPhonePreviewEnhancements() {
         toggleBtn.type = 'button';
         toggleBtn.id = 'btn-toggle-shorts-ui-overlay';
         toggleBtn.className = 'btn-toggle-shorts-ui-overlay';
-        toggleBtn.innerHTML = '<i class="fa-brands fa-youtube"></i> Shorts UI: Açık';
+        toggleBtn.innerHTML = '<i class="fa-brands fa-youtube"></i> <span>Shorts UI: Açık</span>';
         toggleBtn.addEventListener('click', () => {
             const screen = document.getElementById('live-phone-screen');
             if (!screen) return;
             const clean = screen.classList.toggle('is-clean-preview');
+            screen.dataset.userToggledClean = '1';
+            toggleBtn.classList.toggle('is-clean', clean);
             toggleBtn.innerHTML = clean
-                ? '<i class="fa-solid fa-expand"></i> Saf Video Görünümü'
-                : '<i class="fa-brands fa-youtube"></i> Shorts UI: Açık';
+                ? '<i class="fa-solid fa-eye-slash"></i> <span>Shorts UI: Kapalı</span>'
+                : '<i class="fa-brands fa-youtube"></i> <span>Shorts UI: Açık</span>';
         });
         header.appendChild(toggleBtn);
     }
 
-    // Item 48: Post-Render One-Click Action Bar right below .phone-frame
+    // Item 48: Post-Render One-Click Action Bar right below #wiz-phone-scene-stepper or .phone-frame
     const phoneFrame = previewCard.querySelector('.phone-frame');
     if (phoneFrame && !document.getElementById('wiz-post-render-action-bar')) {
         const bar = document.createElement('div');
@@ -291,16 +293,18 @@ function injectPhonePreviewEnhancements() {
         bar.className = 'wiz-post-render-action-bar';
         bar.innerHTML = `
             <a id="btn-wiz-download-mp4" class="wiz-pr-btn" href="#" download title="Son üretilen MP4 dosyasını indir">
-                <i class="fa-solid fa-download"></i> MP4 İndir
+                <i class="fa-solid fa-download"></i> <span>MP4 İndir</span>
             </a>
             <button type="button" id="btn-wiz-open-gallery" class="wiz-pr-btn" title="Video galerisini ve klasörü aç">
-                <i class="fa-solid fa-folder-open"></i> Galeride Göster
+                <i class="fa-solid fa-folder-open"></i> <span>Galeride Göster</span>
             </button>
             <button type="button" id="btn-wiz-upload-yt" class="wiz-pr-btn is-yt" title="Kotasız YouTube Studio yükleyicisini aç">
-                <i class="fa-brands fa-youtube"></i> YouTube'a Yükle
+                <i class="fa-brands fa-youtube"></i> <span>YouTube'a Yükle</span>
             </button>
         `;
-        phoneFrame.parentNode.insertBefore(bar, phoneFrame.nextSibling);
+        const stepper = document.getElementById('wiz-phone-scene-stepper');
+        const anchor = stepper || phoneFrame;
+        anchor.parentNode.insertBefore(bar, anchor.nextSibling);
 
         bar.querySelector('#btn-wiz-open-gallery')?.addEventListener('click', () => {
             if (typeof switchTab === 'function') switchTab('gallery');
@@ -321,7 +325,7 @@ function injectPhonePreviewEnhancements() {
         const strip = document.createElement('div');
         strip.id = 'wiz-recent-renders-strip';
         strip.className = 'wiz-recent-renders-strip';
-        strip.innerHTML = '<div class="wiz-rr-head"><span>🎞️ Son Üretilen Videolar (Hızlı Oynat)</span></div><div id="wiz-rr-list" class="wiz-rr-list"></div>';
+        strip.innerHTML = '<div class="wiz-rr-head"><span>🎞️ Son Üretilen Videolar</span></div><div id="wiz-rr-list" class="wiz-rr-list"></div>';
         previewCard.appendChild(strip);
         loadRecentRendersMiniStrip();
     }
@@ -339,21 +343,26 @@ async function loadRecentRendersMiniStrip() {
             listEl.innerHTML = '<small style="color:var(--muted);font-size:10.5px;">Henüz tamamlanmış video yok.</small>';
             return;
         }
+        window.__latestRenderedVideo = videos[0];
         const dlBtn = document.getElementById('btn-wiz-download-mp4');
         if (dlBtn && videos[0]?.url) {
             dlBtn.href = videos[0].url;
         }
+        if (typeof window.syncPhonePreviewAll === 'function') {
+            window.syncPhonePreviewAll();
+        }
         listEl.innerHTML = videos.map((v, i) => {
-            const title = (v.title || v.topic || v.filename || `Video #${i + 1}`).replace(/</g, '&lt;');
+            const rawTitle = v.title || v.topic || v.filename || `Video #${i + 1}`;
+            const title = rawTitle.replace(/</g, '&lt;');
             const url = v.url || v.video_url || `/output/${v.filename || ''}`;
             const sizeMb = v.size_mb ? `${Number(v.size_mb).toFixed(1)} MB` : 'MP4';
             return `
                 <div class="wiz-rr-item">
                     <div class="wiz-rr-meta">
-                        <strong>${title.length > 34 ? title.slice(0, 34) + '…' : title}</strong>
+                        <strong title="${title.replace(/"/g, '&quot;')}">${title.length > 36 ? title.slice(0, 36) + '…' : title}</strong>
                         <small>${sizeMb}</small>
                     </div>
-                    <button type="button" class="wiz-rr-play-btn" data-video-url="${url.replace(/"/g, '&quot;')}">
+                    <button type="button" class="wiz-rr-play-btn" data-video-url="${url.replace(/"/g, '&quot;')}" data-video-title="${rawTitle.replace(/"/g, '&quot;')}">
                         <i class="fa-solid fa-play"></i> Oynat
                     </button>
                 </div>
@@ -362,12 +371,20 @@ async function loadRecentRendersMiniStrip() {
         listEl.querySelectorAll('.wiz-rr-play-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const url = btn.getAttribute('data-video-url');
+                const vTitle = btn.getAttribute('data-video-title') || '';
+                if (vTitle) window.__latestRenderedVideo = { title: vTitle, url };
                 const player = document.getElementById('live-preview-player');
                 const placeholder = document.getElementById('mockup-placeholder');
                 if (player && url) {
+                    player.autoplay = false;
                     player.src = url;
                     player.classList.remove('hidden');
                     placeholder?.classList.add('hidden');
+                    if (typeof window.setPhonePreviewMode === 'function') {
+                        window.setPhonePreviewMode('video');
+                    } else if (typeof window.syncPhonePreviewAll === 'function') {
+                        window.syncPhonePreviewAll();
+                    }
                     player.play().catch(() => {});
                 }
                 const dl = document.getElementById('btn-wiz-download-mp4');
