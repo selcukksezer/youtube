@@ -518,6 +518,13 @@ main {
     align-items: center;
 }
 
+
+/* iOS Safari: div tabanli kartlarda tiklamanin calismasi icin (cursor:pointer sarti) */
+[data-tab] {
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.08);
+}
+
 .tab,
 .top-module-tab {
     border: 1px solid var(--line);
