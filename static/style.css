@@ -8330,44 +8330,56 @@ textarea {
         pointer-events: auto !important;
     }
 
-    /* === Mobil modül kartları: büyük, dokunmatik dostu kartlar === */
+    /* === Mobil modül kartları: minimal, temiz === */
     .top-module-tabs {
-        display: grid !important;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-bottom: 16px;
+        display: flex !important;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
     }
     .top-module-tab {
-        min-height: 60px;
-        padding: 12px 14px !important;
-        font-size: 14px !important;
-        border-radius: 14px !important;
-        gap: 10px !important;
-        justify-content: flex-start;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+        min-height: 44px;
+        padding: 8px 12px !important;
+        font-size: 13px !important;
+        border-radius: 10px !important;
+        gap: 7px !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        background: transparent !important;
+        box-shadow: none !important;
     }
     .top-module-tab .tab-code {
-        font-size: 11px !important;
-        padding: 5px 8px !important;
-        border-radius: 8px !important;
+        font-size: 10px !important;
+        padding: 3px 6px !important;
+        border-radius: 6px !important;
         flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.06) !important;
+        border: none !important;
     }
     .top-module-tab.active {
-        box-shadow: 0 4px 16px rgba(190, 242, 100, 0.25);
-        transform: translateY(-1px);
+        background: rgba(190, 242, 100, 0.12) !important;
+        border-color: rgba(190, 242, 100, 0.35) !important;
+        color: var(--lime) !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
+    .top-module-tab.active .tab-code {
+        background: rgba(190, 242, 100, 0.18) !important;
+        color: var(--lime) !important;
     }
 
-    /* === Mobil header: daha temiz hiyerarşi === */
+    /* === Mobil header: minimal === */
     .top-header {
-        gap: 8px;
-        padding: 10px 12px;
+        gap: 6px;
+        padding: 8px 10px;
     }
     .stat-pill-group {
         gap: 6px;
     }
     .stat-pill, .pill {
-        min-height: 40px;
+        min-height: 36px;
         font-size: 12px;
+        background: transparent !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
     }
 
     /* === Genel dokunmatik hedefler: en az 44px === */
@@ -8424,9 +8436,12 @@ textarea {
         padding: 12px 12px 120px !important;
     }
     .glass-box, .card, .panel {
-        border-radius: 16px !important;
-        padding: 16px !important;
-        margin-bottom: 12px;
+        border-radius: 12px !important;
+        padding: 14px !important;
+        margin-bottom: 10px;
+        box-shadow: none !important;
+        border: 1px solid rgba(255, 255, 255, 0.06) !important;
+        background: rgba(255, 255, 255, 0.02) !important;
     }
     .box-header h3, .card-title {
         font-size: 16px !important;
@@ -8509,7 +8524,7 @@ textarea {
         transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease !important;
     }
     .top-module-tab:active, .btn:active {
-        transform: scale(0.97) !important;
+        opacity: 0.7;
     }
 
     /* === MODAL: tam ekran mobil === */
