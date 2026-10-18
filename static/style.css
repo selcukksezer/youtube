@@ -1497,6 +1497,11 @@ textarea {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    pointer-events: none;
+}
+.toast-container .toast,
+#toast-container .toast {
+    pointer-events: auto;
 }
 
 .toast {
@@ -7785,6 +7790,11 @@ textarea {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    pointer-events: none;
+}
+.toast-container .toast,
+#toast-container .toast {
+    pointer-events: auto;
 }
 
 .toast {
@@ -8313,6 +8323,11 @@ textarea {
         left: 12px !important;
         right: 12px !important;
         bottom: calc(72px + env(safe-area-inset-bottom)) !important;
+        pointer-events: none !important;
+    }
+    .toast-container .toast,
+    #toast-container .toast {
+        pointer-events: auto !important;
     }
 }
 
