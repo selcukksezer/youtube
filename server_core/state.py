@@ -6,7 +6,7 @@ import time
 import asyncio
 import threading
 import logging
-from typing import List, Any
+from typing import List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,45 @@ current_render_state = {
     "video_url": None,
     "error": None
 }
+
+# Per-task render state isolation registry
+render_tasks_by_id: dict[str, dict] = {}
+
+
+def register_task_state(task_id: str, data: dict) -> dict:
+    """Register or update isolated state for a specific render task_id."""
+    if not task_id:
+        return {}
+    with render_lock:
+        existing = render_tasks_by_id.get(task_id, {})
+        updated = {
+            "task_id": task_id,
+            "is_rendering": True,
+            "cancel_requested": False,
+            **existing,
+            **(data or {}),
+        }
+        render_tasks_by_id[task_id] = updated
+        return dict(updated)
+
+
+def is_task_cancelled(task_id: Optional[str]) -> bool:
+    """Check whether a specific task_id (or global render state) has cancellation requested."""
+    if current_render_state.get("cancel_requested", False):
+        return True
+    if not task_id:
+        return False
+    with render_lock:
+        task_state = render_tasks_by_id.get(task_id)
+        return bool(task_state and task_state.get("cancel_requested", False))
+
+
+def clear_task_state(task_id: Optional[str]) -> None:
+    """Remove isolated state for a completed/cancelled task_id."""
+    if not task_id:
+        return
+    with render_lock:
+        render_tasks_by_id.pop(task_id, None)
 
 
 def format_sse_message(event_type: str, data: Any, timestamp: float = None) -> str:
@@ -156,18 +195,24 @@ class SSELogStreamer:
         # restore), unwrap to the real stream. A nested wrapper broadcast each
         # line twice to the SSE log panel.
         while isinstance(original_stdout, SSELogStreamer):
-            original_stdout = original_stdout.original_stdout
+            next_stream = getattr(original_stdout, "terminal", None) or getattr(
+                original_stdout, "original_stdout", None
+            )
+            if next_stream is None or next_stream is original_stdout:
+                break
+            original_stdout = next_stream
+        self.terminal = original_stdout
         self.original_stdout = original_stdout
 
     def write(self, buf):
-        self.original_stdout.write(buf)
+        self.terminal.write(buf)
         msg = buf.strip()
         if msg:
             broadcast_event("log", msg)
 
     def flush(self):
-        self.original_stdout.flush()
+        self.terminal.flush()
 
     def __getattr__(self, name):
         # encoding / isatty / fileno etc. — libraries poke at sys.stdout
-        return getattr(self.original_stdout, name)
+        return getattr(self.terminal, name)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import glob
 import os
+import shutil
 import sys
 from typing import Any, Callable
 
@@ -26,11 +27,27 @@ def _apply_optional_sonilo_sfx(video_path: str, enabled: bool) -> bool:
 
     log_fn = _rw_attr("_log", print)
     log_fn("[Sonilo SFX] Görüntü analiziyle AI ses efekti üretiliyor; render dosyası yükleniyor.")
+    backup_path = video_path + ".pre_sonilo.bak"
     try:
+        if os.path.isfile(video_path):
+            shutil.copy2(video_path, backup_path)
         add_ai_sfx_to_video(video_path)
-    except SoniloSfxError as exc:
+        if not os.path.isfile(video_path) or os.path.getsize(video_path) < 100_000:
+            raise SoniloSfxError("Sonilo SFX çıktısı eksik veya 100 KB altında")
+    except (SoniloSfxError, Exception) as exc:
+        if os.path.isfile(backup_path):
+            try:
+                shutil.copy2(backup_path, video_path)
+            except OSError:
+                pass
         log_fn(f"[Sonilo SFX] Uygulanamadı; mevcut render korundu: {exc}", 95)
         return False
+    finally:
+        if os.path.isfile(backup_path):
+            try:
+                os.remove(backup_path)
+            except OSError:
+                pass
     log_fn("[Sonilo SFX] AI ses efekti render'a eklendi.", 95)
     return True
 

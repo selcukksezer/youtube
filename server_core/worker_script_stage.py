@@ -56,8 +56,11 @@ def run_script_and_director_stage(
     lang_label = "İngilizce" if target_lang == "en" else "Türkçe"
     pre_result: Dict[str, Any] = {}
 
+    narration_repaired = False
+
     for orig_attempt in range(MAX_ORIGINALITY_RETRIES):
         final_variation_attempt = orig_attempt
+        narration_repaired = False
         check_cancelled()
         if orig_attempt > 0 or not plan:
             if orig_attempt == 0:
@@ -77,13 +80,20 @@ def run_script_and_director_stage(
                     f"senaryo yeniden üretiliyor ({orig_attempt + 1}/{MAX_ORIGINALITY_RETRIES})...",
                     14 + orig_attempt,
                 )
-            plan = generate_scenes(
-                keyword,
-                niche_type=locked_niche,
-                language=target_lang,
-                variation_attempt=orig_attempt,
-                enable_outro=getattr(req, "enable_outro", True) is not False,
-            )
+            if req.reddit_post and locked_niche == "2_reddit_confessions":
+                from scene_generator import generate_reddit_rewrite_script
+
+                source_text = f"{req.reddit_post.get('title', '')}\n{req.reddit_post.get('body', '')}"
+                plan = generate_reddit_rewrite_script(source_text, lang=target_lang)
+                plan["reddit_post"] = req.reddit_post
+            else:
+                plan = generate_scenes(
+                    keyword,
+                    niche_type=locked_niche,
+                    language=target_lang,
+                    variation_attempt=orig_attempt,
+                    enable_outro=getattr(req, "enable_outro", True) is not False,
+                )
             stamp_visual_mode_fn(plan, vm)
             try:
                 from hybrid_niches import enrich_plan_with_hybrid
@@ -92,11 +102,7 @@ def run_script_and_director_stage(
             except Exception:
                 pass
 
-        if req.reddit_post and locked_niche == "2_reddit_confessions" and orig_attempt == 0:
-            from scene_generator import generate_reddit_rewrite_script
-
-            source_text = f"{req.reddit_post.get('title', '')}\n{req.reddit_post.get('body', '')}"
-            plan = generate_reddit_rewrite_script(source_text, lang=target_lang)
+        if req.reddit_post and locked_niche == "2_reddit_confessions" and isinstance(plan, dict):
             plan["reddit_post"] = req.reddit_post
 
         if orig_attempt == 0 and plan:
@@ -169,6 +175,7 @@ def run_script_and_director_stage(
                 reddit_post=getattr(req, "reddit_post", None),
             )
             plan = director.to_legacy_plan()
+            narration_repaired = True
             log_fn(
                 f"[Timeline] {len(director.scenes)} sahne | {director.total_duration():.1f}s | "
                 f"niş={director.niche_id} | SFX={len(director.audio_events)}",
@@ -247,6 +254,7 @@ def run_script_and_director_stage(
             "matched_title": matched_title or "",
         }
 
+    repaired_for_director: Optional[Dict[str, Any]] = None
     try:
         from production.quality import validate_script_quality
 
@@ -269,6 +277,7 @@ def run_script_and_director_stage(
                 director = repair_result["director"]
                 keyword = plan.get("title") or keyword
                 script_quality = repair_result["script_quality"]
+                narration_repaired = False
                 plan.setdefault("meta", {})
                 plan["meta"]["script_quality"] = script_quality
                 plan["meta"]["script_quality_repair"] = quality_repair
@@ -312,17 +321,20 @@ def run_script_and_director_stage(
             script_quality,
             allow_draft_render=allow_draft_render,
         ):
-            from scenes.narration_validate import apply_auto_repair_if_needed
+            if not narration_repaired:
+                from scenes.narration_validate import apply_auto_repair_if_needed
 
-            repaired_plan, narr_fixes, _ = apply_auto_repair_if_needed(plan)
-            if narr_fixes:
-                log_fn(
-                    f"[QualityGate] Anlatım sözleşme ihlali için otomatik onarıldı: {len(narr_fixes)} fix",
-                    24,
-                )
-                plan = repaired_plan
-                script_quality = validate_script_quality(plan)
-                plan["meta"]["script_quality"] = script_quality
+                repaired_plan, narr_fixes, _ = apply_auto_repair_if_needed(plan)
+                narration_repaired = True
+                if narr_fixes:
+                    log_fn(
+                        f"[QualityGate] Anlatım sözleşme ihlali için otomatik onarıldı: {len(narr_fixes)} fix",
+                        24,
+                    )
+                    plan = repaired_plan
+                    repaired_for_director = repaired_plan
+                    script_quality = validate_script_quality(plan)
+                    plan["meta"]["script_quality"] = script_quality
 
             if not quality_report_allows_render_fn(
                 script_quality,
@@ -340,27 +352,35 @@ def run_script_and_director_stage(
                 else:
                     log_fn(f"[QualityGate] UYARI: {msg} (Render devam ediyor)", 24)
     except Exception as script_quality_err:
+        if isinstance(plan, dict):
+            plan.setdefault("meta", {}).setdefault(
+                "script_quality",
+                {"ok": True, "issues": [], "warnings": [], "error": str(script_quality_err)},
+            )
         msg = f"Senaryo kalite sözleşmesi istisnası: {script_quality_err}"
         log_fn(f"[QualityGate] UYARI: {msg} (Render devam ediyor)", 24)
-
-    if db_id and plan.get("scenes"):
-        database.save_scenes(db_id, plan["scenes"])
 
     if director:
         from scenes.narration_validate import apply_auto_repair_if_needed
 
-        plan_dict = director.to_legacy_plan()
-        repaired_plan, narr_fixes, _ = apply_auto_repair_if_needed(plan_dict)
-        if narr_fixes:
-            log_fn(f"[QualityGate] Anlatim otomatik duzeltildi: {len(narr_fixes)} fix", 24)
+        prior_meta = dict((plan or {}).get("meta") or {}) if isinstance(plan, dict) else {}
+        if not narration_repaired:
+            cand_plan, narr_fixes, _ = apply_auto_repair_if_needed(director.to_legacy_plan())
+            narration_repaired = True
+            if narr_fixes:
+                log_fn(f"[QualityGate] Anlatim otomatik duzeltildi: {len(narr_fixes)} fix", 24)
+                repaired_for_director = cand_plan
+        if repaired_for_director is not None:
             director = compile_director_plan(
-                repaired_plan,
+                repaired_for_director,
                 title=keyword,
                 niche_id=locked_niche,
                 language=target_lang,
                 reddit_post=getattr(req, "reddit_post", None),
             )
             plan = director.to_legacy_plan()
+            if prior_meta:
+                plan.setdefault("meta", {}).update(prior_meta)
             with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f:
                 json.dump(plan, f, ensure_ascii=False, indent=2)
             with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
@@ -381,9 +401,10 @@ def run_script_and_director_stage(
             or i.startswith("empty_narration")
             or i.startswith("no_terminal")
         ]
-        if semantic_block:
+        if semantic_block and not narration_repaired:
             plan_dict = director.to_legacy_plan()
             repaired_plan, narr_fixes2, _ = apply_auto_repair_if_needed(plan_dict)
+            narration_repaired = True
             if narr_fixes2:
                 log_fn(
                     f"[QualityGate] Pre-gate ikinci onarım: {len(narr_fixes2)} fix",
@@ -397,6 +418,8 @@ def run_script_and_director_stage(
                     reddit_post=getattr(req, "reddit_post", None),
                 )
                 plan = director.to_legacy_plan()
+                if prior_meta:
+                    plan.setdefault("meta", {}).update(prior_meta)
                 pre_result = pre_render_score(director)
                 semantic_block = [
                     i
@@ -415,10 +438,19 @@ def run_script_and_director_stage(
             return False, plan, director, keyword, final_variation_attempt, pre_result
         bad = scenes_needing_regen(director, pre_result)
         if bad:
-            apply_visual_intents(director.scenes, director.niche_id, title=director.title)
-            build_audio_events(director)
-            plan = director.to_legacy_plan()
-            log_fn(f"[Visual] {len(bad)} sahne intent yenilendi (must_exclude temizliği)")
+            target_scenes = [
+                director.scenes[idx] for idx in bad if 0 <= idx < len(director.scenes)
+            ]
+            if target_scenes:
+                apply_visual_intents(target_scenes, director.niche_id, title=director.title)
+                build_audio_events(director)
+                plan = director.to_legacy_plan()
+                if prior_meta:
+                    plan.setdefault("meta", {}).update(prior_meta)
+                log_fn(f"[Visual] {len(target_scenes)} sahne intent yenilendi (must_exclude temizliği)")
+
+    if db_id and isinstance(plan, dict) and plan.get("scenes"):
+        database.save_scenes(db_id, plan["scenes"])
 
     try:
         from compliance import evaluate_plan_compliance, publication_decision
@@ -473,6 +505,11 @@ def run_script_and_director_stage(
                 27,
             )
     except Exception as compliance_err:
+        if isinstance(plan, dict):
+            plan.setdefault("meta", {}).setdefault(
+                "compliance",
+                {"render_blocking": False, "hard_fail": False, "error": str(compliance_err)},
+            )
         msg = f"Uyumluluk kalite kapısı istisnası: {compliance_err}"
         log_fn(f"[Compliance] UYARI: {msg} (Render devam ediyor)", 28)
 

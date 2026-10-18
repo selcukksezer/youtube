@@ -52,6 +52,7 @@ def verify_and_audit_visual_stage(
     """
     total_s = len(scenes)
     pre_audit_result: Dict[str, Any] = {}
+    _q_audit: Dict[str, Any] = {}
 
     def _retry_missing_clips(max_passes: int = 2):
         for attempt in range(1, max_passes + 1):
@@ -63,11 +64,7 @@ def verify_and_audit_visual_stage(
                 f"[Visual] Retry pass {attempt}/{max_passes}: "
                 f"{len(missing)} missing scene(s) -> indices (0-based) {missing[:16]}"
                 + (f" ... (+{len(missing) - 16})" if len(missing) > 16 else "")
-                + (
-                    "; lavfi yedek açık"
-                    if procedural_on_retry_pass_fn(attempt, max_passes)
-                    else "; stok araması"
-                ),
+                + ("; lavfi yedek açık" if procedural_on_retry_pass_fn(attempt, max_passes) else "; stok araması"),
                 56,
             )
             for i in missing:
@@ -81,35 +78,21 @@ def verify_and_audit_visual_stage(
                     scene_description=scene.get("scene_description") or "",
                     subject=str(intent.get("subject") or ""),
                     existing=(
-                        intent.get("search_queries")
-                        or scene.get("search_queries")
-                        or scene.get("search_query")
-                        or []
+                        intent.get("search_queries") or scene.get("search_queries") or scene.get("search_query") or []
                     ),
                 )
                 if not q:
-                    log_fn(
-                        f"[Visual] Retry pass {attempt}: scene {i + 1}/{total_s} "
-                        "has no filmable subject; left missing"
-                    )
+                    log_fn(f"[Visual] Retry pass {attempt}: scene {i + 1}/{total_s} has no filmable subject; left missing")
                     continue
                 p = fetch_scene_clip_fn(
-                    q,
-                    i,
-                    proj,
+                    q, i, proj,
                     target_duration=clips[i]["duration"],
                     scene_description=scene.get("scene_description", ""),
                     narration=scene.get("narration", ""),
                     visual_intent=intent,
-                    cancel_check=lambda: state.current_render_state.get(
-                        "cancel_requested", False
-                    ),
+                    cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
                     recent_texts=recent_texts,
-                    niche_id=(
-                        (plan or {}).get("locked_niche")
-                        or (plan or {}).get("niche_id")
-                        or ""
-                    ),
+                    niche_id=((plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or ""),
                     channel_id=getattr(req, "channel_id", None),
                     allow_procedural=procedural_on_retry_pass_fn(attempt, max_passes),
                 )
@@ -126,14 +109,8 @@ def verify_and_audit_visual_stage(
         _retry_missing_clips(max_passes=2)
         check_cancelled()
         attach_short_clip_partners(
-            clips,
-            scenes,
-            proj,
-            niche_id=(
-                (plan or {}).get("locked_niche")
-                or (plan or {}).get("niche_id")
-                or ""
-            ),
+            clips, scenes, proj,
+            niche_id=((plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or ""),
             channel_id=getattr(req, "channel_id", None),
             cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
         )
@@ -165,18 +142,21 @@ def verify_and_audit_visual_stage(
     _plan_scene_count = len(plan.get("scenes") or [])
     if _plan_scene_count > 0 and len(clips) != _plan_scene_count:
         if len(clips) > _plan_scene_count:
-            log_fn(
-                f"[O1-Sync] clips={len(clips)} > plan={_plan_scene_count} — trimming extras",
-                58,
-            )
+            log_fn(f"[O1-Sync] clips={len(clips)} > plan={_plan_scene_count} — trimming extras", 58)
             clips = clips[:_plan_scene_count]
         else:
-            log_fn(
-                f"[O1-Sync] clips={len(clips)} < plan={_plan_scene_count} — padding with None entries",
-                58,
-            )
+            log_fn(f"[O1-Sync] clips={len(clips)} < plan={_plan_scene_count} — padding with None entries", 58)
             while len(clips) < _plan_scene_count:
-                clips.append({"path": None, "duration": 5.0})
+                _pad_idx = len(clips)
+                _pad_dur = float(
+                    (
+                        plan["scenes"][_pad_idx].get("duration")
+                        if _pad_idx < len(plan.get("scenes") or []) and isinstance(plan["scenes"][_pad_idx], dict)
+                        else None
+                    )
+                    or 5.0
+                )
+                clips.append({"path": None, "duration": _pad_dur})
 
     coverage = clip_coverage_report(clips)
     ok_clips = coverage["ok"]
@@ -194,11 +174,7 @@ def verify_and_audit_visual_stage(
         norm_plan = normalize_scene_paths_for_web(dict(plan), render_job_prefix)
         state.broadcast_event(
             "plan_updated",
-            {
-                "slug": render_job_prefix,
-                "title": keyword,
-                "plan": norm_plan,
-            },
+            {"slug": render_job_prefix, "title": keyword, "plan": norm_plan},
         )
     except Exception as _sync_err:
         log_fn(f"[TimelineSync] note: {_sync_err}")
@@ -206,27 +182,18 @@ def verify_and_audit_visual_stage(
     try:
         from render.pipeline_audit import audit_search_queries, pre_render_audit
 
-        pre_audit_result = pre_render_audit(
-            clips,
-            audio_path=None,
-            plan=plan,
-        )
+        pre_audit_result = pre_render_audit(clips, audio_path=None, plan=plan)
         _q_audit = audit_search_queries(clips)
         for _e in pre_audit_result.get("errors") or []:
             log_fn(f"[PipelineAudit] ERROR: {_e}", 58)
-        with open(
-            os.path.join(proj, "pipeline_audit_pre.json"), "w", encoding="utf-8"
-        ) as _af:
+        with open(os.path.join(proj, "pipeline_audit_pre.json"), "w", encoding="utf-8") as _af:
             json.dump(
                 {"pre_render": pre_audit_result, "query_audit": _q_audit},
-                _af,
-                ensure_ascii=False,
-                indent=2,
+                _af, ensure_ascii=False, indent=2,
             )
         if not pre_audit_result["ok"]:
             _blocking = [
-                e
-                for e in (pre_audit_result.get("errors") or [])
+                e for e in (pre_audit_result.get("errors") or [])
                 if "duplicate_clips" in e or "scene_count_too_low" in e
             ]
             if _blocking:
@@ -294,34 +261,37 @@ def verify_and_audit_visual_stage(
         _scene = scenes[_si] if _si < len(scenes) else {}
         _intent = _clip.get("visual_intent") or _scene.get("visual_intent") or {}
         from visuals.query_builder import build_shot_queries
+        from visuals.subject_lock import queries_for_scene
 
-        _narr_queries = build_shot_queries(
+        _narr_queries = list(
+            build_shot_queries(
+                narration=_narr,
+                scene_description=_desc,
+                niche_id=(plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or "",
+                visual_intent=_intent,
+                max_queries=3,
+            )
+        )
+        for _fb_q in queries_for_scene(
             narration=_narr,
             scene_description=_desc,
-            niche_id=(plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or "",
-            visual_intent=_intent,
-            max_queries=3,
-        )
+            subject=str(_intent.get("subject") or ""),
+            existing=_clip.get("search_queries") or [],
+        ):
+            if _fb_q and _fb_q not in _narr_queries:
+                _narr_queries.append(_fb_q)
         if not _narr_queries:
-            log_fn(
-                f"[K1-Semantic] Scene {_si + 1}: no scene-specific stock queries; retry unavailable"
-            )
+            log_fn(f"[K1-Semantic] Scene {_si + 1}: no scene-specific stock queries; retry unavailable")
             return
         check_cancelled()
         try:
             _np = fetch_scene_clip_fn(
-                _narr_queries,
-                _si,
-                proj,
+                _narr_queries, _si, proj,
                 target_duration=_clip.get("duration", 6),
                 scene_description=_desc,
                 narration=_narr,
-                cancel_check=lambda: state.current_render_state.get(
-                    "cancel_requested", False
-                ),
-                niche_id=(plan or {}).get("locked_niche")
-                or (plan or {}).get("niche_id")
-                or "",
+                cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
+                niche_id=(plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or "",
                 channel_id=getattr(req, "channel_id", None),
                 allow_procedural=False,
             )
@@ -338,9 +308,7 @@ def verify_and_audit_visual_stage(
             log_fn(f"[K1-Semantic] Scene {_si + 1} retry returned no clip")
 
     _retried_scenes, _low_confidence_scenes = retry_low_confidence_scenes(
-        clips,
-        _retry_semantic_scene,
-        threshold=0.08,
+        clips, _retry_semantic_scene, threshold=0.08,
     )
     if _retried_scenes:
         log_fn(
@@ -351,10 +319,7 @@ def verify_and_audit_visual_stage(
         try:
             require_semantic_confidence(_low_confidence_scenes)
         except Exception as _sem_err:
-            log_fn(
-                f"[K1-Semantic] UYARI: {_sem_err} (Render mevcut stok görsellerle devam ediyor)",
-                58,
-            )
+            log_fn(f"[K1-Semantic] UYARI: {_sem_err} (Render mevcut stok görsellerle devam ediyor)", 58)
 
     try:
         from render.pipeline_audit import (
@@ -363,8 +328,11 @@ def verify_and_audit_visual_stage(
             pre_render_audit,
         )
 
-        pre_audit_result = pre_render_audit(clips, audio_path=None, plan=plan)
-        _q_audit = audit_search_queries(clips)
+        if _retried_scenes or not pre_audit_result:
+            pre_audit_result = pre_render_audit(clips, audio_path=None, plan=plan)
+            _q_audit = audit_search_queries(clips)
+        elif not _q_audit:
+            _q_audit = audit_search_queries(clips)
         _visual_audit_path = os.path.join(output_root, f"{safe}_visual_audit.jpg")
         _visual_frame_audit = audit_visual_frames(clips, _visual_audit_path)
         _visual_audit_slug = ch_paths["slug"]
@@ -382,14 +350,10 @@ def verify_and_audit_visual_stage(
                 f"[PipelineAudit] Search query issues: "
                 f"{_q_audit['issue_count']} scenes have generic/empty/off-topic queries"
             )
-        with open(
-            os.path.join(proj, "pipeline_audit_pre.json"), "w", encoding="utf-8"
-        ) as _af:
+        with open(os.path.join(proj, "pipeline_audit_pre.json"), "w", encoding="utf-8") as _af:
             json.dump(
                 {"pre_render": pre_audit_result, "query_audit": _q_audit},
-                _af,
-                ensure_ascii=False,
-                indent=2,
+                _af, ensure_ascii=False, indent=2,
             )
     except Exception as _audit_err:
         log_fn(f"[PipelineAudit] final visual audit failed: {_audit_err}", 58)
@@ -417,16 +381,12 @@ def verify_and_audit_visual_stage(
         if uniqueness["ok"]:
             break
         dupes = sorted(
-            set(
-                (uniqueness.get("duplicate_hash_indices") or [])
-                + (uniqueness.get("duplicate_path_indices") or [])
-            )
+            set((uniqueness.get("duplicate_hash_indices") or []) + (uniqueness.get("duplicate_path_indices") or []))
         )
         if not dupes:
             break
         log_fn(
-            f"[Visual] Tekrarlı klip pass {_dup_pass}/2: "
-            f"sahneler {[i + 1 for i in dupes]} yeniden aranıyor",
+            f"[Visual] Tekrarlı klip pass {_dup_pass}/2: sahneler {[i + 1 for i in dupes]} yeniden aranıyor",
             58,
         )
         replaced = 0
@@ -441,32 +401,21 @@ def verify_and_audit_visual_stage(
                 scene_description=scene.get("scene_description") or "",
                 subject=str(intent.get("subject") or ""),
                 existing=(
-                    intent.get("search_queries")
-                    or scene.get("search_queries")
-                    or scene.get("search_query")
-                    or []
+                    intent.get("search_queries") or scene.get("search_queries") or scene.get("search_query") or []
                 ),
             )
             if not q:
                 continue
             old = clips[i].get("path")
             p = fetch_scene_clip_fn(
-                q,
-                i,
-                proj,
+                q, i, proj,
                 target_duration=clips[i].get("duration", 6),
                 scene_description=scene.get("scene_description", ""),
                 narration=scene.get("narration", ""),
                 visual_intent=intent,
-                cancel_check=lambda: state.current_render_state.get(
-                    "cancel_requested", False
-                ),
+                cancel_check=lambda: state.current_render_state.get("cancel_requested", False),
                 recent_texts=recent_texts,
-                niche_id=(
-                    (plan or {}).get("locked_niche")
-                    or (plan or {}).get("niche_id")
-                    or ""
-                ),
+                niche_id=((plan or {}).get("locked_niche") or (plan or {}).get("niche_id") or ""),
                 channel_id=getattr(req, "channel_id", None),
                 allow_procedural=procedural_on_retry_pass_fn(_dup_pass, 2),
             )

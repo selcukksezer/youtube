@@ -1027,7 +1027,17 @@
 }
 
 /* 4. Step-by-Step Wizard Visibility Filtering inside .studio-form-card */
-.studio-form-card[data-active-wstep] > [data-wstep] {
+.studio-form-card[data-active-wstep="1"] > [data-wstep]:not([data-wstep~="1"]),
+.studio-form-card[data-active-wstep="2"] > [data-wstep]:not([data-wstep~="2"]),
+.studio-form-card[data-active-wstep="3"] > [data-wstep]:not([data-wstep~="3"]),
+.studio-form-card[data-active-wstep="4"] > [data-wstep]:not([data-wstep~="4"]),
+.studio-form-card[data-active-wstep] > [data-wstep="none"],
+.studio-form-card > .hidden,
+.studio-form-card[data-active-wstep] > [data-wstep].hidden,
+.studio-form-card[data-active-wstep] > [data-wstep][style*="display: none"],
+.studio-form-card[data-active-wstep] > [data-wstep][style*="display:none"],
+.studio-form-card > [style*="display: none"],
+.studio-form-card > [style*="display:none"] {
     display: none !important;
 }
 
@@ -1035,35 +1045,7 @@
 .studio-form-card[data-active-wstep="2"] > [data-wstep~="2"],
 .studio-form-card[data-active-wstep="3"] > [data-wstep~="3"],
 .studio-form-card[data-active-wstep="4"] > [data-wstep~="4"] {
-    display: block !important;
     animation: wizardStepFade 0.22s ease-out;
-}
-
-.studio-form-card[data-active-wstep="1"] > .form-row-2[data-wstep~="1"],
-.studio-form-card[data-active-wstep="2"] > .form-row-2[data-wstep~="2"],
-.studio-form-card[data-active-wstep="3"] > .form-row-2[data-wstep~="3"],
-.studio-form-card[data-active-wstep="4"] > .form-row-2[data-wstep~="4"],
-.studio-form-card[data-active-wstep] > #wizard-breadcrumb-chips[data-wstep] {
-    display: grid !important;
-}
-
-.studio-form-card[data-active-wstep="2"] > #studio-script-actions[data-wstep~="2"],
-.studio-form-card[data-active-wstep="2"] > #wizard-step2-topic-bar[data-wstep~="2"],
-.studio-form-card[data-active-wstep="4"] > #studio-render-actions[data-wstep~="4"],
-.studio-form-card[data-active-wstep] > .card-head[data-wstep],
-.studio-form-card[data-active-wstep] > .wizard-card-nav[data-wstep],
-.studio-form-card[data-active-wstep] > #wizard-resume-banner[data-wstep]:not(.hidden),
-.studio-form-card[data-active-wstep="1"] > #wizard-step1-quick-bar[data-wstep~="1"],
-.studio-form-card[data-active-wstep="1"] > #wizard-topic-gate-bar[data-wstep~="1"]:not(.hidden),
-.studio-form-card[data-active-wstep="1"] > #studio-ai-quota-strip[data-wstep~="1"],
-.studio-form-card[data-active-wstep="1"] > #studio-lang-selector-strip[data-wstep~="1"] {
-    display: flex !important;
-}
-
-.studio-form-card > .hidden,
-.studio-form-card > [style*="display: none"],
-.studio-form-card > [style*="display:none"] {
-    display: none !important;
 }
 
 @keyframes wizardStepFade {
@@ -5283,7 +5265,170 @@ body.density-compact .shorts-card {
     border-top: 1px solid var(--line);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   ABOVE-THE-FOLD WORKSPACE ERGONOMICS & COMPACT HEADER / TABS / HERO
+   ═══════════════════════════════════════════════════════════════════════════ */
 
+.main-content,
+main {
+    padding: 14px clamp(16px, 2.2vw, 28px) 84px;
+}
 
+.top-header {
+    gap: 12px;
+    margin-bottom: 10px;
+}
 
+.header-left h2 {
+    font-size: clamp(19px, 1.75vw, 24px);
+    line-height: 1.1;
+    margin: 0 0 2px;
+}
+
+.header-left p {
+    font-size: 11.5px;
+    max-width: 360px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.header-right,
+.stat-pill-group {
+    gap: 6px;
+}
+
+.top-header .stat-bubble,
+.top-header .header-chip,
+.top-header .btn-sm,
+.top-header .top-btn {
+    padding: 5px 9px !important;
+    font-size: 10.5px !important;
+    white-space: nowrap;
+}
+
+@media (min-width: 1280px) {
+    .top-header {
+        flex-wrap: nowrap;
+    }
+    .header-right {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+    .header-right::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+#top-workspace-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 5px;
+    margin-bottom: 10px;
+    padding-bottom: 2px;
+}
+
+#top-workspace-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+#top-workspace-tabs .top-module-tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 6px 10px;
+    font-size: 11px;
+}
+
+.quick-action-drawer {
+    margin-bottom: 10px !important;
+}
+
+#shorts-studio-hero-shell .section-strip {
+    height: 58px;
+    margin-bottom: 8px;
+}
+
+#shorts-studio-hero-shell .section-strip-copy b {
+    font-size: 13.5px;
+}
+
+#shorts-studio-hero-shell .section-strip-copy span {
+    font-size: 9.5px;
+    margin-top: 1px;
+}
+
+#studio-top-stats {
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+#studio-top-stats .stat {
+    padding: 7px 11px;
+}
+
+#studio-top-stats .stat strong {
+    font-size: 16px;
+    margin: 1px 0;
+}
+
+@media (min-width: 1180px) {
+    #shorts-studio-hero-shell {
+        display: grid;
+        grid-template-columns: minmax(280px, 1.05fr) 1.95fr;
+        gap: 10px;
+        align-items: stretch;
+        margin-bottom: 10px;
+    }
+    #shorts-studio-hero-shell .section-strip,
+    #shorts-studio-hero-shell #studio-top-stats {
+        margin-bottom: 0;
+        height: 58px;
+    }
+}
+
+#studio-flow-rail.wizard {
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+#studio-flow-rail.wizard .step {
+    padding: 8px 12px;
+}
+
+#studio-flow-rail.wizard .step h4 {
+    margin: 4px 0 2px;
+    font-size: 12px;
+}
+
+#studio-flow-rail.wizard .step p {
+    font-size: 9.5px;
+}
+
+#pane-studio .studio-form-card {
+    padding: 14px 18px;
+    gap: 8px;
+}
+
+#pane-studio .wiz-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 2px;
+}
+
+#studio-lang-selector-strip,
+#studio-script-actions,
+#studio-render-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+#wizard-resume-banner {
+    padding: 7px 12px;
+}
 

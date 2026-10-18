@@ -59,6 +59,7 @@ from .llm_scene_client import (
 )
 
 logger = logging.getLogger(__name__)
+_LAST_ROTATED_COMPLETED_COUNT: Optional[int] = None
 
 
 def generate_scenes(
@@ -71,7 +72,9 @@ def generate_scenes(
     force_regenerate: bool = False,
     enable_outro: bool = True,
     continuity_context: Optional[str] = None,
+    reddit_post: Optional[dict] = None,
 ) -> dict:
+    global _LAST_ROTATED_COMPLETED_COUNT
     lang = language or getattr(config, "LANGUAGE", "tr")
     clean_title = sanitize_topic_title(title)
     clean_continuity_context = (continuity_context or "").strip()[:4000]
@@ -79,8 +82,9 @@ def generate_scenes(
         from database import get_video_stats
         stats = get_video_stats()
         total_renders = int(stats.get("total_completed") or 0)
-        if total_renders > 0 and total_renders % 20 == 0:
+        if total_renders > 0 and total_renders % 20 == 0 and total_renders != _LAST_ROTATED_COMPLETED_COUNT:
             advance_prompt_rotation(steps=1)
+            _LAST_ROTATED_COMPLETED_COUNT = total_renders
     except Exception:
         pass
 
@@ -208,6 +212,16 @@ def generate_scenes(
 
     user_msg += _build_series_continuity_prompt(clean_continuity_context, lang)
 
+    if reddit_post and locked_niche == "2_reddit_confessions":
+        r_dict = reddit_post if isinstance(reddit_post, dict) else (reddit_post.model_dump() if hasattr(reddit_post, "model_dump") else {})
+        r_title = str(r_dict.get("title") or getattr(reddit_post, "title", "") or "").strip()[:300]
+        r_body = str(r_dict.get("body") or r_dict.get("selftext") or getattr(reddit_post, "body", "") or "").strip()[:3000]
+        if r_title or r_body:
+            if lang == "en":
+                user_msg += f"\n\nREDDIT CONFESSION CONTEXT:\nTitle: {r_title}\nBody: {r_body}\nAdapt this confession into an original 6-scene spoken script."
+            else:
+                user_msg += f"\n\nREDDIT İTİRAF BAĞLAMI:\nBaşlık: {r_title}\nGönderi: {r_body}\nBu itirafı özgün bir 6 sahnelik Türkçe anlatıma uyarla."
+
     if previous_narration and len(previous_narration.strip()) > 20:
         prev_snip = previous_narration.strip()[:400].replace('\n', ' ')
         if lang == "en":
@@ -239,6 +253,7 @@ def generate_scenes(
     providers = _configured_script_providers()
     last_error = None
     data = None
+    successful_provider_tuple = None
 
     if force_fb:
         providers = []
@@ -289,6 +304,7 @@ def generate_scenes(
                     data = None
 
             if data and _schema_valid(data):
+                successful_provider_tuple = (provider_name, api_key, base_url, model_name)
                 print(f"  [{provider_name}] OK: Senaryo basariyla uretildi")
                 break
         except Exception as e:
@@ -296,8 +312,11 @@ def generate_scenes(
             last_error = e
 
     if data and data.get("scenes") and not plan_quality_usable(data.get("scenes", [])):
-        print("  [SceneGenerator] AI plan kalitesi düşük (kısa anlatım/placeholder görsel) — prosedürel fallback devreye alınıyor.")
-        data = None
+        data["scenes"], _ = validate_and_fix_scenes(data.get("scenes", []))
+        sanitize_plan_scene_descriptions(data)
+        if not plan_quality_usable(data.get("scenes", [])):
+            print("  [SceneGenerator] AI plan kalitesi düşük (kısa anlatım/placeholder görsel) — prosedürel fallback devreye alınıyor.")
+            data = None
 
     if not data or not data.get("scenes"):
         print(
@@ -333,7 +352,8 @@ def generate_scenes(
                 "Asla yarım fiil ile bitme (ilan., et., de., ki.) veya devam fiili ile başlama (Etti, Ediyor). "
                 "Her sahne kendi başına anlamlı olmalı — fiil iki sahneye bölünmemeli."
             )
-        for provider_name, api_key, base_url, model_name in providers:
+        retry_providers = [successful_provider_tuple] if successful_provider_tuple else providers[:1]
+        for provider_name, api_key, base_url, model_name in retry_providers:
             if data.get("scenes") and not any(scene_narration_issues((s.get("narration") or "")) for s in data["scenes"]):
                 break
             print(f"  [{provider_name}] Kopuk cümle — sıkı retry")
@@ -507,5 +527,7 @@ def generate_scenes(
             "context": clean_continuity_context,
             "applied": not bool(data.get("procedural_fallback")),
         }
+    if reddit_post and locked_niche == "2_reddit_confessions":
+        data["reddit_post"] = reddit_post
 
     return sanitize_plan_scene_descriptions(data)

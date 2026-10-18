@@ -212,22 +212,6 @@ def apply_global_overlays_to_graph(
         except Exception as wave_err:
             print(f"  [FFmpegGraph] audio visualizer notice: {wave_err}", flush=True)
 
-    if ass_path and os_mod.path.exists(ass_path):
-        esc = esc_ass_fn(ass_path)
-        filter_parts.append(f"[{picture}]subtitles='{esc}'[vsub]")
-        picture = "vsub"
-
-    if enable_emphasis_card and emphasis_ass_path and os_mod.path.exists(emphasis_ass_path):
-        esc_emp = esc_ass_fn(emphasis_ass_path)
-        filter_parts.append(f"[{picture}]subtitles='{esc_emp}'[vemp]")
-        picture = "vemp"
-
-    if hook_path and hook_input is not None and os_mod.path.exists(hook_path):
-        from effects.hook_card import hook_overlay_filter
-        filter_parts.append(f"[{hook_input}:v]format=rgba[hook]")
-        filter_parts.append(hook_overlay_filter(picture, "hook", "vhook", H))
-        picture = "vhook"
-
     hybrid_spec = hybrid_render_overlay
     hybrid_info = None
     if hybrid_spec and isinstance(hybrid_spec, dict):
@@ -335,6 +319,22 @@ def apply_global_overlays_to_graph(
                 print("  [FFmpegGraph] Reddit question card overlay active", flush=True)
         except Exception as rcard_err:
             print(f"  [FFmpegGraph] Reddit card overlay notice: {rcard_err}", flush=True)
+
+    if ass_path and os_mod.path.exists(ass_path):
+        esc = esc_ass_fn(ass_path)
+        filter_parts.append(f"[{picture}]subtitles='{esc}'[vsub]")
+        picture = "vsub"
+
+    if enable_emphasis_card and emphasis_ass_path and os_mod.path.exists(emphasis_ass_path):
+        esc_emp = esc_ass_fn(emphasis_ass_path)
+        filter_parts.append(f"[{picture}]subtitles='{esc_emp}'[vemp]")
+        picture = "vemp"
+
+    if hook_path and hook_input is not None and os_mod.path.exists(hook_path):
+        from effects.hook_card import hook_overlay_filter
+        filter_parts.append(f"[{hook_input}:v]format=rgba[hook]")
+        filter_parts.append(hook_overlay_filter(picture, "hook", "vhook", H))
+        picture = "vhook"
 
     if extra_kwargs.get("enable_punch_in", False):
         try:

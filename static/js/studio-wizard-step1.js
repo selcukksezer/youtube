@@ -575,7 +575,13 @@ function initWizardStep1CategoryB() {
     document.getElementById('btn-quick-lang-en')?.addEventListener('click', () => setTimeout(updateLangVoiceSyncBadge, 30));
     document.getElementById('select-language')?.addEventListener('change', updateLangVoiceSyncBadge);
     document.getElementById('select-tts-voice')?.addEventListener('change', updateLangVoiceSyncBadge);
+    window.addEventListener('shorts:planChanged', refreshWizardStep1UI);
 
+    refreshWizardStep1UI();
+    setTimeout(refreshWizardStep1UI, 400);
+}
+
+function refreshWizardStep1UI() {
     updateTopicCounterAndHookBadge();
     renderInstantIdeaChips();
     renderRecentTopicsStrip();
@@ -583,8 +589,9 @@ function initWizardStep1CategoryB() {
     updateSubtitleLivePreview();
     updateLangVoiceSyncBadge();
     renderVisualNicheQuickCards();
-    setTimeout(renderVisualNicheQuickCards, 600);
 }
 
+window.refreshWizardStep1UI = refreshWizardStep1UI;
 window.initWizardStep1CategoryB = initWizardStep1CategoryB;
 document.addEventListener('DOMContentLoaded', initWizardStep1CategoryB);
+

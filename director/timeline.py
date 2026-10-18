@@ -298,6 +298,13 @@ def _fit_spoken_scene_count(scenes: List[ScenePlan]) -> None:
             continue
         head = group[0][0]
         head.narration = " ".join(narr for _, narr in group if narr).strip()
+        if len(group) > 1:
+            head.search_queries = list(dict.fromkeys(q for sc, _ in group for q in (sc.search_queries or []) if q))
+            if not (head.scene_description or "").strip():
+                head.scene_description = next(
+                    ((sc.scene_description or "").strip() for sc, _ in group if (sc.scene_description or "").strip()),
+                    head.scene_description,
+                )
         fitted.append(head)
     if not fitted:
         return
@@ -339,8 +346,9 @@ def _apply_word_budget(scenes: List[ScenePlan], max_words: int, min_scenes: int)
     Fit narration into TTS word budget without mid-clause shredding (Madde 494).
     Prefer dropping trailing whole sentences / end scenes before per-scene shred.
     """
+    min_scenes = max(1, int(min_scenes or 1))
     total = _scene_word_count(scenes)
-    if total <= max_words:
+    if not scenes or total <= max_words:
         return
 
     original = total
@@ -395,7 +403,7 @@ def _apply_word_budget(scenes: List[ScenePlan], max_words: int, min_scenes: int)
                 continue
             share = max(MIN_WORDS_PER_SCENE, int(round(max_words * (len(words) / tw))))
             if len(words) > share:
-                s.narration = _condense_narration(s.narration, share)
+                s.narration = _condense_narration(s.narration, share) or s.narration
 
         while _scene_word_count(scenes) > max_words:
             dropped = _drop_trailing_sentences_from_end(

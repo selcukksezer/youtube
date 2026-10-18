@@ -139,7 +139,7 @@ def narration_rate_for_segment(
     rate = _compose_rate(seg_rate, config.TTS_RATE)
     if (segment or {}).get("style") == "hook" or index == 0:
         base_pct = _parse_rate_pct(rate)
-        rate = f"+{min(100, base_pct + 35)}%"
+        rate = f"+{max(base_pct, min(40, base_pct + 12))}%"
     elif _segment_has_emphasis(plain_text or (segment or {}).get("text") or ""):
         base_pct = _parse_rate_pct(rate)
         rate = f"+{min(100, base_pct + 8)}%"
@@ -271,6 +271,9 @@ def _segment_has_emphasis(text: str) -> bool:
     return bool(words & emphasis)
 
 
+_CORO_POOL = None
+
+
 def _run_coro(coro):
     """Run async TTS safely from sync worker threads (and nested loop cases)."""
     try:
@@ -278,8 +281,10 @@ def _run_coro(coro):
     except RuntimeError:
         return asyncio.run(coro)
     import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coro).result()
+    global _CORO_POOL
+    if _CORO_POOL is None or getattr(_CORO_POOL, "_shutdown", False):
+        _CORO_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    return _CORO_POOL.submit(asyncio.run, coro).result()
 
 
 async def _tts(text, mp3_path, rate=None, volume=None, pitch=None):

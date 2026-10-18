@@ -27,8 +27,8 @@ def _ffprobe_duration(path: str) -> float:
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
         subp = _pa_attr("subprocess", subprocess)
         r = subp.run(
-            [ffmpeg, "-i", path, "-f", "null", "-"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+            [ffmpeg, "-i", path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20,
         )
         stderr = r.stderr.decode("utf-8", errors="ignore") if r.stderr else ""
         m = re.search(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)", stderr)

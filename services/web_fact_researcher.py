@@ -48,26 +48,15 @@ def extract_search_keywords(topic: str) -> str:
     norm = topic.lower()
 
     fillers = [
-        r"bunu neden daha once almadim",
-        r"bunu neden daha önce almadım",
-        r"hayatinizi kolaylastiracak",
-        r"hayatınızı kolaylaştıracak",
-        r"diyeceginiz",
-        r"diyeceğiniz",
-        r"mutlaka bilmeniz gereken",
-        r"kimsenin bilmedigi",
-        r"kimsenin bilmediği",
-        r"sok edici",
-        r"şok edici",
-        r"inanilmaz",
-        r"inanılmaz",
-        r"en iyi",
-        r"top \d+",
+        r"bunu neden daha once almadim", r"bunu neden daha önce almadım",
+        r"hayatinizi kolaylastiracak", r"hayatınızı kolaylaştıracak",
+        r"diyeceginiz", r"diyeceğiniz", r"mutlaka bilmeniz gereken",
+        r"kimsenin bilmedigi", r"kimsenin bilmediği", r"sok edici",
+        r"şok edici", r"inanilmaz", r"inanılmaz", r"en iyi", r"top \d+",
     ]
     for pattern in fillers:
         norm = re.sub(pattern, " ", norm)
 
-    # Remove quotes, punctuation
     cleaned = re.sub(r"[^\w\s]", " ", norm)
     tokens = [w.strip() for w in cleaned.split() if len(w.strip()) > 1 and w.strip() not in ("ve", "ile", "de", "da", "ki")]
     if tokens:
@@ -75,24 +64,23 @@ def extract_search_keywords(topic: str) -> str:
     return re.sub(r"[^\w\s]", " ", norm).strip()[:60] or topic[:60]
 
 
-_fact_cache: dict[str, tuple[float, List[str]]] = {}
-_FACT_CACHE_TTL = 600.0
+_FACT_CACHE: dict[tuple[str, int], list] = {}
+_fact_cache = _FACT_CACHE
+_FACT_CACHE_MAX_ENTRIES = 128
 _ddg_cooldown_until: float = 0.0
 _DDG_COOLDOWN_SEC = 900.0
 
 
 def _is_requests_mocked() -> bool:
-    for fn in (getattr(requests, "post", None), getattr(requests, "get", None)):
-        if fn is None:
-            continue
-        if hasattr(fn, "_mock_name") or "unittest.mock" in type(fn).__module__:
+    for fn in (getattr(requests, "get", None), getattr(requests, "post", None)):
+        if fn is not None and (hasattr(fn, "_mock_name") or "mock" in type(fn).__module__.lower()):
             return True
     return False
 
 
 def research_topic_facts(
     topic: str,
-    max_snippets: int = 6,
+    max_snippets: int = 4,
     timeout_sec: float = 2.0,
 ) -> List[str]:
     """
@@ -100,6 +88,7 @@ def research_topic_facts(
     Returns list of short factual snippets (no prompt injection, truncated to 250 chars).
     """
     global _ddg_cooldown_until
+    import os
     import time
 
     query = extract_search_keywords(topic)
@@ -107,12 +96,12 @@ def research_topic_facts(
         return []
 
     mocked = _is_requests_mocked()
-    cache_key = f"{query.casefold()}:{max_snippets}"
+    cache_key: tuple[str, int] = (query.casefold(), int(max_snippets))
     now = time.time()
-    if not mocked:
-        cached = _fact_cache.get(cache_key)
-        if cached and (now - cached[0]) < _FACT_CACHE_TTL:
-            return list(cached[1][:max_snippets])
+    if not mocked and cache_key in _FACT_CACHE:
+        cached = _FACT_CACHE[cache_key]
+        if isinstance(cached, list):
+            return list(cached[:max_snippets])
 
     url = "https://html.duckduckgo.com/html/"
     headers = {
@@ -124,25 +113,16 @@ def research_topic_facts(
         "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
     }
 
-    import os
     clean_snippets: List[str] = []
     skip_ddg = (not mocked) and (now < _ddg_cooldown_until or bool(os.environ.get("PYTEST_CURRENT_TEST")))
     if not skip_ddg:
         try:
-            resp = requests.post(
-                url,
-                data={"q": query},
-                headers=headers,
-                timeout=timeout_sec,
-            )
+            resp = requests.post(url, data={"q": query}, headers=headers, timeout=timeout_sec)
             if resp.status_code == 200 and resp.text:
                 parser = _DDGHTMLParser()
                 parser.feed(resp.text)
-                clean_snippets = []
                 for s in parser.snippets:
-                    # Remove URLs, bold marks, sanitization
-                    s_clean = re.sub(r"https?://\S+", "", s)
-                    s_clean = re.sub(r"<[^>]+>", "", s_clean).strip()
+                    s_clean = re.sub(r"<[^>]+>", "", re.sub(r"https?://\S+", "", s)).strip()
                     if len(s_clean) >= 25:
                         clean_snippets.append(s_clean[:250])
                     if len(clean_snippets) >= max_snippets:
@@ -153,7 +133,6 @@ def research_topic_facts(
                 _ddg_cooldown_until = time.time() + _DDG_COOLDOWN_SEC
                 skip_ddg = True
 
-    # Fallback 1: DuckDuckGo Lite
     if not clean_snippets and not skip_ddg:
         try:
             clean_snippets = _query_duckduckgo_lite(query, max_results=max_snippets)
@@ -162,7 +141,6 @@ def research_topic_facts(
             if not mocked and ("timed out" in str(exc).lower() or "timeout" in str(exc).lower()):
                 _ddg_cooldown_until = time.time() + _DDG_COOLDOWN_SEC
 
-    # Fallback 2: Wikipedia API (0 TL, kesintisiz ansiklopedik doğrulama)
     if not clean_snippets:
         try:
             clean_snippets = _query_wikipedia_snippets(query, lang="tr", max_results=max_snippets)
@@ -173,7 +151,9 @@ def research_topic_facts(
 
     result = clean_snippets[:max_snippets]
     if not mocked:
-        _fact_cache[cache_key] = (time.time(), list(result))
+        if len(_FACT_CACHE) >= _FACT_CACHE_MAX_ENTRIES and cache_key not in _FACT_CACHE:
+            _FACT_CACHE.pop(next(iter(_FACT_CACHE)), None)
+        _FACT_CACHE[cache_key] = list(result)
     return result
 
 
@@ -244,47 +224,22 @@ def extract_claims_from_text(text: str) -> List[dict]:
     if not text:
         return claims
 
-    # 1. Yüzdelik iddialar (%99, yüzde 80, % 50)
     pct_matches = re.finditer(r"(?:%\s*(\d+(?:[.,]\d+)?)|(?:yüzde|percent)\s*(\d+(?:[.,]\d+)?))", text, flags=re.I)
     for m in pct_matches:
         val = m.group(1) or m.group(2)
-        claims.append({
-            "type": "percentage",
-            "raw_match": m.group(0),
-            "value": val,
-            "sentence": text,
-        })
+        claims.append({"type": "percentage", "raw_match": m.group(0), "value": val, "sentence": text})
 
-    # 2. Yıllar ve tarihler (1800-2099 arası 4 basamaklı yıllar)
     year_matches = re.finditer(r"\b(1[4-9]\d{2}|20[0-2]\d)\b(?:\s*(?:yılında|senesinde|yılı|tarihinde|yıllarında))?", text, flags=re.I)
     for m in year_matches:
-        val = m.group(1)
-        claims.append({
-            "type": "year",
-            "raw_match": m.group(0),
-            "value": val,
-            "sentence": text,
-        })
+        claims.append({"type": "year", "raw_match": m.group(0), "value": m.group(1), "sentence": text})
 
-    # 3. Sayısal büyüklükler (milyon, milyar, bin, kat)
     metric_matches = re.finditer(r"\b(\d+(?:[.,]\d+)?)\s*(milyon|milyar|trilyon|bin|kat|katı|metre|kilometre|derece)\b", text, flags=re.I)
     for m in metric_matches:
-        claims.append({
-            "type": "metric",
-            "raw_match": m.group(0),
-            "value": f"{m.group(1)} {m.group(2)}",
-            "sentence": text,
-        })
+        claims.append({"type": "metric", "raw_match": m.group(0), "value": f"{m.group(1)} {m.group(2)}", "sentence": text})
 
-    # 4. Mutlak / süperlatif iddialar (tarihteki tek, asla, dünyadaki tek)
     super_matches = re.finditer(r"\b(tarihteki tek|dünyadaki tek|asla bozulmayan|tamamı|hiçbir zaman)\b", text, flags=re.I)
     for m in super_matches:
-        claims.append({
-            "type": "superlative",
-            "raw_match": m.group(0),
-            "value": m.group(1),
-            "sentence": text,
-        })
+        claims.append({"type": "superlative", "raw_match": m.group(0), "value": m.group(1), "sentence": text})
 
     return claims
 
@@ -305,46 +260,17 @@ def cross_verify_claim(claim: dict, topic: str = "", web_snippets: Optional[List
     snippets_text = " ".join(web_snippets).lower()
 
     if not web_snippets:
-        return {
-            **claim,
-            "status": "unchecked",
-            "confidence": 0.0,
-            "note": "Kaynak yok; iddia silinmedi.",
-        }
+        return {**claim, "status": "unchecked", "confidence": 0.0, "note": "Kaynak yok; iddia silinmedi."}
 
     if claim_type == "percentage":
-        if re.search(
-            rf"(?:%|yüzde|percent)\s*{re.escape(val)}\b|\b{re.escape(val)}\s*%",
-            snippets_text,
-            flags=re.IGNORECASE,
-        ):
-            return {
-                **claim,
-                "status": "verified",
-                "confidence": 0.95,
-                "note": "Yüzde web kaynağında geçiyor.",
-            }
-        return {
-            **claim,
-            "status": "unverified",
-            "confidence": 0.30,
-            "note": "Yüzde web kaynaklarında yok.",
-        }
+        if re.search(rf"(?:%|yüzde|percent)\s*{re.escape(val)}\b|\b{re.escape(val)}\s*%", snippets_text, flags=re.IGNORECASE):
+            return {**claim, "status": "verified", "confidence": 0.95, "note": "Yüzde web kaynağında geçiyor."}
+        return {**claim, "status": "unverified", "confidence": 0.30, "note": "Yüzde web kaynaklarında yok."}
 
     if claim_type == "year":
         if val and re.search(rf"\b{re.escape(val)}\b", snippets_text):
-            return {
-                **claim,
-                "status": "verified",
-                "confidence": 0.95,
-                "note": "Yıl web kaynağında geçiyor.",
-            }
-        return {
-            **claim,
-            "status": "unverified",
-            "confidence": 0.30,
-            "note": "Yıl web kaynaklarında yok.",
-        }
+            return {**claim, "status": "verified", "confidence": 0.95, "note": "Yıl web kaynağında geçiyor."}
+        return {**claim, "status": "unverified", "confidence": 0.30, "note": "Yıl web kaynaklarında yok."}
 
     if claim_type == "metric":
         parts = val.split()
@@ -352,48 +278,18 @@ def cross_verify_claim(claim: dict, topic: str = "", web_snippets: Optional[List
         unit = parts[-1] if len(parts) > 1 else ""
         flat = snippets_text.replace(".", "").replace(",", "")
         if number and number in flat and (not unit or unit in snippets_text):
-            return {
-                **claim,
-                "status": "verified",
-                "confidence": 0.95,
-                "note": "Sayı ve birim web kaynağında geçiyor.",
-            }
-        return {
-            **claim,
-            "status": "unverified",
-            "confidence": 0.30,
-            "note": "Sayısal büyüklük web kaynaklarında yok.",
-        }
+            return {**claim, "status": "verified", "confidence": 0.95, "note": "Sayı ve birim web kaynağında geçiyor."}
+        return {**claim, "status": "unverified", "confidence": 0.30, "note": "Sayısal büyüklük web kaynaklarında yok."}
 
     if claim_type == "superlative":
         if raw and raw in snippets_text:
-            return {
-                **claim,
-                "status": "verified",
-                "confidence": 0.95,
-                "note": "İfade web kaynağında geçiyor.",
-            }
-        return {
-            **claim,
-            "status": "unverified",
-            "confidence": 0.30,
-            "note": "Mutlak iddia web kaynaklarında yok.",
-        }
+            return {**claim, "status": "verified", "confidence": 0.95, "note": "İfade web kaynağında geçiyor."}
+        return {**claim, "status": "unverified", "confidence": 0.30, "note": "Mutlak iddia web kaynaklarında yok."}
 
     if val and (val in snippets_text or raw in snippets_text):
-        return {
-            **claim,
-            "status": "verified",
-            "confidence": 0.95,
-            "note": "Web kaynaklarında doğrudan teyit edildi.",
-        }
+        return {**claim, "status": "verified", "confidence": 0.95, "note": "Web kaynaklarında doğrudan teyit edildi."}
 
-    return {
-        **claim,
-        "status": "unverified",
-        "confidence": 0.40,
-        "note": "Web kaynaklarında teyit edilemeyen iddia.",
-    }
+    return {**claim, "status": "unverified", "confidence": 0.40, "note": "Web kaynaklarında teyit edilemeyen iddia."}
 
 
 def sanitize_unverified_claims(narration: str, claims: List[dict] = None, lang: str = "tr") -> tuple[str, List[dict]]:

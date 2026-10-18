@@ -85,29 +85,39 @@ def process_video_task(req: VideoRenderRequest, *, reset_cancel_request: bool = 
     and post-render quality gate.
     """
     old_stdout = sys.stdout
+    while isinstance(old_stdout, state.SSELogStreamer):
+        next_out = getattr(old_stdout, "terminal", None) or getattr(
+            old_stdout, "original_stdout", None
+        )
+        if next_out is None or next_out is old_stdout:
+            break
+        old_stdout = next_out
     sys.stdout = state.SSELogStreamer(old_stdout)
     db_id = None
     render_job_prefix = ""
-    orig_lang = config.LANGUAGE
-    orig_voice = config.TTS_VOICE
-    orig_rate = config.TTS_RATE
-    orig_sacred = bool(getattr(config, "TTS_SACRED_CALM", False))
+    _orig_config = {
+        "LANGUAGE": getattr(config, "LANGUAGE", "tr"),
+        "TTS_VOICE": getattr(config, "TTS_VOICE", None),
+        "TTS_RATE": getattr(config, "TTS_RATE", "+0%"),
+        "TTS_SACRED_CALM": bool(getattr(config, "TTS_SACRED_CALM", False)),
+        "RENDER_RESOLUTION_MODE": getattr(config, "RENDER_RESOLUTION_MODE", "1080p"),
+    }
     gate_context = None
-    slot_acquired = False
+    gate_entered = False
     sm = None
     keyword = getattr(req, "keyword", None) or "Video"
+    task_id = getattr(req, "task_id", None) or f"task_{int(time.time()*1000)}"
     gameplay_path = None
     render_outcome = "failed"
 
     def check_cancelled():
-        if state.current_render_state.get("cancel_requested"):
+        if state.current_render_state.get("cancel_requested", False) or state.is_task_cancelled(task_id):
             raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
     try:
         from render.render_limits import GLOBAL_RENDER_GATE
         from services.structured_logger import get_structured_logger
 
-        task_id = getattr(req, "task_id", None) or f"task_{int(time.time()*1000)}"
         slogger = get_structured_logger(
             "render_worker", task_id=task_id, niche=req.niche, topic=req.keyword
         )
@@ -122,7 +132,7 @@ def process_video_task(req: VideoRenderRequest, *, reset_cancel_request: bool = 
             task_id=task_id, timeout=180.0
         )
         gate_context.__enter__()
-        slot_acquired = True
+        gate_entered = True
         slogger.info(
             "Render donanım slotu tahsis edildi",
             extra={"active_renders": GLOBAL_RENDER_GATE.active_count},
@@ -136,6 +146,18 @@ def process_video_task(req: VideoRenderRequest, *, reset_cancel_request: bool = 
         state.current_render_state["video_url"] = None
         state.current_render_state["percent"] = 0
         state.current_render_state["step"] = "Başlatılıyor"
+        state.register_task_state(
+            task_id,
+            {
+                "is_rendering": True,
+                "cancel_requested": False
+                if reset_cancel_request
+                else bool(state.current_render_state.get("cancel_requested", False)),
+                "keyword": keyword,
+                "percent": 0,
+                "step": "Başlatılıyor",
+            },
+        )
         check_cancelled()
 
         (
@@ -247,7 +269,8 @@ def process_video_task(req: VideoRenderRequest, *, reset_cancel_request: bool = 
                 target_duration=12,
                 cancel_check=lambda: state.current_render_state.get(
                     "cancel_requested", False
-                ),
+                )
+                or state.is_task_cancelled(task_id),
             )
             if not gameplay_path:
                 state.broadcast_event(
@@ -265,7 +288,8 @@ def process_video_task(req: VideoRenderRequest, *, reset_cancel_request: bool = 
                     preferred_source="pexels",
                     cancel_check=lambda: state.current_render_state.get(
                         "cancel_requested", False
-                    ),
+                    )
+                    or state.is_task_cancelled(task_id),
                     allow_custom=False,
                 )
             if not gameplay_path:
@@ -450,7 +474,7 @@ def process_video_task(req: VideoRenderRequest, *, reset_cancel_request: bool = 
         notify_render_error(keyword, str(e), log_snippet=tb[-600:])
         render_outcome = "failed"
     finally:
-        if slot_acquired and gate_context is not None:
+        if gate_entered and gate_context is not None:
             try:
                 gate_context.__exit__(None, None, None)
             except Exception:
@@ -459,13 +483,15 @@ def process_video_task(req: VideoRenderRequest, *, reset_cancel_request: bool = 
             _sweep_render_temp_files(render_job_prefix)
         except Exception:
             pass
+        state.clear_task_state(task_id)
         state.current_render_state["cancel_requested"] = False
         state.current_render_state["cancel_notified"] = False
         state.current_render_state["is_rendering"] = False
         state.is_rendering_active = False
-        config.LANGUAGE = orig_lang
-        config.TTS_VOICE = orig_voice
-        config.TTS_RATE = orig_rate
-        config.TTS_SACRED_CALM = orig_sacred
+        config.LANGUAGE = _orig_config["LANGUAGE"]
+        config.TTS_VOICE = _orig_config["TTS_VOICE"]
+        config.TTS_RATE = _orig_config["TTS_RATE"]
+        config.TTS_SACRED_CALM = _orig_config["TTS_SACRED_CALM"]
+        config.RENDER_RESOLUTION_MODE = _orig_config["RENDER_RESOLUTION_MODE"]
         sys.stdout = old_stdout
     return render_outcome

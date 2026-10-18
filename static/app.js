@@ -99,6 +99,7 @@ function initShortsStudioDesignAndWizard() {
     if (formCard && !formCard.hasAttribute('data-active-wstep')) {
         formCard.classList.add('wizard-card');
         Array.from(formCard.children).forEach((child) => {
+            if (child.hasAttribute('data-wstep')) return;
             const id = child.id || '';
             if (child.classList.contains('card-header') || child.classList.contains('box-header') || id === 'studio-ai-quota-strip') {
                 child.setAttribute('data-wstep', 'none');
@@ -123,7 +124,7 @@ function initShortsStudioDesignAndWizard() {
                 child.style.order = '8';
             } else if (id === 'studio-render-settings' || id === 'render-enhancement-options') {
                 child.setAttribute('data-wstep', '3');
-            } else if (id === 'studio-quality-panel' || id === 'studio-render-actions' || id === 'btn-new-topic') {
+            } else if (id === 'studio-quality-panel' || id === 'studio-render-actions' || id === 'btn-new-topic' || id === 'wiz-step4-render-estimator' || id === 'wiz-step4-stage-stepper') {
                 child.setAttribute('data-wstep', '4');
             } else {
                 child.setAttribute('data-wstep', '1');
@@ -391,7 +392,7 @@ function initShortsStudioDesignAndWizard() {
         }
     });
 
-    setStudioWizardStep(1, { force: true });
+    setStudioWizardStep(1, { force: true, init: true });
     animateStats(studioPane);
 }
 
@@ -402,7 +403,7 @@ function checkWizardResumeBanner() {
     try { savedStep = Number(localStorage.getItem(WIZARD_STORAGE_STEP_KEY) || 1); } catch (e) {}
     const topicVal = (document.getElementById('input-topic')?.value || '').trim();
     const hasPlan = isCurrentTopicPlanReady();
-    if (!topicVal && !hasPlan) {
+    if ((!hasPlan && savedStep <= 1) || (!topicVal && !hasPlan)) {
         banner.classList.add('hidden');
         return;
     }
@@ -490,8 +491,11 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {}
     try { updateScriptActionButtons(); } catch (e) {}
     try { checkWizardResumeBanner(); } catch (e) {}
+    try { if (typeof window.refreshWizardStep1UI === 'function') window.refreshWizardStep1UI(); } catch (e) {}
+    try { if (typeof window.syncWizardStep2Preview === 'function') window.syncWizardStep2Preview(); } catch (e) {}
     try { updateLoopBridge('stoic', inputTopic ? inputTopic.value : ''); } catch (e) {}
     try { updateAiQuotaDisplay(); } catch (e) {}
     try { if (typeof window.loadHardwareSpecs === 'function') window.loadHardwareSpecs(); } catch (e) {}
     setInterval(updateAiQuotaDisplay, 30000);
 });
+

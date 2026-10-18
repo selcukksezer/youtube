@@ -33,14 +33,8 @@ from render.subtitle_ass_builder import (
 
 # ─── ITEM 107: Altyazı Yazı Tipi Rotasyonu ──────────────────────────────────
 SUBTITLE_FONT_POOL = [
-    "Anton",
-    "Outfit",
-    "Poppins",
-    "Bebas Neue",
-    "Montserrat",
-    "Oswald",
-    "Rajdhani",
-    "Barlow Condensed",
+    "Anton", "Outfit", "Poppins", "Bebas Neue",
+    "Montserrat", "Oswald", "Rajdhani", "Barlow Condensed",
 ]
 
 _SESSION_FONT: str = random.choice(SUBTITLE_FONT_POOL)
@@ -55,17 +49,25 @@ _SESSION_SHADOW_Y: float = round(_SESSION_SHADOW_DEPTH * _math.sin(_SHADOW_RAD),
 
 def get_session_shadow_params() -> dict:
     """Item 116 – Altyazı Gölge Parametreleri."""
-    return {
-        "depth": _SESSION_SHADOW_DEPTH,
-        "angle": _SESSION_SHADOW_ANGLE,
-        "shadow_x": _SESSION_SHADOW_X,
-        "shadow_y": _SESSION_SHADOW_Y,
-    }
+    return {"depth": _SESSION_SHADOW_DEPTH, "angle": _SESSION_SHADOW_ANGLE, "shadow_x": _SESSION_SHADOW_X, "shadow_y": _SESSION_SHADOW_Y}
 
 
 def get_session_subtitle_font(override: str = None) -> str:
     """Item 107 – Altyazı Yazı Tipi Rotasyonu."""
     return override if override else _SESSION_FONT
+
+
+def rotate_session_subtitle_style(seed: Optional[str] = None) -> dict:
+    """Rotate session-level subtitle font and drop-shadow parameters per render job."""
+    global _SESSION_FONT, _SESSION_SHADOW_DEPTH, _SESSION_SHADOW_ANGLE, _SHADOW_RAD, _SESSION_SHADOW_X, _SESSION_SHADOW_Y
+    rng = random.Random(seed) if seed is not None else random
+    _SESSION_FONT = rng.choice(SUBTITLE_FONT_POOL)
+    _SESSION_SHADOW_DEPTH = round(rng.uniform(1.5, 3.5), 1)
+    _SESSION_SHADOW_ANGLE = rng.randint(135, 225)
+    _SHADOW_RAD = _math.radians(_SESSION_SHADOW_ANGLE)
+    _SESSION_SHADOW_X = round(_SESSION_SHADOW_DEPTH * _math.cos(_SHADOW_RAD), 2)
+    _SESSION_SHADOW_Y = round(_SESSION_SHADOW_DEPTH * _math.sin(_SHADOW_RAD), 2)
+    return {"font": _SESSION_FONT, **get_session_shadow_params()}
 
 
 _STYLE_TOKEN_PATH = os.path.join(
@@ -232,6 +234,17 @@ def _probe_audio_duration_sec(audio_path: str) -> float:
     """FFmpeg duration parse for subtitle drift guard (Items 413/184)."""
     if not audio_path or not os.path.isfile(audio_path):
         return 0.0
+    if audio_path.lower().endswith(".wav"):
+        try:
+            import wave
+            with wave.open(audio_path, "rb") as wf:
+                rate = float(wf.getframerate() or 0)
+                if rate > 0:
+                    dur = wf.getnframes() / rate
+                    if dur > 0:
+                        return dur
+        except Exception:
+            pass
     try:
         import subprocess
         import imageio_ffmpeg
@@ -329,10 +342,17 @@ def snap_script_to_whisper(script: list, whisper_words: list) -> list:
         if not key:
             continue
         found = None
-        for j in range(wi, min(wi + 4, len(heard))):
+        window_end = min(wi + 8, len(heard))
+        for j in range(wi, window_end):
             if _norm_word(heard[j].get("text")) == key:
                 found = j
                 break
+        if found is None and len(key) >= 4:
+            for j in range(wi, window_end):
+                h_norm = _norm_word(heard[j].get("text"))
+                if len(h_norm) >= 4 and (h_norm.startswith(key[:4]) or key.startswith(h_norm[:4])):
+                    found = j
+                    break
         if found is None:
             continue
         anchors[i] = heard[found]

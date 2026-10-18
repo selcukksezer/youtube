@@ -333,6 +333,8 @@ async function applyNicheProfile(nicheId) {
         if (gapField && Array.isArray(profile.content_gap_examples) && profile.content_gap_examples.length) {
             gapField.placeholder = profile.content_gap_examples.map(line => `Örn: ${line}`).join('\n');
         }
+        if (typeof window.refreshWizardStep1UI === 'function') window.refreshWizardStep1UI();
+        if (typeof window.syncWizardStep2Preview === 'function') window.syncWizardStep2Preview();
     } catch (error) {
         profileBox.textContent = 'Niş üretim profili yüklenemedi.';
         profileBox.classList.remove('hidden');

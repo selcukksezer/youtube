@@ -105,26 +105,22 @@ def run_post_render_and_packaging_stage(
             json.dump(_post_audit, _paf, ensure_ascii=False, indent=2)
         if not _post_audit["ok"]:
             _post_blocking = [
-                e
-                for e in (_post_audit.get("errors") or [])
-                if "av_sync_error" in e
-                or "video_too_short" in e
-                or "no_video_stream" in e
-                or "output_too_small" in e
+                e for e in (_post_audit.get("errors") or [])
+                if any(k in e for k in ("av_sync_error", "video_too_short", "no_video_stream", "output_too_small"))
             ]
             if _post_blocking:
                 _msg = f"Post-render audit kalite uyarısı: {'; '.join(_post_blocking)}"
-                if not os.path.exists(result) or os.path.getsize(result) < 1000:
+                _critical_post = any(
+                    "no_video_stream" in e or "output_too_small" in e for e in _post_blocking
+                ) or bool(getattr(config, "STRICT_AUDIT_GATE", False))
+                if _critical_post or not os.path.exists(result) or os.path.getsize(result) < 1000:
                     log_fn(f"[PipelineAudit] HARD-FAIL: {_msg} (Çıktı dosyası geçersiz)", 97)
                     if db_id:
                         database.update_video_status(db_id, "failed", error_message=_msg)
                     state.broadcast_event("error", _msg)
                     return "failed"
                 else:
-                    log_fn(
-                        f"[PipelineAudit] UYARI: {_msg} (Video dosyası başarıyla üretildi)",
-                        97,
-                    )
+                    log_fn(f"[PipelineAudit] UYARI: {_msg} (Video dosyası başarıyla üretildi)", 97)
     except Exception as _post_audit_err:
         log_fn(f"[PipelineAudit] post-audit skip: {_post_audit_err}")
 
@@ -135,17 +131,20 @@ def run_post_render_and_packaging_stage(
         if not preflight.get("valid", False):
             pf_errs = preflight.get("errors", [])
             msg = f"MP4 Preflight Bütünlük Uyarısı: {'; '.join(pf_errs)}"
-            if not os.path.exists(result) or os.path.getsize(result) < 1000:
+            _pf_no_video = "no_video_stream" in pf_errs or any(
+                "no_video_stream" in str(e) or "Missing video stream" in str(e) for e in pf_errs
+            )
+            _strict_pf_fail = bool(
+                getattr(config, "STRICT_AUDIT_GATE", False) and preflight.get("width", 0) == 0 and _pf_no_video
+            )
+            if _strict_pf_fail or not os.path.exists(result) or os.path.getsize(result) < 1000:
                 log_fn(f"[VideoPreflight] HARD-FAIL: {msg}", 97)
                 if db_id:
                     database.update_video_status(db_id, "failed", error_message=msg)
                 state.broadcast_event("error", msg)
                 return "failed"
             else:
-                log_fn(
-                    f"[VideoPreflight] UYARI: {msg} (Video dosyası mevcut, devam ediliyor)",
-                    97,
-                )
+                log_fn(f"[VideoPreflight] UYARI: {msg} (Video dosyası mevcut, devam ediliyor)", 97)
         log_fn(
             f"[VideoPreflight] Doğrulandı: {preflight.get('width')}x{preflight.get('height')} "
             f"@ {preflight.get('duration')}s (Ses: {preflight.get('has_audio')})",
@@ -195,25 +194,33 @@ def run_post_render_and_packaging_stage(
             return "failed"
 
     size_mb = round(os.path.getsize(result) / (1024 * 1024), 2)
-    total_dur = sum(c["duration"] for c in clips)
+    clips_dur = sum(float(c.get("duration", 0)) for c in clips)
+    actual_dur = float(
+        post.get("video_duration")
+        or ((_post_audit.get("report") or {}).get("video_duration"))
+        or 0.0
+    )
+    total_dur = round(actual_dur, 2) if actual_dur > 0 else clips_dur
 
-    try:
-        from services.video_title_ideas import generate_video_title_ideas
+    title_ideas = None
+    if getattr(config, "ENABLE_POST_RENDER_TITLE_IDEAS", True) and not seo_meta.get("title_ideas"):
+        try:
+            from services.video_title_ideas import generate_video_title_ideas
 
-        title_ideas = generate_video_title_ideas(
-            result,
-            keyword=keyword,
-            script_context=script_text,
-            current_title=str(seo_meta.get("seo_title") or keyword),
-            language=target_lang,
-        )
-    except (ImportError, OSError, TypeError, ValueError) as title_err:
-        title_ideas = None
-        log_fn(
-            f"[TitleIdeas] Optional title analysis failed "
-            f"({type(title_err).__name__}); keeping existing SEO title.",
-            95,
-        )
+            title_ideas = generate_video_title_ideas(
+                result,
+                keyword=keyword,
+                script_context=script_text,
+                current_title=str(seo_meta.get("seo_title") or keyword),
+                language=target_lang,
+            )
+        except (ImportError, OSError, TypeError, ValueError) as title_err:
+            title_ideas = None
+            log_fn(
+                f"[TitleIdeas] Optional title analysis failed "
+                f"({type(title_err).__name__}); keeping existing SEO title.",
+                95,
+            )
     if title_ideas:
         seo_meta["title_ideas"] = title_ideas
         try:
@@ -272,6 +279,35 @@ def run_post_render_and_packaging_stage(
 
     proof_filename = f"{os.path.splitext(os.path.basename(result))[0]}_proof.json"
     proof_full_path = os.path.join(config.BASE_DIR, "proofs", proof_filename)
+    if not os.path.exists(proof_full_path):
+        try:
+            from proof_archiver import archive_render_proof
+
+            archive_render_proof(
+                video_path=result,
+                title=seo_meta.get("seo_title") or keyword,
+                scene_clips=clips,
+                retention_metadata=(
+                    (plan or {}).get("retention_metadata") if isinstance(plan, dict) else None
+                ),
+            )
+        except Exception:
+            try:
+                os.makedirs(os.path.dirname(proof_full_path), exist_ok=True)
+                with open(proof_full_path, "w", encoding="utf-8") as _pf:
+                    json.dump(
+                        {
+                            "video_filename": os.path.basename(result),
+                            "title": seo_meta.get("seo_title") or keyword,
+                            "scenes_count": len(clips),
+                            "total_duration": total_dur,
+                        },
+                        _pf,
+                        ensure_ascii=False,
+                        indent=2,
+                    )
+            except OSError:
+                pass
     proof_url = f"/proofs/{proof_filename}" if os.path.exists(proof_full_path) else None
 
     thumb_path = os.path.join(output_root, f"{safe}_thumb.jpg")

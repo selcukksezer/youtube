@@ -13,6 +13,7 @@ from subtitle_generator import (
     SUBTITLE_PRESETS,
     merge_studio_subtitle_opts,
     resolve_ab_subtitle_preset,
+    rotate_session_subtitle_style,
 )
 from .pipeline_state_machine import PipelineStage
 
@@ -178,9 +179,17 @@ def select_and_master_bgm_audio(
             intro_blast=mix_cfg["intro_blast"],
             outro_swell_sec=mix_cfg["outro_swell_sec"],
         )
-        if director.effect_manifest.get("item_112_whoosh_ding", False) and timings:
-            for wt in timings:
-                wt["offset"] = wt.get("offset", 0.0) + 0.2
+        if (
+            director.effect_manifest.get("item_112_whoosh_ding", False)
+            and timings
+            and not any(wt.get("_whoosh_shifted") for wt in timings if isinstance(wt, dict))
+        ):
+            timings = [
+                {**wt, "offset": round(float(wt.get("offset", 0.0)) + 0.2, 4), "_whoosh_shifted": True}
+                if isinstance(wt, dict)
+                else wt
+                for wt in timings
+            ]
         if audio_path and os.path.isfile(audio_path):
             sm.mark_done(
                 PipelineStage.STAGE_7_AUDIO_MASTERING,
@@ -254,6 +263,7 @@ def build_seo_and_subtitle_options(
         config.RENDER_RESOLUTION_MODE = "1080p"
         log_fn("[FFmpegGraph] Çözünürlük: 1080p (1080x1920) — final varsayılan")
 
+    rotate_session_subtitle_style()
     sub_opts: Dict[str, Any] = {}
     sm.transition_to(
         PipelineStage.STAGE_8_SUBTITLE_COMPILE,
@@ -261,9 +271,10 @@ def build_seo_and_subtitle_options(
         pct=76.0,
     )
     preset_locked = bool(req.subtitle_preset and req.subtitle_preset in SUBTITLE_PRESETS)
+    active_preset_name = req.subtitle_preset if preset_locked else ""
     if preset_locked:
         sub_opts = merge_studio_subtitle_opts(
-            req.subtitle_preset,
+            active_preset_name,
             font_size=req.subtitle_font_size,
             y_position=req.subtitle_y_position,
             color=req.subtitle_color,
@@ -272,13 +283,23 @@ def build_seo_and_subtitle_options(
     elif not req.subtitle_color and not req.subtitle_highlight_color:
         ab_opts = resolve_ab_subtitle_preset(final_variation_attempt, keyword)
         if ab_opts:
-            sub_opts.update({k: v for k, v in ab_opts.items() if k != "ab_test_variant"})
+            clean_ab = {k: v for k, v in ab_opts.items() if k != "ab_test_variant"}
+            sub_opts.update(clean_ab)
+            active_preset_name = next(
+                (k for k, v in SUBTITLE_PRESETS.items() if v == clean_ab),
+                "red_fire",
+            )
         else:
             from subtitle_generator import get_niche_subtitle_preset
 
-            sub_opts.update(get_niche_subtitle_preset(locked_niche))
+            niche_preset = get_niche_subtitle_preset(locked_niche)
+            sub_opts.update(niche_preset)
+            active_preset_name = next(
+                (k for k, v in SUBTITLE_PRESETS.items() if v == niche_preset),
+                "capcut_yellow",
+            )
         sub_opts = merge_studio_subtitle_opts(
-            "",
+            active_preset_name,
             base=sub_opts,
             font_size=req.subtitle_font_size,
             y_position=req.subtitle_y_position,
@@ -339,7 +360,11 @@ def build_seo_and_subtitle_options(
     if arabic_overlays:
         sub_opts["arabic_overlays"] = arabic_overlays
         if req.subtitle_y_position is None:
-            sub_opts["y_position"] = 0.56
+            is_split = bool(
+                getattr(req, "split_screen", False)
+                or (isinstance(plan, dict) and plan.get("hybrid_split_screen"))
+            )
+            sub_opts["y_position"] = 0.46 if is_split else 0.56
             sub_opts["allow_mid_frame"] = True
 
     human_craft = (plan or {}).get("human_craft") if isinstance(plan, dict) else None
@@ -349,7 +374,7 @@ def build_seo_and_subtitle_options(
         craft_subs = subtitle_opts_from_craft(human_craft)
         if craft_subs:
             sub_opts = merge_studio_subtitle_opts(
-                req.subtitle_preset if preset_locked else "",
+                active_preset_name,
                 base=sub_opts,
                 font_size=req.subtitle_font_size,
                 y_position=req.subtitle_y_position,

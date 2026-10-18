@@ -443,10 +443,7 @@ def repair_script_quality(
             client = openai_cls(api_key=api_key, base_url=base_url)
             params = {
                 "model": model_name,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+                "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}],
                 "temperature": 0.3,
                 "max_tokens": 3000,
             }
@@ -503,18 +500,10 @@ def repair_script_quality(
                     if not _usable_repair_description(description) or queries is None:
                         valid = False
                         break
-                    scene = {
-                        "narration": narration.strip(),
-                        "scene_description": description.strip(),
-                        "search_queries": queries,
-                        "mood": str(proposed.get("mood") or ""),
-                    }
+                    scene = {"narration": narration.strip(), "scene_description": description.strip(), "search_queries": queries, "mood": str(proposed.get("mood") or "")}
                 merged_scenes.append(scene)
 
-            total_words = sum(
-                len(re.findall(r"[\wçğıöşüÇĞİÖŞÜ'-]+", scene["narration"], flags=re.UNICODE))
-                for scene in merged_scenes
-            )
+            total_words = sum(len(re.findall(r"[\wçğıöşüÇĞİÖŞÜ'-]+", scene["narration"], flags=re.UNICODE)) for scene in merged_scenes)
             if not valid or not 95 <= total_words <= 110:
                 last_error = "Provider response did not meet scene or word-count constraints."
                 continue

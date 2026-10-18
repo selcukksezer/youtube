@@ -118,9 +118,10 @@ def run_tts_and_audio_master_stage(
         try:
             from services.niche_guardrails import validate_script_niche_compliance
 
+            _ng_niche = director.niche_id if director else getattr(req, "niche", "")
             niche_val = validate_script_niche_compliance(
                 narration_text,
-                niche_id=director.niche_id if director else getattr(req, "niche", ""),
+                niche_id=_ng_niche,
                 lang=target_lang,
             )
             if not niche_val.get("compliant", True):
@@ -129,7 +130,18 @@ def run_tts_and_audio_master_stage(
                     60,
                 )
                 narration_text = niche_val.get("cleaned_text", narration_text)
+                for _sc in getattr(director, "scenes", []) or []:
+                    _sc_narr = getattr(_sc, "narration", "") or ""
+                    if _sc_narr:
+                        _sc.narration = validate_script_niche_compliance(
+                            _sc_narr, niche_id=_ng_niche, lang=target_lang
+                        ).get("cleaned_text", _sc_narr)
                 if plan:
+                    for _psc in plan.get("scenes") or []:
+                        if isinstance(_psc, dict) and _psc.get("narration"):
+                            _psc["narration"] = validate_script_niche_compliance(
+                                _psc["narration"], niche_id=_ng_niche, lang=target_lang
+                            ).get("cleaned_text", _psc["narration"])
                     plan["full_narration"] = narration_text
         except Exception as ng_err:
             log_fn(f"[NicheGuardrails] Denetim uyarısı: {ng_err}", 60)
@@ -211,6 +223,7 @@ def run_tts_and_audio_master_stage(
             )
             if _gemini_script_circuit_open():
                 log_fn("[Timeline] gemini_script açık — Gemini çağrılmadı.", 69)
+            old_scenes = list(getattr(director, "scenes", []) or [])
             new_plan = recover_overlong_narration(plan, audio_seconds=raw_sec)
             new_words = len((new_plan.get("full_narration") or "").split())
             if new_words <= 0 or new_words >= spoken:
@@ -230,7 +243,59 @@ def run_tts_and_audio_master_stage(
             plan = director.to_legacy_plan()
             narration_text = plan.get("full_narration") or ""
             if len(clips) > len(director.scenes):
-                del clips[len(director.scenes) :]
+                matched_clips: List[Dict[str, Any]] = []
+                used_clip_idxs: set = set()
+                for i, sc in enumerate(director.scenes):
+                    sc_path = getattr(sc, "path", None) or ""
+                    sc_narr_prefix = (getattr(sc, "narration", "") or "").strip()[:30]
+                    sc_desc_prefix = (getattr(sc, "scene_description", "") or "").strip()[:30]
+                    best_idx: Optional[int] = None
+                    if sc_path:
+                        for j, c in enumerate(clips):
+                            if j in used_clip_idxs:
+                                continue
+                            orig_sc = old_scenes[j] if j < len(old_scenes) else None
+                            c_path = (c.get("path") if isinstance(c, dict) else "") or (
+                                getattr(orig_sc, "path", "") if orig_sc else ""
+                            )
+                            if c_path and c_path == sc_path:
+                                best_idx = j
+                                break
+                    if best_idx is None and (sc_narr_prefix or sc_desc_prefix):
+                        for j, c in enumerate(clips):
+                            if j in used_clip_idxs:
+                                continue
+                            orig_sc = old_scenes[j] if j < len(old_scenes) else None
+                            c_narr = (
+                                (c.get("narration") if isinstance(c, dict) else "")
+                                or (getattr(orig_sc, "narration", "") if orig_sc else "")
+                                or ""
+                            ).strip()[:30]
+                            c_desc = (
+                                (
+                                    (c.get("scene_description") or c.get("description"))
+                                    if isinstance(c, dict)
+                                    else ""
+                                )
+                                or (getattr(orig_sc, "scene_description", "") if orig_sc else "")
+                                or ""
+                            ).strip()[:30]
+                            if (sc_narr_prefix and c_narr == sc_narr_prefix) or (
+                                sc_desc_prefix and c_desc == sc_desc_prefix
+                            ):
+                                best_idx = j
+                                break
+                    if best_idx is None:
+                        if i < len(clips) and i not in used_clip_idxs:
+                            best_idx = i
+                        else:
+                            best_idx = next(
+                                (j for j in range(len(clips)) if j not in used_clip_idxs),
+                                min(i, len(clips) - 1),
+                            )
+                    used_clip_idxs.add(best_idx)
+                    matched_clips.append(clips[best_idx])
+                clips[:] = matched_clips
             with open(os.path.join(proj, "plan.json"), "w", encoding="utf-8") as f:
                 json.dump(plan, f, ensure_ascii=False, indent=2)
             with open(os.path.join(proj, "director_plan.json"), "w", encoding="utf-8") as f:
@@ -271,6 +336,44 @@ def run_tts_and_audio_master_stage(
                 audio_path = fitted_audio
                 audio_dur = 59.0
                 speed = raw_sec / 59.0
+                if speed > 0:
+                    rescaled_timings: List[Dict[str, Any]] = []
+                    for w in timings or []:
+                        if isinstance(w, dict):
+                            w_copy = dict(w)
+                            w_copy["offset"] = round(float(w.get("offset", 0.0)) / speed, 4)
+                            w_copy["duration"] = round(
+                                max(0.04, float(w.get("duration", 0.1)) / speed), 4
+                            )
+                            if "start" in w_copy:
+                                w_copy["start"] = round(float(w.get("start", 0.0)) / speed, 4)
+                            if "end" in w_copy:
+                                w_copy["end"] = round(float(w.get("end", 0.0)) / speed, 4)
+                            rescaled_timings.append(w_copy)
+                    timings = rescaled_timings
+                    if getattr(director, "scenes", None):
+                        total_sc_dur = sum(
+                            max(0.0, float(getattr(s, "duration", 0.0) or 0.0))
+                            for s in director.scenes
+                        )
+                        sc_scale = (
+                            (audio_dur / total_sc_dur)
+                            if total_sc_dur > 0
+                            else (1.0 / speed)
+                        )
+                        cursor = 0.0
+                        for idx_s, s in enumerate(director.scenes):
+                            if idx_s == len(director.scenes) - 1:
+                                s_dur = round(max(0.1, audio_dur - cursor), 3)
+                            else:
+                                s_dur = round(
+                                    max(0.1, float(getattr(s, "duration", 0.0) or 0.0) * sc_scale),
+                                    3,
+                                )
+                            s.duration = s_dur
+                            s.t0 = round(cursor, 3)
+                            cursor = round(cursor + s_dur, 3)
+                            s.t1 = round(cursor, 3)
             except Exception:
                 audio_dur = min(raw_sec, 59.0)
                 speed = 1.0

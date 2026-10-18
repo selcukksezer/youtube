@@ -258,7 +258,7 @@ def build_scene_filter_chain(
 
     pad = ""
     if pad_seconds and float(pad_seconds) > 0.12:
-        pad = f"tpad=stop_mode=clone:stop_duration={float(pad_seconds):.3f},"
+        pad = f"tpad=stop_mode=clone:stop_duration={float(pad_seconds):.3f},setpts=PTS-STARTPTS,"
     cover_crop = f"crop={width}:{out_h}"
     if crop_x is not None and not fit_and_fill:
         offset = f"'{crop_x}'" if isinstance(crop_x, str) else str(max(0, int(crop_x)))
@@ -269,7 +269,11 @@ def build_scene_filter_chain(
         tail_len = max(0.2, float(duration) - head_len)
 
         def _piece(src_index: int, seg_dur: float, seg_pad: float, suffix: str) -> str:
-            pad_f = f"tpad=stop_mode=clone:stop_duration={float(seg_pad):.3f}," if seg_pad and float(seg_pad) > 0.12 else ""
+            pad_f = (
+                f"tpad=stop_mode=clone:stop_duration={float(seg_pad):.3f},setpts=PTS-STARTPTS,"
+                if seg_pad and float(seg_pad) > 0.12
+                else ""
+            )
             tag = f"seg{scene_index}{suffix}"
             src = _lead(f"[{src_index}:v]", color_filter if suffix == "a" else tail_color_filter)
             piece_fit = fit_and_fill if suffix == "a" or tail_fit_and_fill is None else tail_fit_and_fill
@@ -279,7 +283,7 @@ def build_scene_filter_chain(
                 piece_crop += f":x={offset}"
             if piece_fit:
                 return (
-                    f"{src}trim=duration={seg_dur:.3f},{pad_f}setpts=PTS-STARTPTS,"
+                    f"{src}trim=duration={seg_dur:.3f},setpts=PTS-STARTPTS,{pad_f}"
                     f"fps={fps_token},split[fg_raw_{scene_index}{suffix}][bg_raw_{scene_index}{suffix}];"
                     f"[bg_raw_{scene_index}{suffix}]scale={width}:{out_h}:force_original_aspect_ratio=increase,"
                     f"crop={width}:{out_h},boxblur=25:5[bg_blur_{scene_index}{suffix}];"
@@ -289,7 +293,7 @@ def build_scene_filter_chain(
                     f"setsar=1[{tag}]"
                 )
             return (
-                f"{src}trim=duration={seg_dur:.3f},{pad_f}setpts=PTS-STARTPTS,"
+                f"{src}trim=duration={seg_dur:.3f},setpts=PTS-STARTPTS,{pad_f}"
                 f"fps={fps_token},scale={width}:{out_h}:force_original_aspect_ratio=increase,"
                 f"{piece_crop},setsar=1[{tag}]"
             )
@@ -316,12 +320,12 @@ def build_scene_filter_chain(
         except Exception:
             pass
         joined = f"{head};{tail};[seg{scene_index}a][seg{scene_index}b]concat=n=2:v=1:a=0[cat{scene_index}]"
-        return joined + f";[cat{scene_index}]null{bright}{motion},setsar=1[v{scene_index}]"
+        return joined + f";[cat{scene_index}]setpts=PTS-STARTPTS{bright}{motion},setsar=1[v{scene_index}]"
 
     if fit_and_fill:
         base = (
             f"{_lead(f'[{input_index}:v]', color_filter)}"
-            f"trim=duration={duration:.3f},{pad}setpts=PTS-STARTPTS,"
+            f"trim=duration={duration:.3f},setpts=PTS-STARTPTS,{pad}"
             f"fps={fps_token},"
             f"split[fg_raw_{scene_index}][bg_raw_{scene_index}];"
             f"[bg_raw_{scene_index}]scale={width}:{out_h}:force_original_aspect_ratio=increase,"
@@ -332,7 +336,7 @@ def build_scene_filter_chain(
     else:
         base = (
             f"{_lead(f'[{input_index}:v]', color_filter)}"
-            f"trim=duration={duration:.3f},{pad}setpts=PTS-STARTPTS,"
+            f"trim=duration={duration:.3f},setpts=PTS-STARTPTS,{pad}"
             f"fps={fps_token},scale={width}:{out_h}:force_original_aspect_ratio=increase,{cover_crop},setsar=1"
         )
     try:

@@ -35,13 +35,20 @@ def _apply_beat_hints_advisory(plan: DirectorPlan) -> None:
             parse_bgm_bpm,
         )
 
-        track = match_bgm_track_to_niche(plan.niche_id, list_bgm_tracks())
-        if track and os.path.isfile(track):
-            bgm_path = track
-        elif track:
-            bgm_path = get_bgm_path(os.path.basename(track))
+        bgm_hint = str((plan.meta or {}).get("bgm_track") or "").strip()
+        if bgm_hint and bgm_hint.lower() not in {"auto", "otomatik", "default", "varsayılan", "varsayilan"}:
+            if os.path.isfile(bgm_hint):
+                bgm_path = bgm_hint
+            else:
+                bgm_path = get_bgm_path(bgm_hint) or get_bgm_path(os.path.basename(bgm_hint)) or bgm_hint
         else:
-            bgm_path = None
+            track = match_bgm_track_to_niche(plan.niche_id, list_bgm_tracks())
+            if track and os.path.isfile(track):
+                bgm_path = track
+            elif track:
+                bgm_path = get_bgm_path(os.path.basename(track))
+            else:
+                bgm_path = None
         
         # 80-120 BPM hipnotik kurgu aralığına kilitlenmiş timeline beat-snapping
         plan.scenes = snap_timeline_to_beat_grid(
@@ -58,15 +65,33 @@ def _apply_beat_hints_advisory(plan: DirectorPlan) -> None:
         snapped = plan.total_duration()
         if snapped > cap + 0.05 and plan.scenes:
             scale = cap / snapped
-            t = 0.0
             for scene in plan.scenes:
                 scene.duration = round(max(0.8, scene.duration * scale), 3)
+            drift = round(cap - sum(s.duration for s in plan.scenes), 3)
+            if abs(drift) > 0.001:
+                if drift < 0:
+                    slack_total = sum(max(0.0, s.duration - 0.8) for s in plan.scenes)
+                    if slack_total > 0:
+                        for scene in plan.scenes:
+                            slack = max(0.0, scene.duration - 0.8)
+                            if slack > 0:
+                                cut = min(slack, abs(drift) * (slack / slack_total))
+                                scene.duration = round(max(0.8, scene.duration - cut), 3)
+                else:
+                    total_now = sum(s.duration for s in plan.scenes) or 1.0
+                    for scene in plan.scenes:
+                        add = drift * (scene.duration / total_now)
+                        scene.duration = round(max(0.8, scene.duration + add), 3)
+                rem_drift = round(cap - sum(s.duration for s in plan.scenes), 3)
+                if abs(rem_drift) > 0.001:
+                    plan.scenes[-1].duration = round(max(0.8, plan.scenes[-1].duration + rem_drift), 3)
+            t = 0.0
+            for scene in plan.scenes:
+                scene.duration = round(max(0.8, float(scene.duration)), 3)
                 scene.t0 = round(t, 3)
                 t = round(t + scene.duration, 3)
                 scene.t1 = t
-            drift = cap - plan.scenes[-1].t1
-            plan.scenes[-1].duration = round(plan.scenes[-1].duration + drift, 3)
-            plan.scenes[-1].t1 = round(plan.scenes[-1].t0 + plan.scenes[-1].duration, 3)
+                scene.beat_hint_ms = round(t * 1000.0, 1)
         
         if plan.time_map is not None:
             plan.time_map["target_duration"] = plan.total_duration()
@@ -81,6 +106,16 @@ def _apply_beat_hints_advisory(plan: DirectorPlan) -> None:
         )
     except Exception as exc:
         print(f"  [Director] Beat hints skipped: {exc}")
+
+
+def resnap_director_to_bgm(plan: DirectorPlan, bgm_track: str) -> None:
+    """Update plan.meta['bgm_track'] and re-run beat-grid snapping when a concrete BGM track is chosen."""
+    if plan is None:
+        return
+    if plan.meta is None:
+        plan.meta = {}
+    plan.meta["bgm_track"] = bgm_track
+    _apply_beat_hints_advisory(plan)
 
 
 def _apply_fact_verification(plan: DirectorPlan) -> None:
@@ -171,10 +206,16 @@ def compile_director_plan(
         from scenes.narration_validate import plan_needs_procedural_inject
 
         force_fb = os.environ.get("SHORTS_FORCE_PROCEDURAL_FALLBACK", "").strip().lower() in {"1", "true", "yes", "on"}
-        if not raw_plan.get("scenes") and not force_fb:
+        if not raw_plan.get("scenes") and not raw_plan.get("full_narration") and not force_fb:
             try:
                 from scene_generator import generate_scenes
-                ai_plan = generate_scenes(title, niche_type=locked_niche, language=language)
+                ai_plan = generate_scenes(
+                    title,
+                    niche_type=locked_niche,
+                    language=language,
+                    enable_outro=bool(raw_plan.get("enable_outro", True)),
+                    variation_attempt=int(raw_plan.get("variation_attempt", 0) or 0),
+                )
                 if ai_plan and ai_plan.get("scenes") and not ai_plan.get("procedural_fallback"):
                     raw_plan.update(ai_plan)
                     print("  [Director] Boş plan için AI senaryosu başarıyla üretildi")
@@ -225,6 +266,10 @@ def compile_director_plan(
         hybrid_meta["fact_snippets"] = raw_plan.get("fact_snippets") or []
     elif isinstance(raw_plan.get("meta"), dict) and "fact_snippets" in raw_plan["meta"]:
         hybrid_meta["fact_snippets"] = raw_plan["meta"].get("fact_snippets") or []
+    if raw_plan.get("bgm_track"):
+        hybrid_meta["bgm_track"] = raw_plan["bgm_track"]
+    elif isinstance(raw_plan.get("meta"), dict) and raw_plan["meta"].get("bgm_track"):
+        hybrid_meta["bgm_track"] = raw_plan["meta"]["bgm_track"]
     if raw_plan.get("hybrid_split_screen") and hybrid_id:
         hybrid_meta["hybrid_split_screen"] = True
 
@@ -298,6 +343,10 @@ def compile_director_plan(
     plan = solve_timeline(plan)
 
     # Post-timeline split-verb repair (cadence pad may have left fragments)
+    before_mid_sig = (
+        len(plan.scenes),
+        tuple((s.narration or "").strip() for s in plan.scenes),
+    )
     legacy_mid = plan.to_legacy_plan()
     legacy_mid, mid_coherence = repair_cross_scene_coherence(legacy_mid)
     if mid_coherence:
@@ -306,7 +355,12 @@ def compile_director_plan(
             ScenePlan.from_dict(s, index=i)
             for i, s in enumerate(legacy_mid.get("scenes") or [])
         ]
-        plan = solve_timeline(plan)
+        after_mid_sig = (
+            len(plan.scenes),
+            tuple((s.narration or "").strip() for s in plan.scenes),
+        )
+        if after_mid_sig != before_mid_sig:
+            plan = solve_timeline(plan)
 
     # Post-condense repair — only when timeline left fragments (P0-02)
     from scenes.narration_validate import auto_repair_plan, scene_narration_issues
@@ -317,15 +371,26 @@ def compile_director_plan(
         repaired_after, post_fixes = auto_repair_plan(legacy_after)
     if post_fixes:
         print(f"  [Director] Post-condense anlatım düzeltildi: {len(post_fixes)} fix")
-        for i, sc in enumerate(plan.scenes):
-            if i < len(repaired_after.get("scenes") or []):
-                sc.narration = repaired_after["scenes"][i].get("narration", sc.narration)
-        if len(repaired_after.get("scenes") or []) != len(plan.scenes):
+        before_post_sig = (
+            len(plan.scenes),
+            tuple((s.narration or "").strip() for s in plan.scenes),
+        )
+        repaired_scenes = repaired_after.get("scenes") or []
+        if len(repaired_scenes) != len(plan.scenes):
             from .schema import ScenePlan
             plan.scenes = [
                 ScenePlan.from_dict(s, index=i)
-                for i, s in enumerate(repaired_after.get("scenes") or [])
+                for i, s in enumerate(repaired_scenes)
             ]
+        else:
+            for i, sc in enumerate(plan.scenes):
+                if i < len(repaired_scenes):
+                    sc.narration = repaired_scenes[i].get("narration", sc.narration)
+        after_post_sig = (
+            len(plan.scenes),
+            tuple((s.narration or "").strip() for s in plan.scenes),
+        )
+        if after_post_sig != before_post_sig:
             plan = solve_timeline(plan)
 
     apply_visual_intents(plan.scenes, plan.niche_id, title=plan.title)

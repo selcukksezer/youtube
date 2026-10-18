@@ -309,6 +309,7 @@ def _render_with_ffmpeg_graph_impl(
                 while True:
                     if cancel_check and cancel_check():
                         proc.terminate()
+                        _cleanup_ffmpeg_process(proc, reader_thread)
                         raise InterruptedError("İşlem kullanıcı tarafından iptal edildi.")
 
                     try:
@@ -316,7 +317,17 @@ def _render_with_ffmpeg_graph_impl(
                         stderr_data.append(line)
                         last_heartbeat = time.time()
                         if "time=" in line and progress_callback:
-                            progress_callback(88, f"[FFmpegGraph] Kodlama devam ediyor ({mode})...")
+                            m = re.search(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)", line)
+                            if m and _t_limit > 0:
+                                elapsed = (
+                                    int(m.group(1)) * 3600
+                                    + int(m.group(2)) * 60
+                                    + float(m.group(3))
+                                )
+                                pct = min(94, max(81, int(80 + (elapsed / max(0.5, _t_limit)) * 14)))
+                            else:
+                                pct = 88
+                            progress_callback(pct, f"[FFmpegGraph] Kodlama devam ediyor ({mode})...")
                     except queue.Empty:
                         pass
 
@@ -331,6 +342,7 @@ def _render_with_ffmpeg_graph_impl(
                     if time.time() - last_heartbeat > inactivity_limit:
                         print(f"  [FFmpegGraph] {mode} {inactivity_limit}s sessiz kaldı (zombi koruması), sonlandırılıyor...", flush=True)
                         proc.terminate()
+                        _cleanup_ffmpeg_process(proc, reader_thread)
                         break
 
                 if proc.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) >= 100000:

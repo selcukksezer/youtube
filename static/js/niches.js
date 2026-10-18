@@ -117,6 +117,8 @@ async function loadNiches() {
         if (!userManuallyPickedNiche && !preferredNiche) {
             await resolveAndApplyNicheFromTopic({ toast: false });
         }
+        if (typeof window.refreshWizardStep1UI === 'function') window.refreshWizardStep1UI();
+        if (typeof window.syncWizardStep2Preview === 'function') window.syncWizardStep2Preview();
     } catch (err) {
         console.error("Niche yükleme hatası:", err);
     }

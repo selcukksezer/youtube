@@ -84,21 +84,50 @@ def _ensure_ui_plan_narration_usable(plan, keyword: str, locked_niche: str, targ
         from scenes.fallback import _generate_five_fact_scenes, _generate_procedural_fallback_scenes
         from scenes.narration_validate import plan_quality_usable
 
+        orig_scenes = list(plan.get("scenes") or [])
+        _preserve_keys = (
+            "selected_video",
+            "path",
+            "video_path",
+            "video_url",
+            "visual_intent",
+            "visual_mode",
+            "custom_media",
+            "search_queries",
+        )
+
+        def _preserve_custom_scene_fields(fb: dict) -> dict:
+            if not isinstance(fb, dict):
+                return fb
+            fb_scenes = fb.get("scenes")
+            if isinstance(fb_scenes, list):
+                for i, orig_scene in enumerate(orig_scenes):
+                    if i >= len(fb_scenes) or not isinstance(orig_scene, dict) or not isinstance(fb_scenes[i], dict):
+                        continue
+                    for key in _preserve_keys:
+                        val = orig_scene.get(key)
+                        if val:
+                            fb_scenes[i][key] = val
+            return fb
+
         blob = " ".join(
-            str((s or {}).get("narration") or "") for s in (plan.get("scenes") or []) if isinstance(s, dict)
+            str((s or {}).get("narration") or "") for s in orig_scenes if isinstance(s, dict)
         ).casefold()
         slop = any(mark in blob for mark in _SCRIPT_SLOP)
         if slop and (locked_niche == "9_five_facts" or "gerçek" in (keyword or "").casefold() or "gercek" in (keyword or "").casefold()):
             log_fn("[Director] Senaryo şablon çöp — 5 gerçek anlatımıyla değiştiriliyor", 11)
+            fb = _preserve_custom_scene_fields(_generate_five_fact_scenes(keyword, target_lang != "en"))
             plan = dict(plan)
-            plan.update(_generate_five_fact_scenes(keyword, target_lang != "en"))
+            plan.update(fb)
             plan["niche_id"] = locked_niche or "9_five_facts"
             return plan
 
-        if plan_quality_usable(plan.get("scenes") or []):
+        if plan_quality_usable(orig_scenes):
             return plan
         log_fn("[Director] UI plan narration unusable — prosedürel fallback enjekte ediliyor", 11)
-        fb = _generate_procedural_fallback_scenes(keyword, niche_type=locked_niche, language=target_lang)
+        fb = _preserve_custom_scene_fields(
+            _generate_procedural_fallback_scenes(keyword, niche_type=locked_niche, language=target_lang)
+        )
         plan = dict(plan)
         plan.update(fb)
     except Exception as exc:

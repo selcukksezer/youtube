@@ -204,8 +204,22 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
     if not _job_manifest:
         raise ValueError("source manifest is empty")
 
+    abs_proj = os.path.abspath(project_dir)
+    has_proj_match = any(
+        row.get("path") and os.path.dirname(os.path.abspath(str(row["path"]))) == abs_proj
+        for row in _job_manifest
+    )
+    active_rows = (
+        [
+            row for row in _job_manifest
+            if not row.get("path") or os.path.dirname(os.path.abspath(str(row["path"]))) == abs_proj
+        ]
+        if has_proj_match
+        else _job_manifest
+    )
+
     scene_map: Dict[Any, Dict[str, Any]] = {}
-    for row in _job_manifest:
+    for row in active_rows:
         s_idx = row.get("scene_index")
         scene_map[s_idx if s_idx is not None else len(scene_map)] = row
 
@@ -270,7 +284,7 @@ def write_job_credits(project_dir: str) -> Dict[str, str]:
     }
 
 
-def _download(url: str, path: str, timeout: int = 45) -> bool:
+def _download(url: str, path: str, timeout: int = 45, cancel_check=None) -> bool:
     from .atomic_cache import atomic_replace, lock_for_key
 
     host = (urlsplit(url).hostname or "").casefold()
@@ -285,6 +299,8 @@ def _download(url: str, path: str, timeout: int = 45) -> bool:
                 r.raise_for_status()
                 with open(tmp_path, "wb") as fh:
                     for chunk in r.iter_content(256 * 1024):
+                        if callable(cancel_check) and cancel_check():
+                            raise InterruptedError("Download cancelled")
                         if chunk:
                             fh.write(chunk)
             if not os.path.isfile(tmp_path) or os.path.getsize(tmp_path) <= 8_000:
