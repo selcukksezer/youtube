@@ -251,27 +251,32 @@ async function applyClipReplacement(payload) {
     if (activeModalSceneIdx === null || !currentPlan?.scenes?.[activeModalSceneIdx]) return;
     const idx = activeModalSceneIdx;
     const sc = currentPlan.scenes[idx];
+    if (payload.replace_mode === 'stock' && payload.stock_video_data?.url) {
+        sc.selected_video = payload.stock_video_data;
+        sc.video_url = payload.stock_video_data.url;
+        delete sc.path;
+        delete sc.video_path;
+        setCurrentPlan(currentPlan);
+        if (typeof window.syncWizardStep2Preview === 'function') window.syncWizardStep2Preview();
+        closeReplaceVisualModal();
+        showToast(`🎬 Sahne #${idx + 1} (${String(payload.stock_video_data.source || 'Stok').toUpperCase()}) seçildi!`);
+        fetch('/api/timeline/replace-clip', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_slug: currentPlan.project_slug || currentPlan.title || 'active_project', plan: currentPlan, scene_index: idx, ...payload })
+        }).catch(() => {});
+        return;
+    }
     showToast('Klip güncelleniyor...', 'info');
-
     try {
         const res = await fetch('/api/timeline/replace-clip', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                project_slug: currentPlan.project_slug || currentPlan.title || 'active_project',
-                plan: currentPlan,
-                scene_index: idx,
-                ...payload
-            })
+            body: JSON.stringify({ project_slug: currentPlan.project_slug || currentPlan.title || 'active_project', plan: currentPlan, scene_index: idx, ...payload })
         });
         const data = await res.json();
-
         if (data.status === 'ok') {
             if (data.project_slug) currentPlan.project_slug = data.project_slug;
             const clipUrl = data.video_url || data.clip_url;
-            if (payload.replace_mode === 'stock') {
-                sc.selected_video = payload.stock_video_data;
-                sc.video_url = clipUrl || payload.stock_video_data?.url;
-            } else if (payload.replace_mode === 'flux') {
+            if (payload.replace_mode === 'flux') {
                 sc.video_url = clipUrl;
                 sc.selected_video = { source: '0 TL Flux AI (SDXL)', url: clipUrl };
             } else if (payload.replace_mode === 'whiteboard') {
@@ -279,6 +284,7 @@ async function applyClipReplacement(payload) {
                 sc.selected_video = { source: 'Whiteboard Çizim', url: clipUrl };
             }
             setCurrentPlan(currentPlan);
+            if (typeof window.syncWizardStep2Preview === 'function') window.syncWizardStep2Preview();
             closeReplaceVisualModal();
             showToast(`🎬 Sahne #${idx + 1} güncellendi!`);
         } else throw new Error(data.detail || data.message || 'Değiştirilemedi');
@@ -559,44 +565,27 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             let applied = 0;
             for (const sc of window.currentPlan.scenes) {
-                const res = await fetch('/api/punch_in/curve', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ duration_sec: parseFloat(sc.duration) || 3.5, fps: 30, intensity: 0.14 })
-                });
+                const res = await fetch('/api/punch_in/curve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ duration_sec: parseFloat(sc.duration) || 3.5, fps: 30, intensity: 0.14 }) });
                 const data = await res.json();
-                if (data.curve) {
-                    sc.punch_in_curve = data.curve;
-                    sc.visual_beat = sc.visual_beat || 'punch_in_zoom';
-                    applied++;
-                }
+                if (data.curve) { sc.punch_in_curve = data.curve; sc.visual_beat = sc.visual_beat || 'punch_in_zoom'; applied++; }
             }
             setCurrentPlan(window.currentPlan);
-            if (outEl) {
-                outEl.classList.remove('hidden');
-                outEl.style.display = 'block';
-                outEl.textContent = `🔍 Beat Punch-In Zoom eğrisi ${applied} sahneye (30 FPS keyframe dizisi) eklendi.`;
-            }
+            if (outEl) { outEl.classList.remove('hidden'); outEl.style.display = 'block'; outEl.textContent = `🔍 Beat Punch-In Zoom eğrisi ${applied} sahneye (30 FPS keyframe dizisi) eklendi.`; }
             showToast(`🔍 ${applied} sahneye Beat Punch-In Zoom eğrisi eklendi`);
         } catch (err) { showToast('Punch-In hatası: ' + err.message, 'error'); }
     });
 });
-
 document.addEventListener('keydown', e => {
+    const activeTab = document.querySelector('.nav-btn.active')?.getAttribute('data-tab');
+    if (activeTab !== 'timeline' || !window.currentPlan) return;
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        const activeTab = document.querySelector('.nav-btn.active')?.getAttribute('data-tab');
-        if (activeTab === 'timeline' && window.currentPlan) {
-            e.preventDefault();
-            if (typeof collectTimelineEdits === 'function') collectTimelineEdits();
-            if (typeof startRenderProcess === 'function') startRenderProcess(window.currentPlan);
-        }
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        const activeTab = document.querySelector('.nav-btn.active')?.getAttribute('data-tab');
-        if (activeTab === 'timeline' && window.currentPlan) {
-            e.preventDefault();
-            if (typeof collectTimelineEdits === 'function') collectTimelineEdits();
-            if (typeof updateComplianceDashboard === 'function') updateComplianceDashboard(window.currentPlan.scenes || []);
-            showToast('💾 Kaydedildi');
-        }
+        e.preventDefault();
+        if (typeof collectTimelineEdits === 'function') collectTimelineEdits();
+        if (typeof startRenderProcess === 'function') startRenderProcess(window.currentPlan);
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (typeof collectTimelineEdits === 'function') collectTimelineEdits();
+        if (typeof updateComplianceDashboard === 'function') updateComplianceDashboard(window.currentPlan.scenes || []);
+        showToast('💾 Kaydedildi');
     }
 });
