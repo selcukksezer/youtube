@@ -431,6 +431,23 @@ function checkWizardResumeBanner() {
 }
 window.checkWizardResumeBanner = checkWizardResumeBanner;
 
+
+// GECICI TAP-DEBUG: ?tapdebug=1 ile acilinca her dokunusta hangi elementin tiklandigini gosterir
+(function () {
+    if (!/tapdebug=1/.test(window.location.search)) return;
+    var badge = document.createElement('div');
+    badge.style.cssText = 'position:fixed;top:8px;left:8px;right:8px;z-index:99999;background:#111;color:#0f0;font:11px monospace;padding:8px;border-radius:8px;pointer-events:none;word-break:break-all;';
+    badge.textContent = 'TAP-DEBUG aktif — karta dokun';
+    document.body.appendChild(badge);
+    document.addEventListener('click', function (e) {
+        var t = e.target;
+        var info = (t.tagName || '?') +
+            (t.id ? '#' + t.id : '') +
+            (t.className && typeof t.className === 'string' ? '.' + t.className.trim().split(/\s+/).slice(0, 3).join('.') : '');
+        badge.textContent = 'Tiklanan: ' + info;
+    }, true);
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof initDomElements === 'function') {
         initDomElements();
