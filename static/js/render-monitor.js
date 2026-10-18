@@ -20,7 +20,7 @@ async function restoreRenderState() {
         }
 
         persistentMonitor.classList.remove('hidden');
-        terminalPanel.classList.remove('hidden'); // Sayfa yenilendiğinde de terminal açık kalsın
+        // Terminal artık açılışta zorla açılmıyor — kullanıcı "Terminal Logları" ile açar
 
         const percent = Number(state.percent || 0);
         dockProgressFill.style.width = `${percent}%`;
